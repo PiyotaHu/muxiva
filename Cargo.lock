@@ -429,6 +429,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "voxa-testkit"
+version = "0.1.0"
+dependencies = [
+ "voxa-core",
+ "voxa-types",
+]
+
+[[package]]
 name = "voxa-types"
 version = "0.1.0"
 dependencies = [

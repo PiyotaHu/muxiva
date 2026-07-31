@@ -6,6 +6,7 @@ members = [
     "crates/voxa-graph-json",
     "crates/voxa-cli",
     "crates/voxa-studio",
+    "crates/voxa-testkit",
     "crates/voxa-types",
 ]
 resolver = "2"

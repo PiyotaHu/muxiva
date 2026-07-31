@@ -1,0 +1,18 @@
+name: native-ffi
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  native:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: ./scripts/check-ffi.sh
+      - run: ./scripts/check-rtc.sh
+

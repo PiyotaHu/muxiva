@@ -1,0 +1,11 @@
+[package]
+name = "voxa-testkit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+voxa-core = { path = "../voxa-core" }
+voxa-types.workspace = true
+
