@@ -44,6 +44,7 @@ typedef voxa_token_v1 voxa_runtime_v1;
 typedef voxa_token_v1 voxa_session_v1;
 typedef voxa_token_v1 voxa_frame_v1;
 typedef voxa_token_v1 voxa_node_v1;
+typedef voxa_token_v1 voxa_session_ingress_v1;
 
 typedef struct voxa_str_v1 { const char *data; size_t len; } voxa_str_v1;
 typedef struct voxa_bytes_v1 { const uint8_t *data; size_t len; } voxa_bytes_v1;
@@ -136,6 +137,15 @@ voxa_status_v1 voxa_runtime_create_v1(voxa_runtime_v1 *, voxa_error_v1 *);
 voxa_status_v1 voxa_runtime_release_v1(voxa_runtime_v1);
 voxa_status_v1 voxa_session_create_v1(voxa_runtime_v1, voxa_session_v1 *, voxa_error_v1 *);
 voxa_status_v1 voxa_session_release_v1(voxa_session_v1);
+typedef struct voxa_ingress_config_v1 { uint32_t abi_version; uint32_t struct_size; size_t item_capacity; size_t byte_capacity; } voxa_ingress_config_v1;
+typedef struct voxa_ingress_stats_v1 { uint32_t abi_version; uint32_t struct_size; uint64_t accepted; uint64_t full_drops; uint64_t closed_drops; size_t queued_items; size_t queued_bytes; } voxa_ingress_stats_v1;
+voxa_status_v1 voxa_session_ingress_create_v1(voxa_session_v1, const voxa_ingress_config_v1 *, voxa_session_ingress_v1 *, voxa_error_v1 *);
+voxa_status_v1 voxa_session_ingress_clone_v1(voxa_session_ingress_v1, voxa_session_ingress_v1 *, voxa_error_v1 *);
+voxa_status_v1 voxa_session_ingress_close_v1(voxa_session_ingress_v1);
+voxa_status_v1 voxa_session_ingress_release_v1(voxa_session_ingress_v1);
+voxa_status_v1 voxa_session_ingress_try_submit_v1(voxa_session_ingress_v1, const voxa_frame_view_v1 *, voxa_error_v1 *);
+voxa_status_v1 voxa_session_ingress_stats_v1(voxa_session_ingress_v1, voxa_ingress_stats_v1 *, voxa_error_v1 *);
+voxa_status_v1 voxa_session_ingress_try_pop_v1(voxa_session_ingress_v1, voxa_frame_v1 *, voxa_error_v1 *);
 voxa_status_v1 voxa_frame_copy_v1(const voxa_frame_view_v1 *, voxa_frame_v1 *, voxa_error_v1 *);
 voxa_status_v1 voxa_frame_release_v1(voxa_frame_v1);
 voxa_status_v1 voxa_frame_retain_v1(voxa_frame_v1); /* always UNSUPPORTED in v1 */

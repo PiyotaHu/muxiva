@@ -7,11 +7,14 @@ use crate::{
     frame::OwnedFrame,
 };
 
+use crate::ingress::ExternalIngress;
+
 pub enum Entry {
     Runtime,
     Session,
     Frame(OwnedFrame),
     Node(Arc<NodeRecord>),
+    Ingress(Arc<ExternalIngress>),
 }
 
 impl Entry {
@@ -21,6 +24,7 @@ impl Entry {
             Self::Session => Kind::Session,
             Self::Frame(_) => Kind::Frame,
             Self::Node(_) => Kind::Node,
+            Self::Ingress(_) => Kind::Ingress,
         }
     }
 }
@@ -31,6 +35,7 @@ pub enum Kind {
     Session,
     Frame,
     Node,
+    Ingress,
 }
 
 struct Slot {
@@ -109,6 +114,46 @@ pub fn node(token: Token) -> Result<Arc<NodeRecord>, FfiError> {
         None => Err(FfiError::handle(
             abi::INVALID_HANDLE,
             "node handle is stale",
+        )),
+    }
+}
+
+pub fn ingress(token: Token) -> Result<Arc<ExternalIngress>, FfiError> {
+    let registry = registry().lock().unwrap_or_else(|error| error.into_inner());
+    let slot = slot(&registry, token)?;
+    match slot.entry.as_ref() {
+        Some(Entry::Ingress(ingress)) => Ok(ingress.clone()),
+        Some(_) => Err(FfiError::handle(
+            abi::INVALID_HANDLE,
+            "handle has the wrong kind",
+        )),
+        None if slot.retired_generation == token.generation => {
+            Err(FfiError::handle(abi::CLOSED, "ingress was released"))
+        }
+        None => Err(FfiError::handle(
+            abi::INVALID_HANDLE,
+            "ingress handle is stale",
+        )),
+    }
+}
+
+pub fn try_ingress(token: Token) -> Result<Arc<ExternalIngress>, FfiError> {
+    let registry = registry()
+        .try_lock()
+        .map_err(|_| FfiError::handle(abi::QUEUE_FULL, "ingress registry is temporarily busy"))?;
+    let slot = slot(&registry, token)?;
+    match slot.entry.as_ref() {
+        Some(Entry::Ingress(ingress)) => Ok(ingress.clone()),
+        Some(_) => Err(FfiError::handle(
+            abi::INVALID_HANDLE,
+            "handle has the wrong kind",
+        )),
+        None if slot.retired_generation == token.generation => {
+            Err(FfiError::handle(abi::CLOSED, "ingress was released"))
+        }
+        None => Err(FfiError::handle(
+            abi::INVALID_HANDLE,
+            "ingress handle is stale",
         )),
     }
 }

@@ -7,6 +7,7 @@ mod bridge;
 mod error;
 mod frame;
 mod handles;
+mod ingress;
 
 use std::{
     mem,
@@ -19,6 +20,27 @@ use error::{boundary, FfiError};
 use handles::{Entry, Kind};
 
 pub use abi::{ABI_VERSION as VOXA_ABI_VERSION_V1, MAX_COPY_BYTES};
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IngressConfig {
+    pub abi_version: u32,
+    pub struct_size: u32,
+    pub item_capacity: usize,
+    pub byte_capacity: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IngressStats {
+    pub abi_version: u32,
+    pub struct_size: u32,
+    pub accepted: u64,
+    pub full_drops: u64,
+    pub closed_drops: u64,
+    pub queued_items: usize,
+    pub queued_bytes: usize,
+}
 
 #[no_mangle]
 pub extern "C" fn voxa_abi_version_v1() -> u32 {
@@ -63,6 +85,132 @@ pub extern "C" fn voxa_session_create_v1(
 #[no_mangle]
 pub extern "C" fn voxa_session_release_v1(session: Token) -> Status {
     release_boundary(|| handles::release(session, Kind::Session).map(drop))
+}
+
+#[no_mangle]
+pub extern "C" fn voxa_session_ingress_create_v1(
+    session: Token,
+    config: *const IngressConfig,
+    out: *mut Token,
+    error: *mut ErrorOutput,
+) -> Status {
+    boundary(error, || {
+        handles::contains(session, Kind::Session)?;
+        require_output(out)?;
+        let config = abi::read_copy(config).ok_or_else(|| {
+            FfiError::validation("VOXA-FFI-INGRESS", "ingress config is null or unaligned")
+        })?;
+        let expected = u32::try_from(mem::size_of::<IngressConfig>()).unwrap_or(u32::MAX);
+        if config.abi_version != abi::ABI_VERSION || config.struct_size != expected {
+            return Err(FfiError::abi(
+                "ingress config version or size does not match v1",
+            ));
+        }
+        if config.item_capacity == 0
+            || config.byte_capacity == 0
+            || config.byte_capacity > abi::MAX_COPY_BYTES
+        {
+            return Err(FfiError::validation(
+                "VOXA-FFI-INGRESS",
+                "ingress bounds are invalid",
+            ));
+        }
+        let token = handles::insert(Entry::Ingress(std::sync::Arc::new(
+            ingress::ExternalIngress::new(config.item_capacity, config.byte_capacity),
+        )));
+        let _ = abi::write_value(out, token);
+        Ok(())
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn voxa_session_ingress_clone_v1(
+    ingress: Token,
+    out: *mut Token,
+    error: *mut ErrorOutput,
+) -> Status {
+    boundary(error, || {
+        require_output(out)?;
+        let handle = handles::ingress(ingress)?;
+        let _ = abi::write_value(out, handles::insert(Entry::Ingress(handle)));
+        Ok(())
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn voxa_session_ingress_close_v1(ingress: Token) -> Status {
+    release_boundary(|| {
+        handles::ingress(ingress)?.close();
+        Ok(())
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn voxa_session_ingress_release_v1(ingress: Token) -> Status {
+    release_boundary(|| handles::release(ingress, Kind::Ingress).map(drop))
+}
+
+#[no_mangle]
+pub extern "C" fn voxa_session_ingress_try_submit_v1(
+    ingress: Token,
+    frame: *const FrameView,
+    error: *mut ErrorOutput,
+) -> Status {
+    boundary(error, || {
+        let ingress = handles::try_ingress(ingress)?;
+        let frame = frame::copy_frame(frame)?;
+        match ingress.try_submit(frame) {
+            Ok(()) => Ok(()),
+            Err(ingress::SubmitError::Full) => Err(FfiError::handle(
+                abi::QUEUE_FULL,
+                "external ingress is full",
+            )),
+            Err(ingress::SubmitError::Closed) => {
+                Err(FfiError::handle(abi::CLOSED, "external ingress is closed"))
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn voxa_session_ingress_stats_v1(
+    ingress: Token,
+    out: *mut IngressStats,
+    error: *mut ErrorOutput,
+) -> Status {
+    boundary(error, || {
+        require_output(out)?;
+        let ingress = handles::ingress(ingress)?;
+        let (accepted, full_drops, closed_drops, queued_items, queued_bytes) = ingress.stats();
+        let stats = IngressStats {
+            abi_version: abi::ABI_VERSION,
+            struct_size: u32::try_from(mem::size_of::<IngressStats>()).unwrap_or(u32::MAX),
+            accepted,
+            full_drops,
+            closed_drops,
+            queued_items,
+            queued_bytes,
+        };
+        let _ = abi::write_value(out, stats);
+        Ok(())
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn voxa_session_ingress_try_pop_v1(
+    ingress: Token,
+    out: *mut Token,
+    error: *mut ErrorOutput,
+) -> Status {
+    boundary(error, || {
+        require_output(out)?;
+        let ingress = handles::ingress(ingress)?;
+        let frame = ingress
+            .pop()
+            .ok_or_else(|| FfiError::handle(abi::BUSY, "external ingress is empty"))?;
+        let _ = abi::write_value(out, handles::insert(Entry::Frame(frame)));
+        Ok(())
+    })
 }
 
 #[no_mangle]

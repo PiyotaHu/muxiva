@@ -50,7 +50,10 @@ controlled I/O workloads; CPU-heavy work cannot be presented as async.
 
 ## Status and documentation
 
-Stages 3 through 7 are implemented and awaiting acceptance. Stage 7 adds the
+Stages 3 through 8 are implemented and awaiting acceptance. Stage 8 adds a
+Rust-owned bounded external ingress plus a versioned C++ mock RTC adapter with
+copy-only media delivery, deterministic faults, and callback-safe shutdown.
+Stage 7 adds the
 versioned copy-owned C ABI, generation-checked handles, C++ RAII/node
 trampolines, and a focused C++ transform running inside a Rust graph. Stage 6 adds
 bounded adjacent Signal routing, an isolated global EventBus, typed graph
@@ -71,6 +74,8 @@ remain recorded in the pre-release reports.
 - [Stage 6 pre-release report](docs/pre_release_notes/06-signal-eventbus-turn-control.md)
 - [Stage 7 C ABI and C++ SDK design](docs/design/07-c-abi-cpp-node-sdk.md)
 - [Stage 7 pre-release report](docs/pre_release_notes/07-c-abi-cpp-node-sdk.md)
+- [Stage 8 mock RTC adapter design](docs/design/08-mock-rtc-adapter.md)
+- [Stage 8 pre-release report](docs/pre_release_notes/08-mock-rtc-adapter.md)
 
 The Stage 7 developer check needs Cargo plus a C11/C++17 compiler; CMake is
 not required:
@@ -78,6 +83,8 @@ not required:
 ```sh
 cargo test --workspace --offline
 CC=clang CXX=clang++ ./scripts/check-ffi.sh
+./scripts/check-rtc.sh
+./scripts/check-rtc-asan.sh
 ```
 
 ## Planned repository layout
