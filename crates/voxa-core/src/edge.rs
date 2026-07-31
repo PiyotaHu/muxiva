@@ -305,6 +305,7 @@ pub struct EdgeMetricsSnapshot {
     enqueue_total: u64,
     dequeue_total: u64,
     drop_total: u64,
+    signal_total: u64,
     full_total: u64,
     blocked_duration_ns: u64,
     oldest_frame_age_ns: Option<u64>,
@@ -328,6 +329,7 @@ impl EdgeMetricsSnapshot {
             enqueue_total: 0,
             dequeue_total: 0,
             drop_total: 0,
+            signal_total: 0,
             full_total: 0,
             blocked_duration_ns: 0,
             oldest_frame_age_ns: None,
@@ -370,6 +372,14 @@ impl EdgeMetricsSnapshot {
         self.drop_total
     }
 
+    /// Returns the number of Stage 4 policy signals observed on this Edge.
+    ///
+    /// Signals are counted but are not delivered to adjacent nodes until the
+    /// Stage 6 signal-routing contract is implemented.
+    pub const fn signal_total(&self) -> u64 {
+        self.signal_total
+    }
+
     /// Returns queue-full observation count.
     pub const fn full_total(&self) -> u64 {
         self.full_total
@@ -388,5 +398,40 @@ impl EdgeMetricsSnapshot {
     /// Returns the latest non-sensitive error reason.
     pub fn latest_error_reason(&self) -> Option<&str> {
         self.latest_error_reason.as_deref()
+    }
+
+    pub(crate) fn record_delivery(&mut self) {
+        self.enqueue_total = self.enqueue_total.saturating_add(1);
+        self.dequeue_total = self.dequeue_total.saturating_add(1);
+    }
+
+    pub(crate) fn record_drop(&mut self, reason: &str) {
+        self.drop_total = self.drop_total.saturating_add(1);
+        self.set_latest_reason(reason);
+    }
+
+    pub(crate) fn record_signal(&mut self) {
+        self.signal_total = self.signal_total.saturating_add(1);
+    }
+
+    pub(crate) fn record_error(&mut self, reason: &str) {
+        self.set_latest_reason(reason);
+    }
+
+    fn set_latest_reason(&mut self, reason: &str) {
+        const MAX_REASON_BYTES: usize = 256;
+        let mut sanitized = String::new();
+        for character in reason.chars() {
+            let character = if character.is_ascii_control() {
+                ' '
+            } else {
+                character
+            };
+            if sanitized.len() + character.len_utf8() > MAX_REASON_BYTES {
+                break;
+            }
+            sanitized.push(character);
+        }
+        self.latest_error_reason = Some(sanitized.into_boxed_str());
     }
 }

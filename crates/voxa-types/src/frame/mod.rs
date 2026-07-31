@@ -319,6 +319,50 @@ impl Frame {
         Self::new(header, payload)
     }
 
+    /// Attaches this frame as the direct parent of an immutable replacement.
+    ///
+    /// This is the narrow runtime bridge used when an Edge policy supplies a
+    /// complete replacement frame. The replacement's identity, timing,
+    /// routing, metadata, extensions, and payload are retained, while its
+    /// caller-supplied lineage is replaced with this parent's lineage plus one
+    /// validated entry. This prevents a policy from forging or duplicating the
+    /// automatic Edge lineage entry.
+    pub fn attach_replacement_lineage(
+        &self,
+        replacement: Frame,
+        origin: TransformOrigin,
+        reason: impl Into<Box<str>>,
+    ) -> Result<Self> {
+        if self.header().frame_id() == replacement.header().frame_id() {
+            return Err(VoxaError::new(
+                ErrorCategory::Validation,
+                "VOXA-FRM-REPLACEMENT-ID",
+                "a replacement frame must use a different ID from its direct parent",
+            ));
+        }
+
+        let replacement_header = replacement.header();
+        let lineage = self.header().lineage().clone().append(LineageEntry::new(
+            self.header().frame_id().clone(),
+            origin,
+            reason,
+        )?);
+        let header = FrameHeader::new(
+            replacement_header.frame_id().clone(),
+            replacement_header.timestamp(),
+            replacement_header.clock_domain().clone(),
+            replacement_header.sequence_id(),
+            replacement_header.stream_id().clone(),
+            replacement_header.trace_id().clone(),
+            replacement.frame_type(),
+            replacement_header.metadata().clone(),
+            replacement_header.extensions().clone(),
+            lineage,
+        )?;
+
+        Self::new(header, replacement.cloned_payload())
+    }
+
     /// Returns a borrowed view that filters private extensions.
     pub fn public_view(&self) -> PublicFrameView<'_> {
         PublicFrameView { frame: self }

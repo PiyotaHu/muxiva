@@ -198,6 +198,47 @@ fn derivation_without_payload_override_shares_the_parent_buffer() {
 }
 
 #[test]
+fn replacement_lineage_bridge_appends_exactly_one_edge_parent_entry() {
+    let parent = frame_with_public_and_private_extensions();
+    let policy_frame = parent
+        .derive(
+            derivation("policy-frame", "policy-private-lineage")
+                .with_payload(FramePayload::Text(TextData::new("replacement"))),
+        )
+        .unwrap();
+    assert_eq!(policy_frame.header().lineage().len(), 1);
+
+    let replaced = parent
+        .attach_replacement_lineage(
+            policy_frame,
+            TransformOrigin::new(None, Some(EdgeId::new("edge-replacement").unwrap())).unwrap(),
+            "edge policy replacement",
+        )
+        .unwrap();
+
+    assert_eq!(replaced.header().frame_id().as_str(), "policy-frame");
+    assert_eq!(replaced.as_text().unwrap().data().as_str(), "replacement");
+    assert_eq!(replaced.header().lineage().len(), 1);
+    let entry = replaced.header().lineage().iter().next().unwrap();
+    assert_eq!(entry.parent_frame_id(), parent.header().frame_id());
+    assert_eq!(
+        entry.origin().edge_id().unwrap().as_str(),
+        "edge-replacement"
+    );
+    assert!(entry.origin().node_id().is_none());
+    assert_eq!(entry.reason(), "edge policy replacement");
+
+    let error = parent
+        .attach_replacement_lineage(
+            parent.clone(),
+            TransformOrigin::new(None, Some(EdgeId::new("edge").unwrap())).unwrap(),
+            "edge policy replacement",
+        )
+        .unwrap_err();
+    assert_eq!(error.code(), "VOXA-FRM-REPLACEMENT-ID");
+}
+
+#[test]
 fn private_extension_is_absent_from_default_views_privacy() {
     let frame = frame_with_public_and_private_extensions();
     let public_header: PublicFrameHeaderView<'_> = frame.public_view().header();
