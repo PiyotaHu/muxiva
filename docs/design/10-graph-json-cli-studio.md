@@ -8,7 +8,10 @@ above 1 MiB.  JSON describes configuration only: no frames, credentials,
 URLs, scripts, paths, or code are accepted.
 
 `voxa init`, `validate`, and `run` all use the same parser/compiler.  `studio`
-currently validates the document and verifies exact requested port binding; the
-secure HTTP/token server and bundled canvas remain a tracked follow-up rather
-than an unsafe placeholder.  Python/TypeScript/C++ SDK parity remains blocked
-on their general graph/session APIs.
+validates the document, binds the exact requested address, creates a local
+bearer token, and serves the Graph v1 schema, graph, and validation endpoint.
+The token is carried in the initial URL fragment and removed from browser
+history before authenticated API requests. The current page is a minimal
+local-only foundation; the bundled canvas remains a tracked follow-up.
+Python/TypeScript/C++ SDK parity remains blocked on their general graph/session
+APIs.

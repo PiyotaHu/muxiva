@@ -50,7 +50,9 @@ controlled I/O workloads; CPU-heavy work cannot be presented as async.
 
 ## Status and documentation
 
-Stages 3 through 9 are implemented and awaiting acceptance. Stage 9 adds
+Stages 3 through 10 are implemented and awaiting acceptance. Stage 10 adds a
+bounded Graph v1 JSON parser/compiler, local CLI, and token-authenticated local
+Studio HTTP foundation. Stage 9 adds
 bounded Python/PyO3 and TypeScript/Node-API language execution domains over a
 shared Rust-owned foreign driver. Stage 8 adds a
 Rust-owned bounded external ingress plus a versioned C++ mock RTC adapter with
@@ -80,6 +82,10 @@ remain recorded in the pre-release reports.
 - [Stage 8 pre-release report](docs/pre_release_notes/08-mock-rtc-adapter.md)
 - [Stage 9 Python and Node execution-domain design](docs/design/09-python-node-execution-domains.md)
 - [Stage 9 pre-release report](docs/pre_release_notes/09-python-node.md)
+- [Stage 10 Graph v1, CLI, and Studio design](docs/design/10-graph-json-cli-studio.md)
+- [Stage 11 testing and quality gates](docs/testing/README.md)
+- [Stage 11 deterministic fault matrix](docs/testing/fault-injection.md)
+- [Stage 11 pre-release report](docs/pre_release_notes/11-test-quality.md)
 
 The Stage 7 developer check needs Cargo plus a C11/C++17 compiler; CMake is
 not required:
@@ -91,7 +97,13 @@ CC=clang CXX=clang++ ./scripts/check-ffi.sh
 ./scripts/check-rtc-asan.sh
 ./scripts/check-python.sh
 ./scripts/check-node.sh
+cargo test --offline -p voxa-studio -p voxa-cli
 ```
+
+The binding scripts build real importable packages and require their local
+Python/Node tools and dependency caches. The Studio tests use loopback sockets;
+they require no browser, external network, or service credentials. See the
+[testing guide](docs/testing/README.md) for exact prerequisites and coverage.
 
 The Stage 9 Rust test gate must select a supported arm64 Python explicitly on
 this development host because its default `python3` shim is legacy x86_64:
