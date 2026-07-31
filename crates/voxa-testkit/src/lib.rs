@@ -6,10 +6,26 @@
 
 mod barrier;
 mod clock;
+mod edge;
+mod event_bus;
+mod frame;
+mod graph;
 mod leak;
+mod managed;
+mod node;
+mod signal;
+mod temp;
 mod thread;
 
 pub use barrier::{GateError, TestGate};
 pub use clock::ManualClock;
+pub use edge::{TestEdgeDisposition, TestEdgePolicy};
+pub use event_bus::EventBusProbe;
+pub use frame::{audio_frame, event_frame, signal_frame, text_frame};
+pub use graph::TestGraphBuilder;
 pub use leak::{LeakProbe, LeakSnapshot};
+pub use managed::{ManagedOutcome, ScriptedManagedStreamAdapter};
+pub use node::{LifecycleCall, TestNode, TestSink, TestSource};
+pub use signal::SignalProbe;
+pub use temp::{ReservedPort, TestDirectory};
 pub use thread::{ThreadEvent, ThreadProbe};
