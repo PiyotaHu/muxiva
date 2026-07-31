@@ -1,6 +1,6 @@
 # Voxa Stage 4 Node, Graph, and Synchronous Runner Contract
 
-Status: **Stage 4A graph model implemented; Stage 4B execution contract fixed but not implemented here**
+Status: **Stage 4 synchronous graph model and runner implemented**
 
 Contract version: **0.1.0-draft.1**
 
@@ -19,31 +19,34 @@ Stage 4 is split into two implementation increments:
 - **4A**, implemented with this contract, provides lifecycle interfaces,
   descriptors, stable graph data, validation, cycle detection, and stable
   topological order.
-- **4B** will provide the single-threaded `GraphRunner`, Edge policy execution,
-  lineage attribution, panic translation, and lifecycle-order tests.
+- **4B**, now implemented, provides the single-threaded `GraphRunner`, Edge
+  policy execution, lineage attribution, panic translation, and
+  lifecycle-order tests.
 
 The split is an implementation boundary, not permission to leave runner
 semantics ambiguous. Sections 8 through 11 are normative for 4B.
 
 ## 2. Scope and non-goals
 
-Stage 4A adds dependency-light modules in `voxa-core`:
+Stage 4 adds dependency-light modules in `voxa-core`:
 
 ```text
 crates/voxa-core/src/
   node.rs       Node lifecycle, descriptors, ConfigMap, NodeContext, abort data
   edge.rs       Edge descriptors, policy selections, queue data, metrics shape
   graph.rs      GraphDefinition, GraphBuilder, validation, topology
+  runner.rs     Single-threaded lifecycle, routing, and Edge policy execution
 ```
 
 It adds no threads, async runtime, network, queue implementation, JSON parser,
 Serde, FFI, Python, TypeScript, C++, RTC, FFmpeg, dynamic plugin, or node
-registry. It does not execute Node or Edge code. Queue and metrics values are
-protocol data reserved for the later runtime.
+registry. The runner executes Node and Edge code synchronously on its caller.
+Queue data is protocol metadata and queue-related metrics stay neutral until
+the later runtime.
 
-The Stage 4B synchronous runner remains single-threaded. Stage 5 owns worker
+The Stage 4B synchronous runner is single-threaded. Stage 5 owns worker
 isolation, bounded concurrent queues, backpressure, cancellation tokens,
-runtime metric mutation, and safe cross-thread stopping.
+metric subscriptions, and safe cross-thread stopping.
 
 ## 3. Stable names and data boundary
 
@@ -184,7 +187,7 @@ is a `NodeDescriptor` plus `ConfigMap`. It contains no `Node` implementation.
 In particular, `GraphDefinition` never stores `Arc<dyn Node>`, `Box<dyn Node>`,
 an Edge policy trait object, a closure, function pointer, runtime handle, or
 callback. `GraphBuilder` likewise starts no thread and invokes no user code.
-The later runner receives a separate implementation map:
+The runner receives a separate implementation map:
 
 ```rust,ignore
 BTreeMap<NodeId, Box<dyn Node>>
@@ -237,8 +240,8 @@ contribute an indegree, and each is removed independently. The resulting order
 is deterministic across node and Edge insertion order.
 
 An empty builder builds successfully into an empty definition with an empty
-topological order. A future synchronous runner prepares, invokes, finishes,
-and aborts no nodes and returns success. An Edge-only graph cannot be built
+topological order. The synchronous runner prepares, invokes, finishes, and
+aborts no nodes and returns success. An Edge-only graph cannot be built
 because `connect` requires both nodes.
 
 ## 8. Normative synchronous GraphRunner execution (Stage 4B)
@@ -269,7 +272,7 @@ error and aborts the graph; it does not search for another port.
 
 ## 9. Edge policy execution contract (Stage 4B)
 
-The later `EdgePolicy` interface is runtime behavior resolved outside
+The `EdgePolicy` interface is runtime behavior resolved outside
 `GraphDefinition`. It is called with immutable Frames and a restricted
 `EdgeContext` that can read graph identity, the current `EdgeDescriptor`, and
 an Edge-local metrics handle. It cannot access `GraphRunner`, a downstream
@@ -332,12 +335,12 @@ exception, or rejected Promise crosses a language/task boundary.
 - optional `oldest_frame_age_ns`; and
 - optional latest non-sensitive error reason.
 
-Stage 4A supplies only a zero snapshot constructor and accessors. Stage 4B may
-update synchronous counters but provides no queue or subscription. Stage 5
-owns atomic/thread-safe collection, `snapshot_edge_metrics(edge_id)`, and the
-subscription interface. Duration fields use integer nanoseconds in graph and
-snapshot data so their future JSON meaning is independent of Rust's in-memory
-`Duration` representation.
+Stage 4 updates synchronous delivery, drop, signal, and latest-error counters,
+but provides no queue or subscription. Queue-related fields remain neutral.
+Stage 5 owns atomic/thread-safe collection and the subscription interface.
+Duration fields use integer nanoseconds in graph and snapshot data so their
+future JSON meaning is independent of Rust's in-memory `Duration`
+representation.
 
 ## 12. Threading, ownership, and privacy
 
@@ -364,7 +367,7 @@ directions, exact Audio/Video mismatch and suggested TransformNode, cycles,
 stable topology across insertion order, empty graph, and preservation of
 stable Node/Edge/port/config identities.
 
-Stage 4B must add focused tests for lifecycle order, source `None` isolation,
+Stage 4B adds focused tests for lifecycle order, source `None` isolation,
 explicit input/output ports, Edge policy order, Replace lineage,
 Drop/Abort/EmitSignal, prepare/process/finish failure, Rust panic conversion,
 first-error behavior, abort-at-most-once, and resource release. Those tests
