@@ -50,14 +50,15 @@ controlled I/O workloads; CPU-heavy work cannot be presented as async.
 
 ## Status and documentation
 
-The Stage 2 Rust foundation is implemented. By maintainer direction, development
-is proceeding to Stage 3 with the remaining Stage 2 review findings explicitly
-deferred. Stage 2 is closed for sequencing, but is not yet quality-clean; the
-deferred findings remain recorded in its pre-release report.
+Stage 3 frames and ownership is implemented and awaiting acceptance. Stage 4
+has not started. By maintainer direction, the remaining Stage 2 review findings
+and the non-blocking Stage 3 review findings are explicitly deferred; they
+remain recorded in the pre-release reports.
 
 - [Product and technical contract](docs/design/01-product-and-technical-contract.md)
 - [Foundation pre-release notes](docs/pre_release_notes/01-foundation.md)
 - [Stage 2 Rust foundation report](docs/pre_release_notes/02-rust-foundation.md)
+- [Stage 3 frames and ownership report](docs/pre_release_notes/03-frames-and-ownership.md)
 
 ## Planned repository layout
 
