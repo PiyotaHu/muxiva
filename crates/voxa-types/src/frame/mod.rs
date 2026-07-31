@@ -2,7 +2,10 @@
 
 use std::fmt;
 
-use crate::{ErrorCategory, Result, VoxaError};
+use crate::{
+    ErrorCategory, Extension, Extensions, FrameId, LineageEntry, Metadata, Result, SequenceId,
+    StreamId, Timestamp, TraceId, TransformOrigin, VoxaError,
+};
 
 mod audio;
 mod header;
@@ -62,6 +65,61 @@ pub enum FramePayload {
     Signal(SignalData),
     /// A published event value.
     Event(EventData),
+}
+
+/// Consuming configuration for deriving one immutable frame from another.
+pub struct FrameDerivation {
+    new_frame_id: FrameId,
+    timestamp: Timestamp,
+    sequence_id: SequenceId,
+    origin: TransformOrigin,
+    reason: Box<str>,
+    metadata: Option<Metadata>,
+    extensions: Option<Extensions>,
+    payload: Option<FramePayload>,
+}
+
+impl FrameDerivation {
+    /// Creates a derivation that preserves metadata, extensions, and payload.
+    pub fn new(
+        new_frame_id: FrameId,
+        timestamp: Timestamp,
+        sequence_id: SequenceId,
+        origin: TransformOrigin,
+        reason: impl Into<Box<str>>,
+    ) -> Result<Self> {
+        let reason = reason.into();
+        LineageEntry::validate_reason(&reason)?;
+
+        Ok(Self {
+            new_frame_id,
+            timestamp,
+            sequence_id,
+            origin,
+            reason,
+            metadata: None,
+            extensions: None,
+            payload: None,
+        })
+    }
+
+    /// Replaces the parent's metadata in the derived frame.
+    pub fn with_metadata(mut self, metadata: Metadata) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+
+    /// Replaces the parent's complete extension collection in the derived frame.
+    pub fn with_extensions(mut self, extensions: Extensions) -> Self {
+        self.extensions = Some(extensions);
+        self
+    }
+
+    /// Replaces the parent's payload and selects the resulting frame type from it.
+    pub fn with_payload(mut self, payload: FramePayload) -> Self {
+        self.payload = Some(payload);
+        self
+    }
 }
 
 impl FramePayload {
@@ -218,6 +276,73 @@ impl Frame {
         Ok(())
     }
 
+    /// Derives a new immutable frame while preserving unspecified parent values.
+    pub fn derive(&self, derivation: FrameDerivation) -> Result<Self> {
+        if self.header().frame_id() == &derivation.new_frame_id {
+            return Err(VoxaError::new(
+                ErrorCategory::Validation,
+                "VOXA-FRM-DERIVATION-ID",
+                "a derived frame must use a different ID from its direct parent",
+            ));
+        }
+
+        let FrameDerivation {
+            new_frame_id,
+            timestamp,
+            sequence_id,
+            origin,
+            reason,
+            metadata,
+            extensions,
+            payload,
+        } = derivation;
+        let parent_header = self.header();
+        let payload = payload.unwrap_or_else(|| self.cloned_payload());
+        let lineage = parent_header.lineage().clone().append(LineageEntry::new(
+            parent_header.frame_id().clone(),
+            origin,
+            reason,
+        )?);
+        let header = FrameHeader::new(
+            new_frame_id,
+            timestamp,
+            parent_header.clock_domain().clone(),
+            sequence_id,
+            parent_header.stream_id().clone(),
+            parent_header.trace_id().clone(),
+            payload.frame_type(),
+            metadata.unwrap_or_else(|| parent_header.metadata().clone()),
+            extensions.unwrap_or_else(|| parent_header.extensions().clone()),
+            lineage,
+        )?;
+
+        Self::new(header, payload)
+    }
+
+    /// Returns a borrowed view that filters private extensions.
+    pub fn public_view(&self) -> PublicFrameView<'_> {
+        PublicFrameView { frame: self }
+    }
+
+    /// Returns a borrowed view containing only bounded diagnostic fields.
+    pub fn log_safe_view(&self) -> LogSafeFrameView<'_> {
+        LogSafeFrameView {
+            frame: self,
+            header: self.header(),
+        }
+    }
+
+    fn cloned_payload(&self) -> FramePayload {
+        match self {
+            Self::Audio(frame) => FramePayload::Audio(frame.data().clone()),
+            Self::Video(frame) => FramePayload::Video(frame.data().clone()),
+            Self::Text(frame) => FramePayload::Text(frame.data().clone()),
+            Self::Byte(frame) => FramePayload::Byte(frame.data().clone()),
+            Self::Signal(frame) => FramePayload::Signal(frame.data().clone()),
+            Self::Event(frame) => FramePayload::Event(frame.data().clone()),
+        }
+    }
+
     fn payload_byte_len(&self) -> Option<usize> {
         match self {
             Self::Audio(frame) => Some(frame.data().buffer().len()),
@@ -226,6 +351,140 @@ impl Frame {
             Self::Byte(frame) => Some(frame.data().buffer().len()),
             Self::Signal(_) | Self::Event(_) => None,
         }
+    }
+}
+
+/// A borrowed public frame view that does not expose private extensions.
+pub struct PublicFrameView<'a> {
+    frame: &'a Frame,
+}
+
+impl<'a> PublicFrameView<'a> {
+    /// Returns the filtered public header view.
+    pub fn header(&self) -> PublicFrameHeaderView<'a> {
+        PublicFrameHeaderView {
+            header: self.frame.header(),
+        }
+    }
+
+    /// Returns the frame's payload type.
+    pub const fn frame_type(&self) -> FrameType {
+        self.frame.frame_type()
+    }
+}
+
+/// A borrowed header view that exposes only public extensions.
+pub struct PublicFrameHeaderView<'a> {
+    header: &'a FrameHeader,
+}
+
+impl<'a> PublicFrameHeaderView<'a> {
+    /// Returns the frame identity.
+    pub fn frame_id(&self) -> &'a FrameId {
+        self.header.frame_id()
+    }
+
+    /// Returns the timestamp scalar interpreted by the clock domain.
+    pub const fn timestamp(&self) -> Timestamp {
+        self.header.timestamp()
+    }
+
+    /// Returns the timestamp's clock domain.
+    pub fn clock_domain(&self) -> &'a ClockDomain {
+        self.header.clock_domain()
+    }
+
+    /// Returns the sequence counter within the stream.
+    pub const fn sequence_id(&self) -> SequenceId {
+        self.header.sequence_id()
+    }
+
+    /// Returns the stream identity.
+    pub fn stream_id(&self) -> &'a StreamId {
+        self.header.stream_id()
+    }
+
+    /// Returns the trace identity.
+    pub fn trace_id(&self) -> &'a TraceId {
+        self.header.trace_id()
+    }
+
+    /// Returns immutable frame metadata.
+    pub fn metadata(&self) -> &'a Metadata {
+        self.header.metadata()
+    }
+
+    /// Iterates over public extensions in input order.
+    pub fn extensions(&self) -> impl Iterator<Item = &'a Extension> {
+        self.header.extensions().public_iter()
+    }
+
+    /// Returns immutable transformation history.
+    pub fn lineage(&self) -> &'a crate::Lineage {
+        self.header.lineage()
+    }
+}
+
+/// A borrowed frame view containing only log-safe scalar diagnostics.
+pub struct LogSafeFrameView<'a> {
+    frame: &'a Frame,
+    header: &'a FrameHeader,
+}
+
+impl<'a> LogSafeFrameView<'a> {
+    /// Returns the frame identity.
+    pub fn frame_id(&self) -> &'a FrameId {
+        self.header.frame_id()
+    }
+
+    /// Returns the stream identity.
+    pub fn stream_id(&self) -> &'a StreamId {
+        self.header.stream_id()
+    }
+
+    /// Returns the trace identity.
+    pub fn trace_id(&self) -> &'a TraceId {
+        self.header.trace_id()
+    }
+
+    /// Returns the frame's payload type.
+    pub const fn frame_type(&self) -> FrameType {
+        self.frame.frame_type()
+    }
+
+    /// Returns the timestamp scalar interpreted by the clock domain.
+    pub const fn timestamp(&self) -> Timestamp {
+        self.header.timestamp()
+    }
+
+    /// Returns the timestamp's clock domain.
+    pub fn clock_domain(&self) -> &'a ClockDomain {
+        self.header.clock_domain()
+    }
+
+    /// Returns the sequence counter within the stream.
+    pub const fn sequence_id(&self) -> SequenceId {
+        self.header.sequence_id()
+    }
+
+    /// Returns a cheaply known payload byte length, when one exists.
+    pub fn payload_byte_len(&self) -> Option<usize> {
+        self.frame.payload_byte_len()
+    }
+
+    /// Returns the number of metadata keys without exposing keys or values.
+    pub fn metadata_key_count(&self) -> usize {
+        self.header.metadata().len()
+    }
+
+    /// Returns the number of public extensions without exposing private records.
+    pub fn public_extension_count(&self) -> usize {
+        self.header.extensions().public_iter().count()
+    }
+
+    /// Returns the number of lineage entries without exposing reasons.
+    pub fn lineage_count(&self) -> usize {
+        self.header.lineage().len()
     }
 }
 
@@ -252,23 +511,20 @@ fn type_mismatch_error(expected: FrameType, actual: FrameType) -> VoxaError {
 
 impl fmt::Debug for Frame {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let header = self.header();
+        let view = self.log_safe_view();
         formatter
             .debug_struct("Frame")
-            .field("frame_id", header.frame_id())
-            .field("stream_id", header.stream_id())
-            .field("trace_id", header.trace_id())
-            .field("frame_type", &self.frame_type())
-            .field("timestamp", &header.timestamp())
-            .field("clock_domain", header.clock_domain())
-            .field("sequence_id", &header.sequence_id())
-            .field("payload_byte_len", &self.payload_byte_len())
-            .field("metadata_key_count", &header.metadata().len())
-            .field(
-                "public_extension_count",
-                &header.extensions().public_iter().count(),
-            )
-            .field("lineage_count", &header.lineage().len())
+            .field("frame_id", view.frame_id())
+            .field("stream_id", view.stream_id())
+            .field("trace_id", view.trace_id())
+            .field("frame_type", &view.frame_type())
+            .field("timestamp", &view.timestamp())
+            .field("clock_domain", view.clock_domain())
+            .field("sequence_id", &view.sequence_id())
+            .field("payload_byte_len", &view.payload_byte_len())
+            .field("metadata_key_count", &view.metadata_key_count())
+            .field("public_extension_count", &view.public_extension_count())
+            .field("lineage_count", &view.lineage_count())
             .finish()
     }
 }

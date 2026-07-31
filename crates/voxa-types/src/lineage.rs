@@ -48,16 +48,7 @@ impl LineageEntry {
         reason: impl Into<Box<str>>,
     ) -> Result<Self> {
         let reason = reason.into();
-        if reason.is_empty()
-            || reason.len() > 256
-            || reason.bytes().any(|byte| byte.is_ascii_control())
-        {
-            return Err(VoxaError::new(
-                ErrorCategory::Validation,
-                "VOXA-FRM-LINEAGE-REASON",
-                "lineage reason must be non-empty, at most 256 bytes, and contain no ASCII controls",
-            ));
-        }
+        Self::validate_reason(&reason)?;
 
         Ok(Self {
             parent_frame_id,
@@ -79,6 +70,20 @@ impl LineageEntry {
     /// Returns the operation reason.
     pub fn reason(&self) -> &str {
         &self.reason
+    }
+
+    pub(crate) fn validate_reason(reason: &str) -> Result<()> {
+        if reason.is_empty()
+            || reason.len() > 256
+            || reason.bytes().any(|byte| byte.is_ascii_control())
+        {
+            return Err(VoxaError::new(
+                ErrorCategory::Validation,
+                "VOXA-FRM-LINEAGE-REASON",
+                "lineage reason must be non-empty, at most 256 bytes, and contain no ASCII controls",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -111,13 +116,6 @@ impl Lineage {
         Self(entries.into_boxed_slice())
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Frame derivation, which is the only permitted caller, is added in the next Stage 3 task"
-        )
-    )]
     pub(crate) fn append(self, entry: LineageEntry) -> Self {
         let mut entries = self.0.into_vec();
         entries.push(entry);

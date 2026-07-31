@@ -179,7 +179,10 @@ impl fmt::Debug for FrameHeader {
             .field("trace_id", &self.trace_id)
             .field("frame_type", &self.frame_type)
             .field("metadata_count", &self.metadata.len())
-            .field("extension_count", &self.extensions.len())
+            .field(
+                "public_extension_count",
+                &self.extensions.public_iter().count(),
+            )
             .field("lineage_count", &self.lineage.len())
             .finish()
     }
@@ -263,7 +266,7 @@ mod tests {
 
         let debug = format!("{header:?}");
         assert!(debug.contains("metadata_count: 1"));
-        assert!(debug.contains("extension_count: 1"));
+        assert!(debug.contains("public_extension_count: 0"));
         assert!(debug.contains("lineage_count: 1"));
         for secret in [
             "secret_metadata_key",
