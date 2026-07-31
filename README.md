@@ -50,7 +50,9 @@ controlled I/O workloads; CPU-heavy work cannot be presented as async.
 
 ## Status and documentation
 
-Stages 3 through 10 are implemented and awaiting acceptance. Stage 10 adds a
+Stages 3 through 11 are implemented. Stage 11 adds the reusable deterministic
+testkit, cross-language quality gates, sanitizer/fuzz infrastructure, and
+measurement-only benchmark runner. Stage 10 adds a
 bounded Graph v1 JSON parser/compiler, local CLI, and token-authenticated local
 Studio HTTP foundation. Stage 9 adds
 bounded Python/PyO3 and TypeScript/Node-API language execution domains over a
