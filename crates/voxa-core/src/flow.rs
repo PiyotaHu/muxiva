@@ -4,7 +4,11 @@
 //! admission/completion observations to managed service terminal outcomes;
 //! Stage 6 may translate its bounded signal observations into `SignalFrame`s.
 
-use std::{collections::VecDeque, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeSet, VecDeque},
+    sync::Arc,
+    time::Duration,
+};
 
 use voxa_types::NodeId;
 
@@ -127,8 +131,19 @@ pub trait FlowClock: Send + Sync {
 }
 
 /// An admitted item retained until its processing completion is observed.
-#[derive(Clone, Debug)]
+///
+/// A work item is intentionally not cloneable: it is the unique completion
+/// capability for one specific admission on one controller.
+///
+/// ```compile_fail
+/// # use voxa_core::FlowWork;
+/// # fn duplicate(work: FlowWork) {
+/// let duplicate = work.clone();
+/// # }
+/// ```
 pub struct FlowWork {
+    controller: Arc<()>,
+    admission_id: u64,
     measurement: FrameMeasurement,
     started_at: Duration,
 }
@@ -137,6 +152,9 @@ pub struct AdaptiveFlowController {
     key: InputPortKey,
     profile: RealtimeInputProfile,
     clock: Arc<dyn FlowClock>,
+    identity: Arc<()>,
+    next_admission_id: u64,
+    active_admissions: BTreeSet<u64>,
     state: FlowState,
     queued_frames: usize,
     queued_bytes: usize,
@@ -175,6 +193,9 @@ impl AdaptiveFlowController {
             key,
             profile,
             clock,
+            identity: Arc::new(()),
+            next_admission_id: 0,
+            active_admissions: BTreeSet::new(),
             state: FlowState::Normal,
             queued_frames: 0,
             queued_bytes: 0,
@@ -243,6 +264,11 @@ impl AdaptiveFlowController {
         {
             return Err(FlowError::AdmissionWithoutQueuedFrame);
         }
+        let admission_id = self.next_admission_id;
+        self.next_admission_id = self
+            .next_admission_id
+            .checked_add(1)
+            .ok_or(FlowError::CounterOverflow)?;
         self.queued_frames -= 1;
         self.queued_bytes -= measurement.bytes;
         self.queued_media -= measurement.media_duration;
@@ -258,7 +284,12 @@ impl AdaptiveFlowController {
             .in_flight_media
             .checked_add(measurement.media_duration)
             .ok_or(FlowError::CounterOverflow)?;
+        if !self.active_admissions.insert(admission_id) {
+            return Err(FlowError::CounterOverflow);
+        }
         let work = FlowWork {
+            controller: self.identity.clone(),
+            admission_id,
             measurement,
             started_at: self.clock.now(),
         };
@@ -266,7 +297,9 @@ impl AdaptiveFlowController {
     }
 
     pub fn record_completion(&mut self, work: FlowWork) -> Result<FlowUpdate, FlowError> {
-        if self.in_flight == 0
+        if !Arc::ptr_eq(&self.identity, &work.controller)
+            || !self.active_admissions.remove(&work.admission_id)
+            || self.in_flight == 0
             || self.in_flight_bytes < work.measurement.bytes
             || self.in_flight_media < work.measurement.media_duration
         {

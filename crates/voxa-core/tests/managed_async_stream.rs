@@ -69,6 +69,8 @@ fn options(
         input_capacity: NonZeroUsize::new(input_capacity).unwrap(),
         result_capacity: NonZeroUsize::new(result_capacity).unwrap(),
         max_in_flight: NonZeroUsize::new(in_flight).unwrap(),
+        max_response_frames: NonZeroUsize::new(64).unwrap(),
+        max_response_bytes: NonZeroUsize::new(1024 * 1024).unwrap(),
         ordering: DeliveryOrdering::Strict,
         reconnect_delay: Duration::ZERO,
         thread_name: "voxa-managed-test".into(),
@@ -534,4 +536,134 @@ fn stop_is_idempotent_rejects_new_work_and_discards_queued_results() {
         SubmitOutcome::Stopping
     );
     assert_eq!(admissions.snapshot().in_flight, 0);
+}
+
+#[test]
+fn cancelled_expired_queued_request_is_a_strict_order_tombstone_not_a_timeout() {
+    let session = SessionId::new("queued-cancel-race").unwrap();
+    let gate = Arc::new(Gate::default());
+    let adapter_gate = gate.clone();
+    let (started_tx, started_rx) = mpsc::channel();
+    let stream = ManagedAsyncStream::new(
+        session.clone(),
+        options(3, 3, 1),
+        move |request: voxa_core::AdapterRequest| {
+            started_tx.send(request.request_id).unwrap();
+            if request.request_id == RequestId::new(1) {
+                adapter_gate.wait();
+            }
+            AdapterResponse::Frames(vec![request.input])
+        },
+    )
+    .unwrap();
+    let admissions = AdmissionSlots::new(3).unwrap();
+    assert_eq!(
+        stream.try_submit(request(
+            1,
+            &session,
+            text_frame(1),
+            Instant::now() + Duration::from_secs(2),
+            1,
+            &admissions,
+        )),
+        SubmitOutcome::Accepted
+    );
+    assert_eq!(
+        started_rx.recv_timeout(Duration::from_secs(1)).unwrap(),
+        RequestId::new(1)
+    );
+    assert_eq!(
+        stream.try_submit(request(
+            2,
+            &session,
+            text_frame(2),
+            Instant::now(),
+            1,
+            &admissions,
+        )),
+        SubmitOutcome::Accepted
+    );
+    assert_eq!(
+        stream.try_submit(request(
+            3,
+            &session,
+            text_frame(3),
+            Instant::now() + Duration::from_secs(2),
+            1,
+            &admissions,
+        )),
+        SubmitOutcome::Accepted
+    );
+    assert!(stream.cancel(RequestId::new(2)));
+    gate.open();
+
+    assert_eq!(
+        stream
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .request_id,
+        RequestId::new(1)
+    );
+    assert_eq!(
+        stream
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .request_id,
+        RequestId::new(3)
+    );
+    assert!(stream.try_recv().is_none());
+    let metrics = stream.metrics();
+    assert_eq!(metrics.cancelled, 1);
+    assert_eq!(metrics.timed_out, 0);
+    assert_eq!(metrics.completed, 3);
+    stop(&stream);
+}
+
+#[test]
+fn oversized_frame_count_and_bytes_become_bounded_terminal_errors() {
+    let session = SessionId::new("response-limits").unwrap();
+    let mut limited = options(2, 2, 1);
+    limited.max_response_frames = NonZeroUsize::new(1).unwrap();
+    limited.max_response_bytes = NonZeroUsize::new(3).unwrap();
+    let stream = ManagedAsyncStream::new(
+        session.clone(),
+        limited,
+        move |request: voxa_core::AdapterRequest| match request.request_id {
+            id if id == RequestId::new(1) => {
+                AdapterResponse::Frames(vec![request.input.clone(), request.input])
+            }
+            _ => AdapterResponse::Frames(vec![request.input]),
+        },
+    )
+    .unwrap();
+    let admissions = AdmissionSlots::new(2).unwrap();
+    for id in [1, 2] {
+        assert_eq!(
+            stream.try_submit(request(
+                id,
+                &session,
+                text_frame(if id == 1 { 1 } else { 2_000 }),
+                Instant::now() + Duration::from_secs(1),
+                1,
+                &admissions,
+            )),
+            SubmitOutcome::Accepted
+        );
+    }
+    for id in [1, 2] {
+        let completion = stream.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(completion.request_id, RequestId::new(id));
+        assert!(matches!(
+            completion.result,
+            StreamResult::Failed(ref error)
+                if error.code() == "managed_stream_response_limit"
+        ));
+    }
+    let metrics = stream.metrics();
+    assert_eq!(metrics.response_limit_exceeded, 2);
+    assert_eq!(metrics.failed, 2);
+    assert_eq!(metrics.succeeded, 0);
+    assert_eq!(metrics.queued_results, 0);
+    assert_eq!(admissions.snapshot().in_flight, 0);
+    stop(&stream);
 }

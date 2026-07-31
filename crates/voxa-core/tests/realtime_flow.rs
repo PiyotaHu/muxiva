@@ -230,6 +230,92 @@ fn merges_20ms_planar_audio_to_100ms_by_channel_plane() {
     }
 }
 
+fn low_rate_audio_frame(index: u64) -> Frame {
+    let timestamp = match index {
+        0 => 0,
+        1 => 333_333_333,
+        2 => 666_666_666,
+        _ => panic!("test supports three sample boundaries"),
+    };
+    let header = FrameHeader::new(
+        FrameId::new(format!("low-rate-{index}")).unwrap(),
+        Timestamp::from_nanos(timestamp),
+        ClockDomain::new(
+            ClockDomainId::new("capture.low-rate").unwrap(),
+            ClockKind::MediaRelative,
+        ),
+        SequenceId::new(index),
+        StreamId::new("low-rate-stream").unwrap(),
+        TraceId::new("low-rate-trace").unwrap(),
+        FrameType::Audio,
+        Metadata::empty(),
+        Extensions::empty(),
+        Lineage::empty(),
+    )
+    .unwrap();
+    Frame::new(
+        header,
+        FramePayload::Audio(
+            AudioData::new(
+                FrameBuffer::from_vec(vec![u8::try_from(index + 1).unwrap()]),
+                3,
+                1,
+                PcmSampleFormat::U8,
+                AudioLayout::Interleaved,
+                1,
+            )
+            .unwrap(),
+        ),
+    )
+    .unwrap()
+}
+
+#[test]
+fn three_hz_merge_uses_total_samples_for_duration_boundaries_and_payload() {
+    let frames = (0..3).map(low_rate_audio_frame).collect::<Vec<_>>();
+    let merged = merge_audio_prefix(
+        &frames,
+        Duration::from_secs(1),
+        Duration::from_secs(1),
+        &mut SequentialIds(20),
+        merge_origin(),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(merged.source_count(), 3);
+    let audio = merged.frame().as_audio().unwrap();
+    assert_eq!(audio.data().duration_ns(), 1_000_000_000);
+    assert_eq!(audio.data().buffer().as_slice(), &[1, 2, 3]);
+    let ranges = merged
+        .frame()
+        .header()
+        .lineage()
+        .iter()
+        .map(|entry| {
+            let range = entry.media_time_range().unwrap();
+            (range.start().as_nanos(), range.end().as_nanos())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ranges,
+        [
+            (0, 333_333_333),
+            (333_333_333, 666_666_666),
+            (666_666_666, 1_000_000_000),
+        ]
+    );
+
+    assert!(merge_audio_prefix(
+        &frames,
+        Duration::from_nanos(999_999_999),
+        Duration::from_nanos(999_999_999),
+        &mut SequentialIds(21),
+        merge_origin(),
+    )
+    .unwrap()
+    .is_none());
+}
+
 #[test]
 fn merge_leaves_mismatched_and_non_audio_prefixes_atomic() {
     let mut discontinuous = vec![
@@ -354,6 +440,35 @@ fn slow_asr_predicts_pressure_then_critical_before_queue_limit() {
         controller.signal_observations().collect::<Vec<_>>(),
         [FlowSignalObservation::Pressure]
     );
+}
+
+#[test]
+fn completion_token_is_tied_to_its_specific_controller_admission() {
+    let clock = Arc::new(FakeClock::default());
+    let mut first = controller(
+        "first",
+        audio_profile(AudioOverflowPolicy::PropagateBackpressure, true),
+        clock.clone(),
+    );
+    let mut second = controller(
+        "second",
+        audio_profile(AudioOverflowPolicy::PropagateBackpressure, true),
+        clock,
+    );
+    let measurement = FrameMeasurement::new(1_920, Duration::from_millis(20));
+    first.record_enqueue(measurement).unwrap();
+    second.record_enqueue(measurement).unwrap();
+    let (first_work, _) = first.record_admission(measurement).unwrap();
+    let (second_work, _) = second.record_admission(measurement).unwrap();
+
+    assert_eq!(
+        first.record_completion(second_work),
+        Err(voxa_core::FlowError::CompletionWithoutAdmission)
+    );
+    assert_eq!(first.snapshot().in_flight, 1);
+    first.record_completion(first_work).unwrap();
+    assert_eq!(first.snapshot().in_flight, 0);
+    assert_eq!(second.snapshot().in_flight, 1);
 }
 
 #[test]

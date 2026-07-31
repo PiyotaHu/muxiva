@@ -89,8 +89,7 @@ impl AudioData {
             u64::try_from(sample_format.bytes_per_sample()).map_err(|_| arithmetic_error())?;
         let expected_bytes = checked_product(samples_per_channel, u64::from(channels))?;
         let expected_bytes = checked_product(expected_bytes, bytes_per_sample)?;
-        let duration_ns =
-            checked_product(samples_per_channel, 1_000_000_000)? / u64::from(sample_rate_hz);
+        let duration_ns = duration_ns_for_samples(samples_per_channel, sample_rate_hz)?;
         let expected_len = usize::try_from(expected_bytes).map_err(|_| arithmetic_error())?;
 
         if buffer.len() != expected_len {
@@ -195,6 +194,20 @@ impl fmt::Debug for AudioData {
 
 fn checked_product(left: u64, right: u64) -> Result<u64> {
     left.checked_mul(right).ok_or_else(arithmetic_error)
+}
+
+pub(crate) fn duration_ns_for_samples(samples: u64, sample_rate_hz: u32) -> Result<u64> {
+    let rate = u64::from(sample_rate_hz);
+    let whole_seconds = samples / rate;
+    let remaining_samples = samples % rate;
+    whole_seconds
+        .checked_mul(1_000_000_000)
+        .and_then(|whole| {
+            remaining_samples
+                .checked_mul(1_000_000_000)
+                .and_then(|fraction| whole.checked_add(fraction / rate))
+        })
+        .ok_or_else(arithmetic_error)
 }
 
 fn arithmetic_error() -> VoxaError {

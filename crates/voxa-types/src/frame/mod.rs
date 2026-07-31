@@ -3,14 +3,17 @@
 use std::fmt;
 
 use crate::{
-    ErrorCategory, Extension, Extensions, FrameId, Lineage, LineageEntry, MediaTimeRange, Metadata,
-    Result, SequenceId, StreamId, Timestamp, TraceId, TransformOrigin, VoxaError,
+    ErrorCategory, Extension, Extensions, FrameBuffer, FrameId, Lineage, LineageEntry,
+    MediaTimeRange, Metadata, Result, SequenceId, StreamId, Timestamp, TraceId, TransformOrigin,
+    VoxaError,
 };
 
 mod audio;
 mod header;
 mod message;
 mod video;
+
+use audio::duration_ns_for_samples;
 
 pub use audio::{AudioData, AudioLayout, PcmSampleFormat};
 pub use header::{ClockDomain, ClockKind, FrameHeader};
@@ -325,10 +328,20 @@ impl Frame {
     /// stream, trace, clock, sequence, PCM shape, timing, sample count, and
     /// identity before preserving inherited lineage and appending one typed
     /// direct-parent range per input frame.
+    ///
+    /// Callers cannot supply the merged payload; it is constructed from the
+    /// parents in layout order. The former forged-payload shape does not
+    /// compile:
+    ///
+    /// ```compile_fail
+    /// # use voxa_types::{AudioData, Frame, FrameId, TransformOrigin};
+    /// # fn forged(parents: &[Frame], id: FrameId, audio: AudioData, origin: TransformOrigin) {
+    /// let _ = Frame::merge_audio(parents, id, audio, origin);
+    /// # }
+    /// ```
     pub fn merge_audio(
         parents: &[Frame],
         new_frame_id: FrameId,
-        merged_audio: AudioData,
         origin: TransformOrigin,
     ) -> Result<Self> {
         const MAX_MERGE_PARENTS: usize = 1_024;
@@ -355,7 +368,6 @@ impl Frame {
 
         let first_data = first.data();
         let first_header = first.header();
-        let mut expected_timestamp = first_header.timestamp();
         let mut expected_sequence = first_header.sequence_id();
         let mut samples_per_channel = 0_u64;
         let mut lineage_entries = Vec::new();
@@ -365,6 +377,12 @@ impl Frame {
             let audio = parent.as_audio().ok_or_else(audio_merge_type_error)?;
             let header = audio.header();
             let data = audio.data();
+            let start_offset =
+                duration_ns_for_samples(samples_per_channel, first_data.sample_rate_hz())?;
+            let expected_timestamp = first_header
+                .timestamp()
+                .checked_add(i64::try_from(start_offset).map_err(|_| arithmetic_error())?)
+                .ok_or_else(arithmetic_error)?;
             if !seen_ids.insert(header.frame_id().clone()) {
                 return Err(audio_merge_compatibility_error("parent IDs must be unique"));
             }
@@ -383,12 +401,14 @@ impl Frame {
                 ));
             }
 
-            samples_per_channel = samples_per_channel
+            let next_samples_per_channel = samples_per_channel
                 .checked_add(data.samples_per_channel())
                 .ok_or_else(arithmetic_error)?;
-            let duration = i64::try_from(data.duration_ns()).map_err(|_| arithmetic_error())?;
-            let end = expected_timestamp
-                .checked_add(duration)
+            let end_offset =
+                duration_ns_for_samples(next_samples_per_channel, first_data.sample_rate_hz())?;
+            let end = first_header
+                .timestamp()
+                .checked_add(i64::try_from(end_offset).map_err(|_| arithmetic_error())?)
                 .ok_or_else(arithmetic_error)?;
             let next_lineage_len = lineage_entries
                 .len()
@@ -409,22 +429,20 @@ impl Frame {
                 REASON,
                 MediaTimeRange::new(expected_timestamp, end, header.clock_domain().clone())?,
             )?);
-            expected_timestamp = end;
+            samples_per_channel = next_samples_per_channel;
             expected_sequence = expected_sequence
                 .checked_next()
                 .ok_or_else(arithmetic_error)?;
         }
 
-        if merged_audio.sample_rate_hz() != first_data.sample_rate_hz()
-            || merged_audio.channels() != first_data.channels()
-            || merged_audio.sample_format() != first_data.sample_format()
-            || merged_audio.layout() != first_data.layout()
-            || merged_audio.samples_per_channel() != samples_per_channel
-        {
-            return Err(audio_merge_compatibility_error(
-                "merged audio does not exactly describe the combined parents",
-            ));
-        }
+        let merged_audio = AudioData::new(
+            FrameBuffer::from_vec(merge_audio_payload(parents, first_data.layout())?),
+            first_data.sample_rate_hz(),
+            first_data.channels(),
+            first_data.sample_format(),
+            first_data.layout(),
+            samples_per_channel,
+        )?;
 
         let header = FrameHeader::new(
             new_frame_id,
@@ -518,6 +536,54 @@ impl Frame {
             Self::Signal(_) | Self::Event(_) => None,
         }
     }
+}
+
+fn merge_audio_payload(parents: &[Frame], layout: AudioLayout) -> Result<Vec<u8>> {
+    let total_bytes = parents.iter().try_fold(0_usize, |sum, parent| {
+        sum.checked_add(
+            parent
+                .as_audio()
+                .ok_or_else(audio_merge_type_error)?
+                .data()
+                .buffer()
+                .len(),
+        )
+        .ok_or_else(arithmetic_error)
+    })?;
+    let mut output = Vec::with_capacity(total_bytes);
+    match layout {
+        AudioLayout::Interleaved => {
+            for parent in parents {
+                output.extend_from_slice(
+                    parent
+                        .as_audio()
+                        .expect("validated audio parent")
+                        .data()
+                        .buffer()
+                        .as_slice(),
+                );
+            }
+        }
+        AudioLayout::Planar => {
+            let channels = parents[0]
+                .as_audio()
+                .expect("validated audio parent")
+                .data()
+                .channels();
+            for channel in 0..channels {
+                for parent in parents {
+                    output.extend_from_slice(
+                        parent
+                            .as_audio()
+                            .expect("validated audio parent")
+                            .data()
+                            .plane_bytes(channel)?,
+                    );
+                }
+            }
+        }
+    }
+    Ok(output)
 }
 
 fn audio_merge_type_error() -> VoxaError {

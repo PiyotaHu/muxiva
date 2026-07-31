@@ -18,7 +18,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use voxa_types::{Frame, SessionId};
+use voxa_types::{Frame, SessionId, Value};
 
 use crate::{AdmissionLease, DeliveryOrdering};
 
@@ -69,6 +69,13 @@ impl ServiceError {
         Self::new(
             "managed_stream_adapter_panic",
             "managed stream adapter panicked while handling a request",
+        )
+    }
+
+    pub fn response_limit() -> Self {
+        Self::new(
+            "managed_stream_response_limit",
+            "managed stream response exceeded its configured frame or byte limit",
         )
     }
 
@@ -179,6 +186,10 @@ pub struct ManagedStreamOptions {
     pub input_capacity: NonZeroUsize,
     pub result_capacity: NonZeroUsize,
     pub max_in_flight: NonZeroUsize,
+    /// Maximum number of Frames retained from one adapter response.
+    pub max_response_frames: NonZeroUsize,
+    /// Maximum aggregate logical payload bytes retained from one response.
+    pub max_response_bytes: NonZeroUsize,
     pub ordering: DeliveryOrdering,
     pub reconnect_delay: Duration,
     pub thread_name: Box<str>,
@@ -190,6 +201,8 @@ impl Default for ManagedStreamOptions {
             input_capacity: NonZeroUsize::new(8).expect("non-zero constant"),
             result_capacity: NonZeroUsize::new(8).expect("non-zero constant"),
             max_in_flight: NonZeroUsize::new(1).expect("non-zero constant"),
+            max_response_frames: NonZeroUsize::new(64).expect("non-zero constant"),
+            max_response_bytes: NonZeroUsize::new(8 * 1024 * 1024).expect("non-zero constant"),
             ordering: DeliveryOrdering::Strict,
             reconnect_delay: Duration::ZERO,
             thread_name: "voxa-managed-stream".into(),
@@ -237,6 +250,7 @@ pub struct ManagedStreamMetricsSnapshot {
     pub failed: u64,
     pub timed_out: u64,
     pub cancelled: u64,
+    pub response_limit_exceeded: u64,
     pub late_results_discarded: u64,
     pub result_backpressure: u64,
     pub results_delivered: u64,
@@ -334,6 +348,7 @@ struct Metrics {
     failed: AtomicU64,
     timed_out: AtomicU64,
     cancelled: AtomicU64,
+    response_limit_exceeded: AtomicU64,
     late_results_discarded: AtomicU64,
     result_backpressure: AtomicU64,
     results_delivered: AtomicU64,
@@ -437,7 +452,7 @@ impl ManagedAsyncStream {
             .queued_inputs
             .fetch_add(1, Ordering::Release);
         drop(registrations);
-        runtime.changed.notify_one();
+        runtime.changed.notify_all();
         SubmitOutcome::Accepted
     }
 
@@ -474,7 +489,7 @@ impl ManagedAsyncStream {
                 .metrics
                 .results_delivered
                 .fetch_add(1, Ordering::Relaxed);
-            runtime.changed.notify_one();
+            runtime.changed.notify_all();
         }
         result
     }
@@ -503,7 +518,7 @@ impl ManagedAsyncStream {
                 .metrics
                 .results_delivered
                 .fetch_add(1, Ordering::Relaxed);
-            runtime.changed.notify_one();
+            runtime.changed.notify_all();
         }
         result
     }
@@ -583,6 +598,15 @@ impl TerminalState {
         metrics.completed.fetch_add(1, Ordering::Relaxed);
         true
     }
+
+    fn timeout(&self, metrics: &Metrics) -> Option<StreamResult> {
+        if !self.finish() {
+            return None;
+        }
+        metrics.completed.fetch_add(1, Ordering::Relaxed);
+        metrics.timed_out.fetch_add(1, Ordering::Relaxed);
+        Some(StreamResult::Failed(ServiceError::timeout()))
+    }
 }
 
 impl Metrics {
@@ -607,6 +631,7 @@ impl Metrics {
             failed: self.failed.load(Ordering::Acquire),
             timed_out: self.timed_out.load(Ordering::Acquire),
             cancelled: self.cancelled.load(Ordering::Acquire),
+            response_limit_exceeded: self.response_limit_exceeded.load(Ordering::Acquire),
             late_results_discarded: self.late_results_discarded.load(Ordering::Acquire),
             result_backpressure: self.result_backpressure.load(Ordering::Acquire),
             results_delivered: self.results_delivered.load(Ordering::Acquire),
@@ -736,10 +761,10 @@ fn run_executor(runtime: Arc<Runtime>) {
                         },
                     );
                 }
-            } else if now >= request.deadline && request.terminal.finish() {
-                runtime.metrics.completed.fetch_add(1, Ordering::Relaxed);
-                runtime.metrics.timed_out.fetch_add(1, Ordering::Relaxed);
-                let result = StreamResult::Failed(ServiceError::timeout());
+            } else if now >= request.deadline {
+                let Some(result) = request.terminal.timeout(&runtime.metrics) else {
+                    continue;
+                };
                 match runtime.options.ordering {
                     DeliveryOrdering::Strict => {
                         ordered.entry(*sequence).or_insert(OrderedResolution {
@@ -844,27 +869,27 @@ fn run_executor(runtime: Arc<Runtime>) {
                     continue;
                 }
                 if Instant::now() >= envelope.deadline {
-                    if envelope.terminal.finish() {
-                        runtime.metrics.completed.fetch_add(1, Ordering::Relaxed);
-                        runtime.metrics.timed_out.fetch_add(1, Ordering::Relaxed);
-                    }
+                    let result = envelope.terminal.timeout(&runtime.metrics);
                     remove_registration(&runtime, envelope.request_id);
-                    let result = StreamResult::Failed(ServiceError::timeout());
                     match runtime.options.ordering {
                         DeliveryOrdering::Strict => {
                             ordered.insert(
                                 envelope.sequence,
                                 OrderedResolution {
                                     request_id: envelope.request_id,
-                                    result: Some(result),
+                                    result,
                                 },
                             );
                         }
-                        DeliveryOrdering::Relaxed => relaxed.push_back(StreamCompletion {
-                            request_id: envelope.request_id,
-                            session_id: runtime.session_id.clone(),
-                            result,
-                        }),
+                        DeliveryOrdering::Relaxed => {
+                            if let Some(result) = result {
+                                relaxed.push_back(StreamCompletion {
+                                    request_id: envelope.request_id,
+                                    session_id: runtime.session_id.clone(),
+                                    result,
+                                });
+                            }
+                        }
                     }
                     continue;
                 }
@@ -889,6 +914,12 @@ fn run_executor(runtime: Arc<Runtime>) {
             }
 
             if launches.is_empty() && !made_progress {
+                // A worker may have completed between the drain at the top of
+                // this loop and this second mailbox lock. Do not sleep after
+                // its notification has already happened.
+                if !mailbox.worker_completions.is_empty() {
+                    continue;
+                }
                 let next_deadline = active
                     .values()
                     .filter(|request| !request.terminal.terminal.load(Ordering::Acquire))
@@ -998,8 +1029,14 @@ fn run_request(runtime: Arc<Runtime>, envelope: Envelope) {
             break;
         }
         match response {
-            AdapterResponse::Frames(frames) => {
-                terminal_result = Some(StreamResult::Frames(frames));
+            AdapterResponse::Frames(mut frames) => {
+                terminal_result = Some(match validate_response_frames(&runtime.options, &frames) {
+                    Ok(()) => {
+                        frames.shrink_to_fit();
+                        StreamResult::Frames(frames)
+                    }
+                    Err(error) => StreamResult::Failed(error),
+                });
                 break;
             }
             AdapterResponse::Failed(error) => {
@@ -1032,6 +1069,15 @@ fn run_request(runtime: Arc<Runtime>, envelope: Envelope) {
             Some(StreamResult::Failed(error)) if error.code() == "managed_stream_timeout" => {
                 runtime.metrics.timed_out.fetch_add(1, Ordering::Relaxed);
             }
+            Some(StreamResult::Failed(error))
+                if error.code() == "managed_stream_response_limit" =>
+            {
+                runtime
+                    .metrics
+                    .response_limit_exceeded
+                    .fetch_add(1, Ordering::Relaxed);
+                runtime.metrics.failed.fetch_add(1, Ordering::Relaxed);
+            }
             Some(StreamResult::Failed(_)) | None => {
                 runtime.metrics.failed.fetch_add(1, Ordering::Relaxed);
             }
@@ -1054,11 +1100,57 @@ fn run_request(runtime: Arc<Runtime>, envelope: Envelope) {
     );
 }
 
+fn validate_response_frames(
+    options: &ManagedStreamOptions,
+    frames: &[Frame],
+) -> Result<(), ServiceError> {
+    if frames.len() > options.max_response_frames.get() {
+        return Err(ServiceError::response_limit());
+    }
+    let bytes = frames.iter().try_fold(0_usize, |total, frame| {
+        total.checked_add(frame_response_bytes(frame)?)
+    });
+    if bytes.is_none_or(|bytes| bytes > options.max_response_bytes.get()) {
+        return Err(ServiceError::response_limit());
+    }
+    Ok(())
+}
+
+fn frame_response_bytes(frame: &Frame) -> Option<usize> {
+    match frame {
+        Frame::Audio(frame) => Some(frame.data().buffer().len()),
+        Frame::Video(frame) => Some(frame.data().buffer().len()),
+        Frame::Text(frame) => Some(frame.data().as_str().len()),
+        Frame::Byte(frame) => Some(frame.data().buffer().len()),
+        Frame::Signal(frame) => value_response_bytes(frame.data().payload()),
+        Frame::Event(frame) => value_response_bytes(frame.data().payload()),
+    }
+}
+
+fn value_response_bytes(value: &Value) -> Option<usize> {
+    let nested = match value {
+        Value::Null => Some(0),
+        Value::Bool(_) => Some(1),
+        Value::Integer(_) | Value::Float(_) => Some(8),
+        Value::String(value) => Some(value.len()),
+        Value::Bytes(value) => Some(value.len()),
+        Value::List(values) => values.iter().try_fold(0_usize, |total, value| {
+            total.checked_add(value_response_bytes(value)?)
+        }),
+        Value::Map(values) => values.iter().try_fold(0_usize, |total, (key, value)| {
+            total
+                .checked_add(key.len())?
+                .checked_add(value_response_bytes(value)?)
+        }),
+    }?;
+    std::mem::size_of::<Value>().checked_add(nested)
+}
+
 fn push_worker_completion(runtime: &Runtime, completion: WorkerCompletion) {
     let mut mailbox = runtime.state.lock().unwrap_or_else(|e| e.into_inner());
     if !mailbox.closed {
         mailbox.worker_completions.push_back(completion);
-        runtime.changed.notify_one();
+        runtime.changed.notify_all();
     } else if completion.result.is_some() {
         runtime
             .metrics
@@ -1073,4 +1165,50 @@ fn remove_registration(runtime: &Runtime, request_id: RequestId) {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .remove(&request_id);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Metrics, StreamResult, TerminalState};
+    use crate::AdmissionSlots;
+    use std::sync::atomic::Ordering;
+
+    fn terminal(slots: &AdmissionSlots) -> TerminalState {
+        TerminalState {
+            cancelled: std::sync::atomic::AtomicBool::new(false),
+            terminal: std::sync::atomic::AtomicBool::new(false),
+            admission: std::sync::Mutex::new(Some(slots.try_acquire().unwrap().unwrap())),
+        }
+    }
+
+    #[test]
+    fn cancellation_winner_suppresses_a_later_timeout_terminal() {
+        let slots = AdmissionSlots::new(1).unwrap();
+        let metrics = Metrics::default();
+        let terminal = terminal(&slots);
+
+        assert!(terminal.cancel(&metrics));
+        assert!(terminal.timeout(&metrics).is_none());
+        assert_eq!(slots.snapshot().in_flight, 0);
+        assert_eq!(metrics.completed.load(Ordering::Acquire), 1);
+        assert_eq!(metrics.cancelled.load(Ordering::Acquire), 1);
+        assert_eq!(metrics.timed_out.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn timeout_winner_is_the_only_terminal_and_rejects_later_cancel() {
+        let slots = AdmissionSlots::new(1).unwrap();
+        let metrics = Metrics::default();
+        let terminal = terminal(&slots);
+
+        assert!(matches!(
+            terminal.timeout(&metrics),
+            Some(StreamResult::Failed(_))
+        ));
+        assert!(!terminal.cancel(&metrics));
+        assert_eq!(slots.snapshot().in_flight, 0);
+        assert_eq!(metrics.completed.load(Ordering::Acquire), 1);
+        assert_eq!(metrics.cancelled.load(Ordering::Acquire), 0);
+        assert_eq!(metrics.timed_out.load(Ordering::Acquire), 1);
+    }
 }

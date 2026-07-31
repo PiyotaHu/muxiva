@@ -60,10 +60,15 @@ transport-readiness, or release-readiness claim. Stage 4's deterministic
 - `AdmissionSlots` and their owned `AdmissionLease`s provide bounded,
   non-polling admission and exact-once release through synchronous or
   asynchronous terminal completion.
+- Every admission produces one non-cloneable, controller-bound `FlowWork`
+  completion capability. A compatible measurement from another admission or
+  controller cannot complete it.
 - Audio-prefix merging produces a new immutable audio Frame only for
   compatible, contiguous inputs, preserves ordered bounded lineage and media
   time ranges, and handles both interleaved and planar sample layouts with
-  checked arithmetic.
+  checked cumulative-sample arithmetic. The trusted merge constructor builds
+  the ordered interleaved/planar payload itself, so callers cannot attach
+  authentic merge lineage to substituted bytes.
 
 ### 5C: isolated managed service sessions
 
@@ -75,6 +80,14 @@ transport-readiness, or release-readiness claim. Stage 4's deterministic
   behind the isolated executor. Deadlines, cancellation, retry/reconnect
   boundaries, adapter panics, idempotent stop, and late-result discard are
   explicit; carried admission leases release exactly once.
+- Per-response Frame and aggregate logical payload-byte limits are configured
+  explicitly and checked before result-mailbox insertion. Oversized responses
+  become bounded `managed_stream_response_limit` terminal errors and their
+  Frames are discarded.
+- Cancellation and deadline expiry share one terminal winner. A cancelled
+  strict-order request leaves only a tombstone; it cannot later publish a
+  timeout or adapter response. Worker completions cannot be stranded in the
+  executor's drain-to-sleep transition.
 - `ManagedStreamMetricsSnapshot` exposes capacity, lifecycle, retry,
   timeout, cancellation, result-backpressure, ordering, and delivery
   counters. A slow session cannot occupy another session's executor/window or
@@ -88,9 +101,9 @@ Fresh validation for the final documentation commit recorded the following.
 | --- | --- |
 | `cargo fmt --all -- --check` | passed |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | passed |
-| `cargo test --workspace --all-targets --all-features` | passed: 110 unit/integration tests |
-| `cargo test --doc --workspace --all-features` | passed: 4 compile-fail doc tests |
-| focused `concurrent_runtime`, `realtime_flow`, and `managed_async_stream` integration tests | passed: 14, 10, and 6 tests respectively |
+| `cargo test --workspace --all-targets --all-features` | passed: 116 unit/integration tests |
+| `cargo test --doc --workspace --all-features` | passed: 6 compile-fail doc tests |
+| focused `concurrent_runtime`, `realtime_flow`, and `managed_async_stream` integration tests | passed: 14, 12, and 8 tests respectively |
 | `hello`, `frames`, and `text_graph` example binaries | passed; `text_graph` printed `Collected uppercase text: HELLO, VOXA` |
 | dependency and source audit | passed; only the established `thiserror` and tracing support tree, no Tokio/async runtime, network/protocol, FFI, Python, Serde, or unsafe implementation surface |
 | `git diff --check` | passed |

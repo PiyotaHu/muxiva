@@ -1,6 +1,6 @@
 # Voxa Stage 5 Concurrent Runtime and Flow-Control Contract
 
-Status: **Stage 5A core runtime implemented; Stage 5B/5C contracts fixed for implementation**
+Status: **Stage 5A runtime and standalone Stage 5B/5C components implemented**
 
 Contract version: **0.1.0-draft.1**
 
@@ -15,17 +15,18 @@ adaptive flow control, audio coalescing, and managed asynchronous services.
 Stage 4's pure `GraphDefinition`, immutable `Frame`, exact ports, Node hooks,
 and Edge policy order remain authoritative.
 
-Implementation is intentionally incremental:
+Implementation remains intentionally layered:
 
 - **5A**, implemented now, supplies the std-only bounded Edge queue,
   cancellation primitive, per-node synchronous worker domains, admission of
   one, source workers, policy routing, Edge metrics, safe Stop, and bounded
   shutdown observation.
-- **5B** will supply the declarative `RealtimeContract`, internal input
-  profile, media-aware limits, audio coalescing, pressure prediction, and
-  adaptive controller.
-- **5C** will supply `ManagedAsyncStream` on an isolated Rust asynchronous I/O
-  executor and its per-service/per-session mailboxes and in-flight windows.
+- **5B**, implemented as standalone per-port components, supplies the
+  declarative `RealtimeContract`, internal input profile, media-aware limits,
+  audio coalescing, pressure prediction, and adaptive controller.
+- **5C**, implemented as an isolated standard-library session executor,
+  supplies `ManagedAsyncStream`, per-session mailboxes, and in-flight windows.
+  Binding these components into every Stage 5A Edge remains staged debt.
 
 Signal delivery and a global EventBus are Stage 6. Stage 5 may produce only
 adjacent flow-pressure observations in the future; it does not introduce a
@@ -299,6 +300,14 @@ resources until it exits. A future real socket transport may replace these
 dedicated workers with an async reactor without changing these isolation and
 capacity boundaries.
 
+Each adapter response is checked against configured non-zero Frame-count and
+aggregate logical payload-byte limits before it can enter a result mailbox.
+An oversized response becomes the structured
+`managed_stream_response_limit` terminal error; its Frames are dropped. A
+cancelled request occupies only an ordering tombstone, and deadline delivery
+is permitted only to the thread that wins the request's exact-once terminal
+transition.
+
 ## 12. Verification and staged debt
 
 Stage 5A tests cover producer/consumer close wakeups, Block, DropOldest,
@@ -307,12 +316,13 @@ shutdown, concurrent Sources, 10,000-frame zero-loss delivery, Edge metrics,
 and proof that Node callbacks do not run on the starting caller thread. The
 complete Stage 4 suite remains required.
 
-Before Stage 5 exits, 5B/5C must additionally test 20 ms audio coalescing and
-lineage, byte/frame/media-duration limits, Pressure/Critical prediction before
-full, every realtime overflow action, lossless no-silent-drop, pausable and
-unpausable inputs, slow simulated ASR without bypass blockage, independent
-session in-flight windows, result ordering, cancellation, retry boundaries,
-and network isolation.
+Stage 5B/5C tests cover 20 ms audio coalescing and lineage, exact cumulative
+sample-boundary duration math, byte/frame/media-duration limits,
+Pressure/Critical prediction before full, every realtime overflow action,
+lossless no-silent-drop, pausable and unpausable inputs, slow simulated ASR
+without bypass blockage, independent session in-flight windows, strict result
+ordering, terminal cancellation/deadline races, retry boundaries, response
+limits, and network isolation.
 
 Recorded nonblocking 5A debt:
 
@@ -324,8 +334,9 @@ Recorded nonblocking 5A debt:
 - callback deadlines are diagnostic/cooperative; arbitrary synchronous Rust
   user code cannot be forcibly interrupted safely.
 - metric subscription is deferred; snapshots are coherent and queryable now.
-- realtime contracts, audio coalescing/controller, managed async services,
-  JSON/CLI/Studio exposure, and audio-duration loss metrics are 5B/5C work.
+- full runtime wiring for realtime contracts, audio coalescing/controller, and
+  managed async results remains open, as do JSON/CLI/Studio exposure and
+  audio-duration loss metrics.
 
 These are bounded follow-on items. Unbounded memory, silent drops, caller-thread
 user code, busy wait, queue wakeup failure, unsafe mutation, and compile/safety
