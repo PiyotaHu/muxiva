@@ -67,6 +67,10 @@ pub struct AbortHookDiagnostic {
 }
 
 impl AbortHookDiagnostic {
+    pub(crate) fn new(node_id: NodeId, message: Box<str>) -> Self {
+        Self { node_id, message }
+    }
+
     /// Returns the aborting node whose cleanup hook panicked.
     pub fn node_id(&self) -> &NodeId {
         &self.node_id

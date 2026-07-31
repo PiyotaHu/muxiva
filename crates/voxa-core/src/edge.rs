@@ -337,6 +337,37 @@ impl EdgeMetricsSnapshot {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_runtime(
+        edge_id: EdgeId,
+        queue_capacity: usize,
+        queue_len: usize,
+        high_watermark: usize,
+        enqueue_total: u64,
+        dequeue_total: u64,
+        drop_total: u64,
+        signal_total: u64,
+        full_total: u64,
+        blocked_duration_ns: u64,
+        oldest_frame_age_ns: Option<u64>,
+        latest_error_reason: Option<Box<str>>,
+    ) -> Self {
+        Self {
+            edge_id,
+            queue_capacity,
+            queue_len,
+            high_watermark,
+            enqueue_total,
+            dequeue_total,
+            drop_total,
+            signal_total,
+            full_total,
+            blocked_duration_ns,
+            oldest_frame_age_ns,
+            latest_error_reason,
+        }
+    }
+
     /// Returns the Edge identity.
     pub fn edge_id(&self) -> &EdgeId {
         &self.edge_id
