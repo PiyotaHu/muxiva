@@ -237,6 +237,15 @@ The controller cannot change audio format, reorder ordered traffic, exceed the
 declared coalescing duration, implicitly shed lossless audio, or conceal
 permanent overload under the word adaptive.
 
+Stage 5B exposes the controller, admission slots, and audio-prefix merger as
+standalone per-input-port components. The Stage 5C runtime hook is deliberately
+narrow: acquire a port slot before dequeue, record enqueue/admission with the
+same byte/media measurement, optionally merge compatible audio immediately
+before admission, and retain both the admission lease and controller work
+record until the managed request reaches a terminal completion. Flow-pressure
+and resume values remain bounded observations until Stage 6; they are not
+delivered by calling Nodes directly.
+
 ## 10. Audio coalescing
 
 Only consecutive Audio Frames with compatible format, sample rate, channel

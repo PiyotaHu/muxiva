@@ -24,7 +24,7 @@ pub use id::{
     ClockDomainId, EdgeId, FrameId, IdentifierError, NodeId, ProducerId, SessionId, StreamId,
     TraceId,
 };
-pub use lineage::{Lineage, LineageEntry, TransformOrigin};
+pub use lineage::{Lineage, LineageEntry, MediaTimeRange, TransformOrigin};
 pub use schema::{NamespacedName, SchemaVersion};
 pub use time::{SequenceId, Timestamp};
 pub use value::{FiniteF64, Metadata, Value, ValueMap};

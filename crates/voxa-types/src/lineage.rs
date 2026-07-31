@@ -1,4 +1,42 @@
-use crate::{EdgeId, ErrorCategory, FrameId, NodeId, Result, VoxaError};
+use crate::{ClockDomain, EdgeId, ErrorCategory, FrameId, NodeId, Result, Timestamp, VoxaError};
+
+/// Exact media-clock bounds contributed by one parent to a merged frame.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MediaTimeRange {
+    start: Timestamp,
+    end: Timestamp,
+    clock_domain: ClockDomain,
+}
+
+impl MediaTimeRange {
+    /// Creates a non-empty range in one explicit clock domain.
+    pub fn new(start: Timestamp, end: Timestamp, clock_domain: ClockDomain) -> Result<Self> {
+        if end.as_nanos() <= start.as_nanos() {
+            return Err(VoxaError::new(
+                ErrorCategory::Validation,
+                "VOXA-FRM-LINEAGE-TIME-RANGE",
+                "a media time range must end after it starts",
+            ));
+        }
+        Ok(Self {
+            start,
+            end,
+            clock_domain,
+        })
+    }
+
+    pub const fn start(&self) -> Timestamp {
+        self.start
+    }
+
+    pub const fn end(&self) -> Timestamp {
+        self.end
+    }
+
+    pub fn clock_domain(&self) -> &ClockDomain {
+        &self.clock_domain
+    }
+}
 
 /// Attributes a transformation to a node, an edge, or both.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -38,6 +76,7 @@ pub struct LineageEntry {
     parent_frame_id: FrameId,
     origin: TransformOrigin,
     reason: Box<str>,
+    media_time_range: Option<MediaTimeRange>,
 }
 
 impl LineageEntry {
@@ -54,7 +93,20 @@ impl LineageEntry {
             parent_frame_id,
             origin,
             reason,
+            media_time_range: None,
         })
+    }
+
+    /// Creates a direct merge-parent entry with exact media-clock bounds.
+    pub fn with_media_time_range(
+        parent_frame_id: FrameId,
+        origin: TransformOrigin,
+        reason: impl Into<Box<str>>,
+        media_time_range: MediaTimeRange,
+    ) -> Result<Self> {
+        let mut entry = Self::new(parent_frame_id, origin, reason)?;
+        entry.media_time_range = Some(media_time_range);
+        Ok(entry)
     }
 
     /// Returns the parent frame identifier.
@@ -70,6 +122,11 @@ impl LineageEntry {
     /// Returns the operation reason.
     pub fn reason(&self) -> &str {
         &self.reason
+    }
+
+    /// Returns exact parent media bounds for a merge entry, when present.
+    pub const fn media_time_range(&self) -> Option<&MediaTimeRange> {
+        self.media_time_range.as_ref()
     }
 
     pub(crate) fn validate_reason(reason: &str) -> Result<()> {

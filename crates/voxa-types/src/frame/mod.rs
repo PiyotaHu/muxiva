@@ -3,8 +3,8 @@
 use std::fmt;
 
 use crate::{
-    ErrorCategory, Extension, Extensions, FrameId, LineageEntry, Metadata, Result, SequenceId,
-    StreamId, Timestamp, TraceId, TransformOrigin, VoxaError,
+    ErrorCategory, Extension, Extensions, FrameId, Lineage, LineageEntry, MediaTimeRange, Metadata,
+    Result, SequenceId, StreamId, Timestamp, TraceId, TransformOrigin, VoxaError,
 };
 
 mod audio;
@@ -319,6 +319,128 @@ impl Frame {
         Self::new(header, payload)
     }
 
+    /// Creates one immutable audio frame from compatible consecutive parents.
+    ///
+    /// This is intentionally narrower than a public header builder: it checks
+    /// stream, trace, clock, sequence, PCM shape, timing, sample count, and
+    /// identity before preserving inherited lineage and appending one typed
+    /// direct-parent range per input frame.
+    pub fn merge_audio(
+        parents: &[Frame],
+        new_frame_id: FrameId,
+        merged_audio: AudioData,
+        origin: TransformOrigin,
+    ) -> Result<Self> {
+        const MAX_MERGE_PARENTS: usize = 1_024;
+        const REASON: &str = "runtime_audio_merge";
+
+        if !(2..=MAX_MERGE_PARENTS).contains(&parents.len()) {
+            return Err(VoxaError::new(
+                ErrorCategory::Validation,
+                "VOXA-FRM-AUDIO-MERGE-PARENTS",
+                "audio merge requires between 2 and 1024 parent frames",
+            ));
+        }
+        let first = parents[0].as_audio().ok_or_else(audio_merge_type_error)?;
+        if parents
+            .iter()
+            .any(|parent| parent.header().frame_id() == &new_frame_id)
+        {
+            return Err(VoxaError::new(
+                ErrorCategory::Validation,
+                "VOXA-FRM-AUDIO-MERGE-ID",
+                "a merged frame must use an ID distinct from every parent",
+            ));
+        }
+
+        let first_data = first.data();
+        let first_header = first.header();
+        let mut expected_timestamp = first_header.timestamp();
+        let mut expected_sequence = first_header.sequence_id();
+        let mut samples_per_channel = 0_u64;
+        let mut lineage_entries = Vec::new();
+        let mut seen_ids = std::collections::BTreeSet::new();
+
+        for parent in parents {
+            let audio = parent.as_audio().ok_or_else(audio_merge_type_error)?;
+            let header = audio.header();
+            let data = audio.data();
+            if !seen_ids.insert(header.frame_id().clone()) {
+                return Err(audio_merge_compatibility_error("parent IDs must be unique"));
+            }
+            if header.stream_id() != first_header.stream_id()
+                || header.trace_id() != first_header.trace_id()
+                || header.clock_domain() != first_header.clock_domain()
+                || header.timestamp() != expected_timestamp
+                || header.sequence_id() != expected_sequence
+                || data.sample_rate_hz() != first_data.sample_rate_hz()
+                || data.channels() != first_data.channels()
+                || data.sample_format() != first_data.sample_format()
+                || data.layout() != first_data.layout()
+            {
+                return Err(audio_merge_compatibility_error(
+                    "audio parents must be consecutive and share routing, clock, and PCM shape",
+                ));
+            }
+
+            samples_per_channel = samples_per_channel
+                .checked_add(data.samples_per_channel())
+                .ok_or_else(arithmetic_error)?;
+            let duration = i64::try_from(data.duration_ns()).map_err(|_| arithmetic_error())?;
+            let end = expected_timestamp
+                .checked_add(duration)
+                .ok_or_else(arithmetic_error)?;
+            let next_lineage_len = lineage_entries
+                .len()
+                .checked_add(header.lineage().len())
+                .and_then(|length| length.checked_add(1))
+                .ok_or_else(arithmetic_error)?;
+            if next_lineage_len > 4_096 {
+                return Err(VoxaError::new(
+                    ErrorCategory::Validation,
+                    "VOXA-FRM-AUDIO-MERGE-LINEAGE",
+                    "merged audio lineage cannot exceed 4096 entries",
+                ));
+            }
+            lineage_entries.extend(header.lineage().iter().cloned());
+            lineage_entries.push(LineageEntry::with_media_time_range(
+                header.frame_id().clone(),
+                origin.clone(),
+                REASON,
+                MediaTimeRange::new(expected_timestamp, end, header.clock_domain().clone())?,
+            )?);
+            expected_timestamp = end;
+            expected_sequence = expected_sequence
+                .checked_next()
+                .ok_or_else(arithmetic_error)?;
+        }
+
+        if merged_audio.sample_rate_hz() != first_data.sample_rate_hz()
+            || merged_audio.channels() != first_data.channels()
+            || merged_audio.sample_format() != first_data.sample_format()
+            || merged_audio.layout() != first_data.layout()
+            || merged_audio.samples_per_channel() != samples_per_channel
+        {
+            return Err(audio_merge_compatibility_error(
+                "merged audio does not exactly describe the combined parents",
+            ));
+        }
+
+        let header = FrameHeader::new(
+            new_frame_id,
+            first_header.timestamp(),
+            first_header.clock_domain().clone(),
+            first_header.sequence_id(),
+            first_header.stream_id().clone(),
+            first_header.trace_id().clone(),
+            FrameType::Audio,
+            first_header.metadata().clone(),
+            first_header.extensions().clone(),
+            Lineage::from_entries(lineage_entries),
+        )?;
+        Self::new(header, FramePayload::Audio(merged_audio))
+    }
+
     /// Attaches this frame as the direct parent of an immutable replacement.
     ///
     /// This is the narrow runtime bridge used when an Edge policy supplies a
@@ -396,6 +518,22 @@ impl Frame {
             Self::Signal(_) | Self::Event(_) => None,
         }
     }
+}
+
+fn audio_merge_type_error() -> VoxaError {
+    VoxaError::new(
+        ErrorCategory::Validation,
+        "VOXA-FRM-AUDIO-MERGE-TYPE",
+        "only audio frames can be merged",
+    )
+}
+
+fn audio_merge_compatibility_error(message: &'static str) -> VoxaError {
+    VoxaError::new(
+        ErrorCategory::Validation,
+        "VOXA-FRM-AUDIO-MERGE-COMPATIBILITY",
+        message,
+    )
 }
 
 /// A borrowed public frame view that does not expose private extensions.
