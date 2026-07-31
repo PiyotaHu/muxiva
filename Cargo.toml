@@ -7,6 +7,8 @@ members = [
     "crates/voxa-cli",
     "crates/voxa-studio",
     "crates/voxa-testkit",
+    "crates/voxa-node",
+    "crates/voxa-python",
     "crates/voxa-types",
 ]
 resolver = "2"

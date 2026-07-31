@@ -1,0 +1,2 @@
+{"name":"@voxa/core-darwin-arm64","version":"0.1.0","os":["darwin"],"cpu":["arm64"],"main":"voxa.darwin-arm64.node","files":["voxa.darwin-arm64.node"]}
+

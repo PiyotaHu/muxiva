@@ -1,0 +1,18 @@
+[package]
+name = "voxa-node"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+napi = { version = "2.16", features = ["napi8", "dyn-symbols"] }
+napi-derive = "2.16"
+voxa-types = { path = "../voxa-types" }
+voxa-core = { path = "../voxa-core" }
+
+[build-dependencies]
+napi-build = "2.1"

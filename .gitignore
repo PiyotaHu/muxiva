@@ -1,2 +1,7 @@
 .worktrees/
-/target/
+target/
+node_modules/
+.pnpm-store/
+*.node
+*.whl
+__pycache__/
