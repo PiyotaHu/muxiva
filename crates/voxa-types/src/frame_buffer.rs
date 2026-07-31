@@ -16,6 +16,13 @@ impl FrameBuffer {
     }
 
     /// Returns the immutable bytes.
+    ///
+    /// ```compile_fail
+    /// use voxa_types::FrameBuffer;
+    ///
+    /// let buffer = FrameBuffer::from_vec(vec![1, 2, 3]);
+    /// buffer.as_slice()[0] = 9;
+    /// ```
     pub fn as_slice(&self) -> &[u8] {
         &self.0
     }
