@@ -557,7 +557,7 @@ impl AbortReason {
 }
 
 /// A Voxa processing node with exactly the four uniform lifecycle hooks.
-pub trait Node {
+pub trait Node: Send {
     /// Prepares resources before frame processing begins.
     fn on_prepare(&mut self, _context: &mut NodeContext) -> Result<()> {
         Ok(())

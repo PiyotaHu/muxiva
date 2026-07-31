@@ -101,7 +101,7 @@ pub enum EdgeAction {
 /// A named validation selection calls [`Self::validate`] before a named
 /// transform selection calls [`Self::transform`]. Hooks execute synchronously
 /// and are protected by the runner's panic boundary.
-pub trait EdgePolicy {
+pub trait EdgePolicy: Send {
     /// Validates an immutable candidate frame.
     fn validate(
         &mut self,

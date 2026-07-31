@@ -49,13 +49,13 @@ Fresh validation completed from this Stage 4C worktree:
 | --- | --- |
 | `cargo fmt --all -- --check` | passed |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | passed |
-| `cargo test --workspace` | passed: 78 unit/integration tests and 4 doc tests |
-| `cargo test --doc --workspace` | passed: 4 doc tests |
-| `cargo run -p voxa-examples --bin text_graph` | passed with the output above |
+| `cargo test --workspace --all-targets --all-features` | passed: 79 unit/integration tests |
+| `cargo test --doc --workspace --all-features` | passed: 4 doc tests |
+| all three `voxa-examples` binaries | passed; `text_graph` produced the output above |
 | `git diff --check` | passed |
 | source/dependency audit | passed; production sources have no threads, Tokio, network, FFI, Serde, or Python surface |
 
-The workspace total is 82 passing tests: 78 unit/integration tests plus 4 doc
+The workspace total is 83 passing tests: 79 unit/integration tests plus 4 doc
 tests. The dependency tree contains the pre-existing tracing and error-support
 packages only; it introduces no Tokio, network, FFI, Serde, or Python package.
 
@@ -84,11 +84,11 @@ as completed MVP functionality:
    are outside this Stage 4 implementation.
 8. No serializable graph DTO, node/policy registry, language binding, or
    cross-language runtime boundary is supplied by this stage.
-9. **Stage 5 blocker:** `Node` and `EdgePolicy` do not yet require `Send`, and
-   current runner tests use `Rc`/`RefCell`. The runtime traits and tests must
-   be made compatible with Stage 5 worker ownership before concurrent
-   scheduling begins. This report intentionally does not change that API;
-   the follow-up is required immediately after Stage 4C.
+9. **Resolved Stage 5 blocker:** `Node` and `EdgePolicy` now require `Send`,
+   their trait-object maps preserve transferability, and compile-time tests
+   cover both boxed callback types and both runtime maps. Synchronous fixtures
+   use `Arc` with `Mutex` or atomics. This resolves worker ownership only; it
+   adds no threads, async runtime, or concurrent scheduling to Stage 4.
 10. `record_delivery` increments both enqueue and dequeue when an item is put
     on the in-memory work list, before the downstream dispatch is popped. The
     current synchronous metric therefore overcounts dequeue timing rather than
@@ -106,6 +106,7 @@ as completed MVP functionality:
 
 ## Validation totals
 
-The fresh run recorded **82 passing workspace tests**: **78 unit/integration
+The fresh run recorded **83 passing workspace tests**: **79 unit/integration
 tests** and **4 doc tests**. This does not claim a quality-clean repository;
-the deferred boundaries and the Stage 5 blocker above remain open.
+the deferred boundaries above remain open, while the callback-transferability
+blocker is resolved.

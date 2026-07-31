@@ -1,21 +1,34 @@
 use std::{
-    cell::{Cell, RefCell},
     collections::BTreeMap,
-    rc::Rc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use voxa_core::{
     AbortCategory, AbortReason, AbortStage, ConfigSchema, EdgeAction, EdgeContext, EdgeDescriptor,
-    EdgePolicy, EdgePolicyName, EnabledCondition, GraphBuilder, GraphRunner, GraphRunnerBuildError,
-    GraphRunnerState, LifecycleCapabilities, Node, NodeContext, NodeDescriptor, NodeInstances,
-    NodeKind, NodeTypeName, PortDescriptor, PortDirection, PortName, QueuePolicy, TransformPolicy,
-    ValidationDecision, ValidationFailureAction, ValidationPolicy, VisibilityDescriptor,
+    EdgePolicies, EdgePolicy, EdgePolicyName, EnabledCondition, GraphBuilder, GraphRunner,
+    GraphRunnerBuildError, GraphRunnerState, LifecycleCapabilities, Node, NodeContext,
+    NodeDescriptor, NodeInstances, NodeKind, NodeTypeName, PortDescriptor, PortDirection, PortName,
+    QueuePolicy, TransformPolicy, ValidationDecision, ValidationFailureAction, ValidationPolicy,
+    VisibilityDescriptor,
 };
 use voxa_types::{
     ClockDomain, ClockDomainId, ClockKind, EdgeId, ErrorCategory, Extensions, Frame, FrameHeader,
     FrameId, FramePayload, FrameType, Lineage, Metadata, NamespacedName, NodeId, SchemaVersion,
     SequenceId, SignalData, StreamId, TextData, Timestamp, TraceId, Value, VoxaError,
 };
+
+fn assert_send<T: Send>() {}
+
+#[test]
+fn runtime_callback_ownership_is_transferable() {
+    assert_send::<Box<dyn Node>>();
+    assert_send::<Box<dyn EdgePolicy>>();
+    assert_send::<NodeInstances>();
+    assert_send::<EdgePolicies>();
+}
 
 fn node_id(value: &str) -> NodeId {
     NodeId::new(value).unwrap()
@@ -125,21 +138,21 @@ enum Hook {
 enum Behavior {
     Source(Vec<(PortName, Frame)>),
     Uppercase,
-    Sink(Rc<RefCell<Vec<Frame>>>),
+    Sink(Arc<Mutex<Vec<Frame>>>),
 }
 
 struct TestNode {
     id: &'static str,
     behavior: Behavior,
-    log: Rc<RefCell<Vec<String>>>,
+    log: Arc<Mutex<Vec<String>>>,
     fail: Option<Hook>,
     panic: Option<Hook>,
     abort_panic: bool,
-    drops: Option<Rc<Cell<usize>>>,
+    drops: Option<Arc<AtomicUsize>>,
 }
 
 impl TestNode {
-    fn new(id: &'static str, behavior: Behavior, log: Rc<RefCell<Vec<String>>>) -> Self {
+    fn new(id: &'static str, behavior: Behavior, log: Arc<Mutex<Vec<String>>>) -> Self {
         Self {
             id,
             behavior,
@@ -166,7 +179,7 @@ impl TestNode {
         self
     }
 
-    fn drop_probe(mut self, drops: Rc<Cell<usize>>) -> Self {
+    fn drop_probe(mut self, drops: Arc<AtomicUsize>) -> Self {
         self.drops = Some(drops);
         self
     }
@@ -189,7 +202,7 @@ impl TestNode {
 impl Drop for TestNode {
     fn drop(&mut self) {
         if let Some(drops) = &self.drops {
-            drops.set(drops.get() + 1);
+            drops.fetch_add(1, Ordering::Relaxed);
         }
     }
 }
@@ -198,7 +211,10 @@ impl Node for TestNode {
     fn on_prepare(&mut self, context: &mut NodeContext) -> voxa_types::Result<()> {
         assert_eq!(context.node_id().as_str(), self.id);
         assert!(context.input_port().is_none());
-        self.log.borrow_mut().push(format!("prepare:{}", self.id));
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("prepare:{}", self.id));
         self.checkpoint(Hook::Prepare)
     }
 
@@ -207,7 +223,7 @@ impl Node for TestNode {
         input: Option<Frame>,
         context: &mut NodeContext,
     ) -> voxa_types::Result<()> {
-        self.log.borrow_mut().push(format!(
+        self.log.lock().unwrap().push(format!(
             "process:{}:{}",
             self.id,
             if input.is_some() { "some" } else { "none" }
@@ -228,7 +244,7 @@ impl Node for TestNode {
             }
             Behavior::Sink(frames) => {
                 assert_eq!(context.input_port().unwrap().as_str(), "in");
-                frames.borrow_mut().push(input.expect("sink input"));
+                frames.lock().unwrap().push(input.expect("sink input"));
             }
         }
         self.checkpoint(Hook::Process)
@@ -236,14 +252,15 @@ impl Node for TestNode {
 
     fn on_finish(&mut self, context: &mut NodeContext) -> voxa_types::Result<()> {
         assert!(context.input_port().is_none());
-        self.log.borrow_mut().push(format!("finish:{}", self.id));
+        self.log.lock().unwrap().push(format!("finish:{}", self.id));
         self.checkpoint(Hook::Finish)
     }
 
     fn on_abort(&mut self, reason: &AbortReason, context: &mut NodeContext) {
         assert!(context.input_port().is_none());
         self.log
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .push(format!("abort:{}:{}", self.id, reason.root().code()));
         assert!(!self.abort_panic, "{} abort panic", self.id);
     }
@@ -261,14 +278,14 @@ enum PolicyAction {
 struct TestPolicy {
     action: PolicyAction,
     validation: ValidationDecision,
-    log: Rc<RefCell<Vec<String>>>,
+    log: Arc<Mutex<Vec<String>>>,
     panic_phase: Option<&'static str>,
     fail_phase: Option<&'static str>,
-    drops: Option<Rc<Cell<usize>>>,
+    drops: Option<Arc<AtomicUsize>>,
 }
 
 impl TestPolicy {
-    fn new(action: PolicyAction, log: Rc<RefCell<Vec<String>>>) -> Self {
+    fn new(action: PolicyAction, log: Arc<Mutex<Vec<String>>>) -> Self {
         Self {
             action,
             validation: ValidationDecision::Accept,
@@ -294,7 +311,7 @@ impl TestPolicy {
         self
     }
 
-    fn drop_probe(mut self, drops: Rc<Cell<usize>>) -> Self {
+    fn drop_probe(mut self, drops: Arc<AtomicUsize>) -> Self {
         self.drops = Some(drops);
         self
     }
@@ -315,7 +332,7 @@ impl TestPolicy {
 impl Drop for TestPolicy {
     fn drop(&mut self) {
         if let Some(drops) = &self.drops {
-            drops.set(drops.get() + 1);
+            drops.fetch_add(1, Ordering::Relaxed);
         }
     }
 }
@@ -329,7 +346,7 @@ impl EdgePolicy for TestPolicy {
         assert_eq!(context.descriptor().edge_id().as_str(), "edge");
         assert!(context.graph().edge_count() >= 1);
         assert!(context.graph().node_count() >= 2);
-        self.log.borrow_mut().push("validate".into());
+        self.log.lock().unwrap().push("validate".into());
         self.checkpoint("validate")?;
         Ok(self.validation.clone())
     }
@@ -339,7 +356,7 @@ impl EdgePolicy for TestPolicy {
         frame: &Frame,
         _context: &EdgeContext<'_>,
     ) -> voxa_types::Result<EdgeAction> {
-        self.log.borrow_mut().push("transform".into());
+        self.log.lock().unwrap().push("transform".into());
         self.checkpoint("transform")?;
         Ok(match &self.action {
             PolicyAction::Forward => EdgeAction::Forward(frame.clone()),
@@ -355,12 +372,12 @@ impl EdgePolicy for TestPolicy {
         _signal: &voxa_types::SignalFrame,
         _context: &EdgeContext<'_>,
     ) -> voxa_types::Result<()> {
-        self.log.borrow_mut().push("signal".into());
+        self.log.lock().unwrap().push("signal".into());
         self.checkpoint("on_signal")
     }
 
     fn on_drop(&mut self, reason: &str, _context: &EdgeContext<'_>) -> voxa_types::Result<()> {
-        self.log.borrow_mut().push(format!("drop:{reason}"));
+        self.log.lock().unwrap().push(format!("drop:{reason}"));
         self.checkpoint("on_drop")
     }
 }
@@ -390,7 +407,7 @@ fn text_pipeline(
     builder.build().unwrap()
 }
 
-fn pipeline_nodes(log: Rc<RefCell<Vec<String>>>, sink: Rc<RefCell<Vec<Frame>>>) -> NodeInstances {
+fn pipeline_nodes(log: Arc<Mutex<Vec<String>>>, sink: Arc<Mutex<Vec<Frame>>>) -> NodeInstances {
     BTreeMap::from([
         (
             node_id("source"),
@@ -409,8 +426,8 @@ fn pipeline_nodes(log: Rc<RefCell<Vec<String>>>, sink: Rc<RefCell<Vec<Frame>>>) 
 
 #[test]
 fn source_uppercase_sink_runs_complete_deterministic_lifecycle() {
-    let log = Rc::new(RefCell::new(Vec::new()));
-    let sink = Rc::new(RefCell::new(Vec::new()));
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::new(Mutex::new(Vec::new()));
     let mut builder = GraphBuilder::new();
     for node in [
         descriptor(
@@ -483,9 +500,12 @@ fn source_uppercase_sink_runs_complete_deterministic_lifecycle() {
     runner.run().unwrap();
 
     assert_eq!(runner.state(), GraphRunnerState::Finished);
-    assert_eq!(sink.borrow()[0].as_text().unwrap().data().as_str(), "HELLO");
     assert_eq!(
-        log.borrow().as_slice(),
+        sink.lock().unwrap()[0].as_text().unwrap().data().as_str(),
+        "HELLO"
+    );
+    assert_eq!(
+        log.lock().unwrap().as_slice(),
         [
             "prepare:source",
             "prepare:upper",
@@ -530,15 +550,15 @@ fn runtime_maps_are_exact_and_empty_graph_runs_once() {
         GraphRunnerBuildError::MissingNodeInstance(id) if id.as_str() == "sink"
     ));
 
-    let log = Rc::new(RefCell::new(Vec::new()));
-    let sink = Rc::new(RefCell::new(Vec::new()));
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::new(Mutex::new(Vec::new()));
     let mut extra_nodes = pipeline_nodes(log, sink);
     extra_nodes.insert(
         node_id("extra"),
         Box::new(TestNode::new(
             "extra",
             Behavior::Source(Vec::new()),
-            Rc::new(RefCell::new(Vec::new())),
+            Arc::new(Mutex::new(Vec::new())),
         )),
     );
     assert!(matches!(
@@ -553,8 +573,8 @@ fn runtime_maps_are_exact_and_empty_graph_runs_once() {
     let missing_policy = GraphRunner::new(
         &named_graph,
         pipeline_nodes(
-            Rc::new(RefCell::new(Vec::new())),
-            Rc::new(RefCell::new(Vec::new())),
+            Arc::new(Mutex::new(Vec::new())),
+            Arc::new(Mutex::new(Vec::new())),
         ),
         BTreeMap::new(),
     )
@@ -568,9 +588,9 @@ fn runtime_maps_are_exact_and_empty_graph_runs_once() {
 
 #[test]
 fn policy_order_replace_lineage_and_forward_fanout_are_isolated() {
-    let log = Rc::new(RefCell::new(Vec::new()));
-    let left = Rc::new(RefCell::new(Vec::new()));
-    let right = Rc::new(RefCell::new(Vec::new()));
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let left = Arc::new(Mutex::new(Vec::new()));
+    let right = Arc::new(Mutex::new(Vec::new()));
     let mut builder = GraphBuilder::new();
     builder
         .add_node(descriptor(
@@ -619,7 +639,7 @@ fn policy_order_replace_lineage_and_forward_fanout_are_isolated() {
             Box::new(TestNode::new(
                 "source",
                 Behavior::Source(vec![(port("out"), text_frame("original", "hello"))]),
-                Rc::new(RefCell::new(Vec::new())),
+                Arc::new(Mutex::new(Vec::new())),
             )) as Box<dyn Node>,
         ),
         (
@@ -627,7 +647,7 @@ fn policy_order_replace_lineage_and_forward_fanout_are_isolated() {
             Box::new(TestNode::new(
                 "left",
                 Behavior::Sink(left.clone()),
-                Rc::new(RefCell::new(Vec::new())),
+                Arc::new(Mutex::new(Vec::new())),
             )) as Box<dyn Node>,
         ),
         (
@@ -635,7 +655,7 @@ fn policy_order_replace_lineage_and_forward_fanout_are_isolated() {
             Box::new(TestNode::new(
                 "right",
                 Behavior::Sink(right.clone()),
-                Rc::new(RefCell::new(Vec::new())),
+                Arc::new(Mutex::new(Vec::new())),
             )) as Box<dyn Node>,
         ),
     ]);
@@ -650,8 +670,8 @@ fn policy_order_replace_lineage_and_forward_fanout_are_isolated() {
 
     runner.run().unwrap();
 
-    assert_eq!(log.borrow().as_slice(), ["validate", "transform"]);
-    let replacement = left.borrow()[0].clone();
+    assert_eq!(log.lock().unwrap().as_slice(), ["validate", "transform"]);
+    let replacement = left.lock().unwrap()[0].clone();
     assert_eq!(replacement.as_text().unwrap().data().as_str(), "changed");
     assert_eq!(replacement.header().frame_id().as_str(), "replacement");
     assert_eq!(replacement.header().lineage().len(), 1);
@@ -660,10 +680,10 @@ fn policy_order_replace_lineage_and_forward_fanout_are_isolated() {
     assert_eq!(lineage.origin().edge_id().unwrap().as_str(), "edge");
     assert!(lineage.origin().node_id().is_none());
     assert_eq!(
-        right.borrow()[0].as_text().unwrap().data().as_str(),
+        right.lock().unwrap()[0].as_text().unwrap().data().as_str(),
         "hello"
     );
-    assert!(right.borrow()[0].header().lineage().is_empty());
+    assert!(right.lock().unwrap()[0].header().lineage().is_empty());
 }
 
 #[test]
@@ -679,9 +699,9 @@ fn validation_drop_skips_transform_and_explicit_abort_stops_delivery() {
             },
             TransformPolicy::Named(named_policy()),
         );
-        let log = Rc::new(RefCell::new(Vec::new()));
-        let sink = Rc::new(RefCell::new(Vec::new()));
-        let nodes = pipeline_nodes(Rc::new(RefCell::new(Vec::new())), sink.clone());
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::new(Mutex::new(Vec::new()));
+        let nodes = pipeline_nodes(Arc::new(Mutex::new(Vec::new())), sink.clone());
         let policies = BTreeMap::from([(
             edge_id("edge"),
             Box::new(TestPolicy::new(PolicyAction::Forward, log.clone()).rejecting("invalid"))
@@ -690,13 +710,13 @@ fn validation_drop_skips_transform_and_explicit_abort_stops_delivery() {
         let mut runner = GraphRunner::new(&graph, nodes, policies).unwrap();
         let result = runner.run();
 
-        assert!(sink.borrow().is_empty());
+        assert!(sink.lock().unwrap().is_empty());
         if let Some(code) = expected_code {
             assert_eq!(result.unwrap_err().root().code(), code);
-            assert_eq!(log.borrow().as_slice(), ["validate"]);
+            assert_eq!(log.lock().unwrap().as_slice(), ["validate"]);
         } else {
             result.unwrap();
-            assert_eq!(log.borrow().as_slice(), ["validate", "drop:invalid"]);
+            assert_eq!(log.lock().unwrap().as_slice(), ["validate", "drop:invalid"]);
             let metrics = runner.snapshot_edge_metrics(&edge_id("edge")).unwrap();
             assert_eq!(metrics.drop_total(), 1);
             assert_eq!(metrics.latest_error_reason(), Some("invalid"));
@@ -715,9 +735,9 @@ fn drop_abort_and_emit_signal_actions_have_explicit_stage4_dispositions() {
             ValidationPolicy::TypeGateOnly,
             TransformPolicy::Named(named_policy()),
         );
-        let policy_log = Rc::new(RefCell::new(Vec::new()));
-        let sink = Rc::new(RefCell::new(Vec::new()));
-        let nodes = pipeline_nodes(Rc::new(RefCell::new(Vec::new())), sink.clone());
+        let policy_log = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::new(Mutex::new(Vec::new()));
+        let nodes = pipeline_nodes(Arc::new(Mutex::new(Vec::new())), sink.clone());
         let policies = BTreeMap::from([(
             edge_id("edge"),
             Box::new(TestPolicy::new(action.clone(), policy_log.clone())) as Box<dyn EdgePolicy>,
@@ -725,14 +745,14 @@ fn drop_abort_and_emit_signal_actions_have_explicit_stage4_dispositions() {
         let mut runner = GraphRunner::new(&graph, nodes, policies).unwrap();
         let result = runner.run();
         let metrics = runner.snapshot_edge_metrics(&edge_id("edge")).unwrap();
-        assert!(sink.borrow().is_empty());
+        assert!(sink.lock().unwrap().is_empty());
 
         match action {
             PolicyAction::Drop(_) => {
                 result.unwrap();
                 assert_eq!(metrics.drop_total(), 1);
                 assert_eq!(
-                    policy_log.borrow().as_slice(),
+                    policy_log.lock().unwrap().as_slice(),
                     ["transform", "drop:not wanted"]
                 );
             }
@@ -744,7 +764,10 @@ fn drop_abort_and_emit_signal_actions_have_explicit_stage4_dispositions() {
                 assert_eq!(result.unwrap().observed_signal_total(), 1);
                 assert_eq!(metrics.signal_total(), 1);
                 assert_eq!(runner.observed_signals().len(), 1);
-                assert_eq!(policy_log.borrow().as_slice(), ["transform", "signal"]);
+                assert_eq!(
+                    policy_log.lock().unwrap().as_slice(),
+                    ["transform", "signal"]
+                );
             }
             _ => unreachable!(),
         }
@@ -766,7 +789,7 @@ fn two_source_graph() -> voxa_core::GraphDefinition {
 }
 
 fn failure_nodes(
-    log: Rc<RefCell<Vec<String>>>,
+    log: Arc<Mutex<Vec<String>>>,
     failing: &'static str,
     hook: Hook,
     panic: bool,
@@ -814,7 +837,7 @@ fn prepare_process_finish_errors_abort_prepared_nodes_once_in_reverse_order() {
             vec!["abort:b:VOXA-TEST-NODE", "abort:a:VOXA-TEST-NODE"],
         ),
     ] {
-        let log = Rc::new(RefCell::new(Vec::new()));
+        let log = Arc::new(Mutex::new(Vec::new()));
         let mut runner = GraphRunner::new(
             &graph,
             failure_nodes(log.clone(), failing, hook, false, false),
@@ -825,7 +848,7 @@ fn prepare_process_finish_errors_abort_prepared_nodes_once_in_reverse_order() {
         assert_eq!(reason.category(), AbortCategory::NodeError);
         assert_eq!(reason.stage(), expected_stage);
         assert_eq!(reason.node_id().unwrap().as_str(), failing);
-        let events = log.borrow();
+        let events = log.lock().unwrap();
         assert!(events.ends_with(
             &expected_tail
                 .into_iter()
@@ -847,7 +870,7 @@ fn prepare_process_finish_errors_abort_prepared_nodes_once_in_reverse_order() {
 #[test]
 fn node_and_policy_panics_are_caught_and_abort_hook_panics_do_not_stop_cleanup() {
     let graph = two_source_graph();
-    let log = Rc::new(RefCell::new(Vec::new()));
+    let log = Arc::new(Mutex::new(Vec::new()));
     let mut runner = GraphRunner::new(
         &graph,
         failure_nodes(log.clone(), "a", Hook::Process, true, true),
@@ -860,7 +883,8 @@ fn node_and_policy_panics_are_caught_and_abort_hook_panics_do_not_stop_cleanup()
     assert_eq!(runner.abort_diagnostics().len(), 1);
     assert_eq!(runner.abort_diagnostics()[0].node_id().as_str(), "b");
     assert!(log
-        .borrow()
+        .lock()
+        .unwrap()
         .iter()
         .any(|event| event.starts_with("abort:a:")));
 
@@ -868,12 +892,12 @@ fn node_and_policy_panics_are_caught_and_abort_hook_panics_do_not_stop_cleanup()
         ValidationPolicy::TypeGateOnly,
         TransformPolicy::Named(named_policy()),
     );
-    let sink = Rc::new(RefCell::new(Vec::new()));
-    let nodes = pipeline_nodes(Rc::new(RefCell::new(Vec::new())), sink);
+    let sink = Arc::new(Mutex::new(Vec::new()));
+    let nodes = pipeline_nodes(Arc::new(Mutex::new(Vec::new())), sink);
     let policies = BTreeMap::from([(
         edge_id("edge"),
         Box::new(
-            TestPolicy::new(PolicyAction::Forward, Rc::new(RefCell::new(Vec::new())))
+            TestPolicy::new(PolicyAction::Forward, Arc::new(Mutex::new(Vec::new())))
                 .panic("transform"),
         ) as Box<dyn EdgePolicy>,
     )]);
@@ -895,10 +919,10 @@ fn policy_hook_errors_and_panics_are_terminal_and_resource_owners_are_released()
             on_failure: ValidationFailureAction::Drop,
         };
         let graph = text_pipeline(validation, TransformPolicy::Identity);
-        let node_drops = Rc::new(Cell::new(0));
-        let policy_drops = Rc::new(Cell::new(0));
-        let log = Rc::new(RefCell::new(Vec::new()));
-        let sink = Rc::new(RefCell::new(Vec::new()));
+        let node_drops = Arc::new(AtomicUsize::new(0));
+        let policy_drops = Arc::new(AtomicUsize::new(0));
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::new(Mutex::new(Vec::new()));
         let mut nodes = pipeline_nodes(log, sink);
         for node in nodes.values_mut() {
             // Replace the map below with probed nodes because trait objects cannot be downcast.
@@ -911,7 +935,7 @@ fn policy_hook_errors_and_panics_are_terminal_and_resource_owners_are_released()
                     TestNode::new(
                         "source",
                         Behavior::Source(vec![(port("out"), text_frame("original", "hello"))]),
-                        Rc::new(RefCell::new(Vec::new())),
+                        Arc::new(Mutex::new(Vec::new())),
                     )
                     .drop_probe(node_drops.clone()),
                 ) as Box<dyn Node>,
@@ -921,14 +945,14 @@ fn policy_hook_errors_and_panics_are_terminal_and_resource_owners_are_released()
                 Box::new(
                     TestNode::new(
                         "sink",
-                        Behavior::Sink(Rc::new(RefCell::new(Vec::new()))),
-                        Rc::new(RefCell::new(Vec::new())),
+                        Behavior::Sink(Arc::new(Mutex::new(Vec::new()))),
+                        Arc::new(Mutex::new(Vec::new())),
                     )
                     .drop_probe(node_drops.clone()),
                 ) as Box<dyn Node>,
             ),
         ]);
-        let mut policy = TestPolicy::new(PolicyAction::Forward, Rc::new(RefCell::new(Vec::new())))
+        let mut policy = TestPolicy::new(PolicyAction::Forward, Arc::new(Mutex::new(Vec::new())))
             .rejecting("drop me")
             .drop_probe(policy_drops.clone());
         policy = if panic {
@@ -949,7 +973,7 @@ fn policy_hook_errors_and_panics_are_terminal_and_resource_owners_are_released()
                 AbortCategory::NodeError
             }
         );
-        assert_eq!(node_drops.get(), 2);
-        assert_eq!(policy_drops.get(), 1);
+        assert_eq!(node_drops.load(Ordering::Relaxed), 2);
+        assert_eq!(policy_drops.load(Ordering::Relaxed), 1);
     }
 }

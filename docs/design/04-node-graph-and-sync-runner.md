@@ -46,7 +46,9 @@ the later runtime.
 
 The Stage 4B synchronous runner is single-threaded. Stage 5 owns worker
 isolation, bounded concurrent queues, backpressure, cancellation tokens,
-metric subscriptions, and safe cross-thread stopping.
+metric subscriptions, and safe cross-thread stopping. `Node` and `EdgePolicy`
+require `Send`, and their runtime instance maps preserve that transferability,
+so Stage 5 may move ownership into workers without weakening this boundary.
 
 ## 3. Stable names and data boundary
 
@@ -73,7 +75,7 @@ or debug-formatted Rust type name.
 There is one object-safe `Node` trait and exactly four hooks:
 
 ```rust,ignore
-pub trait Node {
+pub trait Node: Send {
     fn on_prepare(&mut self, context: &mut NodeContext) -> voxa_types::Result<()>;
     fn on_process(
         &mut self,
@@ -350,10 +352,11 @@ configuration, and Graph definitions own their data. Live Frames retain the
 Stage 3 immutable Arc-backed buffer and derivation rules.
 
 The synchronous runner executes all lifecycle and policy calls serially on its
-calling thread. It does not claim callback-thread safety and must never be
-called directly from an RTC/SDK callback. Stage 5 will isolate work in runtime
-workers. Nothing in Stage 4 changes the fixed Adapter copy/retain/release or
-safe-stop rules.
+calling thread. `Send` permits ownership transfer but does not make callbacks
+concurrent or require `Sync`; the runner does not claim callback-thread safety
+and must never be called directly from an RTC/SDK callback. Stage 5 will
+isolate work in runtime workers. Nothing in Stage 4 changes the fixed Adapter
+copy/retain/release or safe-stop rules.
 
 Configuration, abort details, validation reasons, visibility labels, and
 metrics reasons must not contain media payloads, credentials, private
@@ -371,4 +374,6 @@ Stage 4B adds focused tests for lifecycle order, source `None` isolation,
 explicit input/output ports, Edge policy order, Replace lineage,
 Drop/Abort/EmitSignal, prepare/process/finish failure, Rust panic conversion,
 first-error behavior, abort-at-most-once, and resource release. Those tests
-must run before Stage 5 introduces concurrency.
+must run before Stage 5 introduces concurrency. Compile-time assertions also
+guarantee that boxed `Node` and `EdgePolicy` trait objects plus `NodeInstances`
+and `EdgePolicies` are `Send`.

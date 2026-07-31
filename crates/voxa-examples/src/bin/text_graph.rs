@@ -1,6 +1,10 @@
 #![forbid(unsafe_code)]
 
-use std::{cell::RefCell, collections::BTreeMap, error::Error, rc::Rc};
+use std::{
+    collections::BTreeMap,
+    error::Error,
+    sync::{Arc, Mutex},
+};
 
 use voxa_core::{
     ConfigSchema, EdgeDescriptor, EnabledCondition, GraphBuilder, GraphRunner,
@@ -71,7 +75,7 @@ impl Node for UppercaseTransform {
 
 /// Collects transformed strings for deterministic reporting after the run.
 struct CollectSink {
-    collected: Rc<RefCell<Vec<String>>>,
+    collected: Arc<Mutex<Vec<String>>>,
 }
 
 impl Node for CollectSink {
@@ -81,7 +85,7 @@ impl Node for CollectSink {
         _context: &mut NodeContext,
     ) -> voxa_types::Result<()> {
         let input = input.expect("a Sink receives an Edge-delivered frame");
-        self.collected.borrow_mut().push(
+        self.collected.lock().unwrap().push(
             input
                 .as_text()
                 .expect("the explicit input port accepts Text")
@@ -95,7 +99,7 @@ impl Node for CollectSink {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let graph = text_graph();
-    let collected = Rc::new(RefCell::new(Vec::new()));
+    let collected = Arc::new(Mutex::new(Vec::new()));
     let instances: NodeInstances = BTreeMap::from([
         (
             node_id(SOURCE_ID),
@@ -129,7 +133,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!(
         "Collected uppercase text: {}",
-        collected.borrow().join(", ")
+        collected.lock().unwrap().join(", ")
     );
     Ok(())
 }
