@@ -84,6 +84,10 @@ macro_rules! identifier_type {
 }
 
 identifier_type!(
+    /// Identifies one declarative graph definition.
+    GraphId
+);
+identifier_type!(
     /// Identifies a node in a Voxa graph.
     ///
     /// ```compile_fail

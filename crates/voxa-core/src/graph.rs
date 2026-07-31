@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, collections::BTreeSet, error::Error, fmt};
 
-use voxa_types::{EdgeId, FrameType, NodeId};
+use voxa_types::{EdgeId, FrameType, GraphId, NodeId};
 
 use crate::{
     edge::EdgeDescriptor,
@@ -241,12 +241,17 @@ impl NodeDefinition {
 /// Pure, stable graph data. It stores no node instances or policy callbacks.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GraphDefinition {
+    graph_id: GraphId,
     nodes: Box<[NodeDefinition]>,
     edges: Box<[EdgeDescriptor]>,
     topological_order: Box<[NodeId]>,
 }
 
 impl GraphDefinition {
+    /// Returns the stable graph identity.
+    pub const fn graph_id(&self) -> &GraphId {
+        &self.graph_id
+    }
     /// Returns nodes sorted by stable `NodeId`.
     pub fn nodes(&self) -> &[NodeDefinition] {
         &self.nodes
@@ -285,16 +290,32 @@ impl GraphDefinition {
 }
 
 /// Builds and validates a static directed acyclic graph without executing it.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct GraphBuilder {
+    graph_id: GraphId,
     nodes: BTreeMap<NodeId, NodeDefinition>,
     edges: BTreeMap<EdgeId, EdgeDescriptor>,
+}
+
+impl Default for GraphBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GraphBuilder {
     /// Creates an empty graph builder. Building it succeeds.
     pub fn new() -> Self {
-        Self::default()
+        Self::with_graph_id(GraphId::new("graph").expect("constant graph identifier"))
+    }
+
+    /// Creates an empty graph builder with an explicit serializable identity.
+    pub fn with_graph_id(graph_id: GraphId) -> Self {
+        Self {
+            graph_id,
+            nodes: BTreeMap::new(),
+            edges: BTreeMap::new(),
+        }
     }
 
     /// Adds one pure-data node descriptor.
@@ -357,6 +378,7 @@ impl GraphBuilder {
     pub fn build(self) -> std::result::Result<GraphDefinition, GraphBuildError> {
         let topological_order = stable_topological_order(&self.nodes, &self.edges)?;
         Ok(GraphDefinition {
+            graph_id: self.graph_id,
             nodes: self.nodes.into_values().collect(),
             edges: self.edges.into_values().collect(),
             topological_order: topological_order.into_boxed_slice(),
