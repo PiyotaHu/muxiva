@@ -16,6 +16,7 @@ pub mod managed_stream;
 pub mod node;
 pub mod queue;
 pub mod realtime;
+pub mod registry;
 pub mod resource;
 pub mod runner;
 mod signal;
@@ -69,6 +70,10 @@ pub use queue::{
 pub use realtime::{
     AudioDurationRange, AudioOverflowPolicy, DeliveryGuarantee, DeliveryOrdering, RealtimeContract,
     RealtimeInputProfile, RealtimeProfileError, RuntimeInputTuning,
+};
+pub use registry::{
+    EdgePolicyRegistration, EdgePolicyRegistry, NodeLanguage, NodeRegistration, NodeRegistry,
+    RegistryError,
 };
 pub use resource::{ResourceKey, ResourceStore, ResourceStoreError};
 pub use runner::{

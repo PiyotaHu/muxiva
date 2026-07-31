@@ -1,0 +1,16 @@
+[package]
+name = "voxa-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "voxa"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+serde_json.workspace = true
+voxa-graph-json = { path = "../voxa-graph-json" }
+voxa-studio = { path = "../voxa-studio" }

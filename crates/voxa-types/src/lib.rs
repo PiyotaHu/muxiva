@@ -21,8 +21,8 @@ pub use frame::{
 };
 pub use frame_buffer::FrameBuffer;
 pub use id::{
-    ClockDomainId, EdgeId, FrameId, IdentifierError, NodeId, ProducerId, SessionId, StreamId,
-    TraceId, TurnId,
+    ClockDomainId, EdgeId, FrameId, GraphId, IdentifierError, NodeId, ProducerId, SessionId,
+    StreamId, TraceId, TurnId,
 };
 pub use lineage::{Lineage, LineageEntry, MediaTimeRange, TransformOrigin};
 pub use schema::{NamespacedName, SchemaVersion};

@@ -3,6 +3,9 @@ members = [
     "crates/voxa-core",
     "crates/voxa-examples",
     "crates/voxa-ffi",
+    "crates/voxa-graph-json",
+    "crates/voxa-cli",
+    "crates/voxa-studio",
     "crates/voxa-types",
 ]
 resolver = "2"
@@ -17,4 +20,7 @@ publish = false
 thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
 voxa-types = { path = "crates/voxa-types", version = "0.1.0" }
