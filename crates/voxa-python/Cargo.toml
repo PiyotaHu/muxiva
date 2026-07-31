@@ -1,0 +1,21 @@
+[package]
+name = "voxa-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+pyo3 = "0.23"
+voxa-core = { path = "../voxa-core" }
+voxa-types.workspace = true
+
+[dev-dependencies]
+pyo3 = { version = "0.23", features = ["auto-initialize"] }

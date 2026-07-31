@@ -50,7 +50,9 @@ controlled I/O workloads; CPU-heavy work cannot be presented as async.
 
 ## Status and documentation
 
-Stages 3 through 8 are implemented and awaiting acceptance. Stage 8 adds a
+Stages 3 through 9 are implemented and awaiting acceptance. Stage 9 adds
+bounded Python/PyO3 and TypeScript/Node-API language execution domains over a
+shared Rust-owned foreign driver. Stage 8 adds a
 Rust-owned bounded external ingress plus a versioned C++ mock RTC adapter with
 copy-only media delivery, deterministic faults, and callback-safe shutdown.
 Stage 7 adds the
@@ -76,6 +78,8 @@ remain recorded in the pre-release reports.
 - [Stage 7 pre-release report](docs/pre_release_notes/07-c-abi-cpp-node-sdk.md)
 - [Stage 8 mock RTC adapter design](docs/design/08-mock-rtc-adapter.md)
 - [Stage 8 pre-release report](docs/pre_release_notes/08-mock-rtc-adapter.md)
+- [Stage 9 Python and Node execution-domain design](docs/design/09-python-node-execution-domains.md)
+- [Stage 9 pre-release report](docs/pre_release_notes/09-python-node.md)
 
 The Stage 7 developer check needs Cargo plus a C11/C++17 compiler; CMake is
 not required:
@@ -85,6 +89,16 @@ cargo test --workspace --offline
 CC=clang CXX=clang++ ./scripts/check-ffi.sh
 ./scripts/check-rtc.sh
 ./scripts/check-rtc-asan.sh
+./scripts/check-python.sh
+./scripts/check-node.sh
+```
+
+The Stage 9 Rust test gate must select a supported arm64 Python explicitly on
+this development host because its default `python3` shim is legacy x86_64:
+
+```sh
+PYO3_PYTHON=/Users/private-user/.pyenv/versions/3.13.12/bin/python3.13 \
+  cargo test --workspace --offline
 ```
 
 ## Planned repository layout

@@ -1,0 +1,20 @@
+{
+  "name": "@voxa/core",
+  "version": "0.1.0",
+  "description": "Node-API bindings and bounded TypeScript node execution domain for Voxa",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": { ".": { "types": "./index.d.ts", "import": "./index.js" } },
+  "files": ["index.js", "index.d.ts", "worker.mjs", "native/*.node", "npm"],
+  "engines": { "node": ">=20 <25" },
+  "napi": { "name": "voxa", "triples": { "defaults": false, "additional": ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu"] } },
+  "scripts": {
+    "build": "napi build --platform --release --cargo-cwd ../../crates/voxa-node native",
+    "build:debug": "napi build --platform --cargo-cwd ../../crates/voxa-node native",
+    "test": "node --test __tests__/*.test.mjs",
+    "check": "npm run build:debug && npm test"
+  },
+  "devDependencies": { "@napi-rs/cli": "2.18.4" }
+}
