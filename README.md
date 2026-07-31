@@ -50,11 +50,11 @@ controlled I/O workloads; CPU-heavy work cannot be presented as async.
 
 ## Status and documentation
 
-Stages 3 (frames and ownership), 4 (the synchronous node-graph runner), and 5
-(bounded concurrent runtime, standalone realtime flow-control components, and
-isolated managed-stream sessions) are implemented and awaiting acceptance.
+Stages 3 through 6 are implemented and awaiting acceptance. Stage 6 adds
+bounded adjacent Signal routing, an isolated global EventBus, typed graph
+resources, and atomic transport/turn control with stale-frame Sink filtering.
 Stage 5's report records its intentionally incomplete runtime/UI integration,
-full-pipeline-drain, signal-routing, and real-transport boundaries. By
+full-pipeline-drain and real-transport boundaries. By
 maintainer direction, the remaining Stage 2 review findings and the
 non-blocking Stage 3 and 4 review findings are explicitly deferred; they
 remain recorded in the pre-release reports.
@@ -65,6 +65,8 @@ remain recorded in the pre-release reports.
 - [Stage 3 frames and ownership report](docs/pre_release_notes/03-frames-and-ownership.md)
 - [Stage 4 synchronous graph runtime report](docs/pre_release_notes/04-node-graph-sync-runner.md)
 - [Stage 5 concurrent runtime and flow-control report](docs/pre_release_notes/05-concurrent-runtime-flow-control.md)
+- [Stage 6 Signal/EventBus/turn-control design](docs/design/06-signal-eventbus-turn-control.md)
+- [Stage 6 pre-release report](docs/pre_release_notes/06-signal-eventbus-turn-control.md)
 
 ## Planned repository layout
 

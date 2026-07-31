@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, error::Error, fmt};
 
-use voxa_types::{Frame, FrameType, NodeId, Result, Value};
+use voxa_types::{Frame, FrameType, NodeId, Result, SignalFrame, Value};
 
 /// The role a node has in a graph.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -398,8 +398,10 @@ pub struct NodeContext {
     config: ConfigMap,
     input_port: Option<PortName>,
     emissions: Vec<NodeEmission>,
+    signals: Vec<SignalFrame>,
     emission_limit: usize,
     emission_overflowed: bool,
+    has_signal_routes: bool,
 }
 
 /// Returned when one lifecycle call exceeds its bounded emission budget.
@@ -437,6 +439,62 @@ impl From<NodeEmissionError> for voxa_types::VoxaError {
     }
 }
 
+/// Structured rejection from [`NodeContext::emit_signal`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SignalEmissionError {
+    NoConnectedDownstream {
+        node_id: NodeId,
+    },
+    SourceMismatch {
+        context_node: NodeId,
+        signal_source: NodeId,
+    },
+    Limit {
+        limit: usize,
+    },
+}
+
+impl fmt::Display for SignalEmissionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoConnectedDownstream { node_id } => {
+                write!(
+                    formatter,
+                    "node `{node_id}` has no connected downstream edge"
+                )
+            }
+            Self::SourceMismatch {
+                context_node,
+                signal_source,
+            } => write!(
+                formatter,
+                "signal source `{signal_source}` does not match emitting node `{context_node}`"
+            ),
+            Self::Limit { limit } => write!(
+                formatter,
+                "node lifecycle call exceeded its signal emission limit of {limit}"
+            ),
+        }
+    }
+}
+
+impl Error for SignalEmissionError {}
+
+impl From<SignalEmissionError> for voxa_types::VoxaError {
+    fn from(error: SignalEmissionError) -> Self {
+        let code = match &error {
+            SignalEmissionError::NoConnectedDownstream { .. } => "VOXA-SIGNAL-NO-EDGE",
+            SignalEmissionError::SourceMismatch { .. } => "VOXA-SIGNAL-SOURCE",
+            SignalEmissionError::Limit { .. } => "VOXA-SIGNAL-LIMIT",
+        };
+        voxa_types::VoxaError::new(
+            voxa_types::ErrorCategory::Validation,
+            code,
+            error.to_string(),
+        )
+    }
+}
+
 impl NodeContext {
     /// Creates a context for one node call.
     pub fn new(node_id: NodeId, config: ConfigMap, input_port: Option<PortName>) -> Self {
@@ -450,13 +508,25 @@ impl NodeContext {
         input_port: Option<PortName>,
         emission_limit: usize,
     ) -> Self {
+        Self::with_routing_limits(node_id, config, input_port, emission_limit, false)
+    }
+
+    pub(crate) fn with_routing_limits(
+        node_id: NodeId,
+        config: ConfigMap,
+        input_port: Option<PortName>,
+        emission_limit: usize,
+        has_signal_routes: bool,
+    ) -> Self {
         Self {
             node_id,
             config,
             input_port,
             emissions: Vec::new(),
+            signals: Vec::new(),
             emission_limit,
             emission_overflowed: false,
+            has_signal_routes,
         }
     }
 
@@ -501,6 +571,40 @@ impl NodeContext {
     /// Drains emissions in call order.
     pub fn take_emissions(&mut self) -> Vec<NodeEmission> {
         std::mem::take(&mut self.emissions)
+    }
+
+    /// Queues a control frame for every actually connected downstream edge.
+    pub fn emit_signal(
+        &mut self,
+        signal: SignalFrame,
+    ) -> std::result::Result<(), SignalEmissionError> {
+        if !self.has_signal_routes {
+            return Err(SignalEmissionError::NoConnectedDownstream {
+                node_id: self.node_id.clone(),
+            });
+        }
+        if signal.data().source() != &self.node_id {
+            return Err(SignalEmissionError::SourceMismatch {
+                context_node: self.node_id.clone(),
+                signal_source: signal.data().source().clone(),
+            });
+        }
+        if self.signals.len() >= self.emission_limit {
+            self.emission_overflowed = true;
+            return Err(SignalEmissionError::Limit {
+                limit: self.emission_limit,
+            });
+        }
+        self.signals.push(signal);
+        Ok(())
+    }
+
+    pub fn signals(&self) -> &[SignalFrame] {
+        &self.signals
+    }
+
+    pub fn take_signals(&mut self) -> Vec<SignalFrame> {
+        std::mem::take(&mut self.signals)
     }
 
     pub(crate) const fn emission_overflowed(&self) -> bool {
@@ -632,6 +736,12 @@ pub trait Node: Send {
     /// A future synchronous runner passes `None` exactly for its one source
     /// invocation. Edge deliveries always pass `Some(Frame)`.
     fn on_process(&mut self, input: Option<Frame>, context: &mut NodeContext) -> Result<()>;
+
+    /// Receives a graph-local control frame on the node's worker domain.
+    /// This callback is not a fifth lifecycle hook.
+    fn on_signal(&mut self, _signal: SignalFrame, _context: &mut NodeContext) -> Result<()> {
+        Ok(())
+    }
 
     /// Completes normal resource handling.
     fn on_finish(&mut self, _context: &mut NodeContext) -> Result<()> {

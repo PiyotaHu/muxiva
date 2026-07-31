@@ -131,10 +131,14 @@ identifier_type!(
     /// Identifies an external extension producer.
     ProducerId
 );
+identifier_type!(
+    /// Identifies one conversational transport turn.
+    TurnId
+);
 
 #[cfg(test)]
 mod tests {
-    use super::{EdgeId, FrameId, NodeId, SessionId, StreamId, TraceId};
+    use super::{EdgeId, FrameId, NodeId, SessionId, StreamId, TraceId, TurnId};
 
     #[test]
     fn identifiers_validate_and_round_trip() {
@@ -159,5 +163,6 @@ mod tests {
         assert!(EdgeId::new(" edge ").is_err());
         assert!(super::ClockDomainId::new("clock\n1").is_err());
         assert!(super::ProducerId::new("x".repeat(256)).is_err());
+        assert_eq!(TurnId::new("turn-7").unwrap().as_str(), "turn-7");
     }
 }

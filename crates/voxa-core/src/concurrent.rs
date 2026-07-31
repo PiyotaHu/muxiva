@@ -9,7 +9,9 @@ use std::{
     time::Duration,
 };
 
-use voxa_types::{EdgeId, ErrorCategory, Frame, NodeId, TransformOrigin, Value, VoxaError};
+use voxa_types::{
+    EdgeId, ErrorCategory, Frame, NodeId, SignalFrame, TransformOrigin, TurnId, Value, VoxaError,
+};
 
 use crate::queue::QueueWake;
 use crate::{
@@ -17,9 +19,10 @@ use crate::{
     ConfigMap, DrainMode, EdgeAction, EdgeContext, EdgeDescriptor, EdgeMetricsSnapshot,
     EdgePolicies, EdgePolicy, EnabledCondition, EnqueueOutcome, GraphDefinition,
     GraphRunnerBuildError, Node, NodeContext, NodeEmission, NodeInstances, NodeKind, PortDirection,
-    PortName, QueuePushError, StopToken, TransformPolicy, ValidationDecision,
-    ValidationFailureAction, ValidationPolicy,
+    PortName, QueuePushError, ResourceStore, SignalQueuePushError, StopToken, TransformPolicy,
+    TransportControl, ValidationDecision, ValidationFailureAction, ValidationPolicy,
 };
+use crate::{EventBus, SignalQueueSnapshot};
 
 /// Stage 5A scheduler options. Admission is deliberately fixed at one active
 /// callback per node; later profiles may lower or raise the declared ceiling.
@@ -29,6 +32,7 @@ pub struct RuntimeOptions {
     failure_mode: DrainMode,
     max_in_flight: usize,
     emission_budget: NonZeroUsize,
+    signal_queue_capacity: NonZeroUsize,
 }
 
 impl RuntimeOptions {
@@ -39,6 +43,7 @@ impl RuntimeOptions {
             failure_mode,
             max_in_flight: 1,
             emission_budget: NonZeroUsize::new(16_384).expect("non-zero constant"),
+            signal_queue_capacity: NonZeroUsize::new(64).expect("non-zero constant"),
         }
     }
 
@@ -62,6 +67,15 @@ impl RuntimeOptions {
 
     pub const fn emission_budget(self) -> usize {
         self.emission_budget.get()
+    }
+
+    pub const fn with_signal_queue_capacity(mut self, capacity: NonZeroUsize) -> Self {
+        self.signal_queue_capacity = capacity;
+        self
+    }
+
+    pub const fn signal_queue_capacity(self) -> usize {
+        self.signal_queue_capacity.get()
     }
 }
 
@@ -188,6 +202,9 @@ pub struct ConcurrentRuntime {
     policies: EdgePolicies,
     enabled_edges: BTreeSet<EdgeId>,
     options: RuntimeOptions,
+    event_bus: EventBus,
+    resources: ResourceStore,
+    transport: TransportControl,
 }
 
 impl ConcurrentRuntime {
@@ -213,7 +230,27 @@ impl ConcurrentRuntime {
             policies,
             enabled_edges,
             options,
+            event_bus: EventBus::default(),
+            resources: ResourceStore::new(),
+            transport: TransportControl::new(
+                TurnId::new("turn.initial").expect("valid static turn ID"),
+            ),
         })
+    }
+
+    pub fn with_event_bus(mut self, event_bus: EventBus) -> Self {
+        self.event_bus = event_bus;
+        self
+    }
+
+    pub fn with_resources(mut self, resources: ResourceStore) -> Self {
+        self.resources = resources;
+        self
+    }
+
+    pub fn with_transport_control(mut self, transport: TransportControl) -> Self {
+        self.transport = transport;
+        self
     }
 
     /// Starts all node execution domains. No Node or EdgePolicy callback runs
@@ -239,6 +276,7 @@ impl ConcurrentRuntime {
             .map(|id| (id.clone(), Arc::new(QueueWake::default())))
             .collect::<BTreeMap<_, _>>();
         let mut queues = BTreeMap::new();
+        let mut signal_queues = BTreeMap::new();
         for edge in self.graph.edges() {
             let queue = crate::EdgeQueue::with_target_wake(
                 edge.edge_id().clone(),
@@ -249,19 +287,32 @@ impl ConcurrentRuntime {
                 queue.close(DrainMode::Drain);
             }
             queues.insert(edge.edge_id().clone(), queue);
+            let signal_queue = crate::signal::SignalQueue::new(
+                self.options.signal_queue_capacity(),
+                wakes.get(edge.to_node_id()).expect("target wake").clone(),
+            );
+            if !self.enabled_edges.contains(edge.edge_id()) {
+                signal_queue.close(DrainMode::Drain);
+            }
+            signal_queues.insert(edge.edge_id().clone(), signal_queue);
         }
         let all_queues = Arc::new(queues);
+        let all_signal_queues = Arc::new(signal_queues);
         let worker_total = self.graph.nodes().len();
         let gate = Arc::new(PrepareGate::new(worker_total));
         let shared = Arc::new(WorkerShared {
             graph: self.graph.clone(),
             stop: stop.clone(),
             queues: all_queues.clone(),
+            signal_queues: all_signal_queues.clone(),
             control: control.clone(),
             gate,
             launch: launch.clone(),
             options: self.options,
             abort_diagnostics: abort_diagnostics.clone(),
+            event_bus: self.event_bus.clone(),
+            resources: self.resources.clone(),
+            transport: self.transport.clone(),
         });
 
         let mut incoming = BTreeMap::<NodeId, Vec<InputEdge>>::new();
@@ -276,12 +327,17 @@ impl ConcurrentRuntime {
                 .get(edge.edge_id())
                 .expect("created queue")
                 .clone();
+            let signal_queue = all_signal_queues
+                .get(edge.edge_id())
+                .expect("created signal queue")
+                .clone();
             incoming
                 .entry(edge.to_node_id().clone())
                 .or_default()
                 .push(InputEdge {
                     port: edge.to_input_port().clone(),
                     queue: queue.clone(),
+                    signal_queue: signal_queue.clone(),
                 });
             let (sender, receiver) = mpsc::sync_channel(1);
             outgoing
@@ -295,6 +351,7 @@ impl ConcurrentRuntime {
                 OutputEdge {
                     descriptor: edge.clone(),
                     queue,
+                    signal_queue,
                     policy: policies.remove(edge.edge_id()),
                 },
                 receiver,
@@ -400,9 +457,13 @@ impl ConcurrentRuntime {
         Ok(GraphRuntime {
             stop,
             queues: all_queues,
+            signal_queues: all_signal_queues,
             control,
             options: self.options,
             abort_diagnostics,
+            event_bus: self.event_bus,
+            resources: self.resources,
+            transport: self.transport,
         })
     }
 }
@@ -412,9 +473,13 @@ impl ConcurrentRuntime {
 pub struct GraphRuntime {
     stop: StopToken,
     queues: Arc<BTreeMap<EdgeId, crate::EdgeQueue>>,
+    signal_queues: Arc<BTreeMap<EdgeId, crate::signal::SignalQueue>>,
     control: Arc<RuntimeControl>,
     options: RuntimeOptions,
     abort_diagnostics: Arc<Mutex<Vec<AbortHookDiagnostic>>>,
+    event_bus: EventBus,
+    resources: ResourceStore,
+    transport: TransportControl,
 }
 
 impl GraphRuntime {
@@ -425,7 +490,10 @@ impl GraphRuntime {
         let first = self.control.request_abort(reason);
         if first {
             self.stop.cancel();
+            self.event_bus.request_stop();
+            self.resources.seal();
             close_all(&self.queues, self.options.shutdown_mode);
+            close_all_signals(&self.signal_queues, self.options.shutdown_mode);
         }
         first
     }
@@ -436,6 +504,24 @@ impl GraphRuntime {
 
     pub fn edge_metrics(&self, edge_id: &EdgeId) -> Option<EdgeMetricsSnapshot> {
         self.queues.get(edge_id).map(crate::EdgeQueue::snapshot)
+    }
+
+    pub fn signal_metrics(&self, edge_id: &EdgeId) -> Option<SignalQueueSnapshot> {
+        self.signal_queues
+            .get(edge_id)
+            .map(crate::signal::SignalQueue::snapshot)
+    }
+
+    pub const fn event_bus(&self) -> &EventBus {
+        &self.event_bus
+    }
+
+    pub const fn resources(&self) -> &ResourceStore {
+        &self.resources
+    }
+
+    pub const fn transport_control(&self) -> &TransportControl {
+        &self.transport
     }
 
     pub fn abort_diagnostics(&self) -> Vec<AbortHookDiagnostic> {
@@ -677,27 +763,43 @@ struct WorkerShared {
     graph: Arc<GraphDefinition>,
     stop: StopToken,
     queues: Arc<BTreeMap<EdgeId, crate::EdgeQueue>>,
+    signal_queues: Arc<BTreeMap<EdgeId, crate::signal::SignalQueue>>,
     control: Arc<RuntimeControl>,
     gate: Arc<PrepareGate>,
     launch: Arc<LaunchGate>,
     options: RuntimeOptions,
     abort_diagnostics: Arc<Mutex<Vec<AbortHookDiagnostic>>>,
+    event_bus: EventBus,
+    resources: ResourceStore,
+    transport: TransportControl,
 }
 
 struct InputEdge {
     port: PortName,
     queue: crate::EdgeQueue,
+    signal_queue: crate::signal::SignalQueue,
 }
 
 struct OutputEdge {
     descriptor: EdgeDescriptor,
     queue: crate::EdgeQueue,
+    signal_queue: crate::signal::SignalQueue,
     policy: Option<Box<dyn EdgePolicy>>,
 }
 
 struct OutputDispatch {
     descriptor: EdgeDescriptor,
-    sender: mpsc::SyncSender<Vec<Frame>>,
+    sender: mpsc::SyncSender<Dispatch>,
+}
+
+enum Dispatch {
+    Frames(Vec<Frame>),
+    Signals(Vec<SignalFrame>),
+}
+
+struct NodeCallOutput {
+    emissions: Vec<NodeEmission>,
+    signals: Vec<SignalFrame>,
 }
 
 struct NodeWorker {
@@ -776,21 +878,45 @@ impl NodeWorker {
     }
 
     fn run_source(&mut self) -> Result<(), AbortReason> {
-        let emissions = call_process(
+        let output = call_process(
             &mut *self.node,
             &self.node_id,
             None,
             None,
             &self.shared.graph,
             self.shared.options.emission_budget(),
+            !self.outgoing.is_empty(),
         )?;
-        self.route(emissions)
+        self.route(output)
     }
 
     fn run_consumer(&mut self) -> Result<(), AbortReason> {
         let mut cursor = 0usize;
         loop {
             let observed = self.wake.generation();
+            let mut received_signal = None;
+            for offset in 0..self.incoming.len() {
+                let index = (cursor + offset) % self.incoming.len();
+                if let Some(signal) = self.incoming[index].signal_queue.try_pop() {
+                    received_signal = Some((index, signal));
+                    cursor = (index + 1) % self.incoming.len();
+                    break;
+                }
+            }
+            if let Some((index, signal)) = received_signal {
+                let input_port = self.incoming[index].port.clone();
+                let output = call_signal(
+                    &mut *self.node,
+                    &self.node_id,
+                    signal,
+                    Some(input_port),
+                    &self.shared.graph,
+                    self.shared.options.emission_budget(),
+                    !self.outgoing.is_empty(),
+                )?;
+                self.route(output)?;
+                continue;
+            }
             let mut received = None;
             for offset in 0..self.incoming.len() {
                 let index = (cursor + offset) % self.incoming.len();
@@ -801,30 +927,52 @@ impl NodeWorker {
                 }
             }
             if let Some((index, frame)) = received {
+                let is_sink = self
+                    .shared
+                    .graph
+                    .node(&self.node_id)
+                    .expect("validated node")
+                    .descriptor()
+                    .kind()
+                    == NodeKind::Sink;
+                if is_sink {
+                    match self.shared.transport.should_deliver_to_sink(&frame) {
+                        Ok(true) => {}
+                        Ok(false) => continue,
+                        Err(error) => {
+                            let reason = error.to_string();
+                            return Err(runtime_abort_details(
+                                "VOXA-TRANSPORT-TURN-FRAME",
+                                "invalid turn scope before Sink delivery",
+                                Some(self.node_id.clone()),
+                                [("reason", reason.as_str())],
+                            ));
+                        }
+                    }
+                }
                 let input_port = self.incoming[index].port.clone();
-                let emissions = call_process(
+                let output = call_process(
                     &mut *self.node,
                     &self.node_id,
                     Some(frame),
                     Some(input_port),
                     &self.shared.graph,
                     self.shared.options.emission_budget(),
+                    !self.outgoing.is_empty(),
                 )?;
-                self.route(emissions)?;
+                self.route(output)?;
                 continue;
             }
-            if self
-                .incoming
-                .iter()
-                .all(|edge| edge.queue.is_closed_and_empty())
-            {
+            if self.incoming.iter().all(|edge| {
+                edge.queue.is_closed_and_empty() && edge.signal_queue.is_closed_and_empty()
+            }) {
                 return Ok(());
             }
             self.wake.wait_for_change(observed);
         }
     }
 
-    fn route(&mut self, emissions: Vec<NodeEmission>) -> Result<(), AbortReason> {
+    fn route(&mut self, output: NodeCallOutput) -> Result<(), AbortReason> {
         let descriptor = self
             .shared
             .graph
@@ -834,7 +982,7 @@ impl NodeWorker {
         let mut batches = (0..self.outgoing.len())
             .map(|_| Vec::new())
             .collect::<Vec<_>>();
-        for emission in emissions {
+        for emission in output.emissions {
             let (output_port, frame) = emission.into_parts();
             let Some(port) = descriptor.ports().iter().find(|candidate| {
                 candidate.name() == &output_port && candidate.direction() == PortDirection::Output
@@ -870,17 +1018,38 @@ impl NodeWorker {
             if batch.is_empty() {
                 continue;
             }
-            match self.outgoing[index].sender.try_send(batch) {
+            match self.outgoing[index]
+                .sender
+                .try_send(Dispatch::Frames(batch))
+            {
                 Ok(()) => {}
-                Err(mpsc::TrySendError::Full(batch)) => pending.push((index, batch)),
+                Err(mpsc::TrySendError::Full(Dispatch::Frames(batch))) => {
+                    pending.push((index, batch))
+                }
+                Err(mpsc::TrySendError::Full(Dispatch::Signals(_))) => unreachable!("sent frames"),
                 Err(mpsc::TrySendError::Disconnected(_)) => {
                     return self.dispatch_closed_abort();
                 }
             }
         }
         for (index, batch) in pending {
-            if self.outgoing[index].sender.send(batch).is_err() {
+            if self.outgoing[index]
+                .sender
+                .send(Dispatch::Frames(batch))
+                .is_err()
+            {
                 return self.dispatch_closed_abort();
+            }
+        }
+        if !output.signals.is_empty() {
+            for outgoing in &self.outgoing {
+                if outgoing
+                    .sender
+                    .send(Dispatch::Signals(output.signals.clone()))
+                    .is_err()
+                {
+                    return self.dispatch_closed_abort();
+                }
             }
         }
         Ok(())
@@ -903,19 +1072,76 @@ impl NodeWorker {
 
 fn run_dispatcher(
     mut output: OutputEdge,
-    receiver: mpsc::Receiver<Vec<Frame>>,
+    receiver: mpsc::Receiver<Dispatch>,
     shared: &WorkerShared,
 ) -> OutputEdge {
-    'dispatch: for batch in receiver {
-        for frame in batch {
-            if let Err(reason) = apply_edge(&shared.graph, &mut output, frame) {
-                fail_graph(shared, reason);
-                break 'dispatch;
+    'dispatch: for dispatch in receiver {
+        match dispatch {
+            Dispatch::Frames(batch) => {
+                for frame in batch {
+                    if let Err(reason) = apply_edge(&shared.graph, &mut output, frame) {
+                        fail_graph(shared, reason);
+                        break 'dispatch;
+                    }
+                }
+            }
+            Dispatch::Signals(signals) => {
+                for signal in signals {
+                    if let Err(reason) = apply_signal(&shared.graph, &mut output, signal) {
+                        fail_graph(shared, reason);
+                        break 'dispatch;
+                    }
+                }
             }
         }
     }
     output.queue.close(DrainMode::Drain);
+    output.signal_queue.close(DrainMode::Drain);
     output
+}
+
+fn apply_signal(
+    graph: &GraphDefinition,
+    output: &mut OutputEdge,
+    signal: SignalFrame,
+) -> Result<(), AbortReason> {
+    output.queue.record_signal();
+    if let Some(policy) = output.policy.as_mut() {
+        let snapshot = output.queue.snapshot();
+        let context = EdgeContext::new(graph, &output.descriptor, &snapshot);
+        match catch_unwind(AssertUnwindSafe(|| policy.on_signal(&signal, &context))) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                return Err(policy_error(
+                    &output.descriptor,
+                    &output.queue,
+                    error,
+                    "on_signal",
+                ))
+            }
+            Err(payload) => {
+                return Err(policy_panic(
+                    &output.descriptor,
+                    &output.queue,
+                    payload,
+                    "on_signal",
+                ))
+            }
+        }
+    }
+    output.signal_queue.try_push(signal).map_err(|error| {
+        let (code, message) = match error {
+            SignalQueuePushError::Full => (
+                "VOXA-SIGNAL-QUEUE-FULL",
+                "bounded adjacent Signal queue is full",
+            ),
+            SignalQueuePushError::Closed => (
+                "VOXA-SIGNAL-QUEUE-CLOSED",
+                "adjacent Signal queue is closed",
+            ),
+        };
+        edge_abort(&output.descriptor, code, message, "signal_queue")
+    })
 }
 
 fn coordinate(
@@ -962,6 +1188,8 @@ fn coordinate(
         if shared.control.seal_success() {
             drop(nodes);
             drop(resources);
+            let _ = shared.event_bus.stop(Duration::from_millis(100));
+            shared.resources.stop();
             shared
                 .control
                 .publish_success(ConcurrentRunSummary { worker_total });
@@ -997,6 +1225,8 @@ fn coordinate(
 
     drop(nodes);
     drop(resources);
+    let _ = shared.event_bus.stop(Duration::from_millis(100));
+    shared.resources.stop();
     shared.control.publish_abort(reason);
 }
 
@@ -1032,16 +1262,61 @@ fn call_process(
     input_port: Option<PortName>,
     graph: &GraphDefinition,
     emission_budget: usize,
-) -> Result<Vec<NodeEmission>, AbortReason> {
+    has_signal_routes: bool,
+) -> Result<NodeCallOutput, AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
-    let mut context =
-        NodeContext::with_emission_limit(node_id.clone(), config, input_port, emission_budget);
+    let mut context = NodeContext::with_routing_limits(
+        node_id.clone(),
+        config,
+        input_port,
+        emission_budget,
+        has_signal_routes,
+    );
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_process(input, &mut context)));
     if context.emission_overflowed() {
         return Err(emission_limit_abort(node_id, emission_budget));
     }
     match outcome {
-        Ok(Ok(())) => Ok(context.take_emissions()),
+        Ok(Ok(())) => Ok(NodeCallOutput {
+            emissions: context.take_emissions(),
+            signals: context.take_signals(),
+        }),
+        Ok(Err(error)) => Err(node_error(error, node_id, AbortStage::Process)),
+        Err(payload) => Err(panic_abort(
+            payload,
+            Some(node_id),
+            AbortStage::Process,
+            None,
+        )),
+    }
+}
+
+fn call_signal(
+    node: &mut dyn Node,
+    node_id: &NodeId,
+    signal: SignalFrame,
+    input_port: Option<PortName>,
+    graph: &GraphDefinition,
+    emission_budget: usize,
+    has_signal_routes: bool,
+) -> Result<NodeCallOutput, AbortReason> {
+    let config = graph.node(node_id).expect("node").config().clone();
+    let mut context = NodeContext::with_routing_limits(
+        node_id.clone(),
+        config,
+        input_port,
+        emission_budget,
+        has_signal_routes,
+    );
+    let outcome = catch_unwind(AssertUnwindSafe(|| node.on_signal(signal, &mut context)));
+    if context.emission_overflowed() {
+        return Err(emission_limit_abort(node_id, emission_budget));
+    }
+    match outcome {
+        Ok(Ok(())) => Ok(NodeCallOutput {
+            emissions: context.take_emissions(),
+            signals: context.take_signals(),
+        }),
         Ok(Err(error)) => Err(node_error(error, node_id, AbortStage::Process)),
         Err(payload) => Err(panic_abort(
             payload,
@@ -1276,7 +1551,10 @@ fn record_policy_drop(
 fn fail_graph(shared: &WorkerShared, reason: AbortReason) {
     if shared.control.request_abort(reason) {
         shared.stop.cancel();
+        shared.event_bus.request_stop();
+        shared.resources.seal();
         close_all(&shared.queues, shared.options.failure_mode);
+        close_all_signals(&shared.signal_queues, shared.options.failure_mode);
     }
 }
 
@@ -1284,6 +1562,7 @@ fn cleanup_failed_start(shared: &WorkerShared, handles: Vec<thread::JoinHandle<(
     shared.launch.cancel();
     shared.stop.cancel();
     close_all(&shared.queues, DrainMode::Discard);
+    close_all_signals(&shared.signal_queues, DrainMode::Discard);
     for handle in handles {
         let _ = handle.join();
     }
@@ -1300,6 +1579,12 @@ fn emission_limit_abort(node_id: &NodeId, limit: usize) -> AbortReason {
 }
 
 fn close_all(queues: &BTreeMap<EdgeId, crate::EdgeQueue>, mode: DrainMode) {
+    for queue in queues.values() {
+        queue.close(mode);
+    }
+}
+
+fn close_all_signals(queues: &BTreeMap<EdgeId, crate::signal::SignalQueue>, mode: DrainMode) {
     for queue in queues.values() {
         queue.close(mode);
     }
