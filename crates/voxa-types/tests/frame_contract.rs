@@ -1,9 +1,11 @@
 use std::cmp::Ordering;
 
 use voxa_types::{
-    AudioData, AudioLayout, ClockDomain, ClockDomainId, ClockKind, Extensions, FrameBuffer,
-    FrameHeader, FrameId, FrameType, Lineage, Metadata, PcmSampleFormat, PixelFormat, SequenceId,
-    StreamId, Timestamp, TraceId, VideoData, VideoLayout,
+    AudioData, AudioLayout, ByteData, ClockDomain, ClockDomainId, ClockKind, EventData, Extensions,
+    FiniteF64, Frame, FrameBuffer, FrameHeader, FrameId, FramePayload, FrameType, Lineage,
+    MediaType, Metadata, NamespacedName, NodeId, PcmSampleFormat, PixelFormat, SchemaVersion,
+    SequenceId, SignalData, StreamId, TextData, Timestamp, TraceId, Value, ValueMap, VideoData,
+    VideoLayout,
 };
 
 fn media_domain(id: &str) -> ClockDomain {
@@ -11,6 +13,14 @@ fn media_domain(id: &str) -> ClockDomain {
 }
 
 fn header_in(clock_domain: ClockDomain, timestamp: Timestamp) -> FrameHeader {
+    header_for(FrameType::Audio, clock_domain, timestamp)
+}
+
+fn header_for(
+    frame_type: FrameType,
+    clock_domain: ClockDomain,
+    timestamp: Timestamp,
+) -> FrameHeader {
     FrameHeader::new(
         FrameId::new("frame-1").unwrap(),
         timestamp,
@@ -18,12 +28,194 @@ fn header_in(clock_domain: ClockDomain, timestamp: Timestamp) -> FrameHeader {
         SequenceId::new(1),
         StreamId::new("stream-1").unwrap(),
         TraceId::new("trace-1").unwrap(),
-        FrameType::Audio,
+        frame_type,
         Metadata::empty(),
         Extensions::empty(),
         Lineage::empty(),
     )
     .unwrap()
+}
+
+#[test]
+fn messages_validate_owned_text_and_media_types() {
+    assert_eq!(
+        TextData::from_utf8(FrameBuffer::from_vec(vec![0xff]))
+            .unwrap_err()
+            .code(),
+        "VOXA-FRM-TEXT-UTF8"
+    );
+    let text = TextData::from_utf8(FrameBuffer::from_vec("hello".as_bytes().to_vec())).unwrap();
+    assert_eq!(text.as_str(), "hello");
+    assert_eq!(TextData::new(String::from("owned")).as_str(), "owned");
+
+    assert_eq!(MediaType::new("audio/pcm").unwrap().as_str(), "audio/pcm");
+    for invalid in [
+        "",
+        "audio",
+        "/pcm",
+        "audio/",
+        "audio/pcm/extra",
+        "audio /pcm",
+        "audio/p\u{00e4}cm",
+        &"a".repeat(128),
+    ] {
+        assert_eq!(
+            MediaType::new(invalid).unwrap_err().code(),
+            "VOXA-FRM-MEDIA-TYPE"
+        );
+    }
+
+    let bytes = ByteData::new(FrameBuffer::from_vec(Vec::new()), None);
+    assert!(bytes.buffer().is_empty());
+    assert!(bytes.media_type().is_none());
+}
+
+#[test]
+fn messages_hold_namespaced_signal_and_event_values_without_timestamps() {
+    let all_values = Value::List(
+        vec![
+            Value::Null,
+            Value::Bool(true),
+            Value::Integer(-7),
+            Value::Float(FiniteF64::new(1.5).unwrap()),
+            Value::String("text".into()),
+            Value::Bytes(FrameBuffer::from_vec(vec![1, 2])),
+            Value::List(vec![Value::Bool(false)].into_boxed_slice()),
+            Value::Map(ValueMap::try_from_iter([("key", Value::Null)]).unwrap()),
+        ]
+        .into_boxed_slice(),
+    );
+    let signal = SignalData::new(
+        NamespacedName::new("voxa.signal.ready").unwrap(),
+        SchemaVersion::new(1).unwrap(),
+        NodeId::new("source").unwrap(),
+        all_values.clone(),
+    );
+    assert_eq!(signal.name().as_str(), "voxa.signal.ready");
+    assert_eq!(signal.schema_version().get(), 1);
+    assert_eq!(signal.source().as_str(), "source");
+    assert_eq!(signal.payload(), &all_values);
+    let signal_timestamp = Timestamp::from_nanos(41);
+    let signal_frame = Frame::new(
+        header_for(FrameType::Signal, media_domain("signals"), signal_timestamp),
+        FramePayload::Signal(signal),
+    )
+    .unwrap();
+    assert_eq!(signal_frame.header().timestamp(), signal_timestamp);
+
+    let event = EventData::new(
+        NamespacedName::new("voxa.event.ready").unwrap(),
+        SchemaVersion::new(2).unwrap(),
+        NodeId::new("publisher").unwrap(),
+        all_values,
+    );
+    assert_eq!(event.topic().as_str(), "voxa.event.ready");
+    assert_eq!(event.schema_version().get(), 2);
+    assert_eq!(event.source().as_str(), "publisher");
+
+    let timestamp = Timestamp::from_nanos(42);
+    let frame = Frame::new(
+        header_for(FrameType::Event, media_domain("events"), timestamp),
+        FramePayload::Event(event),
+    )
+    .unwrap();
+    assert_eq!(frame.header().timestamp(), timestamp);
+}
+
+#[test]
+fn frame_variants_dispatch_and_enforce_the_header_type() {
+    let payloads = [
+        FramePayload::Audio(
+            AudioData::new(
+                FrameBuffer::from_vec(vec![0]),
+                48_000,
+                1,
+                PcmSampleFormat::U8,
+                AudioLayout::Interleaved,
+                1,
+            )
+            .unwrap(),
+        ),
+        FramePayload::Video(VideoData::rgba8(FrameBuffer::from_vec(vec![0; 4]), 1, 1, 4).unwrap()),
+        FramePayload::Text(TextData::new("hello")),
+        FramePayload::Byte(ByteData::new(FrameBuffer::from_vec(Vec::new()), None)),
+        FramePayload::Signal(SignalData::new(
+            NamespacedName::new("voxa.signal.ready").unwrap(),
+            SchemaVersion::new(1).unwrap(),
+            NodeId::new("source").unwrap(),
+            Value::Null,
+        )),
+        FramePayload::Event(EventData::new(
+            NamespacedName::new("voxa.event.ready").unwrap(),
+            SchemaVersion::new(1).unwrap(),
+            NodeId::new("source").unwrap(),
+            Value::Null,
+        )),
+    ];
+
+    for payload in payloads {
+        let expected = payload.frame_type();
+        let frame = Frame::new(
+            header_for(expected, media_domain("frames"), Timestamp::from_nanos(7)),
+            payload,
+        )
+        .unwrap();
+        assert_eq!(frame.frame_type(), expected);
+        assert_eq!(frame.header().frame_type(), expected);
+        assert_eq!(
+            [
+                frame.as_audio().is_some(),
+                frame.as_video().is_some(),
+                frame.as_text().is_some(),
+                frame.as_byte().is_some(),
+                frame.as_signal().is_some(),
+                frame.as_event().is_some(),
+            ]
+            .into_iter()
+            .filter(|present| *present)
+            .count(),
+            1
+        );
+        frame.ensure_type(expected).unwrap();
+        assert_eq!(
+            frame
+                .ensure_type(different_type(expected))
+                .unwrap_err()
+                .code(),
+            "VOXA-FRM-TYPE-MISMATCH"
+        );
+    }
+
+    let error = Frame::new(
+        header_for(
+            FrameType::Audio,
+            media_domain("mismatch"),
+            Timestamp::from_nanos(0),
+        ),
+        FramePayload::Text(TextData::new("hello")),
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "VOXA-FRM-TYPE-MISMATCH");
+
+    let text = Frame::new(
+        header_for(
+            FrameType::Text,
+            media_domain("debug"),
+            Timestamp::from_nanos(0),
+        ),
+        FramePayload::Text(TextData::new("private payload contents")),
+    )
+    .unwrap();
+    let rendered = format!("{text:?}");
+    assert!(rendered.contains("payload_byte_len: Some(24)"));
+    assert!(!rendered.contains("private payload contents"));
+}
+
+fn different_type(frame_type: FrameType) -> FrameType {
+    match frame_type {
+        FrameType::Audio => FrameType::Video,
+        _ => FrameType::Audio,
+    }
 }
 
 #[test]

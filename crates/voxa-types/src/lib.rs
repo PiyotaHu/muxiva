@@ -14,8 +14,10 @@ mod value;
 pub use error::{ErrorCategory, ErrorCodeError, ErrorContext, Result, VoxaError};
 pub use extension::{Extension, ExtensionProducer, ExtensionVisibility, Extensions};
 pub use frame::{
-    AudioData, AudioLayout, ClockDomain, ClockKind, FrameHeader, FrameType, PcmSampleFormat,
-    PixelFormat, VideoData, VideoLayout, VideoPlane,
+    AudioData, AudioFrame, AudioLayout, ByteData, ByteFrame, ClockDomain, ClockKind, EventData,
+    EventFrame, Frame, FrameHeader, FramePayload, FrameType, MediaType, PcmSampleFormat,
+    PixelFormat, SignalData, SignalFrame, TextData, TextFrame, VideoData, VideoFrame, VideoLayout,
+    VideoPlane,
 };
 pub use frame_buffer::FrameBuffer;
 pub use id::{
