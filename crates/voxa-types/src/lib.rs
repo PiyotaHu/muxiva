@@ -15,6 +15,7 @@ pub use error::{ErrorCategory, ErrorCodeError, ErrorContext, Result, VoxaError};
 pub use extension::{Extension, ExtensionProducer, ExtensionVisibility, Extensions};
 pub use frame::{
     AudioData, AudioLayout, ClockDomain, ClockKind, FrameHeader, FrameType, PcmSampleFormat,
+    PixelFormat, VideoData, VideoLayout, VideoPlane,
 };
 pub use frame_buffer::FrameBuffer;
 pub use id::{
