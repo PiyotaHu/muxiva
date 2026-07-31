@@ -1,0 +1,24 @@
+name: sanitizers
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  asan-ubsan:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: ./scripts/check-ffi-asan.sh
+      - run: ./scripts/check-rtc-asan.sh
+
+  native-tsan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/check-native-tsan.sh
+

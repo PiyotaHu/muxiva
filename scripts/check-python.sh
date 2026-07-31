@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-python_bin=${VOXA_PYTHON:-/Users/private-user/.pyenv/versions/3.13.12/bin/python3.13}
+python_bin=${VOXA_PYTHON:-$(command -v python3)}
 wheel_dir="$repo/target/stage9-wheels"
 unpack_dir="$repo/target/stage9-python-unpacked"
 mkdir -p "$wheel_dir" "$unpack_dir"

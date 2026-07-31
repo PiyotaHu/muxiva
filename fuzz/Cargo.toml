@@ -1,0 +1,48 @@
+[package]
+name = "voxa-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+voxa-ffi = { path = "../crates/voxa-ffi" }
+voxa-graph-json = { path = "../crates/voxa-graph-json" }
+voxa-types = { path = "../crates/voxa-types" }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "frame_construction"
+path = "fuzz_targets/frame_construction.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "signal_event_value"
+path = "fuzz_targets/signal_event_value.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "ffi_frame_view"
+path = "fuzz_targets/ffi_frame_view.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "graph_json"
+path = "fuzz_targets/graph_json.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "edge_policy_config"
+path = "fuzz_targets/edge_policy_config.rs"
+test = false
+doc = false
+

@@ -1,0 +1,22 @@
+name: benchmark
+
+on:
+  workflow_dispatch:
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Fetch dependencies explicitly
+        run: cargo fetch
+      - name: Collect measurements with provenance
+        run: ./scripts/check-bench.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ github.sha }}-ubuntu-x86_64
+          path: tests/reports/benchmarks/*.json
+          if-no-files-found: error
+          retention-days: 30

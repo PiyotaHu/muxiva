@@ -1,0 +1,30 @@
+name: fuzz
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Provision cargo-fuzz
+        run: cargo install cargo-fuzz --locked --version 0.12.0
+      - name: Fetch fuzz dependencies explicitly
+        run: cargo fetch --manifest-path fuzz/Cargo.toml
+      - name: Run bounded fuzz targets
+        env:
+          VOXA_FUZZ_RUNS: "10000"
+        run: ./scripts/check-fuzz.sh
+      - name: Archive fuzz corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus
+          path: fuzz/corpus
+          if-no-files-found: ignore
+

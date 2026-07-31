@@ -1,10 +1,11 @@
 #!/bin/sh
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-node_home=${VOXA_NODE_HOME:-/Users/private-user/.nvm/versions/node/v22.22.0}
-PATH="$node_home/bin:$PATH"
-export PATH
+if ! command -v node >/dev/null 2>&1 || ! command -v pnpm >/dev/null 2>&1; then
+  echo "SKIP Node binding gate: Node.js and pnpm are required"
+  exit 0
+fi
 export CI=true
 cd "$repo/bindings/node"
-pnpm install --frozen-lockfile
+pnpm install --offline --frozen-lockfile
 pnpm run check

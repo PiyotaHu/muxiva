@@ -1,0 +1,22 @@
+name: miri
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "31 4 * * 2"
+
+jobs:
+  miri:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VOXA_MIRI_TOOLCHAIN: nightly-2026-07-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly-2026-07-15
+        with:
+          components: miri
+      - name: Fetch workspace dependencies explicitly
+        run: cargo fetch
+      - run: ./scripts/check-miri.sh
+

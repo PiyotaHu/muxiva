@@ -6,6 +6,7 @@ members = [
     "crates/voxa-graph-json",
     "crates/voxa-cli",
     "crates/voxa-studio",
+    "crates/voxa-bench",
     "crates/voxa-testkit",
     "crates/voxa-node",
     "crates/voxa-python",

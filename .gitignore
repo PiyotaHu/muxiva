@@ -5,3 +5,4 @@ node_modules/
 *.node
 *.whl
 __pycache__/
+tests/reports/benchmarks/*.json
