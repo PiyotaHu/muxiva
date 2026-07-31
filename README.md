@@ -50,16 +50,21 @@ controlled I/O workloads; CPU-heavy work cannot be presented as async.
 
 ## Status and documentation
 
-Stages 3 (frames and ownership) and 4 (the synchronous node-graph runner) are
-implemented and awaiting acceptance. By maintainer direction, the remaining
-Stage 2 review findings and the non-blocking Stage 3 and 4 review findings are
-explicitly deferred; they remain recorded in the pre-release reports.
+Stages 3 (frames and ownership), 4 (the synchronous node-graph runner), and 5
+(bounded concurrent runtime, standalone realtime flow-control components, and
+isolated managed-stream sessions) are implemented and awaiting acceptance.
+Stage 5's report records its intentionally incomplete runtime/UI integration,
+full-pipeline-drain, signal-routing, and real-transport boundaries. By
+maintainer direction, the remaining Stage 2 review findings and the
+non-blocking Stage 3 and 4 review findings are explicitly deferred; they
+remain recorded in the pre-release reports.
 
 - [Product and technical contract](docs/design/01-product-and-technical-contract.md)
 - [Foundation pre-release notes](docs/pre_release_notes/01-foundation.md)
 - [Stage 2 Rust foundation report](docs/pre_release_notes/02-rust-foundation.md)
 - [Stage 3 frames and ownership report](docs/pre_release_notes/03-frames-and-ownership.md)
 - [Stage 4 synchronous graph runtime report](docs/pre_release_notes/04-node-graph-sync-runner.md)
+- [Stage 5 concurrent runtime and flow-control report](docs/pre_release_notes/05-concurrent-runtime-flow-control.md)
 
 ## Planned repository layout
 
