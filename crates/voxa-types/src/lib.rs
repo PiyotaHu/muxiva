@@ -3,6 +3,7 @@
 
 mod error;
 mod extension;
+mod frame;
 mod frame_buffer;
 mod id;
 mod lineage;
@@ -12,6 +13,9 @@ mod value;
 
 pub use error::{ErrorCategory, ErrorCodeError, ErrorContext, Result, VoxaError};
 pub use extension::{Extension, ExtensionProducer, ExtensionVisibility, Extensions};
+pub use frame::{
+    AudioData, AudioLayout, ClockDomain, ClockKind, FrameHeader, FrameType, PcmSampleFormat,
+};
 pub use frame_buffer::FrameBuffer;
 pub use id::{
     ClockDomainId, EdgeId, FrameId, IdentifierError, NodeId, ProducerId, SessionId, StreamId,
