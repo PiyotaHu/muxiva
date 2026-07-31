@@ -8,8 +8,6 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[workspace]
-
 [dependencies]
 napi = { version = "2.16", features = ["napi8", "dyn-symbols"] }
 napi-derive = "2.16"
@@ -18,7 +16,3 @@ voxa-core = { path = "../voxa-core" }
 
 [build-dependencies]
 napi-build = "2.1"
-
-[profile.release]
-lto = true
-strip = "symbols"

@@ -64,10 +64,10 @@ impl PythonNodeExecutionDomain {
                 ))
             }
         };
-        if ordering == ForeignOrdering::Strict && max_in_flight != 1 {
+        if max_in_flight != 1 {
             return Err(binding_error(
                 "VOXA-PY-IN-FLIGHT",
-                "strict ordering V1 requires max_in_flight=1",
+                "Python V1 executes one task at a time; max_in_flight must be 1",
             ));
         }
         let nz = |value, name| {

@@ -1,2 +1,6 @@
 .worktrees/
-/target/
+target/
+node_modules/
+*.node
+*.whl
+__pycache__/

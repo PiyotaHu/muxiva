@@ -3,6 +3,8 @@ members = [
     "crates/voxa-core",
     "crates/voxa-examples",
     "crates/voxa-ffi",
+    "crates/voxa-node",
+    "crates/voxa-python",
     "crates/voxa-types",
 ]
 resolver = "2"
