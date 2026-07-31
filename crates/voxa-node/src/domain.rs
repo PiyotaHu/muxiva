@@ -17,7 +17,7 @@ use voxa_core::{
     ForeignDriverConfig, ForeignNodeDriver, ForeignSubmitOutcome,
 };
 
-use crate::frame::owned_text_frame;
+use crate::frame::{owned_event_frame, owned_signal_frame, owned_text_frame};
 
 #[derive(Clone)]
 struct Command {
@@ -59,7 +59,11 @@ fn command(sequence: u64, kind: &str, payload: Option<String>) -> Result<Foreign
             payload.unwrap_or_default(),
             sequence as i64,
         )?),
-        "signal" => ForeignCommandKind::Process(owned_text_frame(
+        "signal" => ForeignCommandKind::Signal(owned_signal_frame(
+            payload.unwrap_or_default(),
+            sequence as i64,
+        )?),
+        "event" => ForeignCommandKind::Event(owned_event_frame(
             payload.unwrap_or_default(),
             sequence as i64,
         )?),

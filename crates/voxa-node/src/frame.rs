@@ -39,6 +39,37 @@ pub(crate) fn owned_text_frame(text: String, sequence: i64) -> Result<RustFrame>
     checked_frame(FramePayload::Text(TextData::new(text)), sequence)
 }
 
+pub(crate) fn owned_signal_frame(
+    payload: String,
+    sequence: i64,
+) -> Result<voxa_types::SignalFrame> {
+    let data = SignalData::new(
+        NamespacedName::new("node.signal").map_err(invalid)?,
+        SchemaVersion::new(1).map_err(invalid)?,
+        NodeId::new("node-binding").map_err(invalid)?,
+        Value::String(payload.into()),
+    );
+    let frame = checked_frame(FramePayload::Signal(data), sequence)?;
+    match frame {
+        RustFrame::Signal(frame) => Ok(frame),
+        _ => unreachable!("signal payload constructs signal frame"),
+    }
+}
+
+pub(crate) fn owned_event_frame(payload: String, sequence: i64) -> Result<voxa_types::EventFrame> {
+    let data = EventData::new(
+        NamespacedName::new("node.event").map_err(invalid)?,
+        SchemaVersion::new(1).map_err(invalid)?,
+        NodeId::new("node-binding").map_err(invalid)?,
+        Value::String(payload.into()),
+    );
+    let frame = checked_frame(FramePayload::Event(data), sequence)?;
+    match frame {
+        RustFrame::Event(frame) => Ok(frame),
+        _ => unreachable!("event payload constructs event frame"),
+    }
+}
+
 fn kind(frame: &RustFrame) -> &'static str {
     match frame.frame_type() {
         FrameType::Audio => "audio",
