@@ -29,8 +29,11 @@ derivation example in `voxa-examples`, tests, and the Stage 3 report. It adds:
 - `Value`, immutable metadata, versioned public/private extensions, lineage,
   clock domains, `FrameHeader`, `FrameBuffer`, and six Frame variants;
 - PCM audio and RGBA8/YUV420P video layout validation;
-- explicit public-diagnostic and default-log-safe borrowed views; and
-- checked construction and exact-frame-type validation for later Edge use.
+- explicit public-diagnostic and default-log-safe borrowed views;
+- checked construction and exact-frame-type validation for later Edge use;
+  and
+- a pre-1.0 correction that removes raw ordering from `Timestamp` and requires
+  clock-domain-checked header comparison.
 
 Stage 3 does **not** add `unsafe`, Tokio or another async runtime, graph
 execution, Nodes, Edges, queues, scheduling, FFI implementation, a C header,
@@ -50,6 +53,7 @@ The implementation is split by concern:
 ```text
 crates/voxa-types/src/
   id.rs                 Existing IDs plus FrameId, EdgeId, ClockDomainId, ProducerId
+  time.rs               Timestamp ordering correction; checked scalar arithmetic
   schema.rs             SchemaVersion and namespaced-name validation
   frame_buffer.rs       Arc-backed immutable bytes
   value.rs              Cross-language-owned Value and Metadata
@@ -166,6 +170,12 @@ read the value. Callers holding a Frame can use `header().extensions().iter()`
 and inspect private records. Code needing an access-control boundary must not
 put a secret into a Frame that an untrusted Node receives.
 
+`Extension` has a hand-written Debug implementation. A public record prints
+its key, schema version, producer, and visibility but omits its Value. A
+private record prints `"<private>"` in place of its key and also omits its
+Value. Direct formatting of an Extension therefore follows the same default
+boundary as formatting a Frame or FrameHeader.
+
 Unknown keys and schema versions are ordinary `Extension` values. Derivation
 copies the complete `Extensions` collection unchanged unless the caller
 explicitly supplies a replacement collection. Recognition by Core is never a
@@ -210,9 +220,17 @@ prove ancestry across a distributed system.
 `ClockDomain` is the pair of a `ClockDomainId` and a `ClockKind`. Two
 timestamps are comparable for ordering only when their entire `ClockDomain`
 values are equal. Equal clock kinds with different domain IDs are not an
-ordering guarantee. `Timestamp` remains signed nanoseconds from Stage 2; its
-existing media-relative doc wording is known deferred debt and does not
-override the header's explicit domain.
+ordering guarantee.
+
+Stage 2 derived `Ord` and `PartialOrd` for `Timestamp`, which makes invalid
+cross-domain ordering compile. Stage 3 removes those two traits as an explicit
+pre-1.0 breaking correction. `Timestamp` continues to derive `Clone`, `Copy`,
+`Debug`, `Eq`, `Hash`, and `PartialEq`, and retains `from_nanos`, `as_nanos`,
+and `checked_add`; it has no raw ordering operator or `cmp` method. Its API
+documentation is corrected from “media-relative timestamp” to “signed
+nanosecond value interpreted within an explicit clock domain.” Callers that
+previously used `<`, `>`, sorting, `min`, or `max` on bare timestamps must
+compare the headers that supply their domains.
 
 The header shape is:
 
@@ -236,6 +254,19 @@ All fields are private and exposed only through immutable accessors. The
 header has no setter, mutable borrow, public field, or interior-mutability
 escape hatch. Its `Debug` implementation is log-safe and omits metadata
 values, all extension values, all private-extension keys, and lineage reasons.
+
+```rust
+pub fn compare_timestamp(
+    &self,
+    other: &FrameHeader,
+) -> Result<std::cmp::Ordering>;
+```
+
+`FrameHeader::compare_timestamp` first compares complete `ClockDomain`
+values for equality. Different domains return `VOXA-FRM-CLOCK-DOMAIN`, even
+when their `ClockKind` values match; equal domains compare the two signed
+nanosecond scalars and return `Ordering`. This method provides ordering only,
+not clock conversion or synchronization.
 
 `sequence_id` is monotonic within `stream_id`; source construction owns that
 policy. Stage 3 stores and exposes it but has no stream registry with which to
@@ -348,8 +379,11 @@ sample per channel. Expected payload length is exactly
 `samples_per_channel * channels * bytes_per_sample`; trailing bytes are
 rejected. Every multiply and duration operation uses checked integer
 arithmetic before conversion to `usize`. Planar and interleaved layouts use
-the same total-length rule and immutable buffer; accessors calculate plane or
-interleaved byte ranges with checked arithmetic.
+the same total-length rule and immutable buffer. `AudioData::plane_bytes(0)`
+returns the entire interleaved buffer, and any other interleaved plane index
+returns `VOXA-FRM-AUDIO-PLANE`. For planar layout, the valid indices are
+`0..channels`, each returning its checked contiguous channel plane; an index
+outside that range returns `VOXA-FRM-AUDIO-PLANE`.
 
 ### 10.2 Video
 
@@ -386,6 +420,14 @@ This rejects hidden trailing storage and makes the layout unambiguous. A later
 zero-copy foreign view may need a richer representation; Stage 3 does not
 speculate by accepting arbitrary offsets.
 
+`VideoData::plane_bytes` accepts only a descriptor reference that is one of
+the actual descriptor instances borrowed from that `VideoData` value's
+`layout()`. Membership uses safe reference identity, not equality of offset,
+stride, row-byte, and row scalars. Passing a descriptor borrowed from another
+Video Frame, even when its scalar fields describe the same range, returns
+`VOXA-FRM-VIDEO-PLANE`. A valid own-layout reference returns its full
+stride-including immutable range after checked offset arithmetic.
+
 ### 10.3 Text, byte, signal, and event
 
 `TextData` owns `Box<str>`. `TextData::new` accepts a Rust string, and
@@ -408,8 +450,8 @@ subscription, bare-Value side channel, or JSON payload path.
 
 ## 11. Validation and stable errors
 
-All constructor failures use `ErrorCategory::Validation`, an existing
-`VoxaError`, and these stable codes:
+All construction, access, comparison, and derivation validation failures use
+`ErrorCategory::Validation`, an existing `VoxaError`, and these stable codes:
 
 | Code | Rejected condition |
 | --- | --- |
@@ -421,14 +463,17 @@ All constructor failures use `ErrorCategory::Validation`, an existing
 | `VOXA-FRM-LINEAGE-ORIGIN` | lineage has neither Node nor Edge source |
 | `VOXA-FRM-LINEAGE-REASON` | invalid lineage reason |
 | `VOXA-FRM-LINEAGE-CYCLE` | new header names itself as a parent |
+| `VOXA-FRM-CLOCK-DOMAIN` | timestamp comparison crosses clock domains |
 | `VOXA-FRM-TYPE-MISMATCH` | header, payload, or expected FrameType differs |
 | `VOXA-FRM-AUDIO-RATE` | sample rate outside 1..=768,000 |
 | `VOXA-FRM-AUDIO-CHANNELS` | channel count outside 1..=1,024 |
 | `VOXA-FRM-AUDIO-SAMPLES` | zero samples per channel |
 | `VOXA-FRM-AUDIO-LENGTH` | payload length differs from checked expected length |
+| `VOXA-FRM-AUDIO-PLANE` | audio plane index is not part of the layout |
 | `VOXA-FRM-VIDEO-DIMENSIONS` | zero dimensions or odd YUV420P dimensions |
 | `VOXA-FRM-VIDEO-STRIDE` | a stride is smaller than its row bytes |
 | `VOXA-FRM-VIDEO-LENGTH` | payload length differs from checked plane total |
+| `VOXA-FRM-VIDEO-PLANE` | plane descriptor does not belong to the VideoData layout |
 | `VOXA-FRM-ARITHMETIC` | checked size, offset, or duration arithmetic overflow |
 | `VOXA-FRM-TEXT-UTF8` | invalid UTF-8 text bytes |
 | `VOXA-FRM-MEDIA-TYPE` | invalid optional media type |
@@ -500,8 +545,8 @@ EventBus, SDK callback, FFI handle, or JSON representation.
 
 ## 15. Stage 2 debt carried forward
 
-Stage 3 preserves these visible deferred Stage 2 findings and does not claim
-to resolve them:
+Stage 3 preserves these visible deferred Stage 2 findings except for the
+timestamp correction required by the Frame clock-domain contract:
 
 - `TracingLogSink` still accepts arbitrary non-reserved field values, so its
   broad default-log privacy boundary is not quality-clean. The Frame example
@@ -509,14 +554,20 @@ to resolve them:
 - `ErrorContext::Session` and `ErrorContext::Stream` still lack public
   `VoxaError` builder methods.
 - tracing-output capture, concurrent and pre-installed subscriber behavior,
-  identifier boundary coverage, Stage 2 timestamp wording, event-name grammar
-  wording, stale implementation-plan logging syntax, and literal-versus-
-  summarized test-result labeling remain deferred review work.
+  identifier boundary coverage, event-name grammar wording, stale
+  implementation-plan logging syntax, and literal-versus-summarized
+  test-result labeling remain deferred review work.
 
-Stage 3 may add boundary tests that also cover the new ID types, but it does
-not rewrite the Stage 2 API or report unless a compile failure makes a narrow
-change unavoidable. Such a change requires explicit mention in the Stage 3
-report.
+Stage 3 intentionally resolves the Stage 2 timestamp wording and removes
+`Ord`/`PartialOrd`. The Stage 3 report must identify the affected public
+surface, show the bare-comparison migration to
+`FrameHeader::compare_timestamp`, and record this as a pre-1.0 breaking
+correction rather than silently treating it as new Frame-only behavior.
+
+Apart from the explicit Timestamp correction above, Stage 3 may add boundary
+tests that also cover the new ID types but does not rewrite another Stage 2
+API or its report unless a compile failure makes a narrow change unavoidable.
+Any such additional change requires explicit mention in the Stage 3 report.
 
 ## 16. Acceptance boundary
 
@@ -524,10 +575,14 @@ Stage 3 is accepted only when:
 
 - all six variants construct through the exact immutable model above;
 - invalid sample rates, channel counts, sample counts, payload lengths,
-  dimensions, strides, UTF-8, namespaces, media types, and every reachable
-  arithmetic overflow return the tabled `VoxaError` code;
+  audio/video plane requests, dimensions, strides, UTF-8, namespaces, media
+  types, and every reachable arithmetic overflow return the tabled
+  `VoxaError` code;
+- bare `Timestamp` ordering does not compile, same-domain header comparison
+  orders signed nanoseconds, and different clock-domain IDs reject comparison;
 - clone/move, Arc sharing, last-clone release, and concurrent read tests pass;
-- private extensions are absent from public/log-safe/default Debug views;
+- private extensions are absent from public/log-safe/default `Frame`,
+  `FrameHeader`, and `Extension` Debug views;
 - unknown extensions survive default derivation unchanged;
 - derivation creates a distinct Frame, appends correct lineage, and leaves the
   parent unchanged;

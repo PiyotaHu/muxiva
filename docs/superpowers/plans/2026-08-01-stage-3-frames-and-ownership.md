@@ -25,7 +25,7 @@ requirements.
 ## Global execution constraints
 
 - Work only on `codex/stage-3-frames` in
-  `<stage-3-worktree>`.
+  `/Users/private-user/Documents/voxa/.worktrees/codex-stage-3-frames`.
 - Keep `#![forbid(unsafe_code)]`; do not add an `unsafe` block, allow, or
   exception.
 - Do not add Tokio, another async runtime, graph execution, Node/Edge structs,
@@ -38,7 +38,10 @@ requirements.
   ranges. Numeric validation failures return the contract's stable code and do
   not panic.
 - Do not change `voxa-core` logging or add missing Stage 2 error-context
-  builders. Preserve the deferred findings in the Stage 3 report.
+  builders. The only existing foundation correction authorized here is
+  removing `Ord`/`PartialOrd` from `Timestamp`, correcting its documentation,
+  and routing ordering through `FrameHeader::compare_timestamp`. Preserve all
+  other deferred findings in the Stage 3 report.
 - Every GREEN step includes formatting, focused Clippy, and focused tests.
 - Each listed commit is small and reviewable. Do not combine commits merely to
   reduce the count.
@@ -47,6 +50,7 @@ requirements.
 
 ```text
 crates/voxa-types/src/id.rs
+crates/voxa-types/src/time.rs
 crates/voxa-types/src/schema.rs
 crates/voxa-types/src/frame_buffer.rs
 crates/voxa-types/src/value.rs
@@ -222,12 +226,23 @@ impl Lineage {
 }
 ```
 
-`Lineage::from_entries` and `append` are `pub(crate)` so ordinary callers use
-Frame derivation rather than manufacturing history after construction.
+`Lineage::from_entries(entries: Vec<LineageEntry>) -> Self` and
+`Lineage::append(self, entry: LineageEntry) -> Self` are `pub(crate)` so
+ordinary callers use Frame derivation rather than manufacturing history after
+construction.
 
 ### Header and payloads
 
 ```rust
+// Derives Clone, Copy, Debug, Eq, Hash, and PartialEq; deliberately not
+// Ord or PartialOrd.
+pub struct Timestamp(i64);
+impl Timestamp {
+    pub const fn from_nanos(nanos: i64) -> Self;
+    pub const fn as_nanos(self) -> i64;
+    pub const fn checked_add(self, nanos: i64) -> Option<Self>;
+}
+
 pub enum ClockKind { Monotonic, MediaRelative, WallClock }
 pub struct ClockDomain;
 impl ClockDomain {
@@ -263,6 +278,10 @@ impl FrameHeader {
     pub fn metadata(&self) -> &Metadata;
     pub fn extensions(&self) -> &Extensions;
     pub fn lineage(&self) -> &Lineage;
+    pub fn compare_timestamp(
+        &self,
+        other: &FrameHeader,
+    ) -> voxa_types::Result<std::cmp::Ordering>;
 }
 
 pub enum PcmSampleFormat { U8, I16Le, I24Le, I32Le, F32Le, F64Le }
@@ -371,6 +390,12 @@ impl EventData {
     pub fn payload(&self) -> &Value;
 }
 ```
+
+`Timestamp` no longer implements `Ord` or `PartialOrd`. This is an intentional
+pre-1.0 correction to the Stage 2 public surface. Header comparison returns
+`VOXA-FRM-CLOCK-DOMAIN` unless both complete `ClockDomain` values are equal;
+equal domains compare the signed nanoseconds. Do not add a bare Timestamp
+comparison helper or implement clock conversion.
 
 ### Frame assembly, derivation, and views
 
@@ -698,32 +723,125 @@ git commit -m "feat(types): add frame extensions and lineage"
 
 **Files:**
 
+- Modify: `crates/voxa-types/src/time.rs`
 - Create: `crates/voxa-types/src/frame/mod.rs`
 - Create: `crates/voxa-types/src/frame/header.rs`
 - Create: `crates/voxa-types/src/frame/audio.rs`
 - Modify: `crates/voxa-types/src/lib.rs`
 - Create: `crates/voxa-types/tests/frame_contract.rs`
 
-- [ ] **Step 1 — RED: add header clock and local-cycle tests**
+- [ ] **Step 1 — RED: prohibit raw timestamp ordering and test checked comparison**
 
-Add a test helper that builds an empty header from explicit values. Assert
-clock domains with equal kind but different IDs are unequal. Build a lineage
-whose parent equals the new frame ID and assert
-`VOXA-FRM-LINEAGE-CYCLE`.
+Change the `Timestamp` documentation example in `time.rs` to include this
+compile-fail test. With the Stage 2 derives still present, the doc test is RED
+because the body incorrectly compiles:
+
+```rust
+/// ```compile_fail
+/// use voxa_types::Timestamp;
+/// let earlier = Timestamp::from_nanos(1);
+/// let later = Timestamp::from_nanos(2);
+/// let _ = earlier < later;
+/// ```
+```
+
+In `tests/frame_contract.rs`, add a helper that builds an empty header from
+explicit values and these behavioral tests:
+
+```rust
+use std::cmp::Ordering;
+
+#[test]
+fn header_compares_timestamps_only_inside_one_clock_domain() {
+    let domain = ClockDomain::new(
+        ClockDomainId::new("capture.audio").unwrap(),
+        ClockKind::MediaRelative,
+    );
+    let earlier = header_in(domain.clone(), Timestamp::from_nanos(-1));
+    let later = header_in(domain, Timestamp::from_nanos(2));
+    assert_eq!(earlier.compare_timestamp(&later).unwrap(), Ordering::Less);
+    assert_eq!(later.compare_timestamp(&earlier).unwrap(), Ordering::Greater);
+    assert_eq!(earlier.compare_timestamp(&earlier).unwrap(), Ordering::Equal);
+}
+
+#[test]
+fn header_rejects_same_kind_with_different_clock_ids() {
+    let left = header_in(media_domain("capture.left"), Timestamp::from_nanos(1));
+    let right = header_in(media_domain("capture.right"), Timestamp::from_nanos(2));
+    let error = left.compare_timestamp(&right).unwrap_err();
+    assert_eq!(error.code(), "VOXA-FRM-CLOCK-DOMAIN");
+}
+```
+
+Put the self-parent cycle test in `frame/header.rs`'s unit-test module, not the
+public integration test. The unit test constructs one entry with
+`Lineage::from_entries`, sets `parent_frame_id` equal to the new header ID, and
+asserts `VOXA-FRM-LINEAGE-CYCLE`. This is the only test allowed to use that
+crate-private constructor. Keep the later public integration assertion that
+derivation rejects reuse of the direct parent ID.
+
+```rust
+#[test]
+fn header_rejects_self_parent_lineage() {
+    let frame_id = FrameId::new("frame-cycle").unwrap();
+    let origin = TransformOrigin::new(
+        Some(NodeId::new("normalize").unwrap()),
+        None,
+    ).unwrap();
+    let entry = LineageEntry::new(frame_id.clone(), origin, "normalize").unwrap();
+    let lineage = Lineage::from_entries(vec![entry]);
+    let error = header_with_lineage(frame_id, lineage).unwrap_err();
+    assert_eq!(error.code(), "VOXA-FRM-LINEAGE-CYCLE");
+}
+```
 
 Run:
 
 ```bash
+cargo test -p voxa-types --doc
+cargo test -p voxa-types frame::header::tests -- --nocapture
 cargo test -p voxa-types --test frame_contract header -- --nocapture
 ```
 
-Expected RED: FrameHeader/ClockDomain/FrameType unresolved.
+Expected RED: the raw comparison doc test compiles unexpectedly and the new
+header comparison surface is absent.
 
-- [ ] **Step 2 — GREEN: implement header without setters**
+- [ ] **Step 2 — GREEN: remove raw ordering and implement domain checking**
+
+In `time.rs`, remove only `Ord` and `PartialOrd` from `Timestamp`'s derives and
+correct its doc comment to say the signed nanosecond value requires an
+explicit clock domain. Keep `SequenceId` ordering unchanged.
 
 Implement `ClockKind`, `ClockDomain`, `FrameType`, and `FrameHeader`. Derive
 Clone/equality as appropriate; hand-write Debug to print counts and scalar
-identity only. Add no timestamp comparison method across domains.
+identity only. `compare_timestamp` checks complete domain equality before
+calling `self.timestamp.as_nanos().cmp(&other.timestamp.as_nanos())`. A
+different domain returns:
+
+```rust
+VoxaError::new(
+    ErrorCategory::Validation,
+    "VOXA-FRM-CLOCK-DOMAIN",
+    "timestamps from different clock domains cannot be ordered",
+)
+```
+
+Attach only the two domain IDs as error context; do not perform conversion or
+silently compare equal clock kinds.
+
+Run:
+
+```bash
+cargo fmt --all --check
+cargo clippy -p voxa-types --all-targets -- -D warnings
+cargo test -p voxa-types --doc
+cargo test -p voxa-types frame::header::tests -- --nocapture
+cargo test -p voxa-types --test frame_contract header -- --nocapture
+```
+
+Expected GREEN: raw `<` is rejected by the compiler, same-domain signed values
+order correctly, different IDs reject, and the crate-private self-parent test
+passes.
 
 - [ ] **Step 3 — RED: add audio table tests**
 
@@ -745,9 +863,11 @@ fn constructs_interleaved_pcm_and_duration() {
 ```
 
 Table-test zero and 768,001 rates, zero and 1,025 channels, zero samples,
-short/trailing payloads, planar channel ranges, out-of-range channel access,
-and `u64::MAX` samples causing `VOXA-FRM-ARITHMETIC` before allocation or
-slicing.
+short/trailing payloads, and `u64::MAX` samples causing
+`VOXA-FRM-ARITHMETIC` before allocation or slicing. Test plane 0 as the only
+valid interleaved plane, every `0..channels` planar plane, and invalid indices
+for both layouts; invalid indices must return `VOXA-FRM-AUDIO-PLANE`, never
+`VOXA-FRM-AUDIO-CHANNELS`.
 
 Run:
 
@@ -777,7 +897,7 @@ Convert to `usize` with `usize::try_from` and the same error code. Length
 mismatch errors attach decimal `expected_bytes` and `actual_bytes`, never
 payload content. `plane_bytes` returns the whole buffer for interleaved layout
 when `plane == 0`; any other interleaved plane returns
-`VOXA-FRM-AUDIO-CHANNELS`. For planar layout it returns the checked contiguous
+`VOXA-FRM-AUDIO-PLANE`. For planar layout it returns the checked contiguous
 channel plane and accepts `0..channels`. Document this behavior on the method.
 
 Run:
@@ -794,7 +914,7 @@ Expected GREEN: all header/audio cases pass and no panic is observed.
 - [ ] **Step 5 — commit**
 
 ```bash
-git add crates/voxa-types/src/frame crates/voxa-types/src/lib.rs crates/voxa-types/tests/frame_contract.rs
+git add crates/voxa-types/src/time.rs crates/voxa-types/src/frame crates/voxa-types/src/lib.rs crates/voxa-types/tests/frame_contract.rs
 git commit -m "feat(types): validate frame headers and PCM audio"
 ```
 
@@ -818,6 +938,12 @@ Add tables for zero width/height, odd YUV dimensions, RGBA stride below
 `u32::MAX` dimensions with huge strides. Overflow must return
 `VOXA-FRM-ARITHMETIC`; impossible allocation is never attempted.
 
+Construct two separate valid `VideoData` values, obtain a `VideoPlane`
+reference from the first value's `layout`, and pass it to the second value's
+`plane_bytes`. Assert `VOXA-FRM-VIDEO-PLANE`, even when both layouts have the
+same dimensions and scalar plane fields. Valid own-layout plane references
+must return their full stride-including ranges.
+
 Run:
 
 ```bash
@@ -831,8 +957,12 @@ Expected RED: video module/types absent.
 Use shared private checked-size helpers from `frame/mod.rs`. Construct private
 `VideoPlane` values only after dimension and stride checks. Calculate offsets
 and total length with checked arithmetic. `plane_bytes` verifies the plane is
-one of the current layout's descriptors before returning its full
-stride-including range; otherwise return `VOXA-FRM-VIDEO-LENGTH`.
+one of the current layout's borrowed descriptor instances with
+`std::ptr::eq` before returning its full stride-including range; scalar
+descriptor equality is insufficient. A foreign reference returns
+`VOXA-FRM-VIDEO-PLANE`. Reserve `VOXA-FRM-VIDEO-LENGTH` solely for constructor
+payload-length mismatch. This uses safe pointer identity and exposes no raw
+pointer.
 
 Run:
 
@@ -980,11 +1110,26 @@ fn private_extension_is_absent_from_default_views() {
     assert!(!rendered.contains("com.example.private_context"));
     assert!(!rendered.contains("private-secret"));
     assert!(!rendered.contains("public-value"));
+
+    let header_rendered = format!("{:?}", frame.header());
+    assert!(!header_rendered.contains("com.example.private_context"));
+    assert!(!header_rendered.contains("private-secret"));
+    assert!(!header_rendered.contains("public-value"));
+
+    let private = frame.header().extensions().iter()
+        .find(|extension| extension.visibility() == ExtensionVisibility::Private)
+        .unwrap();
+    let extension_rendered = format!("{:?}", private);
+    assert!(!extension_rendered.contains("com.example.private_context"));
+    assert!(!extension_rendered.contains("private-secret"));
 }
 ```
 
 Also assert `header().extensions().iter()` still lets the receiving caller
-read the private extension, and `log_safe_view` reports only the public count.
+read the private extension, `log_safe_view` reports only the public count, and
+the public Extension's direct Debug includes its public key/schema/producer
+but omits its Value. These direct assertions prevent Frame-level redaction
+from hiding a leaking `FrameHeader` or `Extension` implementation.
 
 Run:
 
@@ -1155,9 +1300,14 @@ view behavior, test counts, dependency tree, example output, commits, and
 risks. State explicitly that live Frames have no serde/JSON implementation and
 that Stage 4 has not started.
 
-Carry the Stage 2 deferred findings verbatim in substance. Separate newly
-observed Stage 3 concerns from inherited debt. Do not claim CI execution unless
-an actual remote CI result is available.
+Record removal of `Timestamp: Ord + PartialOrd` as a pre-1.0 breaking
+correction, list raw comparison/sorting/min/max as affected surfaces, and give
+`FrameHeader::compare_timestamp` as the migration. Include fresh evidence for
+the compile-fail raw-ordering test plus same-domain and different-domain
+behavior. Mark the Stage 2 timestamp wording/ordering issue resolved by this
+stage; carry every other Stage 2 deferred finding verbatim in substance.
+Separate newly observed Stage 3 concerns from inherited debt. Do not claim CI
+execution unless an actual remote CI result is available.
 
 - [ ] **Step 2 — run focused acceptance**
 
@@ -1232,14 +1382,19 @@ binding, or Stage 4 implementation.
 - [ ] All live data is owned; FrameBuffer exposes immutable bytes only.
 - [ ] Copy/Retain/Release are documentation, not foreign-buffer code.
 - [ ] Audio/video expected lengths and offsets use checked arithmetic.
+- [ ] Invalid audio indices use `VOXA-FRM-AUDIO-PLANE`; foreign VideoPlane
+  references use `VOXA-FRM-VIDEO-PLANE`.
+- [ ] Bare Timestamp ordering does not compile and header comparison requires
+  complete clock-domain equality.
 - [ ] Six Frame variants match six FrameType values exactly.
 - [ ] Signal and Event are Frames and introduce no routing side channel.
 - [ ] Unknown extensions survive default derivation byte/value-for-value.
 - [ ] Private extensions are readable to receivers but absent from public,
-  log-safe, and default Debug views.
+  log-safe, and direct Frame/FrameHeader/Extension Debug views.
 - [ ] Derivation appends one parent/origin/reason entry and cannot mutate the
   parent.
 - [ ] No live Frame serde/JSON surface or forbidden dependency exists.
 - [ ] The example constructs/derives Frames only.
-- [ ] Stage 2 deferred findings remain visible and unclaimed.
+- [ ] The timestamp breaking correction is reported with migration guidance;
+  all remaining Stage 2 deferred findings stay visible and unclaimed.
 - [ ] The final report and gates stop at Stage 3 acceptance.
