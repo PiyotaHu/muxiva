@@ -398,16 +398,65 @@ pub struct NodeContext {
     config: ConfigMap,
     input_port: Option<PortName>,
     emissions: Vec<NodeEmission>,
+    emission_limit: usize,
+    emission_overflowed: bool,
+}
+
+/// Returned when one lifecycle call exceeds its bounded emission budget.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NodeEmissionError {
+    limit: usize,
+}
+
+impl NodeEmissionError {
+    /// Returns the maximum number of emissions retained for the call.
+    pub const fn limit(self) -> usize {
+        self.limit
+    }
+}
+
+impl fmt::Display for NodeEmissionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "node lifecycle call exceeded its emission limit of {}",
+            self.limit
+        )
+    }
+}
+
+impl Error for NodeEmissionError {}
+
+impl From<NodeEmissionError> for voxa_types::VoxaError {
+    fn from(error: NodeEmissionError) -> Self {
+        voxa_types::VoxaError::new(
+            voxa_types::ErrorCategory::Validation,
+            "VOXA-NODE-EMISSION-LIMIT",
+            error.to_string(),
+        )
+    }
 }
 
 impl NodeContext {
     /// Creates a context for one node call.
     pub fn new(node_id: NodeId, config: ConfigMap, input_port: Option<PortName>) -> Self {
+        Self::with_emission_limit(node_id, config, input_port, 16_384)
+    }
+
+    /// Creates a context with an explicit per-call emission allocation limit.
+    pub fn with_emission_limit(
+        node_id: NodeId,
+        config: ConfigMap,
+        input_port: Option<PortName>,
+        emission_limit: usize,
+    ) -> Self {
         Self {
             node_id,
             config,
             input_port,
             emissions: Vec::new(),
+            emission_limit,
+            emission_overflowed: false,
         }
     }
 
@@ -429,8 +478,19 @@ impl NodeContext {
     }
 
     /// Collects a frame for one explicit output port.
-    pub fn emit(&mut self, output_port: PortName, frame: Frame) {
+    pub fn emit(
+        &mut self,
+        output_port: PortName,
+        frame: Frame,
+    ) -> std::result::Result<(), NodeEmissionError> {
+        if self.emissions.len() >= self.emission_limit {
+            self.emission_overflowed = true;
+            return Err(NodeEmissionError {
+                limit: self.emission_limit,
+            });
+        }
         self.emissions.push(NodeEmission { output_port, frame });
+        Ok(())
     }
 
     /// Returns emissions collected so far.
@@ -441,6 +501,10 @@ impl NodeContext {
     /// Drains emissions in call order.
     pub fn take_emissions(&mut self) -> Vec<NodeEmission> {
         std::mem::take(&mut self.emissions)
+    }
+
+    pub(crate) const fn emission_overflowed(&self) -> bool {
+        self.emission_overflowed
     }
 }
 

@@ -233,14 +233,14 @@ impl Node for TestNode {
                 assert!(input.is_none());
                 assert!(context.input_port().is_none());
                 for (output, frame) in outputs.iter() {
-                    context.emit(output.clone(), frame.clone());
+                    context.emit(output.clone(), frame.clone())?;
                 }
             }
             Behavior::Uppercase => {
                 let input = input.as_ref().expect("transform input");
                 assert_eq!(context.input_port().unwrap().as_str(), "in");
                 let value = input.as_text().unwrap().data().as_str().to_uppercase();
-                context.emit(port("out"), text_frame("uppercase-frame", &value));
+                context.emit(port("out"), text_frame("uppercase-frame", &value))?;
             }
             Behavior::Sink(frames) => {
                 assert_eq!(context.input_port().unwrap().as_str(), "in");

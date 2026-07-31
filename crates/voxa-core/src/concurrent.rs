@@ -1,7 +1,8 @@
 use std::{
     any::Any,
     collections::{BTreeMap, BTreeSet},
-    fmt,
+    fmt, io,
+    num::NonZeroUsize,
     panic::{catch_unwind, AssertUnwindSafe},
     sync::{mpsc, Arc, Condvar, Mutex},
     thread,
@@ -27,6 +28,7 @@ pub struct RuntimeOptions {
     shutdown_mode: DrainMode,
     failure_mode: DrainMode,
     max_in_flight: usize,
+    emission_budget: NonZeroUsize,
 }
 
 impl RuntimeOptions {
@@ -36,6 +38,7 @@ impl RuntimeOptions {
             shutdown_mode,
             failure_mode,
             max_in_flight: 1,
+            emission_budget: NonZeroUsize::new(16_384).expect("non-zero constant"),
         }
     }
 
@@ -49,6 +52,16 @@ impl RuntimeOptions {
 
     pub const fn max_in_flight(self) -> usize {
         self.max_in_flight
+    }
+
+    /// Sets the maximum emissions retained from one Node lifecycle call.
+    pub const fn with_emission_budget(mut self, emission_budget: NonZeroUsize) -> Self {
+        self.emission_budget = emission_budget;
+        self
+    }
+
+    pub const fn emission_budget(self) -> usize {
+        self.emission_budget.get()
     }
 }
 
@@ -126,6 +139,48 @@ impl fmt::Display for RuntimeWaitError {
 
 impl std::error::Error for RuntimeWaitError {}
 
+/// Execution-domain kind whose creation prevented a runtime from starting.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeThreadRole {
+    EdgeDispatcher,
+    NodeWorker,
+    Coordinator,
+}
+
+/// Structured, recoverable failure to create all runtime execution domains.
+#[derive(Debug)]
+pub struct RuntimeStartError {
+    role: RuntimeThreadRole,
+    thread_name: Box<str>,
+    source: io::Error,
+}
+
+impl RuntimeStartError {
+    pub const fn role(&self) -> RuntimeThreadRole {
+        self.role
+    }
+
+    pub fn thread_name(&self) -> &str {
+        &self.thread_name
+    }
+}
+
+impl fmt::Display for RuntimeStartError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "failed to spawn {:?} thread `{}`: {}",
+            self.role, self.thread_name, self.source
+        )
+    }
+}
+
+impl std::error::Error for RuntimeStartError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
 /// Compiled single-use concurrent runtime before worker launch.
 pub struct ConcurrentRuntime {
     graph: Arc<GraphDefinition>,
@@ -163,19 +218,20 @@ impl ConcurrentRuntime {
 
     /// Starts all node execution domains. No Node or EdgePolicy callback runs
     /// on the caller thread after this method is entered.
-    pub fn start(self) -> GraphRuntime {
+    pub fn start(self) -> Result<GraphRuntime, RuntimeStartError> {
+        self.start_with_spawner(&SystemThreadSpawner)
+    }
+
+    fn start_with_spawner(
+        self,
+        spawner: &dyn ThreadSpawner,
+    ) -> Result<GraphRuntime, RuntimeStartError> {
         let stop = StopToken::new();
-        let state = Arc::new(RuntimeStatus::new());
-        let completion = Arc::new(Completion::default());
-        let failure = Arc::new(Mutex::new(None));
-        let abort_diagnostics = shared_abort_diagnostics();
-        let active = Arc::new(Mutex::new(
-            self.graph
-                .topological_order()
-                .iter()
-                .cloned()
-                .collect::<BTreeSet<_>>(),
+        let control = Arc::new(RuntimeControl::new(
+            self.graph.topological_order().iter().cloned(),
         ));
+        let abort_diagnostics = shared_abort_diagnostics();
+        let launch = Arc::new(LaunchGate::default());
         let wakes = self
             .graph
             .topological_order()
@@ -201,16 +257,16 @@ impl ConcurrentRuntime {
             graph: self.graph.clone(),
             stop: stop.clone(),
             queues: all_queues.clone(),
-            failure: failure.clone(),
-            state: state.clone(),
-            active: active.clone(),
+            control: control.clone(),
             gate,
+            launch: launch.clone(),
             options: self.options,
             abort_diagnostics: abort_diagnostics.clone(),
         });
 
         let mut incoming = BTreeMap::<NodeId, Vec<InputEdge>>::new();
-        let mut outgoing = BTreeMap::<NodeId, Vec<OutputEdge>>::new();
+        let mut outgoing = BTreeMap::<NodeId, Vec<OutputDispatch>>::new();
+        let mut dispatchers = Vec::new();
         let mut policies = self.policies;
         for edge in self.graph.edges() {
             if !self.enabled_edges.contains(edge.edge_id()) {
@@ -227,18 +283,54 @@ impl ConcurrentRuntime {
                     port: edge.to_input_port().clone(),
                     queue: queue.clone(),
                 });
+            let (sender, receiver) = mpsc::sync_channel(1);
             outgoing
                 .entry(edge.from_node_id().clone())
                 .or_default()
-                .push(OutputEdge {
+                .push(OutputDispatch {
+                    descriptor: edge.clone(),
+                    sender,
+                });
+            dispatchers.push((
+                OutputEdge {
                     descriptor: edge.clone(),
                     queue,
                     policy: policies.remove(edge.edge_id()),
-                });
+                },
+                receiver,
+            ));
         }
 
         let (exit_tx, exit_rx) = mpsc::channel();
-        let mut worker_handles = Vec::new();
+        let mut handles = Vec::new();
+        while let Some((output, receiver)) = dispatchers.pop() {
+            let name = format!("voxa-edge-{}", output.descriptor.edge_id().as_str());
+            let worker_shared = shared.clone();
+            let tx = exit_tx.clone();
+            let task = Box::new(move || {
+                if !worker_shared.launch.wait() {
+                    let _ = tx.send(RuntimeExit::Edge(Box::new(output)));
+                    return;
+                }
+                let output = run_dispatcher(output, receiver, &worker_shared);
+                let _ = tx.send(RuntimeExit::Edge(Box::new(output)));
+            });
+            match spawner.spawn(name.clone(), task) {
+                Ok(handle) => handles.push(handle),
+                Err(source) => {
+                    drop(dispatchers);
+                    drop(outgoing);
+                    drop(incoming);
+                    cleanup_failed_start(&shared, handles);
+                    return Err(RuntimeStartError {
+                        role: RuntimeThreadRole::EdgeDispatcher,
+                        thread_name: name.into(),
+                        source,
+                    });
+                }
+            }
+        }
+
         let mut nodes = self.nodes;
         for node_id in self.graph.topological_order() {
             let worker = NodeWorker {
@@ -251,43 +343,67 @@ impl ConcurrentRuntime {
             };
             let tx = exit_tx.clone();
             let name = format!("voxa-node-{}", node_id.as_str());
-            worker_handles.push(
-                thread::Builder::new()
-                    .name(name)
-                    .spawn(move || {
-                        let exit = worker.run();
-                        let _ = tx.send(exit);
-                    })
-                    .expect("failed to spawn Voxa node worker"),
-            );
+            let worker_shared = shared.clone();
+            let task = Box::new(move || {
+                if !worker_shared.launch.wait() {
+                    let _ = tx.send(RuntimeExit::Node(worker.cancelled_exit()));
+                    return;
+                }
+                let _ = tx.send(RuntimeExit::Node(worker.run()));
+            });
+            match spawner.spawn(name.clone(), task) {
+                Ok(handle) => handles.push(handle),
+                Err(source) => {
+                    drop(nodes);
+                    drop(outgoing);
+                    drop(incoming);
+                    cleanup_failed_start(&shared, handles);
+                    return Err(RuntimeStartError {
+                        role: RuntimeThreadRole::NodeWorker,
+                        thread_name: name.into(),
+                        source,
+                    });
+                }
+            }
         }
         drop(exit_tx);
 
+        let handle_registry = Arc::new(Mutex::new(Some(handles)));
         let coordinator_shared = shared.clone();
-        let coordinator_completion = completion.clone();
-        thread::Builder::new()
-            .name("voxa-runtime-coordinator".to_owned())
-            .spawn(move || {
-                coordinate(
-                    coordinator_shared,
-                    exit_rx,
-                    worker_handles,
-                    coordinator_completion,
-                    worker_total,
-                );
-            })
-            .expect("failed to spawn Voxa runtime coordinator");
+        let coordinator_handles = handle_registry.clone();
+        let coordinator_name = "voxa-runtime-coordinator".to_owned();
+        let task = Box::new(move || {
+            let handles = coordinator_handles
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .take()
+                .unwrap_or_default();
+            coordinate(coordinator_shared, exit_rx, handles, worker_total);
+        });
+        if let Err(source) = spawner.spawn(coordinator_name.clone(), task) {
+            drop(outgoing);
+            drop(incoming);
+            let handles = handle_registry
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .take()
+                .unwrap_or_default();
+            cleanup_failed_start(&shared, handles);
+            return Err(RuntimeStartError {
+                role: RuntimeThreadRole::Coordinator,
+                thread_name: coordinator_name.into(),
+                source,
+            });
+        }
 
-        GraphRuntime {
+        launch.release();
+        Ok(GraphRuntime {
             stop,
             queues: all_queues,
-            failure,
-            state,
-            completion,
-            active,
+            control,
             options: self.options,
             abort_diagnostics,
-        }
+        })
     }
 }
 
@@ -296,10 +412,7 @@ impl ConcurrentRuntime {
 pub struct GraphRuntime {
     stop: StopToken,
     queues: Arc<BTreeMap<EdgeId, crate::EdgeQueue>>,
-    failure: Arc<Mutex<Option<AbortReason>>>,
-    state: Arc<RuntimeStatus>,
-    completion: Arc<Completion>,
-    active: Arc<Mutex<BTreeSet<NodeId>>>,
+    control: Arc<RuntimeControl>,
     options: RuntimeOptions,
     abort_diagnostics: Arc<Mutex<Vec<AbortHookDiagnostic>>>,
 }
@@ -308,22 +421,17 @@ impl GraphRuntime {
     /// Idempotently stops the graph from any thread and wakes all queue waits.
     /// Returns true only for the call that installed cancellation first.
     pub fn stop(&self) -> bool {
-        if matches!(
-            self.state(),
-            ConcurrentRuntimeState::Finished | ConcurrentRuntimeState::Aborted
-        ) {
-            return false;
-        }
         let reason = cancellation_abort();
-        let first = install_failure(&self.failure, reason);
-        self.stop.cancel();
-        self.state.set(ConcurrentRuntimeState::Stopping);
-        close_all(&self.queues, self.options.shutdown_mode);
+        let first = self.control.request_abort(reason);
+        if first {
+            self.stop.cancel();
+            close_all(&self.queues, self.options.shutdown_mode);
+        }
         first
     }
 
     pub fn state(&self) -> ConcurrentRuntimeState {
-        self.state.get()
+        self.control.state()
     }
 
     pub fn edge_metrics(&self, edge_id: &EdgeId) -> Option<EdgeMetricsSnapshot> {
@@ -339,63 +447,196 @@ impl GraphRuntime {
 
     /// Waits with an explicit deadline. A timeout never hides live workers.
     pub fn wait(&self, timeout: Duration) -> Result<ConcurrentRunSummary, RuntimeWaitError> {
-        let mut result = self
-            .completion
-            .result
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if result.is_none() {
-            let waited = self
-                .completion
+        let mut inner = self.control.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.result.is_none() {
+            inner = self
+                .control
                 .changed
-                .wait_timeout_while(result, timeout, |value| value.is_none())
-                .unwrap_or_else(|e| e.into_inner());
-            result = waited.0;
+                .wait_timeout_while(inner, timeout, |value| value.result.is_none())
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
         }
-        match result.as_ref() {
+        match inner.result.as_ref() {
             Some(Ok(summary)) => Ok(*summary),
             Some(Err(reason)) => Err(RuntimeWaitError::Aborted(reason.clone())),
             None => Err(RuntimeWaitError::Timeout(ShutdownDiagnostics {
-                state: self.state(),
-                active_nodes: self
-                    .active
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .iter()
-                    .cloned()
-                    .collect(),
+                state: inner.state,
+                active_nodes: inner.active_nodes.iter().cloned().collect(),
             })),
         }
     }
 }
 
-struct RuntimeStatus(Mutex<ConcurrentRuntimeState>);
+trait ThreadSpawner {
+    fn spawn(
+        &self,
+        name: String,
+        task: Box<dyn FnOnce() + Send + 'static>,
+    ) -> io::Result<thread::JoinHandle<()>>;
+}
 
-impl RuntimeStatus {
-    fn new() -> Self {
-        Self(Mutex::new(ConcurrentRuntimeState::Starting))
+struct SystemThreadSpawner;
+
+impl ThreadSpawner for SystemThreadSpawner {
+    fn spawn(
+        &self,
+        name: String,
+        task: Box<dyn FnOnce() + Send + 'static>,
+    ) -> io::Result<thread::JoinHandle<()>> {
+        thread::Builder::new().name(name).spawn(task)
     }
+}
 
-    fn get(&self) -> ConcurrentRuntimeState {
-        *self.0.lock().unwrap_or_else(|e| e.into_inner())
-    }
+struct RuntimeControl {
+    inner: Mutex<ControlState>,
+    changed: Condvar,
+}
 
-    fn set(&self, next: ConcurrentRuntimeState) {
-        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if matches!(
-            *state,
-            ConcurrentRuntimeState::Finished | ConcurrentRuntimeState::Aborted
-        ) {
-            return;
+struct ControlState {
+    state: ConcurrentRuntimeState,
+    reason: Option<AbortReason>,
+    success_sealed: bool,
+    result: Option<Result<ConcurrentRunSummary, AbortReason>>,
+    active_nodes: BTreeSet<NodeId>,
+}
+
+impl RuntimeControl {
+    fn new(active_nodes: impl IntoIterator<Item = NodeId>) -> Self {
+        Self {
+            inner: Mutex::new(ControlState {
+                state: ConcurrentRuntimeState::Starting,
+                reason: None,
+                success_sealed: false,
+                result: None,
+                active_nodes: active_nodes.into_iter().collect(),
+            }),
+            changed: Condvar::new(),
         }
-        *state = next;
+    }
+
+    fn state(&self) -> ConcurrentRuntimeState {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).state
+    }
+
+    fn mark_running(&self) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.state == ConcurrentRuntimeState::Starting && inner.reason.is_none() {
+            inner.state = ConcurrentRuntimeState::Running;
+        }
+    }
+
+    fn request_abort(&self, reason: AbortReason) -> bool {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.reason.is_some() || inner.success_sealed || inner.result.is_some() {
+            return false;
+        }
+        inner.reason = Some(reason);
+        inner.state = if inner.state == ConcurrentRuntimeState::Finishing {
+            ConcurrentRuntimeState::Aborting
+        } else {
+            ConcurrentRuntimeState::Stopping
+        };
+        true
+    }
+
+    fn reason(&self) -> Option<AbortReason> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .reason
+            .clone()
+    }
+
+    fn begin_finishing(&self) -> bool {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.reason.is_some() || inner.result.is_some() {
+            return false;
+        }
+        if matches!(
+            inner.state,
+            ConcurrentRuntimeState::Starting | ConcurrentRuntimeState::Running
+        ) {
+            inner.state = ConcurrentRuntimeState::Finishing;
+        }
+        inner.state == ConcurrentRuntimeState::Finishing
+    }
+
+    fn seal_success(&self) -> bool {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.reason.is_none() && inner.result.is_none() {
+            inner.success_sealed = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn publish_success(&self, summary: ConcurrentRunSummary) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        debug_assert!(inner.success_sealed && inner.reason.is_none());
+        inner.state = ConcurrentRuntimeState::Finished;
+        inner.result = Some(Ok(summary));
+        self.changed.notify_all();
+    }
+
+    fn begin_aborting(&self) -> AbortReason {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.state = ConcurrentRuntimeState::Aborting;
+        inner.reason.clone().expect("abort reason installed")
+    }
+
+    fn publish_abort(&self, reason: AbortReason) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.state = ConcurrentRuntimeState::Aborted;
+        inner.result = Some(Err(reason));
+        self.changed.notify_all();
+    }
+
+    fn node_inactive(&self, node_id: &NodeId) {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .active_nodes
+            .remove(node_id);
+    }
+
+    fn lifecycle_enter(&self, node_id: NodeId) {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .active_nodes
+            .insert(node_id);
+    }
+
+    fn lifecycle_exit(&self, node_id: &NodeId) {
+        self.node_inactive(node_id);
     }
 }
 
 #[derive(Default)]
-struct Completion {
-    result: Mutex<Option<Result<ConcurrentRunSummary, AbortReason>>>,
+struct LaunchGate {
+    state: Mutex<Option<bool>>,
     changed: Condvar,
+}
+
+impl LaunchGate {
+    fn wait(&self) -> bool {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        while state.is_none() {
+            state = self.changed.wait(state).unwrap_or_else(|e| e.into_inner());
+        }
+        state.unwrap_or(false)
+    }
+
+    fn release(&self) {
+        *self.state.lock().unwrap_or_else(|e| e.into_inner()) = Some(true);
+        self.changed.notify_all();
+    }
+
+    fn cancel(&self) {
+        *self.state.lock().unwrap_or_else(|e| e.into_inner()) = Some(false);
+        self.changed.notify_all();
+    }
 }
 
 struct PrepareGate {
@@ -436,10 +677,9 @@ struct WorkerShared {
     graph: Arc<GraphDefinition>,
     stop: StopToken,
     queues: Arc<BTreeMap<EdgeId, crate::EdgeQueue>>,
-    failure: Arc<Mutex<Option<AbortReason>>>,
-    state: Arc<RuntimeStatus>,
-    active: Arc<Mutex<BTreeSet<NodeId>>>,
+    control: Arc<RuntimeControl>,
     gate: Arc<PrepareGate>,
+    launch: Arc<LaunchGate>,
     options: RuntimeOptions,
     abort_diagnostics: Arc<Mutex<Vec<AbortHookDiagnostic>>>,
 }
@@ -455,11 +695,16 @@ struct OutputEdge {
     policy: Option<Box<dyn EdgePolicy>>,
 }
 
+struct OutputDispatch {
+    descriptor: EdgeDescriptor,
+    sender: mpsc::SyncSender<Vec<Frame>>,
+}
+
 struct NodeWorker {
     node_id: NodeId,
     node: Box<dyn Node>,
     incoming: Vec<InputEdge>,
-    outgoing: Vec<OutputEdge>,
+    outgoing: Vec<OutputDispatch>,
     wake: Arc<QueueWake>,
     shared: Arc<WorkerShared>,
 }
@@ -467,13 +712,30 @@ struct NodeWorker {
 struct WorkerExit {
     node_id: NodeId,
     node: Box<dyn Node>,
-    outgoing: Vec<OutputEdge>,
     prepared: bool,
 }
 
+enum RuntimeExit {
+    Node(WorkerExit),
+    Edge(Box<OutputEdge>),
+}
+
 impl NodeWorker {
+    fn cancelled_exit(self) -> WorkerExit {
+        WorkerExit {
+            node_id: self.node_id,
+            node: self.node,
+            prepared: false,
+        }
+    }
+
     fn run(mut self) -> WorkerExit {
-        let prepared = match call_prepare(&mut *self.node, &self.node_id, &self.shared.graph) {
+        let prepared = match call_prepare(
+            &mut *self.node,
+            &self.node_id,
+            &self.shared.graph,
+            self.shared.options.emission_budget(),
+        ) {
             Ok(()) => true,
             Err(reason) => {
                 fail_graph(&self.shared, reason);
@@ -482,7 +744,7 @@ impl NodeWorker {
         };
         self.shared.gate.arrive_and_wait();
         if !self.shared.stop.is_cancelled() {
-            self.shared.state.set(ConcurrentRuntimeState::Running);
+            self.shared.control.mark_running();
         }
 
         let is_source = self
@@ -504,18 +766,11 @@ impl NodeWorker {
             }
         }
 
-        for output in &self.outgoing {
-            output.queue.close(DrainMode::Drain);
-        }
-        self.shared
-            .active
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(&self.node_id);
+        self.outgoing.clear();
+        self.shared.control.node_inactive(&self.node_id);
         WorkerExit {
             node_id: self.node_id,
             node: self.node,
-            outgoing: self.outgoing,
             prepared,
         }
     }
@@ -527,6 +782,7 @@ impl NodeWorker {
             None,
             None,
             &self.shared.graph,
+            self.shared.options.emission_budget(),
         )?;
         self.route(emissions)
     }
@@ -552,6 +808,7 @@ impl NodeWorker {
                     Some(frame),
                     Some(input_port),
                     &self.shared.graph,
+                    self.shared.options.emission_budget(),
                 )?;
                 self.route(emissions)?;
                 continue;
@@ -574,6 +831,9 @@ impl NodeWorker {
             .node(&self.node_id)
             .expect("validated node")
             .descriptor();
+        let mut batches = (0..self.outgoing.len())
+            .map(|_| Vec::new())
+            .collect::<Vec<_>>();
         for emission in emissions {
             let (output_port, frame) = emission.into_parts();
             let Some(port) = descriptor.ports().iter().find(|candidate| {
@@ -595,107 +855,165 @@ impl NodeWorker {
                     AbortStage::Process,
                 ));
             }
-            for output in self
-                .outgoing
-                .iter_mut()
-                .filter(|edge| edge.descriptor.from_output_port() == &output_port)
-            {
-                apply_edge(&self.shared.graph, output, frame.clone())?;
+            for (index, output) in self.outgoing.iter().enumerate() {
+                if output.descriptor.from_output_port() == &output_port {
+                    batches[index].push(frame.clone());
+                }
+            }
+        }
+
+        // Every edge receives its complete bounded callback batch before this
+        // worker waits for a congested dispatcher. This prevents a full slow
+        // branch from serially withholding the same callback from a bypass.
+        let mut pending = Vec::new();
+        for (index, batch) in batches.into_iter().enumerate() {
+            if batch.is_empty() {
+                continue;
+            }
+            match self.outgoing[index].sender.try_send(batch) {
+                Ok(()) => {}
+                Err(mpsc::TrySendError::Full(batch)) => pending.push((index, batch)),
+                Err(mpsc::TrySendError::Disconnected(_)) => {
+                    return self.dispatch_closed_abort();
+                }
+            }
+        }
+        for (index, batch) in pending {
+            if self.outgoing[index].sender.send(batch).is_err() {
+                return self.dispatch_closed_abort();
             }
         }
         Ok(())
     }
+
+    fn dispatch_closed_abort(&self) -> Result<(), AbortReason> {
+        if let Some(reason) = self.shared.control.reason() {
+            Err(reason)
+        } else {
+            Err(runtime_abort(
+                "VOXA-CONCURRENT-DISPATCH-CLOSED",
+                "edge dispatcher exited while its producer was active",
+                Some(self.node_id.clone()),
+                AbortCategory::NodeError,
+                AbortStage::Runtime,
+            ))
+        }
+    }
+}
+
+fn run_dispatcher(
+    mut output: OutputEdge,
+    receiver: mpsc::Receiver<Vec<Frame>>,
+    shared: &WorkerShared,
+) -> OutputEdge {
+    'dispatch: for batch in receiver {
+        for frame in batch {
+            if let Err(reason) = apply_edge(&shared.graph, &mut output, frame) {
+                fail_graph(shared, reason);
+                break 'dispatch;
+            }
+        }
+    }
+    output.queue.close(DrainMode::Drain);
+    output
 }
 
 fn coordinate(
     shared: Arc<WorkerShared>,
-    exits: mpsc::Receiver<WorkerExit>,
+    exits: mpsc::Receiver<RuntimeExit>,
     handles: Vec<thread::JoinHandle<()>>,
-    completion: Arc<Completion>,
     worker_total: usize,
 ) {
     let mut nodes = BTreeMap::new();
     let mut resources = Vec::new();
     let mut prepared = BTreeSet::new();
     for exit in exits {
-        if exit.prepared {
-            prepared.insert(exit.node_id.clone());
+        match exit {
+            RuntimeExit::Node(exit) => {
+                if exit.prepared {
+                    prepared.insert(exit.node_id.clone());
+                }
+                nodes.insert(exit.node_id, exit.node);
+            }
+            RuntimeExit::Edge(output) => resources.push(*output),
         }
-        resources.push(exit.outgoing);
-        nodes.insert(exit.node_id, exit.node);
     }
     for handle in handles {
         let _ = handle.join();
     }
 
-    let mut reason = shared
-        .failure
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    if reason.is_none() {
-        shared.state.set(ConcurrentRuntimeState::Finishing);
+    if shared.control.reason().is_none() && shared.control.begin_finishing() {
         for node_id in shared.graph.topological_order().iter().rev() {
             if let Some(node) = nodes.get_mut(node_id) {
-                if let Err(error) = call_finish(&mut **node, node_id, &shared.graph) {
-                    reason = Some(error.clone());
-                    install_failure(&shared.failure, error);
-                    shared.stop.cancel();
-                    close_all(&shared.queues, shared.options.failure_mode);
+                shared.control.lifecycle_enter(node_id.clone());
+                if let Err(error) = call_finish(
+                    &mut **node,
+                    node_id,
+                    &shared.graph,
+                    shared.options.emission_budget(),
+                ) {
+                    shared.control.lifecycle_exit(node_id);
+                    fail_graph(&shared, error);
                     break;
                 }
+                shared.control.lifecycle_exit(node_id);
             }
         }
-        if reason.is_none() {
-            reason = shared
-                .failure
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .clone();
+        if shared.control.seal_success() {
+            drop(nodes);
+            drop(resources);
+            shared
+                .control
+                .publish_success(ConcurrentRunSummary { worker_total });
+            return;
         }
     }
 
-    let result = if let Some(reason) = reason {
-        shared.state.set(ConcurrentRuntimeState::Aborting);
-        let diagnostics = shared.abort_diagnostics.clone();
-        for node_id in shared.graph.topological_order().iter().rev() {
-            if !prepared.contains(node_id) {
-                continue;
-            }
-            let config = shared.graph.node(node_id).expect("node").config().clone();
-            let mut context = NodeContext::new(node_id.clone(), config, None);
-            if let Some(node) = nodes.get_mut(node_id) {
-                if let Err(payload) =
-                    catch_unwind(AssertUnwindSafe(|| node.on_abort(&reason, &mut context)))
-                {
-                    diagnostics.lock().unwrap_or_else(|e| e.into_inner()).push(
-                        AbortHookDiagnostic::new(node_id.clone(), panic_message(payload.as_ref())),
-                    );
-                }
-            }
+    let reason = shared.control.begin_aborting();
+    let diagnostics = shared.abort_diagnostics.clone();
+    for node_id in shared.graph.topological_order().iter().rev() {
+        if !prepared.contains(node_id) {
+            continue;
         }
-        shared.state.set(ConcurrentRuntimeState::Aborted);
-        Err(reason)
-    } else {
-        shared.state.set(ConcurrentRuntimeState::Finished);
-        Ok(ConcurrentRunSummary { worker_total })
-    };
+        let config = shared.graph.node(node_id).expect("node").config().clone();
+        let mut context = NodeContext::with_emission_limit(
+            node_id.clone(),
+            config,
+            None,
+            shared.options.emission_budget(),
+        );
+        if let Some(node) = nodes.get_mut(node_id) {
+            shared.control.lifecycle_enter(node_id.clone());
+            if let Err(payload) =
+                catch_unwind(AssertUnwindSafe(|| node.on_abort(&reason, &mut context)))
+            {
+                diagnostics.lock().unwrap_or_else(|e| e.into_inner()).push(
+                    AbortHookDiagnostic::new(node_id.clone(), panic_message(payload.as_ref())),
+                );
+            }
+            shared.control.lifecycle_exit(node_id);
+        }
+    }
 
     drop(nodes);
     drop(resources);
-    let mut slot = completion.result.lock().unwrap_or_else(|e| e.into_inner());
-    *slot = Some(result);
-    completion.changed.notify_all();
+    shared.control.publish_abort(reason);
 }
 
 fn call_prepare(
     node: &mut dyn Node,
     node_id: &NodeId,
     graph: &GraphDefinition,
+    emission_budget: usize,
 ) -> Result<(), AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
-    let mut context = NodeContext::new(node_id.clone(), config, None);
-    match catch_unwind(AssertUnwindSafe(|| node.on_prepare(&mut context))) {
+    let mut context =
+        NodeContext::with_emission_limit(node_id.clone(), config, None, emission_budget);
+    let outcome = catch_unwind(AssertUnwindSafe(|| node.on_prepare(&mut context)));
+    if context.emission_overflowed() {
+        return Err(emission_limit_abort(node_id, emission_budget));
+    }
+    match outcome {
         Ok(Ok(())) => Ok(()),
         Ok(Err(error)) => Err(node_error(error, node_id, AbortStage::Prepare)),
         Err(payload) => Err(panic_abort(
@@ -713,10 +1031,16 @@ fn call_process(
     input: Option<Frame>,
     input_port: Option<PortName>,
     graph: &GraphDefinition,
+    emission_budget: usize,
 ) -> Result<Vec<NodeEmission>, AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
-    let mut context = NodeContext::new(node_id.clone(), config, input_port);
-    match catch_unwind(AssertUnwindSafe(|| node.on_process(input, &mut context))) {
+    let mut context =
+        NodeContext::with_emission_limit(node_id.clone(), config, input_port, emission_budget);
+    let outcome = catch_unwind(AssertUnwindSafe(|| node.on_process(input, &mut context)));
+    if context.emission_overflowed() {
+        return Err(emission_limit_abort(node_id, emission_budget));
+    }
+    match outcome {
         Ok(Ok(())) => Ok(context.take_emissions()),
         Ok(Err(error)) => Err(node_error(error, node_id, AbortStage::Process)),
         Err(payload) => Err(panic_abort(
@@ -732,10 +1056,16 @@ fn call_finish(
     node: &mut dyn Node,
     node_id: &NodeId,
     graph: &GraphDefinition,
+    emission_budget: usize,
 ) -> Result<(), AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
-    let mut context = NodeContext::new(node_id.clone(), config, None);
-    match catch_unwind(AssertUnwindSafe(|| node.on_finish(&mut context))) {
+    let mut context =
+        NodeContext::with_emission_limit(node_id.clone(), config, None, emission_budget);
+    let outcome = catch_unwind(AssertUnwindSafe(|| node.on_finish(&mut context)));
+    if context.emission_overflowed() {
+        return Err(emission_limit_abort(node_id, emission_budget));
+    }
+    match outcome {
         Ok(Ok(())) => Ok(()),
         Ok(Err(error)) => Err(node_error(error, node_id, AbortStage::Finish)),
         Err(payload) => Err(panic_abort(
@@ -944,21 +1274,29 @@ fn record_policy_drop(
 }
 
 fn fail_graph(shared: &WorkerShared, reason: AbortReason) {
-    if install_failure(&shared.failure, reason) {
-        shared.state.set(ConcurrentRuntimeState::Stopping);
+    if shared.control.request_abort(reason) {
         shared.stop.cancel();
         close_all(&shared.queues, shared.options.failure_mode);
     }
 }
 
-fn install_failure(slot: &Mutex<Option<AbortReason>>, reason: AbortReason) -> bool {
-    let mut slot = slot.lock().unwrap_or_else(|e| e.into_inner());
-    if slot.is_some() {
-        false
-    } else {
-        *slot = Some(reason);
-        true
+fn cleanup_failed_start(shared: &WorkerShared, handles: Vec<thread::JoinHandle<()>>) {
+    shared.launch.cancel();
+    shared.stop.cancel();
+    close_all(&shared.queues, DrainMode::Discard);
+    for handle in handles {
+        let _ = handle.join();
     }
+}
+
+fn emission_limit_abort(node_id: &NodeId, limit: usize) -> AbortReason {
+    let limit = limit.to_string();
+    runtime_abort_details(
+        "VOXA-CONCURRENT-EMISSION-LIMIT",
+        "node lifecycle call exceeded its bounded emission budget",
+        Some(node_id.clone()),
+        [("emission_limit", limit.as_str())],
+    )
 }
 
 fn close_all(queues: &BTreeMap<EdgeId, crate::EdgeQueue>, mode: DrainMode) {
@@ -1205,4 +1543,73 @@ fn details<const N: usize>(values: [(&str, &str); N]) -> ConfigMap {
 
 fn shared_abort_diagnostics() -> Arc<Mutex<Vec<AbortHookDiagnostic>>> {
     Arc::new(Mutex::new(Vec::new()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    use super::*;
+    use crate::{ConfigSchema, GraphBuilder, LifecycleCapabilities, NodeDescriptor, NodeTypeName};
+
+    struct FailingSpawner {
+        fail_at: usize,
+        calls: AtomicUsize,
+    }
+
+    impl ThreadSpawner for FailingSpawner {
+        fn spawn(
+            &self,
+            name: String,
+            task: Box<dyn FnOnce() + Send + 'static>,
+        ) -> io::Result<thread::JoinHandle<()>> {
+            if self.calls.fetch_add(1, Ordering::SeqCst) == self.fail_at {
+                return Err(io::Error::other("injected spawn failure"));
+            }
+            thread::Builder::new().name(name).spawn(task)
+        }
+    }
+
+    struct ProbeSource(Arc<AtomicBool>);
+
+    impl Node for ProbeSource {
+        fn on_process(&mut self, _: Option<Frame>, _: &mut NodeContext) -> voxa_types::Result<()> {
+            self.0.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn coordinator_spawn_failure_cancels_and_joins_started_workers() {
+        let node_id = NodeId::new("source").unwrap();
+        let descriptor = NodeDescriptor::new(
+            node_id.clone(),
+            NodeTypeName::new("test.source").unwrap(),
+            NodeKind::Source,
+            Vec::new(),
+            ConfigSchema::empty(),
+            LifecycleCapabilities::default(),
+        );
+        let mut builder = GraphBuilder::new();
+        builder.add_node(descriptor).unwrap();
+        let called = Arc::new(AtomicBool::new(false));
+        let mut nodes: NodeInstances = BTreeMap::new();
+        nodes.insert(node_id, Box::new(ProbeSource(called.clone())));
+        let runtime = ConcurrentRuntime::new(
+            builder.build().unwrap(),
+            nodes,
+            EdgePolicies::new(),
+            RuntimeOptions::default(),
+        )
+        .unwrap();
+        let error = match runtime.start_with_spawner(&FailingSpawner {
+            fail_at: 1,
+            calls: AtomicUsize::new(0),
+        }) {
+            Ok(_) => panic!("injected coordinator spawn unexpectedly succeeded"),
+            Err(error) => error,
+        };
+        assert_eq!(error.role(), RuntimeThreadRole::Coordinator);
+        assert!(!called.load(Ordering::SeqCst));
+    }
 }

@@ -20,7 +20,7 @@ pub use audio_merge::{merge_audio_prefix, FrameIdSource, MergedAudioFrame};
 pub use cancellation::{Cancellation, StopToken};
 pub use concurrent::{
     ConcurrentRunSummary, ConcurrentRuntime, ConcurrentRuntimeState, GraphRuntime, RuntimeOptions,
-    RuntimeWaitError, ShutdownDiagnostics,
+    RuntimeStartError, RuntimeThreadRole, RuntimeWaitError, ShutdownDiagnostics,
 };
 pub use edge::{
     EdgeDescriptor, EdgeMetrics, EdgeMetricsSnapshot, EdgePolicyName, EnabledCondition,
@@ -39,7 +39,8 @@ pub use graph::{
 pub use node::{
     AbortCategory, AbortReason, AbortRootContext, AbortStage, ConfigKey, ConfigMap, ConfigSchema,
     DescriptorNameError, DuplicateConfigKey, LifecycleCapabilities, Node, NodeContext,
-    NodeDescriptor, NodeEmission, NodeKind, NodeTypeName, PortDescriptor, PortDirection, PortName,
+    NodeDescriptor, NodeEmission, NodeEmissionError, NodeKind, NodeTypeName, PortDescriptor,
+    PortDirection, PortName,
 };
 pub use queue::{
     DrainMode, EdgeQueue, EnqueueOutcome, QueueClosed, QueueDropReason, QueuePushError,

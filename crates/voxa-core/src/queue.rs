@@ -260,14 +260,16 @@ impl EdgeQueue {
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
         if !state.closed {
             state.closed = true;
-            if mode == DrainMode::Discard {
-                let discarded = state.frames.len() as u64;
-                state.frames.clear();
-                state.enqueued_at.clear();
-                if discarded != 0 {
-                    state.drop_total = state.drop_total.saturating_add(discarded);
-                    set_reason(&mut state, QueueDropReason::ShutdownDiscard.as_str());
-                }
+        }
+        // Close is monotonic: a later Discard escalates an earlier Drain, but
+        // a later Drain can never make discarded data available again.
+        if mode == DrainMode::Discard {
+            let discarded = state.frames.len() as u64;
+            state.frames.clear();
+            state.enqueued_at.clear();
+            if discarded != 0 {
+                state.drop_total = state.drop_total.saturating_add(discarded);
+                set_reason(&mut state, QueueDropReason::ShutdownDiscard.as_str());
             }
         }
         drop(state);

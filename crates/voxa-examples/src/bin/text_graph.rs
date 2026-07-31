@@ -39,7 +39,7 @@ impl Node for TextSource {
     ) -> voxa_types::Result<()> {
         debug_assert!(input.is_none(), "sources are invoked once with None");
         for frame in &self.frames {
-            context.emit(port(SOURCE_PORT), frame.clone());
+            context.emit(port(SOURCE_PORT), frame.clone())?;
         }
         Ok(())
     }
@@ -68,7 +68,7 @@ impl Node for UppercaseTransform {
         context.emit(
             port(TRANSFORM_OUTPUT_PORT),
             text_frame(&format!("uppercase-{sequence}"), &text, sequence),
-        );
+        )?;
         Ok(())
     }
 }
