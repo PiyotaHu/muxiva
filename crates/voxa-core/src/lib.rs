@@ -9,6 +9,7 @@ pub mod edge;
 pub mod edge_policy;
 pub mod event_bus;
 pub mod flow;
+pub mod foreign;
 pub mod graph;
 pub mod logging;
 pub mod managed_stream;
@@ -40,6 +41,12 @@ pub use flow::{
     overflow_may_drop, AdaptiveFlowController, FlowAction, FlowClock, FlowDropReason, FlowError,
     FlowSignalObservation, FlowSnapshot, FlowState, FlowUpdate, FlowWork, FrameMeasurement,
     InputPortKey, OverflowDecision, TrustedVadDecision,
+};
+pub use foreign::{
+    ForeignCommand, ForeignCommandKind, ForeignCompletion, ForeignCompletionKind,
+    ForeignCompletionOutcome, ForeignDriverConfig, ForeignDriverError, ForeignDriverSnapshot,
+    ForeignFullPolicy, ForeignNodeDriver, ForeignOrdering, ForeignShutdownDiagnostics,
+    ForeignSubmitOutcome,
 };
 pub use graph::{
     EdgeEndpoint, EndpointRole, GraphBuildError, GraphBuilder, GraphDefinition, NodeDefinition,
