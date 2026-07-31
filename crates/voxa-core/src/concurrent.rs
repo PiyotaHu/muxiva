@@ -308,12 +308,18 @@ impl GraphRuntime {
     /// Idempotently stops the graph from any thread and wakes all queue waits.
     /// Returns true only for the call that installed cancellation first.
     pub fn stop(&self) -> bool {
+        if matches!(
+            self.state(),
+            ConcurrentRuntimeState::Finished | ConcurrentRuntimeState::Aborted
+        ) {
+            return false;
+        }
         let reason = cancellation_abort();
         let first = install_failure(&self.failure, reason);
-        let cancelled = self.stop.cancel();
+        self.stop.cancel();
         self.state.set(ConcurrentRuntimeState::Stopping);
         close_all(&self.queues, self.options.shutdown_mode);
-        first && cancelled
+        first
     }
 
     pub fn state(&self) -> ConcurrentRuntimeState {
@@ -475,7 +481,9 @@ impl NodeWorker {
             }
         };
         self.shared.gate.arrive_and_wait();
-        self.shared.state.set(ConcurrentRuntimeState::Running);
+        if !self.shared.stop.is_cancelled() {
+            self.shared.state.set(ConcurrentRuntimeState::Running);
+        }
 
         let is_source = self
             .shared

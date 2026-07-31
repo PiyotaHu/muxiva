@@ -136,6 +136,22 @@ fn stop_token_is_cross_thread_waking_and_idempotent() {
     assert!(token.cancel());
     assert!(!token.cancel());
     rx.recv_timeout(Duration::from_secs(1)).unwrap();
+
+    let concurrent = StopToken::new();
+    let callers = (0..8)
+        .map(|_| {
+            let token = concurrent.clone();
+            thread::spawn(move || token.cancel())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        callers
+            .into_iter()
+            .map(|caller| caller.join().unwrap())
+            .filter(|cancelled| *cancelled)
+            .count(),
+        1
+    );
 }
 
 fn descriptor(name: &str, kind: NodeKind, ports: &[(&str, PortDirection)]) -> NodeDescriptor {
