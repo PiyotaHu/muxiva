@@ -282,6 +282,23 @@ declared response ordering. Runtime graph threads never block on network I/O.
 An async dependency is justified only in 5C at this isolation boundary. The
 core queue and scheduler remain Rust standard-library based.
 
+The initial Stage 5C implementation uses a standard-library session executor
+instead of adding an async dependency before a real transport requires one.
+Each `ManagedAsyncStream` is bound to one `SessionId` and owns bounded input,
+completion, and result mailboxes plus a bounded in-flight window. The session
+executor launches only window-admitted request workers; adapter connect/send/
+parse work therefore never runs on a caller or graph thread. A strict stream
+retains out-of-order completions inside that same window until earlier request
+sequences resolve. Submission and graph-facing result polling are `try` paths.
+
+Cancellation or deadline expiry releases the carried admission lease exactly
+once. A blocking adapter may finish later, but its response is counted and
+discarded. Stop rejects new submissions, cancels all registered requests,
+clears bounded mailboxes, and lets any detached adapter call retain its shared
+resources until it exits. A future real socket transport may replace these
+dedicated workers with an async reactor without changing these isolation and
+capacity boundaries.
+
 ## 12. Verification and staged debt
 
 Stage 5A tests cover producer/consumer close wakeups, Block, DropOldest,

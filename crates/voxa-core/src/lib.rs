@@ -10,6 +10,7 @@ pub mod edge_policy;
 pub mod flow;
 pub mod graph;
 pub mod logging;
+pub mod managed_stream;
 pub mod node;
 pub mod queue;
 pub mod realtime;
@@ -35,6 +36,12 @@ pub use flow::{
 };
 pub use graph::{
     EdgeEndpoint, EndpointRole, GraphBuildError, GraphBuilder, GraphDefinition, NodeDefinition,
+};
+pub use managed_stream::{
+    AdapterRequest, AdapterResponse, AsyncRequest, ManagedAsyncStream, ManagedStreamAdapter,
+    ManagedStreamBuildError, ManagedStreamMetricsSnapshot, ManagedStreamOptions,
+    ManagedStreamState, ManagedStreamStopReport, RequestId, ServiceError, StreamCompletion,
+    StreamResult, SubmitOutcome,
 };
 pub use node::{
     AbortCategory, AbortReason, AbortRootContext, AbortStage, ConfigKey, ConfigMap, ConfigSchema,
