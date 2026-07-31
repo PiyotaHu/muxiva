@@ -1,5 +1,12 @@
-/// A signed, media-relative timestamp measured in nanoseconds.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// A signed nanosecond value interpreted within an explicit clock domain.
+///
+/// ```compile_fail
+/// use voxa_types::Timestamp;
+/// let earlier = Timestamp::from_nanos(1);
+/// let later = Timestamp::from_nanos(2);
+/// let _ = earlier < later;
+/// ```
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Timestamp(i64);
 
 impl Timestamp {

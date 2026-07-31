@@ -108,10 +108,33 @@ identifier_type!(
     /// Identifies a trace.
     TraceId
 );
+identifier_type!(
+    /// Identifies a frame.
+    ///
+    /// ```compile_fail
+    /// use voxa_types::{EdgeId, FrameId};
+    /// fn needs_edge(_: EdgeId) {}
+    /// let frame = FrameId::new("frame-1").unwrap();
+    /// needs_edge(frame);
+    /// ```
+    FrameId
+);
+identifier_type!(
+    /// Identifies a future graph edge.
+    EdgeId
+);
+identifier_type!(
+    /// Identifies a clock domain.
+    ClockDomainId
+);
+identifier_type!(
+    /// Identifies an external extension producer.
+    ProducerId
+);
 
 #[cfg(test)]
 mod tests {
-    use super::{NodeId, SessionId, StreamId, TraceId};
+    use super::{EdgeId, FrameId, NodeId, SessionId, StreamId, TraceId};
 
     #[test]
     fn identifiers_validate_and_round_trip() {
@@ -121,5 +144,20 @@ mod tests {
         assert!(SessionId::new("").is_err());
         assert!(StreamId::new(" audio ").is_err());
         assert!(TraceId::new("trace\n1").is_err());
+    }
+
+    #[test]
+    fn frame_identifiers_are_distinct_and_validate_like_existing_identifiers() {
+        let frame = FrameId::new("frame-1").expect("valid frame id");
+        let edge = EdgeId::new("edge-1").expect("valid edge id");
+        let _ = super::ClockDomainId::new("clock-1").expect("valid clock domain id");
+        let _ = super::ProducerId::new("producer-1").expect("valid producer id");
+
+        assert_eq!(frame.as_str(), "frame-1");
+        assert_eq!(edge.to_string(), "edge-1");
+        assert!(FrameId::new("").is_err());
+        assert!(EdgeId::new(" edge ").is_err());
+        assert!(super::ClockDomainId::new("clock\n1").is_err());
+        assert!(super::ProducerId::new("x".repeat(256)).is_err());
     }
 }
