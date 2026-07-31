@@ -50,7 +50,9 @@ controlled I/O workloads; CPU-heavy work cannot be presented as async.
 
 ## Status and documentation
 
-Stages 3 through 6 are implemented and awaiting acceptance. Stage 6 adds
+Stages 3 through 7 are implemented and awaiting acceptance. Stage 7 adds the
+versioned copy-owned C ABI, generation-checked handles, C++ RAII/node
+trampolines, and a focused C++ transform running inside a Rust graph. Stage 6 adds
 bounded adjacent Signal routing, an isolated global EventBus, typed graph
 resources, and atomic transport/turn control with stale-frame Sink filtering.
 Stage 5's report records its intentionally incomplete runtime/UI integration,
@@ -67,6 +69,16 @@ remain recorded in the pre-release reports.
 - [Stage 5 concurrent runtime and flow-control report](docs/pre_release_notes/05-concurrent-runtime-flow-control.md)
 - [Stage 6 Signal/EventBus/turn-control design](docs/design/06-signal-eventbus-turn-control.md)
 - [Stage 6 pre-release report](docs/pre_release_notes/06-signal-eventbus-turn-control.md)
+- [Stage 7 C ABI and C++ SDK design](docs/design/07-c-abi-cpp-node-sdk.md)
+- [Stage 7 pre-release report](docs/pre_release_notes/07-c-abi-cpp-node-sdk.md)
+
+The Stage 7 developer check needs Cargo plus a C11/C++17 compiler; CMake is
+not required:
+
+```sh
+cargo test --workspace --offline
+CC=clang CXX=clang++ ./scripts/check-ffi.sh
+```
 
 ## Planned repository layout
 

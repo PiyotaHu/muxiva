@@ -2,6 +2,7 @@
 members = [
     "crates/voxa-core",
     "crates/voxa-examples",
+    "crates/voxa-ffi",
     "crates/voxa-types",
 ]
 resolver = "2"

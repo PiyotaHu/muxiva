@@ -1,0 +1,13 @@
+[package]
+name = "voxa-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+voxa-core = { path = "../voxa-core" }
+voxa-types.workspace = true
