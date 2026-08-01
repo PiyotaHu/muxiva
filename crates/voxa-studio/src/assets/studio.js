@@ -55,6 +55,13 @@ async function loadStudio() {
     renderPalette()
     $('#graph-path').textContent = metadata.graph_path
     $('#connection-status').textContent = metadata.writable ? 'Local runtime · writable' : 'Local runtime · read only'
+    if (metadata.project_demo) {
+      $('#project-demo').classList.remove('hidden')
+      $('#project-demo').addEventListener('click', async () => {
+        if (state.dirty && !await saveGraph()) return
+        window.open(`/project/index.html#${state.token}`, '_blank', 'noopener,noreferrer')
+      })
+    }
     seedPositions()
     bindEvents()
     renderAll()
@@ -797,11 +804,11 @@ function formatNanos(nanos) {
 }
 
 async function saveGraph() {
-  if (!await validateGraph(false)) return toast('Fix validation errors before saving', true)
+  if (!await validateGraph(false)) { toast('Fix validation errors before saving', true); return false }
   try {
     await api('/api/v1/graph', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state.graph) })
-    setDirty(false); toast('Graph saved to disk')
-  } catch (error) { toast(error.message, true) }
+    setDirty(false); toast('Graph saved to disk'); return true
+  } catch (error) { toast(error.message, true); return false }
 }
 function setDirty(dirty) { state.dirty = dirty; $('#dirty-dot').classList.toggle('dirty', dirty); $('#dirty-dot').title = dirty ? 'Unsaved changes' : 'Saved' }
 

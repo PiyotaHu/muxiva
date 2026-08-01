@@ -360,6 +360,32 @@ fn turn_snapshot_switch_stale_filter_and_interrupt_are_atomic_and_idempotent() {
     );
 }
 
+#[test]
+fn runtime_interrupt_advances_turn_and_invalidates_in_flight_frames() {
+    let control = TransportControl::new(TurnId::new("turn.initial").unwrap());
+    let old = control
+        .stamp_frame(
+            &text_frame(3),
+            FrameId::new("before-barge-in").unwrap(),
+            node_id("microphone"),
+        )
+        .unwrap();
+
+    let next = control.advance_after_interrupt();
+
+    assert_eq!(next.as_str(), "turn.runtime.1");
+    assert_eq!(control.snapshot().turn_id(), &next);
+    assert!(!control.should_deliver_to_sink(&old).unwrap());
+    let current = control
+        .stamp_frame(
+            &text_frame(4),
+            FrameId::new("after-barge-in").unwrap(),
+            node_id("microphone"),
+        )
+        .unwrap();
+    assert!(control.should_deliver_to_sink(&current).unwrap());
+}
+
 struct TurnSource {
     control: TransportControl,
 }

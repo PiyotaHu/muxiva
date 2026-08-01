@@ -27,6 +27,8 @@ pub const TEXT_SINK: &str = "builtin.text_sink";
 pub const STDOUT_TEXT_SINK: &str = "builtin.stdout_text_sink";
 pub const AUDIO_RESAMPLE: &str = "builtin.audio_resample";
 pub const INTERVAL_TICK: &str = "builtin.interval_tick";
+pub const AUDIO_VAD: &str = "builtin.audio_vad";
+pub const VOICE_TURN_CONTEXT: &str = "builtin.voice_turn_context";
 pub const DEMO_MICROPHONE: &str = "builtin.demo.microphone";
 pub const DEMO_STREAMING_ASR: &str = "builtin.demo.streaming_asr";
 pub const DEMO_VOICE_ACTIVITY: &str = "builtin.demo.voice_activity";
@@ -112,6 +114,33 @@ fn register_audio_nodes(registry: &mut NodeRegistry) {
             audio_resample_schema(),
         ),
         Arc::new(AudioResampleFactory),
+    );
+    register(
+        registry,
+        typed_descriptor(
+            AUDIO_VAD,
+            NodeKind::Transform,
+            &[
+                ("audio_in", PortDirection::Input, FrameType::Audio),
+                ("speech_out", PortDirection::Output, FrameType::Event),
+            ],
+            audio_vad_schema(),
+        ),
+        Arc::new(AudioVadFactory),
+    );
+    register(
+        registry,
+        typed_descriptor(
+            VOICE_TURN_CONTEXT,
+            NodeKind::Transform,
+            &[
+                ("transcript_in", PortDirection::Input, FrameType::Text),
+                ("speech_in", PortDirection::Input, FrameType::Event),
+                ("context_out", PortDirection::Output, FrameType::Text),
+            ],
+            empty_schema(),
+        ),
+        Arc::new(VoiceTurnContextFactory),
     );
 }
 
@@ -782,6 +811,289 @@ fn audio_resample_schema() -> ConfigSchema {
         ),
         ("additionalProperties", Value::Bool(false)),
     ]))
+}
+
+fn audio_vad_schema() -> ConfigSchema {
+    ConfigSchema::new(map([
+        ("type", Value::String("object".into())),
+        (
+            "properties",
+            map([
+                (
+                    "threshold",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(1)),
+                        ("maximum", Value::Integer(32_767)),
+                        ("default", Value::Integer(600)),
+                    ]),
+                ),
+                (
+                    "start_frames",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(1)),
+                        ("maximum", Value::Integer(100)),
+                        ("default", Value::Integer(2)),
+                    ]),
+                ),
+                (
+                    "stop_frames",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(1)),
+                        ("maximum", Value::Integer(500)),
+                        ("default", Value::Integer(18)),
+                    ]),
+                ),
+            ]),
+        ),
+        (
+            "required",
+            Value::List(
+                vec![
+                    Value::String("threshold".into()),
+                    Value::String("start_frames".into()),
+                    Value::String("stop_frames".into()),
+                ]
+                .into_boxed_slice(),
+            ),
+        ),
+        ("additionalProperties", Value::Bool(false)),
+    ]))
+}
+
+struct AudioVadFactory;
+
+impl NodeFactory for AudioVadFactory {
+    fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
+        let valid = matches!(config.get("threshold"), Some(Value::Integer(1..=32_767)))
+            && matches!(config.get("start_frames"), Some(Value::Integer(1..=100)))
+            && matches!(config.get("stop_frames"), Some(Value::Integer(1..=500)))
+            && config.len() == 3;
+        if valid {
+            Ok(())
+        } else {
+            Err(config_error(
+                "audio VAD requires threshold, start_frames, and stop_frames in range",
+            ))
+        }
+    }
+
+    fn create(
+        &self,
+        _node_id: &NodeId,
+        config: &ConfigMap,
+    ) -> Result<Box<dyn Node>, NodeFactoryError> {
+        let integer = |name: &str| match config.get(name) {
+            Some(Value::Integer(value)) => *value as u32,
+            _ => 0,
+        };
+        Ok(Box::new(AudioVad {
+            threshold: integer("threshold") as u64,
+            start_frames: integer("start_frames"),
+            stop_frames: integer("stop_frames"),
+            loud_frames: 0,
+            quiet_frames: 0,
+            active: false,
+        }))
+    }
+}
+
+struct AudioVad {
+    threshold: u64,
+    start_frames: u32,
+    stop_frames: u32,
+    loud_frames: u32,
+    quiet_frames: u32,
+    active: bool,
+}
+
+impl AudioVad {
+    fn transition(
+        &mut self,
+        active: bool,
+        input: &Frame,
+        context: &mut NodeContext,
+    ) -> voxa_types::Result<()> {
+        self.active = active;
+        let topic = if active {
+            "voxa.voice.speech.started"
+        } else {
+            "voxa.voice.speech.stopped"
+        };
+        let event = derive_payload(
+            input,
+            context.node_id(),
+            "audio-vad",
+            FramePayload::Event(EventData::new(
+                NamespacedName::new(topic)?,
+                SchemaVersion::new(1)?,
+                context.node_id().clone(),
+                Value::Bool(active),
+            )),
+        )?;
+        context.publish_event(event.as_event().expect("event payload").clone())?;
+        context.emit(PortName::new("speech_out").unwrap(), event)?;
+        if active {
+            let signal = derive_payload(
+                input,
+                context.node_id(),
+                "audio-vad-interrupt",
+                FramePayload::Signal(SignalData::new(
+                    NamespacedName::new(voxa_core::RUNTIME_INTERRUPT_SIGNAL)?,
+                    SchemaVersion::new(1)?,
+                    context.node_id().clone(),
+                    Value::String("barge-in".into()),
+                )),
+            )?;
+            context.emit_signal(signal.as_signal().expect("signal payload").clone())?;
+        }
+        println!(
+            "[VOXA][VOICE][{}] state={} action={}",
+            context.node_id(),
+            if active { "speaking" } else { "listening" },
+            if active {
+                "interrupt-downstream"
+            } else {
+                "close-turn"
+            }
+        );
+        Ok(())
+    }
+}
+
+impl Node for AudioVad {
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> voxa_types::Result<()> {
+        let input = required_type(input, FrameType::Audio, "audio VAD requires audio")?;
+        let audio = input.as_audio().expect("validated audio").data();
+        if audio.sample_format() != PcmSampleFormat::I16Le
+            || audio.layout() != AudioLayout::Interleaved
+        {
+            return Err(node_error(
+                "VOXA-AUDIO-VAD-FORMAT",
+                "audio VAD requires interleaved PCM s16le",
+            ));
+        }
+        let samples = audio.buffer().as_slice().chunks_exact(2);
+        let (sum, count) = samples.fold((0_u64, 0_u64), |(sum, count), bytes| {
+            let sample = i64::from(i16::from_le_bytes([bytes[0], bytes[1]])).unsigned_abs();
+            (sum.saturating_add(sample), count + 1)
+        });
+        let loud = count > 0 && sum / count >= self.threshold;
+        if loud {
+            self.loud_frames = self.loud_frames.saturating_add(1);
+            self.quiet_frames = 0;
+        } else {
+            self.quiet_frames = self.quiet_frames.saturating_add(1);
+            self.loud_frames = 0;
+        }
+        if !self.active && self.loud_frames >= self.start_frames {
+            self.transition(true, &input, context)?;
+        } else if self.active && self.quiet_frames >= self.stop_frames {
+            self.transition(false, &input, context)?;
+        }
+        Ok(())
+    }
+}
+
+struct VoiceTurnContextFactory;
+
+impl NodeFactory for VoiceTurnContextFactory {
+    fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
+        validate_empty_config(config, "voice turn context")
+    }
+
+    fn create(
+        &self,
+        _node_id: &NodeId,
+        _config: &ConfigMap,
+    ) -> Result<Box<dyn Node>, NodeFactoryError> {
+        Ok(Box::new(VoiceTurnContext::default()))
+    }
+}
+
+#[derive(Default)]
+struct VoiceTurnContext {
+    speech_active: bool,
+    pending_transcript: Option<Box<str>>,
+}
+
+impl VoiceTurnContext {
+    fn emit_pending(&mut self, input: &Frame, context: &mut NodeContext) -> voxa_types::Result<()> {
+        if let Some(transcript) = self.pending_transcript.take() {
+            context.emit(
+                PortName::new("context_out").unwrap(),
+                derive_payload(
+                    input,
+                    context.node_id(),
+                    "voice-turn-context",
+                    FramePayload::Text(TextData::new(transcript)),
+                )?,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl Node for VoiceTurnContext {
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> voxa_types::Result<()> {
+        let input = input.ok_or_else(|| {
+            node_error(
+                "VOXA-VOICE-CONTEXT-INPUT",
+                "voice turn context requires input",
+            )
+        })?;
+        match context.input_port().map(PortName::as_str) {
+            Some("transcript_in") => {
+                let transcript = input
+                    .as_text()
+                    .ok_or_else(|| {
+                        node_error("VOXA-VOICE-CONTEXT-TYPE", "transcript must be text")
+                    })?
+                    .data()
+                    .as_str()
+                    .trim();
+                if !transcript.is_empty() {
+                    self.pending_transcript = Some(transcript.into());
+                    if !self.speech_active {
+                        self.emit_pending(&input, context)?;
+                    }
+                }
+            }
+            Some("speech_in") => {
+                let event = input.as_event().ok_or_else(|| {
+                    node_error("VOXA-VOICE-CONTEXT-TYPE", "speech input must be an event")
+                })?;
+                match event.data().topic().as_str() {
+                    "voxa.voice.speech.started" => {
+                        self.speech_active = true;
+                        self.pending_transcript = None;
+                    }
+                    "voxa.voice.speech.stopped" => {
+                        self.speech_active = false;
+                        self.emit_pending(&input, context)?;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {
+                return Err(node_error(
+                    "VOXA-VOICE-CONTEXT-PORT",
+                    "voice turn context received an unknown port",
+                ))
+            }
+        }
+        Ok(())
+    }
 }
 
 struct AudioResampleFactory;

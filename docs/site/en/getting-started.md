@@ -60,3 +60,17 @@ voxa studio my-agent.voxa.json
 
 Studio opens locally with a random access token. Continue with the
 [Studio guide](studio.md).
+
+## Credentialed flagship voice demo
+
+After obtaining an Agora Native C++ SDK, three short-lived RTC tokens, and
+DashScope credentials, run:
+
+```bash
+./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/run.sh
+```
+
+Choose Qwen Realtime or Cascade in Studio, fill **Connections**, and open
+**Voice Room**. See `examples/voice-agent/README.md` in the repository for the
+credential boundary and complete acceptance flow.

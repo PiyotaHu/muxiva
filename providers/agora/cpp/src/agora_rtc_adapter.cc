@@ -585,9 +585,3 @@ void RtcAdapter::on_video_frame(const I420FrameView& value) noexcept {
 }
 
 }  // namespace voxa::agora
-
-#if !defined(VOXA_ENABLE_AGORA)
-namespace voxa::agora {
-std::unique_ptr<Sdk> make_native_sdk() noexcept { return {}; }
-}  // namespace voxa::agora
-#endif

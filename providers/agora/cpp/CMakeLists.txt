@@ -33,6 +33,8 @@ if(VOXA_ENABLE_AGORA)
   target_compile_definitions(voxa_agora PRIVATE VOXA_ENABLE_AGORA=1)
   target_include_directories(voxa_agora PRIVATE "${VOXA_AGORA_INCLUDE_DIR}")
   target_link_libraries(voxa_agora PUBLIC "${VOXA_AGORA_LIBRARY}")
+else()
+  target_sources(voxa_agora PRIVATE src/agora_native_sdk_stub.cc)
 endif()
 
 install(DIRECTORY include/ DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")

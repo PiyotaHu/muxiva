@@ -38,8 +38,16 @@ are password inputs, are cleared after submission, remain only in local process
 memory for the initial implementation, and are never returned by the status
 API or saved with the Graph. The Voice Graph Gallery shows both a recommended
 seven-Node end-to-end Realtime topology and an inspectable eleven-Node VAD → ASR →
-LLM → TTS cascade. Applying either graph remains disabled until all of its exact
-Provider Factories are installed.
+LLM → TTS cascade. Python ASR, sentence-streaming LLM, committed streaming TTS,
+generic VAD/turn context, and the C++ dynamic Node Pack loader are implemented.
+A graph becomes runnable only when every exact Factory is installed.
+
+The project **Voice Room** captures the microphone with Agora Web SDK, subscribes
+to bot audio, and visualizes graph, callback, and frame activity. Ingress,
+egress, and browser clients use three distinct UIDs and short-lived tokens so
+native clients cannot replace one another. Browser code receives only the App
+ID, channel, web UID, and short-lived web token explicitly exposed by the
+Manifest. DashScope keys, bot tokens, and the App Certificate stay server-side.
 
 Provider code is now strictly application-owned. The Qwen Audio Realtime Node
 Pack is Python and lives under `examples/voice-agent`; the Agora transport is
@@ -48,8 +56,10 @@ Core, Graph builtins, and Studio contain no Qwen, DashScope, or Agora code.
 The root CMake project also contains no Agora target; the provider has its own
 standalone CMake project and depends one-way on Voxa's public ABI.
 Studio discovers generic connection fields and graph templates from project
-Manifests. The Python Qwen protocol tests cover PCM append, streamed audio and
-text, and `response.cancel`; the C++ gate compiles the Agora Nodes and adapter.
+Manifests. Python protocol tests cover Realtime, ASR, sentence-sized streaming
+LLM output, explicitly committed TTS, and `response.cancel`. The C++ gate builds
+Node Packs, dynamically loads their ABI, and compiles both templates with
+Studio's real Registry.
 
 ## FFmpeg
 

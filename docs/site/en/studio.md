@@ -25,10 +25,11 @@ declare ports and configuration schema, then select **Save & Register**.
 └── node.py
 ```
 
-The package appears in the project Palette immediately. Text Python Source,
-Transform, and Sink Nodes can run through the trusted local development Host.
-TypeScript, Rust, and C++ project packages are authorable but remain disabled in
-runnable Graphs until their corresponding Studio build Hosts are implemented.
+The package appears in the project Palette immediately. Python Nodes run through
+the trusted local Host. A C++ dynamic library under
+`.voxa/native/<package_id>/` is loadable after Studio verifies its ABI v1
+identity, version, role, and exact port shape against the Manifest. TypeScript
+and Rust project source still requires an externally built supported artifact.
 
 Selecting a project Node shows the exact source stored under `.voxa/nodes/`
 and offers **Edit in Node Lab**. Selecting a compiled built-in shows its exact
@@ -39,6 +40,12 @@ Factory identity and a link to the authoritative Rust implementation.
 The Runtime panel reports callback counts and duration, active and failed
 Nodes, Edge throughput, queue occupancy, drops, and retained terminal outcome.
 Run uses the current canvas snapshot; saving first is not required.
+
+When a project provides `.voxa/web/index.html`, the toolbar exposes its project
+experience, such as **Voice Room**. Studio saves the current valid graph before
+opening it. The page is bearer-token protected, and only short-lived connection
+fields explicitly marked `client_exposed: true` can be returned to it; server
+API keys and bot credentials remain unavailable to browser code.
 
 ## Security boundary
 

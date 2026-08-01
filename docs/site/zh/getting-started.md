@@ -58,3 +58,16 @@ voxa studio my-agent.voxa.json
 
 Studio 会在本机启动并生成随机访问 Token。下一步阅读
 [Studio 指南](studio.md)。
+
+## 真实语音门面 Demo
+
+取得 Agora Native C++ SDK、三个短期 RTC Token 以及 DashScope 凭据后：
+
+```bash
+./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/run.sh
+```
+
+在 Studio 选择 Qwen Realtime 或 Cascade，填写 **Connections**，打开
+**Voice Room**。详细凭据边界与验收步骤见仓库中的
+`examples/voice-agent/README.md`。

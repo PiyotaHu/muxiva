@@ -118,10 +118,12 @@ class QwenAudioRealtimeNode:
                 text = event.get("delta", "")
                 if text:
                     ctx.emit("text_out", voxa.TextFrame(text, sequence=frame.sequence))
+                    ctx.publish_event("voxa.voice.response.delta", {"text": text})
             elif kind == "conversation.item.input_audio_transcription.delta":
                 text = event.get("text", "")
                 if text:
                     ctx.emit("text_out", voxa.TextFrame(text, sequence=frame.sequence))
+                    ctx.publish_event("voxa.voice.transcript.delta", {"text": text})
             elif kind == "error":
                 error = event.get("error", {})
                 raise QwenProtocolError(

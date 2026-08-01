@@ -3,22 +3,24 @@
 mod node_library;
 
 use std::{
+    collections::VecDeque,
     fs::{self, OpenOptions},
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Mutex,
+        Arc, Mutex,
     },
     time::{Duration, Instant},
 };
 
 use voxa_core::{
-    start_registered_runtime, EdgePolicies, GraphRuntime, RuntimeOptions, RuntimeWaitError,
+    start_registered_runtime_with_context, EdgePolicies, EventBus, GraphRuntime, ResourceStore,
+    RuntimeOptions, RuntimeWaitError,
 };
 use voxa_graph_json::{GraphDiagnostic, GraphDocument, MAX_DOCUMENT_BYTES};
-use voxa_types::{EdgeId, NodeId};
+use voxa_types::{EdgeId, NamespacedName, NodeId};
 
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const INDEX: &str = include_str!("assets/index.html");
@@ -42,6 +44,7 @@ struct StudioRuntime {
     next_session: AtomicU64,
     session: Mutex<Option<RuntimeSession>>,
     connections: node_library::ConnectionStore,
+    events: Arc<Mutex<VecDeque<serde_json::Value>>>,
 }
 
 impl StudioRuntime {
@@ -50,6 +53,7 @@ impl StudioRuntime {
             next_session: AtomicU64::new(0),
             session: Mutex::new(None),
             connections: node_library::ConnectionStore::load(graph)?,
+            events: Arc::new(Mutex::new(VecDeque::with_capacity(128))),
         })
     }
 }
@@ -201,12 +205,24 @@ fn handle_connection(
     let request = match read_request(&mut stream) {
         Ok(request) => request,
         Err(error) => {
-            return write_response(&mut stream, error.status, "text/plain", error.message)
+            return write_response(
+                &mut stream,
+                error.status,
+                "text/plain",
+                error.message,
+                false,
+            )
         }
     };
     let authorized = request.authorization.as_deref() == Some(&format!("Bearer {token}"));
     let (status, content_type, payload) = route(&request, graph, authorized, runtime);
-    write_response(&mut stream, status, content_type, &payload)
+    write_response(
+        &mut stream,
+        status,
+        content_type,
+        &payload,
+        request.path.starts_with("/project/"),
+    )
 }
 
 fn route(
@@ -233,6 +249,21 @@ fn route(
             "text/javascript; charset=utf-8",
             SCRIPT.to_owned(),
         ),
+        ("GET", path) if path.starts_with("/project/") => {
+            match read_project_asset(graph, &path["/project/".len()..]) {
+                Ok((content_type, payload)) => ("200 OK", content_type, payload),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
+                    "404 Not Found",
+                    "text/plain; charset=utf-8",
+                    "project asset not found".into(),
+                ),
+                Err(_) => (
+                    "400 Bad Request",
+                    "text/plain; charset=utf-8",
+                    "invalid project asset".into(),
+                ),
+            }
+        }
         _ if !authorized => (
             "401 Unauthorized",
             "text/plain; charset=utf-8",
@@ -298,6 +329,7 @@ fn route(
                 "graph_path": graph.display().to_string(),
                 "max_document_bytes": MAX_DOCUMENT_BYTES,
                 "writable": fs::metadata(graph).map(|metadata| !metadata.permissions().readonly()).unwrap_or(false),
+                "project_demo": graph.parent().unwrap_or_else(|| Path::new(".")).join(".voxa/web/index.html").is_file(),
             });
             ("200 OK", "application/json", payload.to_string())
         }
@@ -305,6 +337,11 @@ fn route(
             "200 OK",
             "application/json",
             runtime.connections.status_json().to_string(),
+        ),
+        ("GET", "/api/v1/connections/client") => (
+            "200 OK",
+            "application/json",
+            runtime.connections.client_json().to_string(),
         ),
         ("PUT", "/api/v1/providers") => match runtime.connections.update_json(&request.body) {
             Ok(()) => (
@@ -323,6 +360,11 @@ fn route(
             Err(errors) => diagnostics_response(errors),
         },
         ("GET", "/api/v1/runtime") => ("200 OK", "application/json", runtime_snapshot(runtime)),
+        ("GET", "/api/v1/runtime/events") => (
+            "200 OK",
+            "application/json",
+            runtime_events(runtime).to_string(),
+        ),
         ("POST", "/api/v1/runtime/start") => start_runtime(runtime, &request.body, graph),
         ("POST", "/api/v1/runtime/stop") => stop_runtime(runtime),
         ("PUT", "/api/v1/graph") => match validate(&request.body, graph, runtime) {
@@ -346,6 +388,46 @@ fn route(
             "not found".into(),
         ),
     }
+}
+
+fn read_project_asset(graph: &Path, requested: &str) -> std::io::Result<(&'static str, String)> {
+    let relative = Path::new(requested);
+    if requested.is_empty()
+        || relative.is_absolute()
+        || relative
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "unsafe project asset path",
+        ));
+    }
+    let path = graph
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(".voxa/web")
+        .join(relative);
+    let metadata = fs::metadata(&path)?;
+    if !metadata.is_file() || metadata.len() > 4 * 1024 * 1024 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "project asset is not a bounded file",
+        ));
+    }
+    let content_type = match path.extension().and_then(|value| value.to_str()) {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js") => "text/javascript; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("json") => "application/json",
+        _ => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "unsupported project asset type",
+            ))
+        }
+    };
+    Ok((content_type, fs::read_to_string(path)?))
 }
 
 fn project_templates(graph: &Path) -> std::io::Result<Vec<serde_json::Value>> {
@@ -470,6 +552,16 @@ fn start_runtime(
             json_message("a Studio runtime session is already active"),
         );
     }
+    let event_bus = match studio_event_bus(&state.events) {
+        Ok(bus) => bus,
+        Err(error) => {
+            return (
+                "500 Internal Server Error",
+                "application/json",
+                json_message(&format!("failed to start Studio event telemetry: {error}")),
+            )
+        }
+    };
     let graph_id = graph.graph_id().as_str().to_owned();
     let node_ids = graph
         .nodes()
@@ -481,11 +573,13 @@ fn start_runtime(
         .iter()
         .map(|edge| edge.edge_id().clone())
         .collect();
-    let runtime = match start_registered_runtime(
+    let runtime = match start_registered_runtime_with_context(
         graph,
         &registry,
         EdgePolicies::new(),
         RuntimeOptions::default(),
+        ResourceStore::new(),
+        event_bus,
     ) {
         Ok(runtime) => runtime,
         Err(error) => {
@@ -511,6 +605,44 @@ fn start_runtime(
         "application/json",
         session_snapshot(session.as_ref().expect("installed session")).to_string(),
     )
+}
+
+fn studio_event_bus(events: &Arc<Mutex<VecDeque<serde_json::Value>>>) -> Result<EventBus, String> {
+    events
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clear();
+    let bus = EventBus::default();
+    for topic in [
+        "voxa.voice.speech.started",
+        "voxa.voice.speech.stopped",
+        "voxa.voice.transcript.delta",
+        "voxa.voice.transcript.completed",
+        "voxa.voice.response.delta",
+        "voxa.voice.response.completed",
+    ] {
+        let queue = events.clone();
+        bus.subscribe(
+            NamespacedName::new(topic).map_err(|error| error.to_string())?,
+            move |event| {
+                let data = event.data();
+                let value = serde_json::json!({
+                    "topic": data.topic().as_str(),
+                    "source": data.source().as_str(),
+                    "sequence": event.header().sequence_id().get(),
+                    "payload": voxa_graph_json::value_to_json(data.payload()),
+                });
+                let mut queue = queue.lock().unwrap_or_else(|error| error.into_inner());
+                if queue.len() == 128 {
+                    queue.pop_front();
+                }
+                queue.push_back(value);
+                Ok(())
+            },
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(bus)
 }
 
 fn stop_runtime(state: &StudioRuntime) -> (&'static str, &'static str, String) {
@@ -540,6 +672,18 @@ fn runtime_snapshot(state: &StudioRuntime) -> String {
     session.as_ref().map_or_else(
         || serde_json::json!({"status": "idle", "session_id": null}).to_string(),
         |session| session_snapshot(session).to_string(),
+    )
+}
+
+fn runtime_events(state: &StudioRuntime) -> serde_json::Value {
+    serde_json::Value::Array(
+        state
+            .events
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .iter()
+            .cloned()
+            .collect(),
     )
 }
 
@@ -701,9 +845,15 @@ fn write_response(
     status: &str,
     content_type: &str,
     payload: &str,
+    project_asset: bool,
 ) -> std::io::Result<()> {
+    let policy = if project_asset {
+        "default-src 'none'; script-src 'self' https:; style-src 'self'; connect-src 'self' https: wss:; media-src blob:; worker-src blob:; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'"
+    } else {
+        "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'"
+    };
     let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nContent-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{payload}",
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nContent-Security-Policy: {policy}\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
     );
     stream.write_all(response.as_bytes())
@@ -711,7 +861,9 @@ fn write_response(
 
 #[cfg(test)]
 mod tests {
-    use super::{handle_connection, route, HttpRequest, StudioRuntime};
+    use super::{
+        handle_connection, project_templates, route, validate, HttpRequest, StudioRuntime,
+    };
     use std::{
         fs,
         io::{Read, Write},
@@ -723,12 +875,31 @@ mod tests {
 
     static NEXT_PATH: AtomicU64 = AtomicU64::new(0);
 
+    #[test]
+    fn installed_voice_templates_compile_against_the_real_project_registry() {
+        let Ok(graph) = std::env::var("VOXA_VOICE_FIXTURE_GRAPH") else {
+            return;
+        };
+        let graph = PathBuf::from(graph);
+        let runtime = StudioRuntime::new(&graph).unwrap();
+        let templates = project_templates(&graph).unwrap();
+        assert_eq!(templates.len(), 2);
+        for template in templates {
+            let graph_json = template["graph"].to_string();
+            if let Err(diagnostics) = validate(&graph_json, &graph, &runtime) {
+                panic!("template {} failed: {diagnostics:?}", template["id"]);
+            }
+        }
+    }
+
     fn graph_path() -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "voxa-studio-contract-{}-{}.json",
+        let directory = std::env::temp_dir().join(format!(
+            "voxa-studio-contract-{}-{}",
             std::process::id(),
             NEXT_PATH.fetch_add(1, Ordering::Relaxed)
         ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("graph.json");
         fs::write(
             &path,
             include_str!("../../../examples/graphs/text-uppercase.v1.json"),
@@ -916,7 +1087,7 @@ mod tests {
         fs::create_dir_all(&package_dir).unwrap();
         fs::write(
             package_dir.join("voxa.node.json"),
-            r#"{"format":"voxa.node/v1","package_id":"connection_test","display_name":"Connection Test","node_type":"test.connection","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:Node","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object"},"connection":{"id":"test_provider","display_name":"Test Provider","description":"Generic manifest connection","fields":[{"name":"api_key","label":"API Key","environment":"TEST_PROVIDER_API_KEY","secret":true,"required":true,"default":""},{"name":"endpoint","label":"Endpoint","environment":"TEST_PROVIDER_ENDPOINT","secret":false,"required":true,"default":"https://example.test"}]}}"#,
+            r#"{"format":"voxa.node/v1","package_id":"connection_test","display_name":"Connection Test","node_type":"test.connection","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:Node","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object"},"connection":{"id":"test_provider","display_name":"Test Provider","description":"Generic manifest connection","fields":[{"name":"api_key","label":"API Key","environment":"TEST_PROVIDER_API_KEY","secret":true,"required":true,"default":""},{"name":"endpoint","label":"Endpoint","environment":"TEST_PROVIDER_ENDPOINT","secret":false,"required":true,"client_exposed":true,"default":"https://example.test"}]}}"#,
         )
         .unwrap();
         fs::write(package_dir.join("node.py"), "class Node: pass\n").unwrap();
@@ -952,6 +1123,16 @@ mod tests {
         assert!(payload.contains(r#""name":"api_key"#));
         assert!(payload.contains(r#""set":true"#));
         assert!(payload.contains("https://custom.example"));
+        let client_request = HttpRequest {
+            method: "GET".into(),
+            path: "/api/v1/connections/client".into(),
+            authorization: None,
+            body: String::new(),
+        };
+        let (_, _, client_payload) = route(&client_request, &graph, true, &runtime);
+        assert!(client_payload.contains("https://custom.example"));
+        assert!(!client_payload.contains(api_key));
+        assert!(!client_payload.contains("api_key"));
         assert_eq!(fs::read_to_string(&graph).unwrap(), original);
         fs::remove_file(graph).unwrap();
     }

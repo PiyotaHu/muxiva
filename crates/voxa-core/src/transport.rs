@@ -21,6 +21,7 @@ const AUDIO_ENDED: &str = "voxa.transport.audio.ended";
 const USER_JOINED: &str = "voxa.transport.user.joined";
 const USER_LEFT: &str = "voxa.transport.user.left";
 const CONNECTION_CHANGED: &str = "voxa.transport.connection.changed";
+pub const RUNTIME_INTERRUPT_SIGNAL: &str = "voxa.runtime.interrupt";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectionState {
@@ -180,6 +181,26 @@ impl TransportControl {
         state.interrupted = true;
         state.revision = state.revision.saturating_add(1);
         ControlApplyOutcome::Applied
+    }
+
+    /// Atomically invalidates the current turn and opens a fresh runtime turn.
+    ///
+    /// This is the barge-in primitive used when an acoustic Node cannot know
+    /// the Runtime's private TurnId. Frames already stamped with the old turn
+    /// become stale immediately at every Sink gate.
+    pub fn advance_after_interrupt(&self) -> TurnId {
+        let mut state = self
+            .state
+            .write()
+            .unwrap_or_else(|error| error.into_inner());
+        let next_revision = state.revision.saturating_add(1);
+        let turn_id =
+            TurnId::new(format!("turn.runtime.{next_revision}")).expect("bounded runtime turn ID");
+        state.turn_id = turn_id.clone();
+        state.interrupted = false;
+        state.audio_ended = false;
+        state.revision = next_revision;
+        turn_id
     }
 
     pub fn end_audio(&self, turn_id: &TurnId) -> ControlApplyOutcome {

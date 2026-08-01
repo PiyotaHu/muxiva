@@ -1,0 +1,1 @@
+# Uses Python's standard library HTTP client; no third-party dependency.

@@ -43,12 +43,24 @@ shim.TextFrame = TextFrame
 shim.AudioFrame = AudioFrame
 
 class NodeContext:
-    def __init__(self, node_id, input_port, config):
+    def __init__(self, node_id, input_port, config, streaming=False):
         self.node_id, self.input_port, self.config = node_id, input_port, config
+        self.streaming = streaming
         self.emissions, self.signals, self.events = [], [], []
-    def emit(self, port, frame): self.emissions.append({"port":port, "frame":encode_frame(frame)})
-    def emit_signal(self, name, payload=None): self.signals.append({"name":name, "payload":payload})
-    def publish_event(self, topic, payload=None): self.events.append({"topic":topic, "payload":payload})
+    def emit(self, port, frame):
+        emission = {"port":port, "frame":encode_frame(frame)}
+        if self.streaming:
+            print(json.dumps({"kind":"emission", **emission}), flush=True)
+        else:
+            self.emissions.append(emission)
+    def emit_signal(self, name, payload=None):
+        value = {"name":name, "payload":payload}
+        if self.streaming: print(json.dumps({"kind":"signal", **value}), flush=True)
+        else: self.signals.append(value)
+    def publish_event(self, topic, payload=None):
+        value = {"topic":topic, "payload":payload}
+        if self.streaming: print(json.dumps({"kind":"event", **value}), flush=True)
+        else: self.events.append(value)
     def __str__(self): return self.input_port or ""
     def __eq__(self, other): return self.input_port == other
 
@@ -92,15 +104,14 @@ for line in sys.stdin:
         op = command["op"]
         if op == "process":
             frame = decode_frame(command.get("frame"))
-            ctx = NodeContext(command["node_id"], command.get("input_port"), config)
+            ctx = NodeContext(command["node_id"], command.get("input_port"), config, streaming=True)
             result = invoke("on_process", frame, ctx)
-            emissions = list(ctx.emissions)
             if result is not None:
                 values = result if isinstance(result, dict) else {command["default_output"]: result}
                 for port, frames in values.items():
                     if not isinstance(frames, list): frames = [frames]
-                    emissions.extend({"port":port, "frame":encode_frame(item)} for item in frames)
-            response = {"ok": True, "emissions": emissions, "signals":ctx.signals, "events":ctx.events}
+                    for item in frames: ctx.emit(port, item)
+            response = {"ok": True, "signals":ctx.signals, "events":ctx.events}
         elif op == "prepare": invoke("on_prepare", NodeContext(command["node_id"], None, config)); response = {"ok": True}
         elif op == "finish": invoke("on_finish", NodeContext(command["node_id"], None, config)); response = {"ok": True}
         elif op == "abort": invoke("on_abort", command.get("reason", "aborted"), NodeContext(command["node_id"], None, config)); response = {"ok": True}
@@ -155,6 +166,9 @@ pub struct ConnectionFieldManifest {
     pub secret: bool,
     #[serde(default)]
     pub required: bool,
+    /// Explicit opt-in for short-lived values needed by a project browser app.
+    #[serde(default)]
+    pub client_exposed: bool,
     #[serde(default)]
     pub default: String,
 }
@@ -216,10 +230,12 @@ impl ConnectionStore {
                 }
             }
         }
-        Ok(Self {
+        let store = Self {
             manifests: Arc::new(manifests),
             values: Arc::new(Mutex::new(values)),
-        })
+        };
+        store.apply_to_process_environment();
+        Ok(store)
     }
 
     pub fn status_json(&self) -> serde_json::Value {
@@ -251,6 +267,39 @@ impl ConnectionStore {
             }).collect::<Vec<_>>(),
             "storage": "process-memory",
         })
+    }
+
+    pub fn client_json(&self) -> serde_json::Value {
+        let values = self
+            .values
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let connections = self
+            .manifests
+            .iter()
+            .map(|connection| {
+                let fields = connection
+                    .fields
+                    .iter()
+                    .filter(|field| field.client_exposed)
+                    .filter_map(|field| {
+                        values
+                            .get(&(connection.id.clone(), field.name.clone()))
+                            .map(|value| {
+                                (
+                                    field.name.clone(),
+                                    serde_json::Value::String(
+                                        String::from_utf8_lossy(&value.0).into_owned(),
+                                    ),
+                                )
+                            })
+                    })
+                    .collect::<serde_json::Map<_, _>>();
+                (connection.id.clone(), serde_json::Value::Object(fields))
+            })
+            .filter(|(_, value)| value.as_object().is_some_and(|fields| !fields.is_empty()))
+            .collect::<serde_json::Map<_, _>>();
+        serde_json::Value::Object(connections)
     }
 
     pub fn update_json(&self, input: &str) -> Result<(), String> {
@@ -294,7 +343,26 @@ impl ConnectionStore {
                     .replace(value.trim());
             }
         }
+        drop(values);
+        self.apply_to_process_environment();
         Ok(())
+    }
+
+    fn apply_to_process_environment(&self) {
+        let values = self
+            .values
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        for connection in self.manifests.iter() {
+            for field in &connection.fields {
+                if let Some(value) = values.get(&(connection.id.clone(), field.name.clone())) {
+                    std::env::set_var(
+                        &field.environment,
+                        String::from_utf8_lossy(&value.0).as_ref(),
+                    );
+                }
+            }
+        }
     }
 
     fn apply_to_command(&self, command: &mut Command, connection: Option<&ConnectionManifest>) {
@@ -362,10 +430,15 @@ pub fn register_project_nodes_with_connections(
     connections: ConnectionStore,
 ) -> Result<(), String> {
     for package in list(graph).map_err(|error| error.to_string())? {
-        if !python_host_supported(&package) {
-            continue;
-        }
-        let registration = python_registration(graph, &package, connections.clone())?;
+        let registration = match package.manifest.language.as_str() {
+            "python" if python_host_supported(&package) => {
+                python_registration(graph, &package, connections.clone())?
+            }
+            "cpp" if cpp_host_supported(graph, &package.manifest) => {
+                cpp_registration(graph, &package.manifest)?
+            }
+            _ => continue,
+        };
         registry
             .register(registration)
             .map_err(|error| error.to_string())?;
@@ -524,12 +597,101 @@ fn read_package(directory: PathBuf) -> io::Result<NodePackage> {
         serde_json::from_str(&fs::read_to_string(directory.join("voxa.node.json"))?)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let code = fs::read_to_string(directory.join(source_filename(&manifest.language)))?;
-    let runtime_available = python_host_supported_manifest(&manifest);
+    let runtime_available = python_host_supported_manifest(&manifest)
+        || (manifest.language == "cpp" && cpp_artifact_path_from_directory(&directory).is_file());
     Ok(NodePackage {
         manifest,
         code,
         runtime_available,
     })
+}
+
+fn cpp_registration(
+    graph: &Path,
+    manifest: &NodePackageManifest,
+) -> Result<NodeRegistration, String> {
+    let path = cpp_artifact_path(graph, &manifest.package_id);
+    let registration = voxa_ffi::load_cpp_multimodal_node_pack(&path)?;
+    validate_cpp_registration(manifest, &registration)?;
+    Ok(registration)
+}
+
+fn validate_cpp_registration(
+    manifest: &NodePackageManifest,
+    registration: &NodeRegistration,
+) -> Result<(), String> {
+    let descriptor = registration.descriptor();
+    let expected_kind = match manifest.kind.as_str() {
+        "source" => NodeKind::Source,
+        "transform" => NodeKind::Transform,
+        "sink" => NodeKind::Sink,
+        _ => return Err("invalid C++ Node kind".into()),
+    };
+    if registration.language() != NodeLanguage::Cpp
+        || descriptor.node_type().as_str() != manifest.node_type
+        || registration.version().as_str() != manifest.factory_version
+        || descriptor.kind() != expected_kind
+        || descriptor.ports().len() != manifest.ports.len()
+    {
+        return Err(format!(
+            "C++ artifact identity does not match Manifest `{}`",
+            manifest.package_id
+        ));
+    }
+    for (actual, expected) in descriptor.ports().iter().zip(&manifest.ports) {
+        let expected_direction = match expected.direction.as_str() {
+            "input" => PortDirection::Input,
+            "output" => PortDirection::Output,
+            _ => return Err("invalid C++ Port direction".into()),
+        };
+        if actual.name().as_str() != expected.name
+            || actual.direction() != expected_direction
+            || actual.frame_type() != parse_frame_type(&expected.frame_type)?
+        {
+            return Err(format!(
+                "C++ artifact Port shape does not match Manifest `{}`",
+                manifest.package_id
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn cpp_host_supported(graph: &Path, manifest: &NodePackageManifest) -> bool {
+    manifest.language == "cpp" && cpp_artifact_path(graph, &manifest.package_id).is_file()
+}
+
+fn cpp_artifact_path(graph: &Path, package_id: &str) -> PathBuf {
+    graph
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(".voxa/native")
+        .join(package_id)
+        .join(native_library_filename())
+}
+
+fn cpp_artifact_path_from_directory(directory: &Path) -> PathBuf {
+    let package_id = directory
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    directory
+        .parent()
+        .and_then(Path::parent)
+        .unwrap_or_else(|| Path::new("."))
+        .join("native")
+        .join(package_id)
+        .join(native_library_filename())
+}
+
+fn native_library_filename() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "libvoxa_node_pack.dylib"
+    } else if cfg!(target_os = "windows") {
+        "voxa_node_pack.dll"
+    } else {
+        "libvoxa_node_pack.so"
+    }
 }
 
 fn python_registration(
@@ -761,34 +923,50 @@ impl Node for PythonDevNode {
         context: &mut NodeContext,
     ) -> voxa_types::Result<()> {
         let wire = input.as_ref().map(frame_to_wire).transpose()?;
-        let response = self.call(serde_json::json!({
+        let command = serde_json::json!({
             "op":"process",
             "frame":wire,
             "input_port":context.input_port().map(PortName::as_str),
             "default_output":self.default_output,
             "node_id":context.node_id().as_str(),
-        }))?;
+        });
+        writeln!(self.input, "{command}")
+            .and_then(|_| self.input.flush())
+            .map_err(|error| python_error(format!("cannot send to Python Host: {error}")))?;
+        let response = loop {
+            let response = read_host_response(&mut self.output).map_err(python_error)?;
+            if response.get("kind").and_then(serde_json::Value::as_str) == Some("emission") {
+                emit_python_frame(&response, input.as_ref(), context)?;
+                continue;
+            }
+            if response.get("kind").and_then(serde_json::Value::as_str) == Some("event") {
+                publish_python_event(&response, input.as_ref(), context)?;
+                continue;
+            }
+            if response.get("kind").and_then(serde_json::Value::as_str) == Some("signal") {
+                emit_python_signal(&response, input.as_ref(), context)?;
+                continue;
+            }
+            if response.get("ok") != Some(&serde_json::Value::Bool(true)) {
+                return Err(python_error(
+                    response
+                        .get("error")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("Python Node failed")
+                        .to_owned(),
+                ));
+            }
+            break response;
+        };
+        // Explicit ctx operations are streamed above. Arrays remain for Host
+        // protocol compatibility with older project Nodes.
         for emission in response
             .get("emissions")
             .and_then(serde_json::Value::as_array)
             .into_iter()
             .flatten()
         {
-            let port = emission
-                .get("port")
-                .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| python_error("Python emission is missing its Port"))?;
-            let frame = wire_to_frame(
-                emission
-                    .get("frame")
-                    .ok_or_else(|| python_error("Python emission is missing its Frame"))?,
-                input.as_ref(),
-                context.node_id(),
-            )?;
-            context.emit(
-                PortName::new(port).map_err(|error| python_error(error.to_string()))?,
-                frame,
-            )?;
+            emit_python_frame(emission, input.as_ref(), context)?;
         }
         for event in response
             .get("events")
@@ -796,24 +974,7 @@ impl Node for PythonDevNode {
             .into_iter()
             .flatten()
         {
-            let topic = event
-                .get("topic")
-                .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| python_error("Python EventBus publication is missing its topic"))?;
-            let derived = control_frame(
-                input.as_ref(),
-                context.node_id(),
-                FramePayload::Event(EventData::new(
-                    NamespacedName::new(topic).map_err(|error| python_error(error.to_string()))?,
-                    SchemaVersion::new(1).map_err(|error| python_error(error.to_string()))?,
-                    context.node_id().clone(),
-                    voxa_graph_json::value_from_json(
-                        event.get("payload").unwrap_or(&serde_json::Value::Null),
-                    )
-                    .map_err(python_error)?,
-                )),
-            )?;
-            context.publish_event(derived.as_event().expect("event payload").clone())?;
+            publish_python_event(event, input.as_ref(), context)?;
         }
         for signal in response
             .get("signals")
@@ -821,24 +982,7 @@ impl Node for PythonDevNode {
             .into_iter()
             .flatten()
         {
-            let name = signal
-                .get("name")
-                .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| python_error("Python Signal emission is missing its name"))?;
-            let derived = control_frame(
-                input.as_ref(),
-                context.node_id(),
-                FramePayload::Signal(SignalData::new(
-                    NamespacedName::new(name).map_err(|error| python_error(error.to_string()))?,
-                    SchemaVersion::new(1).map_err(|error| python_error(error.to_string()))?,
-                    context.node_id().clone(),
-                    voxa_graph_json::value_from_json(
-                        signal.get("payload").unwrap_or(&serde_json::Value::Null),
-                    )
-                    .map_err(python_error)?,
-                )),
-            )?;
-            context.emit_signal(derived.as_signal().expect("signal payload").clone())?;
+            emit_python_signal(signal, input.as_ref(), context)?;
         }
         Ok(())
     }
@@ -851,6 +995,81 @@ impl Node for PythonDevNode {
     fn on_abort(&mut self, reason: &voxa_core::AbortReason, _context: &mut NodeContext) {
         let _ = self.call(serde_json::json!({"op":"abort", "reason":reason.root().message(), "node_id":self.node_id.as_str()}));
     }
+}
+
+fn emit_python_frame(
+    emission: &serde_json::Value,
+    parent: Option<&Frame>,
+    context: &mut NodeContext,
+) -> voxa_types::Result<()> {
+    let port = emission
+        .get("port")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| python_error("Python emission is missing its Port"))?;
+    let frame = wire_to_frame(
+        emission
+            .get("frame")
+            .ok_or_else(|| python_error("Python emission is missing its Frame"))?,
+        parent,
+        context.node_id(),
+    )?;
+    context.emit(
+        PortName::new(port).map_err(|error| python_error(error.to_string()))?,
+        frame,
+    )?;
+    Ok(())
+}
+
+fn publish_python_event(
+    event: &serde_json::Value,
+    parent: Option<&Frame>,
+    context: &mut NodeContext,
+) -> voxa_types::Result<()> {
+    let topic = event
+        .get("topic")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| python_error("Python EventBus publication is missing its topic"))?;
+    let derived = control_frame(
+        parent,
+        context.node_id(),
+        FramePayload::Event(EventData::new(
+            NamespacedName::new(topic).map_err(|error| python_error(error.to_string()))?,
+            SchemaVersion::new(1).map_err(|error| python_error(error.to_string()))?,
+            context.node_id().clone(),
+            voxa_graph_json::value_from_json(
+                event.get("payload").unwrap_or(&serde_json::Value::Null),
+            )
+            .map_err(python_error)?,
+        )),
+    )?;
+    context.publish_event(derived.as_event().expect("event payload").clone())?;
+    Ok(())
+}
+
+fn emit_python_signal(
+    signal: &serde_json::Value,
+    parent: Option<&Frame>,
+    context: &mut NodeContext,
+) -> voxa_types::Result<()> {
+    let name = signal
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| python_error("Python Signal emission is missing its name"))?;
+    let derived = control_frame(
+        parent,
+        context.node_id(),
+        FramePayload::Signal(SignalData::new(
+            NamespacedName::new(name).map_err(|error| python_error(error.to_string()))?,
+            SchemaVersion::new(1).map_err(|error| python_error(error.to_string()))?,
+            context.node_id().clone(),
+            voxa_graph_json::value_from_json(
+                signal.get("payload").unwrap_or(&serde_json::Value::Null),
+            )
+            .map_err(python_error)?,
+        )),
+    )?;
+    context.emit_signal(derived.as_signal().expect("signal payload").clone())?;
+    Ok(())
 }
 
 impl Drop for PythonDevNode {
@@ -1119,5 +1338,33 @@ mod tests {
             3
         );
         fs::remove_dir_all(graph_path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn compiled_project_cpp_node_packs_load_through_the_real_abi() {
+        let Ok(graph_path) = std::env::var("VOXA_VOICE_FIXTURE_GRAPH") else {
+            return;
+        };
+        let graph_path = PathBuf::from(graph_path);
+        let packages = list(&graph_path).unwrap();
+        let cpp_packages = packages
+            .iter()
+            .filter(|package| package.manifest.language == "cpp")
+            .collect::<Vec<_>>();
+        assert!(!cpp_packages.is_empty());
+        assert!(cpp_packages.iter().all(|package| package.runtime_available));
+        let mut registry = voxa_graph_json::builtin_registry();
+        let connections = ConnectionStore::load(&graph_path).unwrap();
+        register_project_nodes_with_connections(&graph_path, &mut registry, connections).unwrap();
+        for package in cpp_packages {
+            assert!(registry
+                .resolve(
+                    &voxa_core::NodeTypeName::new(package.manifest.node_type.clone()).unwrap(),
+                    voxa_core::NodeLanguage::Cpp,
+                    &voxa_core::NodeFactoryVersion::new(package.manifest.factory_version.clone())
+                        .unwrap(),
+                )
+                .is_ok());
+        }
     }
 }

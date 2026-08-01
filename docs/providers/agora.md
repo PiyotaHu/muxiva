@@ -39,7 +39,15 @@ tests live under `providers/agora/cpp`; the root Voxa CMake project and Python
 package contain no Agora target or SDK wrapper.
 The flagship application's C++ Node Pack is under
 `examples/voice-agent/.voxa/nodes/agora_*`. Studio discovers its Manifest but
-does not compile or link Agora itself.
+does not compile or link Agora itself. Build the complete flagship packs with:
+
+```sh
+./examples/voice-agent/setup.sh /absolute/path/to/agora-sdk
+```
+
+Ingress, egress, and browser clients use separate UIDs and short-lived RTC
+tokens. The browser receives only explicitly exposed room fields; App
+Certificates and server/provider credentials must never enter the browser.
 
 Do not commit App IDs, certificates, or tokens. Studio's generic Connection
 store passes the Manifest-declared environment variables only to the owning

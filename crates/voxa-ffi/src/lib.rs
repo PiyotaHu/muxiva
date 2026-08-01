@@ -12,7 +12,9 @@ mod ingress;
 use std::{
     mem,
     panic::{catch_unwind, AssertUnwindSafe},
+    path::Path,
     ptr,
+    sync::Arc,
 };
 
 use abi::{
@@ -24,6 +26,33 @@ use handles::{Entry, Kind};
 use serde::Deserialize;
 
 pub use abi::{ABI_VERSION as VOXA_ABI_VERSION_V1, MAX_COPY_BYTES};
+
+/// Loads one trusted, in-process C++ multimodal Node Pack through ABI v1.
+///
+/// The returned registration owns the dynamic library for at least as long as
+/// any factory or Node instance can call into it.
+pub fn load_cpp_multimodal_node_pack(path: &Path) -> Result<voxa_core::NodeRegistration, String> {
+    type Entrypoint = unsafe extern "C" fn() -> abi::MultimodalNodeFactoryView;
+
+    // SAFETY: loading native code is explicitly restricted to a user-installed
+    // Node Pack path. ABI fields and every callback are validated before the
+    // registration becomes visible to the Runtime.
+    let library = Arc::new(
+        unsafe { libloading::Library::new(path) }
+            .map_err(|error| format!("cannot load C++ Node Pack `{}`: {error}", path.display()))?,
+    );
+    // SAFETY: the symbol name and return layout are the public Voxa ABI v1
+    // contract. cpp_multimodal_factory_spec validates the returned descriptor.
+    let view = unsafe {
+        let entrypoint: libloading::Symbol<'_, Entrypoint> = library
+            .get(b"voxa_node_pack_factory\0")
+            .map_err(|error| format!("C++ Node Pack has no v1 factory symbol: {error}"))?;
+        entrypoint()
+    };
+    let spec = cpp_multimodal_factory_spec(&view)
+        .map_err(|error| format!("{}: {}", error.code, error.message))?;
+    Ok(bridge::cpp_multimodal_registration(spec, Some(library)))
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -546,6 +575,8 @@ fn cpp_multimodal_factory_spec(
                 "video" => voxa_types::FrameType::Video,
                 "text" => voxa_types::FrameType::Text,
                 "byte" => voxa_types::FrameType::Byte,
+                "signal" => voxa_types::FrameType::Signal,
+                "event" => voxa_types::FrameType::Event,
                 _ => {
                     return Err(FfiError::validation(
                         "VOXA-FFI-GRAPH-FACTORY",

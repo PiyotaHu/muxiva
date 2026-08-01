@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Voxa Live Voice Room</title>
+  <link rel="stylesheet" href="/project/app.css">
+  <link rel="stylesheet" href="/project/conversation.css">
+</head>
+<body>
+  <main>
+    <header>
+      <a class="brand" href="/"><span>V</span> VOXA</a>
+      <div id="runtime-pill" class="pill"><i></i><b>Runtime idle</b></div>
+    </header>
+    <section class="hero">
+      <p class="eyebrow">FULL-DUPLEX MULTIMODAL AGENT</p>
+      <h1>Talk naturally.<br><em>Interrupt anytime.</em></h1>
+      <p class="lead">Your microphone travels through Agora C++, a typed Voxa graph, and one of two Qwen Python intelligence architectures.</p>
+      <button id="launch">Start live conversation</button>
+      <button id="leave" class="secondary" hidden>End session</button>
+      <p id="hint">Choose a graph in Studio, save it, then start here.</p>
+    </section>
+
+    <section class="orb-stage">
+      <div id="orb" class="orb"><div></div><span>READY</span></div>
+      <div id="levels" class="levels" aria-hidden="true"></div>
+      <b id="voice-state">Waiting for you</b>
+      <p id="session-copy">The agent stays alive until you end the session.</p>
+    </section>
+
+    <section class="conversation" aria-live="polite">
+      <div class="bubble user"><small>YOU · LIVE TRANSCRIPT</small><p id="user-text">Your words will appear here…</p></div>
+      <div class="bubble agent"><small>VOXA · STREAMING RESPONSE</small><p id="agent-text">The response will stream here while audio plays…</p></div>
+    </section>
+
+    <section class="pipeline">
+      <div data-node="agora-in"><span>C++</span><b>Agora In</b><small>microphone</small></div>
+      <i>→</i><div data-node="vad"><span>Rust</span><b>VAD + Barge-in</b><small>control plane</small></div>
+      <i>→</i><div data-node="reasoning"><span>Python</span><b>Qwen Intelligence</b><small>realtime / cascade</small></div>
+      <i>→</i><div data-node="agora-out"><span>C++</span><b>Agora Out</b><small>voice response</small></div>
+    </section>
+
+    <section class="telemetry">
+      <div><small>GRAPH</small><b id="graph-name">—</b></div>
+      <div><small>NODE CALLS</small><b id="calls">0</b></div>
+      <div><small>FRAMES</small><b id="frames">0</b></div>
+      <div><small>LATENCY SIGNAL</small><b id="latency">LIVE</b></div>
+    </section>
+    <section id="error" class="error" hidden></section>
+  </main>
+  <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js" defer></script>
+  <script src="/project/app.js" defer></script>
+</body>
+</html>

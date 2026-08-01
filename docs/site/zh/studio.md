@@ -25,9 +25,10 @@ byte、signal 与 event Port 之间不允许错误连接。
 └── node.py
 ```
 
-Package 会立即进入当前项目的 Palette。文本 Python Source、Transform 与 Sink
-可以通过可信本地开发 Host 运行。TypeScript、Rust 和 C++ 项目 Package 当前可
-编辑与保存，但在对应 Build Host 完成前不会进入可运行 Graph。
+Package 会立即进入当前项目的 Palette。Python Node 通过可信本地 Host 运行；
+符合 Voxa ABI v1、放在 `.voxa/native/<package_id>/` 的 C++ 动态库也会被严格核对
+Manifest 身份、版本、角色与 Port 后加载。TypeScript 与 Rust 项目源码目前仍需
+在 Studio 外构建为受支持的运行产物。
 
 选中项目 Node 后，Inspector 会展示 `.voxa/nodes/` 中保存的完整源码，并提供
 **Edit in Node Lab**。选中编译内置 Node 时会展示精确 Factory 身份，并链接到
@@ -37,6 +38,11 @@ Package 会立即进入当前项目的 Palette。文本 Python Source、Transfor
 
 Runtime 面板展示回调次数与耗时、活跃或失败 Node、Edge 吞吐、队列占用、丢帧
 以及最终结果。Run 使用当前画布快照，不要求预先保存。
+
+若项目提供 `.voxa/web/index.html`，工具栏会出现 **Voice Room** 等项目体验入口。
+Studio 会先保存当前有效图，再打开项目页面。项目页面只能通过本地 Bearer Token
+访问；连接 Manifest 只有显式声明 `client_exposed: true` 的短期字段才能被读取，
+其余 API Key、Bot Token 和服务端凭据不会返回浏览器。
 
 ## 安全边界
 

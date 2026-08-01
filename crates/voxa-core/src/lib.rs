@@ -79,7 +79,7 @@ pub use realtime::{
     RealtimeInputProfile, RealtimeProfileError, RuntimeInputTuning,
 };
 pub use registered_runtime::{
-    materialize_registered_nodes, start_registered_runtime,
+    materialize_registered_nodes, start_registered_runtime, start_registered_runtime_with_context,
     start_registered_runtime_with_resources, GraphMaterializationError,
     RegisteredRuntimeStartError,
 };
@@ -96,5 +96,5 @@ pub use runner::{
 pub use signal::{SignalQueuePushError, SignalQueueSnapshot};
 pub use transport::{
     ConnectionState, ControlApplyOutcome, TransportControl, TransportControlError,
-    TransportSnapshot,
+    TransportSnapshot, RUNTIME_INTERRUPT_SIGNAL,
 };

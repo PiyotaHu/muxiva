@@ -34,9 +34,9 @@ class AgoraAudioSinkNode final : public voxa::MultimodalGraphNode {
     sdk_ = voxa::agora::make_native_sdk();
     if (!sdk_) throw std::runtime_error("Agora Native SDK is not enabled in this build");
     const auto app_id = required_env("VOXA_AGORA_APP_ID");
-    const auto token = required_env("VOXA_AGORA_BOT_TOKEN");
+    const auto token = required_env("VOXA_AGORA_SINK_TOKEN");
     const auto channel = required_env("VOXA_AGORA_CHANNEL");
-    const auto uid = static_cast<std::uint32_t>(std::stoul(required_env("VOXA_AGORA_BOT_UID")));
+    const auto uid = static_cast<std::uint32_t>(std::stoul(required_env("VOXA_AGORA_SINK_UID")));
     if (sdk_->initialize(app_id, &observer_) != 0 || sdk_->join(token, channel, uid) != 0) {
       sdk_->shutdown();
       throw std::runtime_error("Agora C++ SDK failed to join the configured room");
@@ -75,6 +75,6 @@ class AgoraAudioSinkNode final : public voxa::MultimodalGraphNode {
 extern "C" voxa_multimodal_node_factory_v1 voxa_node_pack_factory() {
   static const auto factory = voxa::MultimodalGraphNodeFactory::make<AgoraAudioSinkNode>(
       "provider.agora.audio_sink", VOXA_NODE_SINK,
-      R"json([{"name":"audio_in","direction":"input","frame_type":"audio"}])json");
+      R"json([{"name":"audio_in","direction":"input","frameType":"audio"}])json");
   return factory.view();
 }

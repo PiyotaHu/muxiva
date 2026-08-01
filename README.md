@@ -42,8 +42,8 @@ Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but
 | Python/PyO3 package | Experimental | Dedicated thread/asyncio loop and hosted Graph v1 text factories; `isolated_process` is rejected |
 | Node-API package | Experimental | Dedicated Worker and hosted Graph v1 text factories; Promise-returning transforms are rejected |
 | JSON Graph v1 and CLI | Experimental | Exact-version Registry compilation, concurrent execution of compiled-in factories, bounded waits, initialization, and local Studio |
-| Local Studio | Available | Project Node Lab, drag-to-canvas, typed port wiring, validation, local Run/Stop and atomic save |
-| Model providers | Planned | Not included in Core or the current build |
+| Local Studio | Available | Node Lab, typed wiring, Python Host, C++ ABI packs, project experiences, local Run/Stop |
+| Model providers | Experimental | Application-owned Qwen Python packs; never linked into Core |
 
 ## Architecture
 
@@ -110,6 +110,20 @@ For the intentionally small installation smoke test, run
 
 Keep the mock session alive for a longer architecture review with
 `voxa demo --turns 20 --interval-ms 1000`.
+
+### Run the credentialed flagship voice room
+
+The flagship application offers both Qwen Audio Realtime and an inspectable
+VAD → ASR → LLM → TTS graph, with Agora C++ transport and a browser microphone:
+
+```bash
+./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/run.sh
+```
+
+Choose a graph in Studio, fill **Connections**, then open **Voice Room**. The
+full setup, three-identity RTC token model, security boundary, and offline gates
+are documented in [the flagship application guide](examples/voice-agent/README.md).
 
 ### Create, validate, and run a graph
 

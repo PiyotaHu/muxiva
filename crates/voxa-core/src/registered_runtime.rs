@@ -132,11 +132,31 @@ pub fn start_registered_runtime_with_resources(
     options: RuntimeOptions,
     resources: crate::ResourceStore,
 ) -> Result<GraphRuntime, RegisteredRuntimeStartError> {
+    start_registered_runtime_with_context(
+        graph,
+        registry,
+        policies,
+        options,
+        resources,
+        crate::EventBus::default(),
+    )
+}
+
+/// Materializes and starts one graph with graph-local resources and EventBus.
+pub fn start_registered_runtime_with_context(
+    graph: GraphDefinition,
+    registry: &NodeRegistry,
+    policies: EdgePolicies,
+    options: RuntimeOptions,
+    resources: crate::ResourceStore,
+    event_bus: crate::EventBus,
+) -> Result<GraphRuntime, RegisteredRuntimeStartError> {
     let nodes = materialize_registered_nodes(&graph, registry)
         .map_err(RegisteredRuntimeStartError::Materialization)?;
     ConcurrentRuntime::new(graph, nodes, policies, options)
         .map_err(RegisteredRuntimeStartError::Attachments)?
         .with_resources(resources)
+        .with_event_bus(event_bus)
         .start()
         .map_err(RegisteredRuntimeStartError::Threads)
 }

@@ -115,8 +115,8 @@ transport can reuse the same Qwen provider without Agora.
 ## Studio connection and template experience
 
 Studio owns a first-class **Connections** surface. A developer can paste the
-DashScope API key and Agora Bot token, set non-secret workspace, App ID,
-channel and Bot UID fields, and see readiness without editing an environment
+DashScope API key and three short-lived Agora RTC tokens, set workspace, App ID,
+channel and distinct browser/ingress/egress UID fields, and see readiness without editing an environment
 file. Password fields are cleared immediately after submission. The browser
 does not store secrets and the status API never echoes them. Initial storage is
 process memory and is erased when Studio exits; durable storage may only use an
@@ -132,10 +132,10 @@ The Voice Graph Gallery exposes two choices:
    captions, output resampler, and Agora Sink. This makes each stage observable
    and replaceable.
 
-A template is visible before its optional Provider is installed, but Studio
-must not apply it until every exact Factory identity is present in the Runtime
-Registry. This prevents a gallery action from creating a Graph that cannot
-validate or run.
+A template is visible before its optional Provider is installed. It can be
+inspected and applied, while validation and Run require every exact Factory
+identity in the Runtime Registry. This keeps architecture discovery available
+without pretending a missing provider is executable.
 
 ## Acceptance
 
@@ -164,8 +164,17 @@ Implemented after the provider-boundary correction:
 - the built-in PCM16 resampler covers 48 → 16 kHz and 24 → 48 kHz;
 - credential-free protocol and fake-transport tests cover authentication,
   audio append, transcript decode, cancellation, bounds, and secret redaction.
+- a generic C++ dynamic Node Pack loader validates ABI identity and exact
+  Manifest port shape while retaining the loaded library for Node lifetimes;
+- the full Python Qwen ASR, sentence-streaming LLM, and committed streaming TTS
+  cascade plus generic Rust VAD/turn context are executable;
+- the project Voice Room joins through Agora Web SDK, controls the Studio
+  Runtime, renders live metrics and EventBus transcript/response telemetry, and
+  stays active until the developer ends the session;
+- browser-visible connection values require explicit `client_exposed` opt-in;
+  DashScope keys, bot tokens, and App Certificates remain unavailable.
 
-Still required before the credentialed demo meets this record's acceptance:
-the generic compiled C++ Node Pack loader, browser room controls, full cascade
-Providers, bounded reconnect/mailbox behavior, TurnId stale-output gating, and
-retained live-room evidence.
+Still required for release certification rather than implementation completeness:
+retained credentialed live-room evidence on each release platform, token-expiry
+and reconnect fault runs against the selected Agora SDK release, and long-duration
+soak results. These cannot be fabricated by credential-free CI.

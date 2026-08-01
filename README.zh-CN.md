@@ -42,8 +42,8 @@ Voxa 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部
 | Python/PyO3 包 | 实验性 | 独立线程/asyncio loop 与宿主 Graph v1 文本 Factory；明确拒绝 `isolated_process` |
 | Node-API 包 | 实验性 | 独立 Worker 与宿主 Graph v1 文本 Factory；明确拒绝返回 Promise 的 Transform |
 | JSON Graph v1 与 CLI | 实验性 | 精确版本 Registry 编译、内置 Factory 并发执行、有界等待、初始化和本地 Studio |
-| 本地 Studio | 可用 | 项目 Node Lab、拖入画布、类型化端口连线、校验、本地 Run/Stop 与原子保存 |
-| 模型 Provider | 规划中 | 当前不属于 Core，也不是构建依赖 |
+| 本地 Studio | 可用 | Node Lab、类型化连线、Python Host、C++ ABI Pack、项目体验与本地 Run/Stop |
+| 模型 Provider | 实验性 | 应用层 Qwen Python Node Pack，绝不链接进 Core |
 
 ## 架构
 
@@ -104,6 +104,20 @@ microphone(audio)
 
 仅用于确认安装成功的极简 Smoke Test 可使用 `voxa demo --scenario text`。
 如需长时间观察完整链路，可运行 `voxa demo --turns 20 --interval-ms 1000`。
+
+### 运行真实凭据门面语音房间
+
+门面应用同时提供 Qwen Audio Realtime 与可检查的 VAD → ASR → LLM → TTS 图，
+使用 Agora C++ Transport 和浏览器麦克风：
+
+```bash
+./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/run.sh
+```
+
+在 Studio 选择图、填写 **Connections**，然后打开 **Voice Room**。完整安装流程、
+三身份 RTC Token 模型、安全边界和离线门禁见
+[门面应用指南](examples/voice-agent/README.md)。
 
 ### 创建、校验并运行 Graph
 

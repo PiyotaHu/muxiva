@@ -419,9 +419,8 @@ pub fn borrowed_frame_view(frame: &Frame) -> Result<FrameView, FfiError> {
         FrameType::Video => 2,
         FrameType::Text => 3,
         FrameType::Byte => 4,
-        FrameType::Signal | FrameType::Event => {
-            return Err(invalid("control frames cannot use graph data ports"))
-        }
+        FrameType::Signal => 5,
+        FrameType::Event => 6,
     };
     view.header.clock_kind = match header.clock_domain().kind() {
         ClockKind::Monotonic => 1,
@@ -504,8 +503,29 @@ pub fn borrowed_frame_view(frame: &Frame) -> Result<FrameView, FfiError> {
                 },
             }
         }
+        Frame::Signal(frame) => abi::FramePayload {
+            signal: abi::SignalPayload {
+                signal_name: str_view(frame.data().name().as_str()),
+                source_node_id: str_view(frame.data().source().as_str()),
+                // ABI v1 leaves structured Value serialization provider-defined.
+                value: abi::BytesView {
+                    data: std::ptr::null(),
+                    len: 0,
+                },
+                reserved: [0; 2],
+            },
+        },
+        Frame::Event(frame) => abi::FramePayload {
+            event: abi::EventPayload {
+                topic: str_view(frame.data().topic().as_str()),
+                value: abi::BytesView {
+                    data: std::ptr::null(),
+                    len: 0,
+                },
+                reserved: [0; 2],
+            },
+        },
         Frame::Text(_) => unreachable!(),
-        Frame::Signal(_) | Frame::Event(_) => unreachable!(),
     };
     Ok(view)
 }

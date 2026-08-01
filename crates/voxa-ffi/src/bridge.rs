@@ -1,3 +1,4 @@
+use libloading::Library;
 use std::{
     collections::BTreeMap,
     ffi::c_void,
@@ -224,6 +225,7 @@ fn cpp_registration(spec: CppFactorySpec) -> NodeRegistration {
 
 struct CppMultimodalProvider {
     spec: CppMultimodalFactorySpec,
+    _library: Option<Arc<Library>>,
 }
 
 impl ForeignNodeProvider for CppMultimodalProvider {
@@ -397,30 +399,8 @@ pub fn run_registered_multimodal_graph(
 ) -> Result<usize, FfiError> {
     let mut registry = voxa_graph_json::builtin_registry();
     for spec in specs {
-        let template = NodeId::new(format!("template-{}", spec.node_type.as_str()))
-            .expect("valid template ID");
-        let descriptor = NodeDescriptor::new(
-            template.clone(),
-            spec.node_type.clone(),
-            spec.kind,
-            spec.ports
-                .iter()
-                .map(|(name, direction, frame_type)| {
-                    PortDescriptor::new(template.clone(), name.clone(), *direction, *frame_type)
-                })
-                .collect::<Vec<_>>(),
-            spec.config_schema.clone(),
-            LifecycleCapabilities::new(true, true, true, true),
-        );
         registry
-            .register(NodeRegistration::new(
-                NodeLanguage::Cpp,
-                descriptor,
-                spec.version.clone(),
-                Arc::new(ForeignNodeFactoryAdapter::new(Arc::new(
-                    CppMultimodalProvider { spec: spec.clone() },
-                ))),
-            ))
+            .register(cpp_multimodal_registration(spec.clone(), None))
             .map_err(|_| {
                 FfiError::validation(
                     "VOXA-FFI-GRAPH-REGISTRY",
@@ -459,6 +439,38 @@ pub fn run_registered_multimodal_graph(
             })
         }
     }
+}
+
+pub fn cpp_multimodal_registration(
+    spec: CppMultimodalFactorySpec,
+    library: Option<Arc<Library>>,
+) -> NodeRegistration {
+    let template =
+        NodeId::new(format!("template-{}", spec.node_type.as_str())).expect("valid template ID");
+    let descriptor = NodeDescriptor::new(
+        template.clone(),
+        spec.node_type.clone(),
+        spec.kind,
+        spec.ports
+            .iter()
+            .map(|(name, direction, frame_type)| {
+                PortDescriptor::new(template.clone(), name.clone(), *direction, *frame_type)
+            })
+            .collect::<Vec<_>>(),
+        spec.config_schema.clone(),
+        LifecycleCapabilities::new(true, true, true, true),
+    );
+    NodeRegistration::new(
+        NodeLanguage::Cpp,
+        descriptor,
+        spec.version.clone(),
+        Arc::new(ForeignNodeFactoryAdapter::new(Arc::new(
+            CppMultimodalProvider {
+                spec,
+                _library: library,
+            },
+        ))),
+    )
 }
 
 fn validate_node_vtable(table: &NodeVtable) -> Result<(), NodeFactoryError> {

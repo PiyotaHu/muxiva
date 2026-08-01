@@ -31,17 +31,24 @@ DashScope API Key 或 Agora App Certificate。
 Studio 提供 DashScope 与 Agora 的 **Connections** 配置界面。Secret 使用密码
 输入框，提交后立即清空；初版只保留在本地 Studio 进程内存中，状态接口不回显，
 Graph 也不会保存。Voice Graph Gallery 同时展示推荐的 7-Node 端到端 Realtime
-拓扑，以及可检查、可替换的 11-Node VAD → ASR → LLM → TTS 级联拓扑。只有当
-对应的精确 Provider Factory 全部安装后，Studio 才允许应用模板，避免生成无法
-校验和运行的图。
+拓扑，以及可检查、可替换的 11-Node VAD → ASR → LLM → TTS 级联拓扑。Python
+ASR、流式 LLM、TTS、通用 VAD/Turn Context 与 C++ 动态 Node Pack Loader 均已
+实现；只有精确 Provider Factory 全部安装后模板才可运行。
+
+项目自带的 **Voice Room** 通过 Agora Web SDK 采集麦克风、订阅 Bot 音频，并实时
+展示 Graph、Node 调用和 Frame 活动。Ingress、Egress 与浏览器使用三个独立 UID/短期
+Token，避免两个 Native Client 相互顶替。浏览器只会收到 Manifest 明确允许的 App
+ID、Channel、Web UID 与短期 Web Token；DashScope Key、Bot Token 和 App
+Certificate 永不进入浏览器。
 
 Provider 代码现在严格归应用所有。Qwen Audio Realtime Node Pack 使用 Python，位于
 `examples/voice-agent`；Agora Transport 使用 C++，位于 `providers/agora/cpp` 以及
 应用自己的 C++ Node 中。Core、Graph Builtin 与 Studio 不包含任何 Qwen、DashScope
 或 Agora 代码。根 CMake 工程也不声明 Agora Target；Provider 使用自己的独立
 CMake 工程，并且只单向依赖 Voxa 公共 ABI。Studio 只从项目 Manifest 发现通用连接字段和图模板。Python Qwen
-协议测试覆盖 PCM 发送、流式音频/文本与 `response.cancel`；C++ 门禁会编译 Agora
-Node 与 Adapter。
+协议测试覆盖 Realtime、ASR、句段化流式 LLM、显式 commit TTS 与
+`response.cancel`；C++ 门禁会编译 Node Pack、通过 ABI 动态加载，并用 Studio
+真实 Registry 编译两张图模板。
 
 ## FFmpeg
 

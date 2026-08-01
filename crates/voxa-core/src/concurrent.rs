@@ -13,7 +13,8 @@ use std::{
 };
 
 use voxa_types::{
-    EdgeId, ErrorCategory, Frame, NodeId, SignalFrame, TransformOrigin, TurnId, Value, VoxaError,
+    EdgeId, ErrorCategory, Frame, FrameId, NodeId, SignalFrame, TransformOrigin, TurnId, Value,
+    VoxaError,
 };
 
 use crate::queue::QueueWake;
@@ -24,8 +25,11 @@ use crate::{
     GraphRunnerBuildError, Node, NodeContext, NodeEmission, NodeInstances, NodeKind, PortDirection,
     PortName, QueuePushError, ResourceStore, SignalQueuePushError, StopToken, TransformPolicy,
     TransportControl, ValidationDecision, ValidationFailureAction, ValidationPolicy,
+    RUNTIME_INTERRUPT_SIGNAL,
 };
 use crate::{EventBus, SignalQueueSnapshot};
+
+static NEXT_TURN_STAMP: AtomicU64 = AtomicU64::new(1);
 
 /// Stage 5A scheduler options. Admission is deliberately fixed at one active
 /// callback per node; later profiles may lower or raise the declared ceiling.
@@ -1151,6 +1155,17 @@ impl NodeWorker {
     }
 
     fn route(&mut self, output: NodeCallOutput) -> Result<(), AbortReason> {
+        // Barge-in is a graph-wide control transition, not merely an adjacent
+        // edge notification. Advance the private turn before routing this
+        // callback so every previously stamped response becomes stale at the
+        // mandatory Sink gate immediately.
+        if output
+            .signals
+            .iter()
+            .any(|signal| signal.data().name().as_str() == RUNTIME_INTERRUPT_SIGNAL)
+        {
+            self.shared.transport.advance_after_interrupt();
+        }
         let descriptor = self
             .shared
             .graph
@@ -1161,7 +1176,7 @@ impl NodeWorker {
             .map(|_| Vec::new())
             .collect::<Vec<_>>();
         for emission in output.emissions {
-            let (output_port, frame) = emission.into_parts();
+            let (output_port, mut frame) = emission.into_parts();
             let Some(port) = descriptor.ports().iter().find(|candidate| {
                 candidate.name() == &output_port && candidate.direction() == PortDirection::Output
             }) else {
@@ -1180,6 +1195,39 @@ impl NodeWorker {
                     AbortCategory::NodeError,
                     AbortStage::Process,
                 ));
+            }
+            match self.shared.transport.frame_turn(&frame) {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    let stamp = NEXT_TURN_STAMP.fetch_add(1, Ordering::Relaxed);
+                    frame = self
+                        .shared
+                        .transport
+                        .stamp_frame(
+                            &frame,
+                            FrameId::new(format!("runtime-turn-stamp-{stamp}"))
+                                .expect("bounded runtime frame ID"),
+                            self.node_id.clone(),
+                        )
+                        .map_err(|error| {
+                            let reason = error.to_string();
+                            runtime_abort_details(
+                                "VOXA-TRANSPORT-TURN-STAMP",
+                                "failed to attach runtime turn scope to emitted frame",
+                                Some(self.node_id.clone()),
+                                [("reason", reason.as_str())],
+                            )
+                        })?;
+                }
+                Err(error) => {
+                    let reason = error.to_string();
+                    return Err(runtime_abort_details(
+                        "VOXA-TRANSPORT-TURN-FRAME",
+                        "node emitted a frame with an invalid turn scope",
+                        Some(self.node_id.clone()),
+                        [("reason", reason.as_str())],
+                    ));
+                }
             }
             for (index, output) in self.outgoing.iter().enumerate() {
                 if output.descriptor.from_output_port() == &output_port {

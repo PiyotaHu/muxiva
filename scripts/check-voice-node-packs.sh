@@ -30,4 +30,14 @@ cmake -S "$repository_root/providers/agora/cpp" \
   -DVOXA_SOURCE_ROOT="$repository_root"
 cmake --build "$build_directory/agora-provider" --target voxa_agora
 
-echo "Voice Node Pack validation passed: Qwen=Python; Agora=C++."
+cmake -S "$repository_root/examples/voice-agent" \
+  -B "$build_directory/voice-agent" \
+  -DVOXA_ENABLE_AGORA=OFF
+cmake --build "$build_directory/voice-agent"
+
+VOXA_VOICE_FIXTURE_GRAPH="$repository_root/examples/voice-agent/graph.json" \
+  cargo test -p voxa-studio compiled_project_cpp_node_packs_load_through_the_real_abi
+VOXA_VOICE_FIXTURE_GRAPH="$repository_root/examples/voice-agent/graph.json" \
+  cargo test -p voxa-studio installed_voice_templates_compile_against_the_real_project_registry
+
+echo "Voice Node Pack validation passed: Qwen=Python; Agora=C++; native ABI=loaded."
