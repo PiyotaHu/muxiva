@@ -196,7 +196,7 @@ impl PythonNodeExecutionDomain {
             .take()
             .expect("only the first close takes the receiver");
         drop(state);
-        let completed = py.allow_threads(move || done.recv_timeout(self.shutdown_timeout).is_ok());
+        let completed = py.detach(move || done.recv_timeout(self.shutdown_timeout).is_ok());
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if completed {
             if let Some(handle) = state.thread.take() {
@@ -391,7 +391,7 @@ impl PythonNodeExecutionDomain {
                     "Python lifecycle callback exceeded its deadline",
                 ));
             }
-            py.allow_threads(|| thread::sleep(Duration::from_millis(1)));
+            py.detach(|| thread::sleep(Duration::from_millis(1)));
         }
     }
 }
@@ -427,7 +427,7 @@ fn run_domain(
     call_timeout: Duration,
     graph_output_ports: Arc<Mutex<Option<Vec<PortName>>>>,
 ) {
-    let loop_object = match Python::with_gil(|py| -> PyResult<Py<PyAny>> {
+    let loop_object = match Python::attach(|py| -> PyResult<Py<PyAny>> {
         let asyncio = py.import("asyncio")?;
         let event_loop = asyncio.call_method0("new_event_loop")?;
         asyncio.call_method1("set_event_loop", (&event_loop,))?;
@@ -449,7 +449,7 @@ fn run_domain(
                 driver.acknowledge_cancel(sequence);
             }
             kind => {
-                let result = Python::with_gil(|py| {
+                let result = Python::attach(|py| {
                     let ports = graph_output_ports
                         .lock()
                         .unwrap_or_else(|error| error.into_inner())
@@ -483,7 +483,7 @@ fn run_domain(
             }
         }
     }
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let _ = loop_object.bind(py).call_method0("close");
     });
 }
@@ -583,7 +583,7 @@ fn normalize_graph_output(
     if value.is_none() {
         return Ok(Vec::new());
     }
-    if let Ok(mapping) = value.downcast::<PyDict>() {
+    if let Ok(mapping) = value.cast::<PyDict>() {
         let mut emissions = Vec::new();
         for (key, value) in mapping.iter() {
             let name = key.extract::<String>()?;
@@ -620,17 +620,17 @@ fn normalize_output(value: &Bound<'_, PyAny>) -> PyResult<Vec<Frame>> {
     if value.is_none() {
         return Ok(Vec::new());
     }
-    if let Ok(list) = value.downcast::<PyList>() {
+    if let Ok(list) = value.cast::<PyList>() {
         return list.iter().map(|item| extract_frame(&item)).collect();
     }
-    if let Ok(tuple) = value.downcast::<PyTuple>() {
+    if let Ok(tuple) = value.cast::<PyTuple>() {
         return tuple.iter().map(|item| extract_frame(&item)).collect();
     }
     Ok(vec![extract_frame(value)?])
 }
 
 fn python_error(error: PyErr) -> AbortReason {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         abort_reason(
             "VOXA-PY-EXCEPTION",
             error.value(py).to_string(),

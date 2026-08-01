@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use napi::{Error, Result, Status};
+use napi::{bindgen_prelude::Function, Error, Result, Status};
 use napi_derive::napi;
 
 use crate::subscription::SubscriptionSet;
@@ -97,7 +97,7 @@ impl EventBus {
     pub fn subscribe(
         &mut self,
         topic: String,
-        callback: napi::JsFunction,
+        callback: Function<'_, String, ()>,
         capacity: Option<u32>,
     ) -> Result<u32> {
         self.subscriptions

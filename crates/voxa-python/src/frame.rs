@@ -61,7 +61,7 @@ fn value_as_string(value: &Value) -> String {
     }
 }
 
-#[pyclass(frozen, name = "Frame")]
+#[pyclass(frozen, skip_from_py_object, name = "Frame")]
 #[derive(Clone)]
 pub struct PyFrame {
     pub(crate) inner: Frame,
@@ -94,7 +94,7 @@ impl PyFrame {
     }
 }
 
-#[pyclass(frozen, name = "TextFrame")]
+#[pyclass(frozen, skip_from_py_object, name = "TextFrame")]
 #[derive(Clone)]
 pub struct PyTextFrame {
     pub(crate) inner: Frame,
@@ -144,7 +144,7 @@ impl PyTextFrame {
     }
 }
 
-#[pyclass(frozen, name = "ByteFrame")]
+#[pyclass(frozen, skip_from_py_object, name = "ByteFrame")]
 #[derive(Clone)]
 pub struct PyByteFrame {
     pub(crate) inner: Frame,
@@ -214,7 +214,7 @@ impl PyByteFrame {
     }
 }
 
-#[pyclass(frozen, name = "AudioFrame")]
+#[pyclass(frozen, skip_from_py_object, name = "AudioFrame")]
 #[derive(Clone)]
 pub struct PyAudioFrame {
     pub(crate) inner: Frame,
@@ -332,7 +332,7 @@ impl PyAudioFrame {
     }
 }
 
-#[pyclass(frozen, name = "VideoFrame")]
+#[pyclass(frozen, skip_from_py_object, name = "VideoFrame")]
 #[derive(Clone)]
 pub struct PyVideoFrame {
     pub(crate) inner: Frame,
@@ -439,7 +439,7 @@ impl PyVideoFrame {
     }
 }
 
-#[pyclass(frozen, name = "SignalFrame")]
+#[pyclass(frozen, skip_from_py_object, name = "SignalFrame")]
 #[derive(Clone)]
 pub struct PySignalFrame {
     pub(crate) inner: Frame,
@@ -509,7 +509,7 @@ impl PySignalFrame {
     }
 }
 
-#[pyclass(frozen, name = "EventFrame")]
+#[pyclass(frozen, skip_from_py_object, name = "EventFrame")]
 #[derive(Clone)]
 pub struct PyEventFrame {
     pub(crate) inner: Frame,

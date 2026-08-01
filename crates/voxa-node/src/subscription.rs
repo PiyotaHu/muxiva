@@ -1,15 +1,27 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
+};
 
 use napi::{
-    threadsafe_function::{
-        ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction, ThreadsafeFunctionCallMode,
-    },
-    Error, JsFunction, Result, Status,
+    bindgen_prelude::Function,
+    threadsafe_function::{ThreadsafeCallContext, ThreadsafeFunction, ThreadsafeFunctionCallMode},
+    Error, Result, Status,
 };
 
 struct Subscriber {
     topic: String,
-    callback: ThreadsafeFunction<String, ErrorStrategy::Fatal>,
+    callback: ThreadsafeFunction<SubscriptionCall, (), String, Status, false, false, 65_536>,
+    pending: Arc<AtomicU32>,
+    capacity: u32,
+}
+
+struct SubscriptionCall {
+    payload: String,
+    pending: Arc<AtomicU32>,
 }
 
 #[derive(Default)]
@@ -20,23 +32,39 @@ pub(crate) struct SubscriptionSet {
 }
 
 impl SubscriptionSet {
-    pub fn subscribe(&mut self, topic: String, callback: JsFunction, capacity: u32) -> Result<u32> {
+    pub fn subscribe(
+        &mut self,
+        topic: String,
+        callback: Function<'_, String, ()>,
+        capacity: u32,
+    ) -> Result<u32> {
         if self.closed {
             return Err(Error::new(Status::Closing, "EventBus is closed"));
         }
         if !(1..=65_536).contains(&capacity) || !topic.contains('.') {
             return Err(Error::new(Status::InvalidArg, "invalid topic or capacity"));
         }
-        let callback = callback.create_threadsafe_function(
-            capacity as usize,
-            |ctx: ThreadSafeCallContext<String>| Ok(vec![ctx.value]),
-        )?;
+        let callback = callback
+            .build_threadsafe_function::<SubscriptionCall>()
+            .max_queue_size::<65_536>()
+            .build_callback(|ctx: ThreadsafeCallContext<SubscriptionCall>| {
+                ctx.value.pending.fetch_sub(1, Ordering::AcqRel);
+                Ok(ctx.value.payload)
+            })?;
+        let pending = Arc::new(AtomicU32::new(0));
         self.next = self
             .next
             .checked_add(1)
             .ok_or_else(|| Error::new(Status::GenericFailure, "subscription id exhausted"))?;
-        self.subscribers
-            .insert(self.next, Subscriber { topic, callback });
+        self.subscribers.insert(
+            self.next,
+            Subscriber {
+                topic,
+                callback,
+                pending,
+                capacity,
+            },
+        );
         Ok(self.next)
     }
     pub fn publish(&self, topic: &str, payload: String) -> Result<u32> {
@@ -49,32 +77,39 @@ impl SubscriptionSet {
             .values()
             .filter(|entry| entry.topic == topic)
         {
-            if subscriber
-                .callback
-                .call(payload.clone(), ThreadsafeFunctionCallMode::NonBlocking)
-                == Status::Ok
-            {
+            let reserved = subscriber
+                .pending
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |pending| {
+                    (pending < subscriber.capacity).then_some(pending + 1)
+                })
+                .is_ok();
+            if !reserved {
+                continue;
+            }
+            let status = subscriber.callback.call(
+                SubscriptionCall {
+                    payload: payload.clone(),
+                    pending: Arc::clone(&subscriber.pending),
+                },
+                ThreadsafeFunctionCallMode::NonBlocking,
+            );
+            if status == Status::Ok {
                 accepted += 1;
+            } else {
+                subscriber.pending.fetch_sub(1, Ordering::AcqRel);
             }
         }
         Ok(accepted)
     }
     pub fn unsubscribe(&mut self, id: u32) -> bool {
-        self.subscribers
-            .remove(&id)
-            .map(|subscriber| {
-                let _ = subscriber.callback.abort();
-            })
-            .is_some()
+        self.subscribers.remove(&id).map(drop).is_some()
     }
     pub fn close(&mut self) -> bool {
         if self.closed {
             return false;
         }
         self.closed = true;
-        for (_, subscriber) in std::mem::take(&mut self.subscribers) {
-            let _ = subscriber.callback.abort();
-        }
+        drop(std::mem::take(&mut self.subscribers));
         true
     }
 }

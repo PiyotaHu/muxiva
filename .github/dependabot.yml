@@ -9,6 +9,9 @@ updates:
       timezone: Asia/Shanghai
     open-pull-requests-limit: 10
     groups:
+      napi-runtime:
+        patterns: ["napi", "napi-derive", "napi-build"]
+        update-types: ["minor", "patch"]
       rust-minor-and-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
@@ -34,6 +37,7 @@ updates:
     groups:
       node-bindings:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: npm
     directory: "/examples/typescript"
@@ -61,3 +65,6 @@ updates:
     groups:
       python-build:
         patterns: ["*"]
+    ignore:
+      - dependency-name: maturin
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]

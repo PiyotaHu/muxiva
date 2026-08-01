@@ -5,10 +5,9 @@ use std::{
 };
 
 use napi::{
-    threadsafe_function::{
-        ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction, ThreadsafeFunctionCallMode,
-    },
-    Error, JsFunction, Result, Status,
+    bindgen_prelude::Function,
+    threadsafe_function::{ThreadsafeCallContext, ThreadsafeFunction, ThreadsafeFunctionCallMode},
+    Error, Result, Status,
 };
 use napi_derive::napi;
 use voxa_core::{
@@ -38,7 +37,7 @@ pub struct JsDomainCommand {
 /// the TSFN only schedules accepted owned commands onto the JS event loop.
 #[napi]
 pub struct NodeExecutionDomain {
-    callback: ThreadsafeFunction<Command, ErrorStrategy::Fatal>,
+    callback: ThreadsafeFunction<Command, (), JsDomainCommand, Status, false, false, 65_536>,
     driver: ForeignNodeDriver,
     responses: Mutex<std::collections::BTreeMap<u64, String>>,
 }
@@ -79,23 +78,23 @@ fn command(sequence: u64, kind: &str, payload: Option<String>) -> Result<Foreign
 #[napi]
 impl NodeExecutionDomain {
     #[napi(constructor)]
-    pub fn new(callback: JsFunction, capacity: u32) -> Result<Self> {
+    pub fn new(callback: Function<'_, JsDomainCommand, ()>, capacity: u32) -> Result<Self> {
         if !(1..=65_536).contains(&capacity) {
             return Err(Error::new(
                 Status::InvalidArg,
                 "capacity must be between 1 and 65536",
             ));
         }
-        let callback = callback.create_threadsafe_function(
-            capacity as usize,
-            |ctx: ThreadSafeCallContext<Command>| {
-                Ok(vec![JsDomainCommand {
+        let callback = callback
+            .build_threadsafe_function::<Command>()
+            .max_queue_size::<65_536>()
+            .build_callback(|ctx: ThreadsafeCallContext<Command>| {
+                Ok(JsDomainCommand {
                     sequence: ctx.value.sequence,
                     kind: ctx.value.kind,
                     payload_json: ctx.value.payload_json,
-                }])
-            },
-        )?;
+                })
+            })?;
         let capacity = NonZeroUsize::new(capacity as usize).expect("validated non-zero");
         let driver = ForeignNodeDriver::new(ForeignDriverConfig {
             command_capacity: capacity,
@@ -233,13 +232,9 @@ impl NodeExecutionDomain {
     }
     #[napi]
     pub fn close(&self) -> bool {
-        let first = self.driver.begin_stop(abort_reason(
+        self.driver.begin_stop(abort_reason(
             "VOXA-NODE-STOPPED",
             "Node execution domain stopped",
-        ));
-        if first {
-            let _ = self.callback.clone().abort();
-        }
-        first
+        ))
     }
 }

@@ -13,10 +13,10 @@ jobs:
       VOXA_MIRI_TOOLCHAIN: nightly-2026-07-15
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly-2026-07-15
+      - uses: dtolnay/rust-toolchain@nightly
         with:
+          toolchain: nightly-2026-07-15
           components: miri
       - name: Fetch workspace dependencies explicitly
         run: cargo fetch
       - run: ./scripts/check-miri.sh
-

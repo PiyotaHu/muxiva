@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]
-pyo3 = "0.23"
+pyo3 = "0.29"
 serde.workspace = true
 serde_json.workspace = true
 voxa-core = { path = "../voxa-core" }
@@ -21,4 +21,4 @@ voxa-graph-json = { path = "../voxa-graph-json" }
 voxa-types.workspace = true
 
 [dev-dependencies]
-pyo3 = { version = "0.23", features = ["auto-initialize"] }
+pyo3 = { version = "0.29", features = ["auto-initialize"] }

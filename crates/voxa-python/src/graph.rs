@@ -147,7 +147,7 @@ impl ForeignNodeProvider for PythonProvider {
         _node_id: &NodeId,
         config: &ConfigMap,
     ) -> Result<Box<dyn ForeignNodeInstance>, NodeFactoryError> {
-        let node = Python::with_gil(|py| {
+        let node = Python::attach(|py| {
             if self.pass_config {
                 let json = py.import("json")?;
                 let encoded = voxa_graph_json::config_map_to_json(config).to_string();
@@ -259,14 +259,14 @@ pub fn run_graph(
         RuntimeOptions::default(),
     )
     .map_err(|error| binding_error("VOXA-PY-GRAPH-START", error.to_string()))?;
-    match py.allow_threads(|| runtime.wait(Duration::from_millis(timeout_ms))) {
+    match py.detach(|| runtime.wait(Duration::from_millis(timeout_ms))) {
         Ok(summary) => Ok(summary.worker_total()),
         Err(RuntimeWaitError::Aborted(reason)) => {
             Err(binding_error(reason.root().code(), reason.root().message()))
         }
         Err(RuntimeWaitError::Timeout(diagnostics)) => {
             runtime.stop();
-            let _ = py.allow_threads(|| runtime.wait(Duration::from_secs(5)));
+            let _ = py.detach(|| runtime.wait(Duration::from_secs(5)));
             Err(binding_error(
                 "VOXA-PY-GRAPH-TIMEOUT",
                 format!(

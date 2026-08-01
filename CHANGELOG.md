@@ -20,7 +20,23 @@ but must be called out explicitly with migration guidance.
 
 ### Changed
 
+- Upgraded the Python binding to PyO3 0.29 and the Node binding to NAPI-RS 3,
+  including the new typed ThreadsafeFunction API and NAPI CLI configuration.
+- Corrected the scheduled Fuzz and Miri workflows to provision their required
+  pinned nightly Rust toolchains.
+- Dependabot now keeps coupled NAPI crates together and avoids grouping
+  unrelated Node.js major-version migrations.
 - README and Node development guides now point to the public documentation
   site and describe current language Host boundaries explicitly.
+
+### Security
+
+- Updated PyO3 to 0.29.0, resolving the published iterator out-of-bounds read,
+  missing `Sync` bound, and `PyString::from_object` buffer-safety advisories.
+
+### Fixed
+
+- Node Worker shutdown now waits for the native execution domain to acknowledge
+  closure before terminating the Worker, preventing environment teardown races.
 
 [Unreleased]: https://github.com/PiyotaHu/Voxa/compare/main...HEAD

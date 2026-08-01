@@ -6,11 +6,9 @@ use std::{
 };
 
 use napi::{
-    bindgen_prelude::AsyncTask,
-    threadsafe_function::{
-        ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction, ThreadsafeFunctionCallMode,
-    },
-    Env, Error, JsFunction, Status, Task,
+    bindgen_prelude::{AsyncTask, Function},
+    threadsafe_function::{ThreadsafeCallContext, ThreadsafeFunction, ThreadsafeFunctionCallMode},
+    Env, Error, Status, Task,
 };
 use napi_derive::napi;
 use serde::Deserialize;
@@ -85,7 +83,8 @@ pub struct JsGraphCommand {
     pub config_json: String,
 }
 
-type GraphCallback = ThreadsafeFunction<GraphCommand, ErrorStrategy::Fatal>;
+type GraphCallback =
+    Arc<ThreadsafeFunction<GraphCommand, String, JsGraphCommand, Status, false, false, 1024>>;
 
 struct TypeScriptProvider {
     callback: GraphCallback,
@@ -128,7 +127,7 @@ impl TypeScriptInstance {
         input_port: Option<String>,
     ) -> Result<GraphResponse, VoxaError> {
         let (sender, receiver) = mpsc::sync_channel(1);
-        let status = self.callback.call_with_return_value::<String, _>(
+        let status = self.callback.call_with_return_value(
             GraphCommand {
                 factory_key: self.factory_key.clone(),
                 node_type: self.node_type.clone(),
@@ -139,7 +138,7 @@ impl TypeScriptInstance {
                 config_json: self.config_json.clone(),
             },
             ThreadsafeFunctionCallMode::NonBlocking,
-            move |response| {
+            move |response, _env| {
                 let _ = sender.send(response);
                 Ok(())
             },
@@ -156,6 +155,8 @@ impl TypeScriptInstance {
                 "TypeScript lifecycle callback exceeded its deadline",
             )
         })?;
+        let encoded =
+            encoded.map_err(|error| graph_error("VOXA-NODE-GRAPH-CALLBACK", &error.to_string()))?;
         let response: GraphResponse = serde_json::from_str(&encoded).map_err(|_| {
             graph_error(
                 "VOXA-NODE-GRAPH-RESPONSE",
@@ -296,7 +297,7 @@ impl Task for RunRegisteredGraphTask {
 pub fn run_registered_graph(
     graph_json: String,
     factories: Vec<GraphFactorySpec>,
-    callback: JsFunction,
+    callback: Function<'_, JsGraphCommand, String>,
     timeout_ms: Option<u32>,
 ) -> napi::Result<AsyncTask<RunRegisteredGraphTask>> {
     let timeout_ms = timeout_ms.unwrap_or(30_000);
@@ -310,20 +311,22 @@ pub fn run_registered_graph(
         .into_iter()
         .map(parse_spec)
         .collect::<napi::Result<Vec<_>>>()?;
-    let callback = callback.create_threadsafe_function(
-        CALLBACK_QUEUE_CAPACITY,
-        |context: ThreadSafeCallContext<GraphCommand>| {
-            Ok(vec![JsGraphCommand {
-                factory_key: context.value.factory_key,
-                node_type: context.value.node_type,
-                node_id: context.value.node_id,
-                kind: context.value.kind,
-                payload_json: context.value.payload_json,
-                input_port: context.value.input_port,
-                config_json: context.value.config_json,
-            }])
-        },
-    )?;
+    let callback = Arc::new(
+        callback
+            .build_threadsafe_function::<GraphCommand>()
+            .max_queue_size::<CALLBACK_QUEUE_CAPACITY>()
+            .build_callback(|context: ThreadsafeCallContext<GraphCommand>| {
+                Ok(JsGraphCommand {
+                    factory_key: context.value.factory_key,
+                    node_type: context.value.node_type,
+                    node_id: context.value.node_id,
+                    kind: context.value.kind,
+                    payload_json: context.value.payload_json,
+                    input_port: context.value.input_port,
+                    config_json: context.value.config_json,
+                })
+            })?,
+    );
     Ok(AsyncTask::new(RunRegisteredGraphTask {
         graph_json,
         factories,

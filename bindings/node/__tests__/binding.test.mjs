@@ -25,9 +25,12 @@ test('EventBus schedules subscribers without inline invocation', async () => {
   let seen
   bus.subscribe('test.topic', (payload) => { seen = payload }, 1)
   assert.equal(bus.publish('test.topic', '{"ok":true}'), 1)
+  assert.equal(bus.publish('test.topic', '{"queued":true}'), 0)
   assert.equal(seen, undefined)
   await new Promise(setImmediate)
   assert.equal(seen, '{"ok":true}')
+  assert.equal(bus.publish('test.topic', '{"afterDrain":true}'), 1)
+  await new Promise(setImmediate)
+  assert.equal(seen, '{"afterDrain":true}')
   assert.equal(bus.close(), true)
 })
-

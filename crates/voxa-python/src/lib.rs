@@ -50,7 +50,7 @@ mod tests {
 
     #[test]
     fn async_node_runs_on_its_dedicated_loop_and_returns_owned_frame() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let module = PyModule::new(py, "_native").unwrap();
             super::_native(&module).unwrap();
             let source = CString::new(
@@ -99,7 +99,7 @@ node = Node()
 
     #[test]
     fn isolated_process_is_rejected_explicitly() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let module = PyModule::new(py, "_native").unwrap();
             super::_native(&module).unwrap();
             let object = py.eval(pyo3::ffi::c_str!("object()"), None, None).unwrap();

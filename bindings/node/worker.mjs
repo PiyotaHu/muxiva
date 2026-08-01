@@ -36,7 +36,11 @@ function flush() {
 }
 
 parentPort.on('message', (message) => {
-  if (message.type === 'close') { domain.close(); return }
+  if (message.type === 'close') {
+    const closed = domain.close()
+    parentPort.postMessage({ type: 'closed', closed })
+    return
+  }
   const outcome = domain.submit(message.sequence, message.kind, JSON.stringify(message.payload))
   if (outcome !== 'accepted') parentPort.postMessage({ sequence: message.sequence, ok: false, error: { code: `VOXA_NODE_${outcome.toUpperCase()}`, message: `node domain ${outcome}` }, threadId })
 })

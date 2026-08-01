@@ -25,20 +25,29 @@ export function defineTransformNode(implementation) {
 }
 
 export class TypeScriptTransformNode {
-  #worker; #capacity; #pending = new Map(); #closed = false; #next = 1
+  #worker; #capacity; #pending = new Map(); #closed = false; #next = 1; #closeResolve
   constructor(implementation, { capacity = 16 } = {}) {
     if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 65536) throw new RangeError('capacity must be between 1 and 65536')
     const methods = Object.fromEntries(methodNames.map((name) => [name, typeof implementation?.[name] === 'function' ? String(implementation[name]) : null]))
     this.#capacity = capacity
     this.#worker = new Worker(new URL('./worker.mjs', import.meta.url), { workerData: { addonPath: fileURLToPath(binary), capacity, methods } })
     this.#worker.on('message', (message) => {
+      if (message.type === 'closed') {
+        this.#closeResolve?.()
+        this.#closeResolve = undefined
+        return
+      }
       const pending = this.#pending.get(message.sequence)
       if (!pending) return
       this.#pending.delete(message.sequence)
       message.ok ? pending.resolve(message.value) : pending.reject(Object.assign(new Error(message.error.message), { code: message.error.code }))
     })
     this.#worker.on('error', (error) => this.#failAll(error))
-    this.#worker.on('exit', (code) => { if (!this.#closed && code !== 0) this.#failAll(new Error(`Voxa Node worker exited with code ${code}`)) })
+    this.#worker.on('exit', (code) => {
+      this.#closeResolve?.()
+      this.#closeResolve = undefined
+      if (!this.#closed && code !== 0) this.#failAll(new Error(`Voxa Node worker exited with code ${code}`))
+    })
   }
   invoke(kind, payload = null) {
     if (this.#closed) return Promise.reject(Object.assign(new Error('node domain is closed'), { code: 'VOXA_NODE_CLOSED' }))
@@ -52,7 +61,17 @@ export class TypeScriptTransformNode {
   event(frame) { return this.invoke('event', frame) }
   finish() { return this.invoke('finish') }
   abort(reason) { return this.invoke('abort', reason) }
-  async close() { if (this.#closed) return false; this.#closed = true; this.#failAll(Object.assign(new Error('node domain stopped'), { code: 'VOXA_NODE_STOPPED' })); this.#worker.postMessage({ type: 'close' }); await this.#worker.terminate(); return true }
+  async close() {
+    if (this.#closed) return false
+    this.#closed = true
+    this.#failAll(Object.assign(new Error('node domain stopped'), { code: 'VOXA_NODE_STOPPED' }))
+    await new Promise((resolve) => {
+      this.#closeResolve = resolve
+      this.#worker.postMessage({ type: 'close' })
+    })
+    await this.#worker.terminate()
+    return true
+  }
   get outstanding() { return this.#pending.size }
   #failAll(error) { for (const pending of this.#pending.values()) pending.reject(error); this.#pending.clear() }
 }

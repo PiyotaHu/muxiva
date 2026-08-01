@@ -9,11 +9,17 @@ jobs:
   fuzz:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      VOXA_FUZZ_TOOLCHAIN: nightly-2026-07-15
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly-2026-07-15
       - name: Provision cargo-fuzz
         run: cargo install cargo-fuzz --locked --version 0.12.0
+      - name: Fetch workspace dependencies explicitly
+        run: cargo fetch --locked
       - name: Fetch fuzz dependencies explicitly
         run: cargo fetch --manifest-path fuzz/Cargo.toml
       - name: Run bounded fuzz targets
@@ -27,4 +33,3 @@ jobs:
           name: fuzz-corpus
           path: fuzz/corpus
           if-no-files-found: ignore
-

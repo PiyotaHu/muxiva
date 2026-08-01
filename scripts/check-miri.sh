@@ -16,5 +16,8 @@ if ! cargo "+${toolchain}" miri --version >/dev/null 2>&1; then
   exit 0
 fi
 
+# Miri builds a custom standard-library sysroot on first use. Provision it
+# while the registry is available, then keep the actual test deterministic.
+cargo "+${toolchain}" miri setup
 export CARGO_NET_OFFLINE=true
 cargo "+${toolchain}" miri test -p voxa-types --lib
