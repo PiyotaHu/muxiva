@@ -24,7 +24,7 @@ test -n "$package"
 cd "$consumer_dir"
 pnpm init >/dev/null
 pnpm pkg set type=module
-pnpm add --offline "$package"
+pnpm add "$package"
 cp "$repo/examples/typescript/tsconfig.json" "$repo/examples/typescript/uppercase-node.ts" .
 "$repo/bindings/node/node_modules/.bin/tsc" -p tsconfig.json
 node dist/uppercase-node.js
