@@ -28,15 +28,7 @@
     <main class="workspace">
       <aside class="sidebar palette-panel">
         <div class="panel-heading"><span>NODE PALETTE</span><small>Click to add</small></div>
-        <button class="palette-item source" data-add-node="builtin.text_source">
-          <span class="node-icon">S</span><span><b>Text Source</b><small>Produces text frames</small></span><span>＋</span>
-        </button>
-        <button class="palette-item transform" data-add-node="builtin.uppercase">
-          <span class="node-icon">T</span><span><b>Uppercase</b><small>Transforms text</small></span><span>＋</span>
-        </button>
-        <button class="palette-item sink" data-add-node="builtin.text_sink">
-          <span class="node-icon">K</span><span><b>Text Sink</b><small>Consumes text frames</small></span><span>＋</span>
-        </button>
+        <div id="node-palette"></div>
 
         <div class="panel-heading edges-heading"><span>EDGES</span><button id="add-edge" class="mini-button">＋ Add</button></div>
         <div id="edge-list" class="edge-list"></div>
@@ -79,12 +71,9 @@
         </div>
         <form id="node-inspector" class="node-inspector hidden">
           <label>Node ID<input id="node-id" spellcheck="false"></label>
-          <label>Node type<select id="node-type">
-            <option value="builtin.text_source">builtin.text_source</option>
-            <option value="builtin.uppercase">builtin.uppercase</option>
-            <option value="builtin.text_sink">builtin.text_sink</option>
-          </select></label>
+          <label>Node Factory<select id="node-type"></select></label>
           <label>Language<input id="node-language" value="rust" readonly></label>
+          <label>Factory version<input id="node-version" value="1.0.0" readonly></label>
           <label>Configuration<textarea id="node-config" rows="10" spellcheck="false"></textarea></label>
           <p id="config-error" class="field-error"></p>
         </form>

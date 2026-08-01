@@ -45,7 +45,9 @@ plane, and must not be exposed directly to the internet.
 
 ## Current boundary
 
-The editor exposes the trusted Node types supported by the current Graph v1
-compiler: `builtin.text_source`, `builtin.uppercase`, and `builtin.text_sink`.
-General plugin/SDK Node discovery and live runtime metrics require the planned
-versioned Node Factory registry. Studio does not pretend those factories exist.
+The palette is generated from the trusted runtime Registry returned by
+`GET /api/v1/registry/nodes`. Node type, language, exact Factory version,
+ports, and configuration schema therefore match Graph compilation. The built-in
+Registry currently contains `builtin.text_source`, `builtin.uppercase`, and
+`builtin.text_sink` at version `1.0.0`. General SDK plugin discovery and live
+runtime metrics remain follow-up work.

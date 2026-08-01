@@ -1,9 +1,79 @@
 # Graph v1 reference
 
-Required root fields are `version` (`voxa.graph/v1`), `graph_id`, `nodes`, and
-`edges`.  Nodes name a compiled-in trusted type and language.  Edges name exact
-source/output and target/input ports, a matching `frame_type`, and bounded
-`queue_policy.capacity`/`overflow`.  The current built-in registry supports
-`builtin.text_source`, `builtin.uppercase`, and `builtin.text_sink`, all in
-Rust and all using text ports.  Use `voxa validate` for registry and graph
-diagnostics before `voxa run`.
+Graph v1 is Voxa's strict, pure-data graph protocol. The root requires
+`version` (`voxa.graph/v1`), `graph_id`, `nodes`, and `edges`. Unknown fields
+are rejected and the complete document is limited to 1 MiB.
+
+The machine-readable JSON Schema is bundled at
+`crates/voxa-graph-json/schema/graph-v1.schema.json` and served by Studio at
+`GET /api/v1/schema/graph-v1`.
+
+## Node identity and Factory selection
+
+Every Node requires:
+
+```json
+{
+  "id": "source",
+  "node_type": "builtin.text_source",
+  "language": "rust",
+  "factory_version": "1.0.0",
+  "node_config": { "text": "hello" }
+}
+```
+
+`node_type`, `language`, and `factory_version` form one exact Registry lookup.
+There is no implicit newest version, fallback language, or default Factory
+version. This makes a Graph reproducible when multiple implementations are
+installed.
+
+The compiler obtains the Node kind, ports, frame types, lifecycle metadata,
+configuration schema, validator, and executable Factory from that one
+registration. It does not maintain a separate Node switch. Configuration is
+converted into Voxa's closed `Value` algebra, validated before Node creation,
+and preserved in the compiled `NodeDefinition`.
+
+Supported language spellings are `rust`, `cpp`, `python`, and `typescript`.
+Only registrations actually installed in the compiler's Registry resolve.
+
+## Built-in registrations
+
+Voxa currently ships these exact Rust registrations at Factory version
+`1.0.0`:
+
+| Node type | Kind | Inputs | Outputs | Configuration |
+| --- | --- | --- | --- | --- |
+| `builtin.text_source` | Source | — | `text_out: text` | exactly one `text` string, at most 256 KiB |
+| `builtin.uppercase` | Transform | `text_in: text` | `text_out: text` | empty object |
+| `builtin.text_sink` | Sink | `text_in: text` | — | empty object |
+
+Studio obtains the same catalog from `GET /api/v1/registry/nodes`; its Palette
+and ports are not hard-coded separately.
+
+## Edges
+
+Every Edge names exact source/output and target/input ports, an exact
+`frame_type`, and a bounded queue policy:
+
+```json
+{
+  "id": "source-upper",
+  "from": { "node_id": "source", "port": "text_out" },
+  "to": { "node_id": "upper", "port": "text_in" },
+  "frame_type": "text",
+  "queue_policy": { "capacity": 32, "overflow": "block" }
+}
+```
+
+`capacity` is non-zero. Supported overflow spellings are `block`,
+`drop_oldest`, `drop_newest`, and `abort`. An Edge never performs an implicit
+type conversion.
+
+## Pre-alpha migration
+
+Graphs created before D02 must add an explicit `factory_version` to every
+Node. The current built-ins use `"factory_version": "1.0.0"`. Missing versions
+are rejected instead of guessed.
+
+Run `voxa validate` before `voxa run` or saving from Studio. Diagnostics carry
+a stable code and JSON Pointer such as `/nodes/0/node_config`.

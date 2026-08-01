@@ -73,8 +73,8 @@ pub use realtime::{
 };
 pub use registry::{
     EdgePolicyRegistration, EdgePolicyRegistry, NodeCreateError, NodeCreationStage, NodeFactory,
-    NodeFactoryError, NodeFactoryVersion, NodeFactoryVersionError, NodeLanguage, NodeRegistration,
-    NodeRegistry, RegistryError,
+    NodeFactoryError, NodeFactorySelection, NodeFactoryVersion, NodeFactoryVersionError,
+    NodeLanguage, NodeRegistration, NodeRegistry, RegistryError,
 };
 pub use resource::{ResourceKey, ResourceStore, ResourceStoreError};
 pub use runner::{

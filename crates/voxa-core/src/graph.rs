@@ -5,6 +5,7 @@ use voxa_types::{EdgeId, FrameType, GraphId, NodeId};
 use crate::{
     edge::EdgeDescriptor,
     node::{ConfigMap, NodeDescriptor, NodeKind, PortDirection, PortName},
+    NodeFactorySelection,
 };
 
 /// One fully explicit endpoint used in graph validation diagnostics.
@@ -115,6 +116,8 @@ pub enum GraphBuildError {
     },
     /// Configuration was supplied for a missing node.
     ConfigNodeMissing { node_id: NodeId },
+    /// A Factory selection was supplied for a missing node.
+    FactoryNodeMissing { node_id: NodeId },
     /// The complete graph contains a directed cycle.
     Cycle { node_ids: Box<[NodeId]> },
 }
@@ -204,6 +207,9 @@ impl fmt::Display for GraphBuildError {
             Self::ConfigNodeMissing { node_id } => {
                 write!(formatter, "configuration targets missing node `{node_id}`")
             }
+            Self::FactoryNodeMissing { node_id } => {
+                write!(formatter, "Factory selection targets missing node `{node_id}`")
+            }
             Self::Cycle { node_ids } => write!(
                 formatter,
                 "graph contains a directed cycle involving {}",
@@ -224,6 +230,7 @@ impl Error for GraphBuildError {}
 pub struct NodeDefinition {
     descriptor: NodeDescriptor,
     config: ConfigMap,
+    factory: Option<NodeFactorySelection>,
 }
 
 impl NodeDefinition {
@@ -235,6 +242,12 @@ impl NodeDefinition {
     /// Returns immutable configured values.
     pub const fn config(&self) -> &ConfigMap {
         &self.config
+    }
+
+    /// Returns the exact registered implementation selected by a compiled graph.
+    /// Programmatic graphs that attach instances directly may leave this unset.
+    pub const fn factory(&self) -> Option<&NodeFactorySelection> {
+        self.factory.as_ref()
     }
 }
 
@@ -333,6 +346,7 @@ impl GraphBuilder {
             NodeDefinition {
                 descriptor,
                 config: ConfigMap::empty(),
+                factory: None,
             },
         );
         Ok(self)
@@ -371,6 +385,22 @@ impl GraphBuilder {
                     node_id: node_id.clone(),
                 })?;
         node.config = config;
+        Ok(self)
+    }
+
+    /// Selects the exact executable Factory for one existing node.
+    pub fn set_factory(
+        &mut self,
+        node_id: &NodeId,
+        factory: NodeFactorySelection,
+    ) -> std::result::Result<&mut Self, GraphBuildError> {
+        let node =
+            self.nodes
+                .get_mut(node_id)
+                .ok_or_else(|| GraphBuildError::FactoryNodeMissing {
+                    node_id: node_id.clone(),
+                })?;
+        node.factory = Some(factory);
         Ok(self)
     }
 

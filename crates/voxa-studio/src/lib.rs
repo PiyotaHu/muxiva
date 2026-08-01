@@ -189,6 +189,12 @@ fn route(
             "application/json",
             voxa_graph_json::GRAPH_V1_SCHEMA.to_owned(),
         ),
+        ("GET", "/api/v1/registry/nodes") => (
+            "200 OK",
+            "application/json",
+            serde_json::to_string(&voxa_graph_json::builtin_node_catalog())
+                .unwrap_or_else(|_| "[]".into()),
+        ),
         ("GET", "/api/v1/graph") => match fs::read_to_string(graph) {
             Ok(document) => ("200 OK", "application/json", document),
             Err(error) => (
@@ -384,6 +390,23 @@ mod tests {
             assert!(!response.contains("text-uppercase"));
             assert!(!response.contains("expected-token"));
         }
+    }
+
+    #[test]
+    fn authorized_node_catalog_comes_from_the_runtime_registry() {
+        let graph = graph_path();
+        let Some(response) = request(
+            &graph,
+            "catalog-token",
+            "GET /api/v1/registry/nodes HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer catalog-token\r\n\r\n".into(),
+        ) else {
+            return;
+        };
+        fs::remove_file(graph).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(response.contains("builtin.text_source"));
+        assert!(response.contains("factory_version"));
+        assert!(response.contains("config_schema"));
     }
 
     #[test]

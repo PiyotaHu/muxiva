@@ -22,6 +22,19 @@ pub enum NodeLanguage {
 }
 
 impl NodeLanguage {
+    /// Parses the stable Graph/Studio language spelling.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "rust" => Some(Self::Rust),
+            "cpp" => Some(Self::Cpp),
+            "python" => Some(Self::Python),
+            "typescript" => Some(Self::TypeScript),
+            _ => None,
+        }
+    }
+}
+
+impl NodeLanguage {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Rust => "rust",
@@ -96,6 +109,27 @@ impl fmt::Display for NodeFactoryVersionError {
 }
 
 impl Error for NodeFactoryVersionError {}
+
+/// The exact implementation selected for a node in a compiled graph.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodeFactorySelection {
+    language: NodeLanguage,
+    version: NodeFactoryVersion,
+}
+
+impl NodeFactorySelection {
+    pub const fn new(language: NodeLanguage, version: NodeFactoryVersion) -> Self {
+        Self { language, version }
+    }
+
+    pub const fn language(&self) -> NodeLanguage {
+        self.language
+    }
+
+    pub const fn version(&self) -> &NodeFactoryVersion {
+        &self.version
+    }
+}
 
 /// A stable failure returned by trusted factory configuration or creation code.
 #[derive(Clone, Debug, Eq, PartialEq)]

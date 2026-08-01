@@ -1,11 +1,7 @@
 'use strict'
 
 const NS = 'http://www.w3.org/2000/svg'
-const ports = {
-  'builtin.text_source': { inputs: [], outputs: ['text_out'], kind: 'source', label: 'Text Source' },
-  'builtin.uppercase': { inputs: ['text_in'], outputs: ['text_out'], kind: 'transform', label: 'Uppercase' },
-  'builtin.text_sink': { inputs: ['text_in'], outputs: [], kind: 'sink', label: 'Text Sink' },
-}
+const catalog = new Map()
 const state = {
   token: '', graph: null, selected: null, positions: {}, diagnostics: [],
   history: [], future: [], dirty: false, zoom: 1, validating: null,
@@ -46,8 +42,12 @@ async function loadStudio() {
   state.token = bootToken()
   if (!state.token) return fatal('The access token is missing from this Studio URL.')
   try {
-    const [graph, metadata] = await Promise.all([api('/api/v1/graph'), api('/api/v1/studio')])
+    const [graph, metadata, registrations] = await Promise.all([
+      api('/api/v1/graph'), api('/api/v1/studio'), api('/api/v1/registry/nodes'),
+    ])
     state.graph = typeof graph === 'string' ? JSON.parse(graph) : graph
+    installCatalog(registrations)
+    renderPalette()
     $('#graph-path').textContent = metadata.graph_path
     $('#connection-status').textContent = metadata.writable ? 'Local runtime · writable' : 'Local runtime · read only'
     seedPositions()
@@ -57,6 +57,42 @@ async function loadStudio() {
   } catch (error) {
     fatal(error.status === 401 ? 'The Studio access token is invalid or expired.' : error.message)
   }
+}
+
+function factoryKey(value) { return JSON.stringify([value.node_type, value.language, value.factory_version]) }
+function nodeInfo(node) {
+  return catalog.get(factoryKey(node)) || { kind: 'transform', label: node.node_type, inputs: [], outputs: [], config_schema: {} }
+}
+function installCatalog(registrations) {
+  if (!Array.isArray(registrations) || !registrations.length) throw new Error('The runtime Node Registry is empty.')
+  for (const entry of registrations) {
+    const info = { ...entry, inputs: [], outputs: [] }
+    for (const port of entry.ports || []) (port.direction === 'input' ? info.inputs : info.outputs).push(port.name)
+    info.label = entry.node_type.split('.').pop().split('_').map((part) => part[0].toUpperCase() + part.slice(1)).join(' ')
+    catalog.set(factoryKey(entry), info)
+  }
+}
+function renderPalette() {
+  const buttons = [...catalog.entries()].map(([key, entry]) => {
+    const button = document.createElement('button'); button.className = `palette-item ${entry.kind}`; button.dataset.addNode = key
+    const icon = document.createElement('span'); icon.className = 'node-icon'; icon.textContent = entry.kind[0].toUpperCase()
+    const copy = document.createElement('span'), label = document.createElement('b'), detail = document.createElement('small')
+    label.textContent = entry.label; detail.textContent = `${entry.language} · v${entry.factory_version}`; copy.append(label, detail)
+    const add = document.createElement('span'); add.textContent = '＋'; button.append(icon, copy, add); return button
+  })
+  $('#node-palette').replaceChildren(...buttons)
+  $('#node-type').replaceChildren(...[...catalog.entries()].map(([key, entry]) => {
+    const option = document.createElement('option'); option.value = key; option.textContent = `${entry.node_type} · ${entry.language} · v${entry.factory_version}`; return option
+  }))
+}
+function defaultConfig(entry) {
+  const result = {}, properties = entry.config_schema?.properties || {}
+  for (const name of entry.config_schema?.required || []) {
+    const property = properties[name] || {}
+    if (Object.hasOwn(property, 'default')) result[name] = clone(property.default)
+    else if (property.type === 'string') result[name] = ''
+  }
+  return result
 }
 
 function bindEvents() {
@@ -97,7 +133,7 @@ function seedPositions() {
   const columns = { source: 0, transform: 0, sink: 0 }
   const x = { source: 110, transform: 475, sink: 840 }
   state.graph.nodes.forEach((node, index) => {
-    const info = ports[node.node_type] || { kind: 'transform' }
+    const info = nodeInfo(node)
     const row = columns[info.kind]++
     state.positions[node.id] = { x: x[info.kind] ?? 180 + index * 260, y: 130 + row * 175 }
   })
@@ -132,15 +168,19 @@ function reconcilePositions() {
   if (!state.graph.nodes.some((node) => node.id === state.selected)) state.selected = null
 }
 
-function addNode(type) {
-  const info = ports[type]
+function addNode(key) {
+  const info = catalog.get(key)
+  if (!info) return toast('Node Factory is no longer registered', true)
   const base = info.kind === 'source' ? 'source' : info.kind === 'sink' ? 'sink' : 'transform'
   let number = 1
   while (state.graph.nodes.some((node) => node.id === `${base}-${number}`)) number++
   const id = `${base}-${number}`
   mutate(() => {
-    state.graph.nodes.push({ id, node_type: type, language: 'rust', node_config: type === 'builtin.text_source' ? { text: 'hello' } : {} })
-    const sameKind = state.graph.nodes.filter((node) => ports[node.node_type]?.kind === info.kind).length - 1
+    state.graph.nodes.push({
+      id, node_type: info.node_type, language: info.language, factory_version: info.factory_version,
+      node_config: defaultConfig(info),
+    })
+    const sameKind = state.graph.nodes.filter((node) => nodeInfo(node).kind === info.kind).length - 1
     const x = info.kind === 'source' ? 110 : info.kind === 'sink' ? 840 : 475
     state.positions[id] = { x, y: 130 + sameKind * 175 }
     state.selected = id
@@ -168,11 +208,15 @@ function updateSelectedNode() {
   const nextId = $('#node-id').value.trim()
   if (!nextId) { $('#config-error').textContent = 'Node ID is required'; return }
   if (state.graph.nodes.some((candidate) => candidate !== node && candidate.id === nextId)) { $('#config-error').textContent = 'Node ID must be unique'; return }
-  if (node.id === nextId && node.node_type === $('#node-type').value && JSON.stringify(node.node_config) === JSON.stringify(config)) return
+  const selectedFactory = catalog.get($('#node-type').value)
+  if (!selectedFactory) { $('#config-error').textContent = 'Select a registered Node Factory'; return }
+  if (node.id === nextId && factoryKey(node) === $('#node-type').value && JSON.stringify(node.node_config) === JSON.stringify(config)) return
   const previousId = node.id
   mutate(() => {
     node.id = nextId
-    node.node_type = $('#node-type').value
+    node.node_type = selectedFactory.node_type
+    node.language = selectedFactory.language
+    node.factory_version = selectedFactory.factory_version
     node.node_config = config
     if (previousId !== nextId) {
       state.graph.edges.forEach((edge) => {
@@ -187,8 +231,8 @@ function updateSelectedNode() {
 }
 
 function openEdgeDialog() {
-  const sources = state.graph.nodes.filter((node) => ports[node.node_type]?.outputs.length)
-  const targets = state.graph.nodes.filter((node) => ports[node.node_type]?.inputs.length)
+  const sources = state.graph.nodes.filter((node) => nodeInfo(node).outputs.length)
+  const targets = state.graph.nodes.filter((node) => nodeInfo(node).inputs.length)
   fillSelect($('#edge-from-node'), sources)
   fillSelect($('#edge-to-node'), targets)
   refreshEdgePorts()
@@ -200,8 +244,8 @@ function fillSelect(select, nodes) {
 function refreshEdgePorts() {
   const source = state.graph.nodes.find((node) => node.id === $('#edge-from-node').value)
   const target = state.graph.nodes.find((node) => node.id === $('#edge-to-node').value)
-  fillStringSelect($('#edge-from-port'), ports[source?.node_type]?.outputs || [])
-  fillStringSelect($('#edge-to-port'), ports[target?.node_type]?.inputs || [])
+  fillStringSelect($('#edge-from-port'), source ? nodeInfo(source).outputs : [])
+  fillStringSelect($('#edge-to-port'), target ? nodeInfo(target).inputs : [])
 }
 function fillStringSelect(select, values) {
   select.replaceChildren(...values.map((value) => { const option = document.createElement('option'); option.value = value; option.textContent = value; return option }))
@@ -250,7 +294,7 @@ function renderEdgeLayer(edgeLayer = $('#edge-layer')) {
 }
 
 function renderNode(node) {
-  const info = ports[node.node_type] || { kind: 'transform', label: node.node_type, inputs: [], outputs: [] }
+  const info = nodeInfo(node)
   const position = state.positions[node.id] || { x: 100, y: 100 }
   const group = svg('g', { class: `node-group${node.id === state.selected ? ' selected' : ''}`, transform: `translate(${position.x} ${position.y})`, 'data-node': node.id, tabindex: '0' })
   group.append(svg('rect', { class: 'node-card', width: 220, height: 108, rx: 11 }))
@@ -309,7 +353,7 @@ function renderInspector() {
   $('#delete-node').disabled = !node
   empty.classList.toggle('hidden', Boolean(node)); form.classList.toggle('hidden', !node)
   if (!node) return
-  $('#node-id').value = node.id; $('#node-type').value = node.node_type; $('#node-language').value = node.language; $('#node-config').value = JSON.stringify(node.node_config, null, 2); $('#config-error').textContent = ''
+  $('#node-id').value = node.id; $('#node-type').value = factoryKey(node); $('#node-language').value = node.language; $('#node-version').value = node.factory_version || ''; $('#node-config').value = JSON.stringify(node.node_config, null, 2); $('#config-error').textContent = ''
 }
 
 function scheduleValidation() {
