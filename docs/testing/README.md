@@ -29,6 +29,11 @@ as executed coverage.
 | Stage 10 CLI/Studio | `cargo test --offline -p voxa-studio -p voxa-cli` | shared Graph v1 diagnostics, create-only init, bearer-token rejection, authenticated validation, and exact occupied-port failure | loopback sockets must be permitted by the test sandbox |
 | D07 Agora C++ | `./scripts/check-rtc.sh` and `./scripts/check-rtc-asan.sh` | fake-SDK PCM16/I420 copy, bounded ingress, signals/events, outbound media, idempotent close, deliberately late callback | C++17 compiler; vendor SDK is not required |
 | D07 Agora Python | `VOXA_AGORA_PYTHON=/path/to/python3.9 ./scripts/check-agora-python.sh` | imports the real community extension and checks its engine/audio/video observer surface | CPython 3.9 with `agora-python-sdk==3.4.2.1`; otherwise explicit `SKIP` |
+| D08 media | `./scripts/check-media.sh` | exact PCM/video shapes, rate conversion, I420/RGBA conversion, timestamp continuity/discontinuity, byte budget, concurrent admission, flush/reset | C++17 compiler; real FFmpeg test runs when development libraries are discoverable |
+| D08 media safety | `./scripts/check-media-asan.sh` | provider-independent contract and, when discoverable, the real FFmpeg backend under ASan/UBSan | clang with ASan/UBSan |
+
+The Linux `check-native-tsan.sh` gate also executes the D08 concurrent-admission
+contract under ThreadSanitizer.
 
 The Stage 8 delay setting models an adapter fault. Test completion is observed
 through adapter state/counters and a bounded deadline; the delay is not used to

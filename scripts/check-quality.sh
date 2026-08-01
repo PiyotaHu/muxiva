@@ -7,6 +7,7 @@ cd "$repository_root"
 ./scripts/check-rust.sh
 ./scripts/check-ffi.sh
 ./scripts/check-rtc.sh
+./scripts/check-media.sh
 
 if [[ -x ./scripts/check-python.sh ]]; then
   ./scripts/check-python.sh

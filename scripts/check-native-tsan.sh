@@ -21,3 +21,12 @@ output="$repository_root/target/native-tsan-contract"
 clang++ -std=c++17 -Wall -Wextra -Werror -fsanitize=thread -fno-omit-frame-pointer \
   "$source_file" -o "$output" -fsanitize=thread
 "$output"
+
+media_output="$repository_root/target/media-pipeline-tsan"
+clang++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -pthread \
+  -fsanitize=thread -fno-omit-frame-pointer \
+  -I"$repository_root/cpp/media/include" \
+  "$repository_root/cpp/media/src/media_pipeline.cc" \
+  "$repository_root/cpp/media/tests/media_pipeline_test.cc" \
+  -o "$media_output" -fsanitize=thread
+"$media_output"

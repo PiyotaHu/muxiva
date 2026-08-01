@@ -65,3 +65,12 @@ and `VOXA_AGORA_SDK_ROOT=/path/to/sdk`. It keeps Agora callbacks outside graph
 execution and feeds owned frames through bounded external ingress. See
 [`docs/providers/agora.md`](../providers/agora.md) for SDK compatibility,
 build, credentials, and live acceptance steps.
+
+## FFmpeg media pipeline
+
+`Voxa::media` provides bounded raw-media normalization. Enable its real backend
+with `VOXA_ENABLE_FFMPEG=ON` and `VOXA_FFMPEG_ROOT=/path/to/ffmpeg`. The streaming
+audio resampler preserves filter state and supports explicit flush/reset;
+video conversion supports RGBA8/I420 scaling and color conversion. See
+[`docs/providers/ffmpeg.md`](../providers/ffmpeg.md) and
+`examples/cpp/media-convert`.

@@ -17,3 +17,4 @@ jobs:
         run: cargo fetch --locked
       - run: ./scripts/check-ffi.sh
       - run: ./scripts/check-rtc.sh
+      - run: ./scripts/check-media.sh

@@ -18,14 +18,14 @@ Voxa 现在为 Python、TypeScript 和 C++ 提供相同的最小完整链路：�
 Python, TypeScript, and C++ hosts can now register trusted, exact-version text
 Transform factories and execute them inside the same Graph v1 concurrent
 Runtime as Rust built-ins. Graph JSON remains pure data and never loads code.
-The host must supply implementations explicitly. The compatibility D04 API accepts
-empty foreign `node_config`, one text input, and one text output; general
-schemas, media ports, sources, sinks, and package discovery remain follow-ups.
+The host must supply implementations explicitly. The compatibility D04 API
+remains available, while D05 adds schemas, media ports, Sources, Sinks, and
+named multi-output. Automatic package/plugin discovery remains a follow-up.
 
 Python、TypeScript 与 C++ 宿主现在都能注册受信任的精确版本文本 Transform
 Factory，并与 Rust 内置 Node 一起进入同一个 Graph v1 并发 Runtime。Graph
-JSON 仍是纯数据，代码必须由宿主显式提供。兼容 D04 API 限定为空配置、单文本
-输入和单文本输出；通用 Schema、媒体端口、Source、Sink 与包发现仍是后续工作。
+JSON 仍是纯数据，代码必须由宿主显式提供。兼容 D04 API 继续保留，D05 已加入
+Schema、媒体端口、Source、Sink 和命名多输出；自动包/插件发现仍是后续工作。
 
 ## Acceptance gates / 验收门禁
 

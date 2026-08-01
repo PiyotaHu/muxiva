@@ -16,6 +16,7 @@ jobs:
         run: cargo fetch --locked
       - run: ./scripts/check-ffi-asan.sh
       - run: ./scripts/check-rtc-asan.sh
+      - run: ./scripts/check-media-asan.sh
 
   native-tsan:
     runs-on: ubuntu-latest

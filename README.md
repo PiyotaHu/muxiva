@@ -35,11 +35,12 @@ Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but
 | Signal, EventBus, turn control | Available | Adjacent signals and isolated global events |
 | C ABI and C++ SDK | Available | Versioned ABI, RAII wrappers, installable CMake package, and hosted Graph v1 text factories |
 | RTC adapters | Experimental | Mock contract plus optional Agora C++ PCM16/I420 and Python audio providers; live credential certification remains |
+| Media normalization | Experimental | Optional FFmpeg streaming audio resampling plus RGBA8/I420 scale and color conversion |
 | Python/PyO3 package | Experimental | Dedicated thread/asyncio loop and hosted Graph v1 text factories; `isolated_process` is rejected |
 | Node-API package | Experimental | Dedicated Worker and hosted Graph v1 text factories; Promise-returning transforms are rejected |
 | JSON Graph v1 and CLI | Experimental | Exact-version Registry compilation, concurrent execution of compiled-in factories, bounded waits, initialization, and local Studio |
 | Local Studio | Available | Bundled visual canvas, Node/Edge editing, validation and atomic save |
-| FFmpeg and model providers | Planned | Not included in Core or the current build |
+| Model providers | Planned | Not included in Core or the current build |
 
 ## Architecture
 
@@ -157,7 +158,7 @@ voxa/
 │   ├── voxa-node/        # Node-API native module
 │   └── voxa-testkit/     # Deterministic test harnesses
 ├── bindings/node/        # @voxa/core package
-├── cpp/                  # Public C/C++ headers, examples, Mock RTC
+├── cpp/                  # Public C/C++ SDK, RTC adapters and media providers
 ├── examples/             # Rust, graph, Python, TypeScript and C++ examples
 ├── fuzz/                 # Fuzz targets
 ├── docs/                 # Design, testing and pre-release reports
@@ -195,7 +196,7 @@ Near-term priorities:
 1. Stabilize public Rust, C++, Python, and TypeScript SDK contracts.
 2. Stabilize the new schema-driven multimodal Source, Transform, Sink, and named multi-output foreign Factory APIs.
 3. Stabilize Studio live runtime metrics and execution-control contracts.
-4. Certify the Agora adapter with live-room soak tests and add media/codec integration.
+4. Certify the Agora adapter with live-room soak tests and extend D08 into compressed codec/device providers.
 5. Implement versioned Python process isolation and TypeScript Promise support.
 6. Publish packages, compatibility matrices, performance baselines, and release artifacts.
 
