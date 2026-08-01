@@ -10,4 +10,5 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 voxa-core = { path = "../voxa-core" }
+voxa-graph-json = { path = "../voxa-graph-json" }
 voxa-types.workspace = true

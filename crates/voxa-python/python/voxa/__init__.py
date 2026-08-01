@@ -6,6 +6,7 @@ from ._native import (  # noqa: F401
     EventBus,
     EventFrame,
     Frame,
+    GraphNodeFactory,
     PythonNodeExecutionDomain,
     Runtime,
     Session,
@@ -13,6 +14,7 @@ from ._native import (  # noqa: F401
     TextFrame,
     VideoFrame,
     VoxaError,
+    run_graph,
 )
 from .sdk import NodeOptions, NodeRunner, TransformNode
 
@@ -22,6 +24,7 @@ __all__ = [
     "EventBus",
     "EventFrame",
     "Frame",
+    "GraphNodeFactory",
     "NodeOptions",
     "NodeRunner",
     "PythonNodeExecutionDomain",
@@ -32,4 +35,5 @@ __all__ = [
     "TransformNode",
     "VideoFrame",
     "VoxaError",
+    "run_graph",
 ]

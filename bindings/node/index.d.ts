@@ -49,3 +49,14 @@ export class NodeRunner<Input = NodeValue, Output = Input, Signal = NodeValue, E
   abort(reason:unknown):Promise<unknown>
   close():Promise<boolean>
 }
+
+export interface GraphNodeFactoryOptions {
+  version?:string
+  inputPort?:string
+  outputPort?:string
+}
+export class GraphNodeFactory<Input = NodeValue, Output = Input> {
+  constructor(nodeType:string,implementation:TransformImplementation<Input,Output>,options?:GraphNodeFactoryOptions)
+  readonly spec:{ nodeType:string; version:string; inputPort:string; outputPort:string }
+}
+export function runGraph(graphJson:string,factories:GraphNodeFactory[],options?:{ timeoutMs?:number }):Promise<number>

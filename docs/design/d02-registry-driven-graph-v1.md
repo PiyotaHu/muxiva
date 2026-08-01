@@ -37,6 +37,6 @@ Factories require empty configuration. Errors identify the Node and
 
 D03 now materializes all selected Node instances from
 `NodeDefinition::factory()`, attaches Edge policies, executes the graph through
-the general concurrent Runtime, and reports its terminal outcome. D04 remains
-responsible for registering Python, TypeScript, and C++ bridge factories into
-this execution path.
+the general concurrent Runtime, and reports its terminal outcome. D04 now
+registers Python, TypeScript, and C++ text Transform bridge factories into this
+execution path.

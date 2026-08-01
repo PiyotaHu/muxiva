@@ -74,6 +74,7 @@ voxa_frame_view_v1 text_frame(const std::string& text) {
 int main() {
   assert(voxa_abi_version_v1() == VOXA_ABI_VERSION_V1);
   assert((voxa_capabilities_v1() & VOXA_CAP_RETAIN_RELEASE) == 0);
+  assert((voxa_capabilities_v1() & VOXA_CAP_GRAPH_FACTORIES) != 0);
   voxa::Error error;
   voxa::Runtime runtime(error);
   auto node = voxa::Node::make<Uppercase>(error);

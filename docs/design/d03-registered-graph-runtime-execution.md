@@ -48,6 +48,6 @@ for cleanup.
 
 The CLI currently installs Voxa's compiled-in Rust built-ins. D03 does not add
 dynamic library loading, code embedded in Graph JSON, or remote implementation
-fetching. D04 will adapt the existing Python, TypeScript, and C++ execution
-domains into versioned Registry factories so those Nodes can use this same
-Graph v1 path.
+fetching. D04 now adapts the existing Python, TypeScript, and C++ execution
+domains into versioned Registry factories so hosted text Transform Nodes use
+this same Graph v1 path.

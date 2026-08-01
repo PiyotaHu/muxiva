@@ -31,3 +31,4 @@ PYTHONPATH="$unpack_dir" "$python_bin" -m pytest -q "$repo/crates/voxa-python/te
 "$consumer_dir/bin/python" -m pip install --no-deps "$wheel"
 "$consumer_dir/bin/python" "$repo/examples/python/uppercase_node.py"
 "$consumer_dir/bin/python" "$repo/examples/python/async_node.py"
+"$consumer_dir/bin/python" "$repo/examples/python/registered_graph.py"

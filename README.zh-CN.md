@@ -33,10 +33,10 @@ Voxa 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部
 | Frame、图模型、同步/并发 Runtime | 可用 | 静态 DAG，端口与 Frame 类型精确匹配 |
 | 背压与实时流控 | 可用 | 有界队列、音频合帧、Managed Stream |
 | Signal、EventBus、turn 控制 | 可用 | 相邻 Signal 与隔离的全局 Event |
-| C ABI 与 C++ SDK | 可用 | 版本化 ABI、RAII Wrapper、可安装 CMake 包；当前为单 Node 文本 Runner |
+| C ABI 与 C++ SDK | 可用 | 版本化 ABI、RAII Wrapper、可安装 CMake 包与宿主注册的 Graph v1 文本 Factory |
 | Mock RTC Adapter | 可用 | 确定性故障和回调安全关闭；不含真实 RTC SDK |
-| Python/PyO3 包 | 实验性 | 独立线程和 asyncio loop；明确拒绝 `isolated_process` |
-| Node-API 包 | 实验性 | 独立 Worker；明确拒绝返回 Promise 的 Transform |
+| Python/PyO3 包 | 实验性 | 独立线程/asyncio loop 与宿主 Graph v1 文本 Factory；明确拒绝 `isolated_process` |
+| Node-API 包 | 实验性 | 独立 Worker 与宿主 Graph v1 文本 Factory；明确拒绝返回 Promise 的 Transform |
 | JSON Graph v1 与 CLI | 实验性 | 精确版本 Registry 编译、内置 Factory 并发执行、有界等待、初始化和本地 Studio |
 | 本地 Studio | 可用 | 内置可视化画布、Node/Edge 编辑、校验与原子保存 |
 | 真实 RTC、FFmpeg、模型 Provider | 规划中 | 当前不属于 Core，也不是构建依赖 |
@@ -192,7 +192,7 @@ voxa/
 近期优先级：
 
 1. 稳定 Rust、C++、Python 和 TypeScript 公开 SDK 契约。
-2. 将 Python、TypeScript 和 C++ Node Factory 注册到同一条 Graph v1 执行链路。
+2. 将外语 Graph Factory 从空配置文本 Transform 扩展到 Schema 驱动的多模态 Source、Transform 与 Sink。
 3. 为可视化 Studio 增加实时 Runtime 指标和执行控制。
 4. 接入经过生产评审的 RTC Adapter 与媒体/Codec 能力。
 5. 实现版本化 Python 进程隔离与 TypeScript Promise 支持。

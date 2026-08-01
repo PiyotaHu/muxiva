@@ -33,3 +33,7 @@ self-contained because their source is installed into the dedicated Worker.
 
 See the [TypeScript SDK guide](../../docs/sdk/typescript.md) and the independent
 [`examples/typescript`](../../examples/typescript) project.
+
+`GraphNodeFactory` plus `runGraph` registers an exact-version TypeScript text
+Transform into Graph v1. The complete graph runs in Rust while callbacks stay
+on a dedicated Worker; Graph JSON never imports JavaScript code.

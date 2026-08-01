@@ -33,10 +33,10 @@ Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but
 | Frames, graph model, sync/concurrent runtime | Available | Static DAGs; exact port and frame types |
 | Backpressure and real-time flow control | Available | Bounded queues, audio merge, managed streams |
 | Signal, EventBus, turn control | Available | Adjacent signals and isolated global events |
-| C ABI and C++ SDK | Available | Versioned ABI, RAII wrappers, installable CMake package; focused text runner |
+| C ABI and C++ SDK | Available | Versioned ABI, RAII wrappers, installable CMake package, and hosted Graph v1 text factories |
 | Mock RTC adapter | Available | Deterministic faults and callback-safe shutdown; no real RTC SDK |
-| Python/PyO3 package | Experimental | Dedicated thread and asyncio loop; `isolated_process` is rejected |
-| Node-API package | Experimental | Dedicated Worker; Promise-returning transforms are rejected |
+| Python/PyO3 package | Experimental | Dedicated thread/asyncio loop and hosted Graph v1 text factories; `isolated_process` is rejected |
+| Node-API package | Experimental | Dedicated Worker and hosted Graph v1 text factories; Promise-returning transforms are rejected |
 | JSON Graph v1 and CLI | Experimental | Exact-version Registry compilation, concurrent execution of compiled-in factories, bounded waits, initialization, and local Studio |
 | Local Studio | Available | Bundled visual canvas, Node/Edge editing, validation and atomic save |
 | Real RTC, FFmpeg, model providers | Planned | Not included in Core or the current build |
@@ -193,7 +193,7 @@ The test framework covers deterministic graph faults, queue pressure, managed-st
 Near-term priorities:
 
 1. Stabilize public Rust, C++, Python, and TypeScript SDK contracts.
-2. Register Python, TypeScript, and C++ Node factories into the same Graph v1 execution path.
+2. Expand foreign Graph factories from empty-config text Transforms to schema-driven multimodal Sources, Transforms, and Sinks.
 3. Add live runtime metrics and execution controls to the visual Studio.
 4. Add a production-reviewed RTC adapter and media/codec integration.
 5. Implement versioned Python process isolation and TypeScript Promise support.

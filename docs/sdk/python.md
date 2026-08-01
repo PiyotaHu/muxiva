@@ -33,3 +33,18 @@ V1 accepts only `max_in_flight=1` and `isolation="in_process"`. The context
 manager calls prepare once, finish on a clean exit, and always closes the
 domain. On exceptional exit it invokes `on_abort` with the exception message
 before closing. See `examples/python/uppercase_node.py` and `async_node.py`.
+
+## Register a Graph v1 Factory
+
+```python
+factory = voxa.GraphNodeFactory("example.python.uppercase", Uppercase)
+worker_total = voxa.run_graph(graph_json, [factory])
+```
+
+The Graph node must select `language: "python"` and the exact Factory version.
+Each materialized Node receives a fresh value from the constructor and runs on
+its own Python execution thread and asyncio loop. The complete installable
+example is `examples/python/registered_graph.py`.
+
+D04 v1 supports text Transform factories with empty `node_config`. It does not
+import Python modules named by untrusted Graph JSON.

@@ -121,3 +121,35 @@ def test_node_runner_aborts_on_exceptional_context_exit():
             raise RuntimeError("stop now")
 
     assert node.reason == "stop now"
+
+
+def test_python_factory_executes_inside_registered_graph_v1_runtime():
+    calls = []
+
+    class Uppercase:
+        def on_prepare(self):
+            calls.append("prepare")
+
+        def on_process(self, frame):
+            calls.append(("process", frame.text))
+            return voxa.TextFrame(frame.text.upper())
+
+        def on_finish(self):
+            calls.append("finish")
+
+    graph = r'''{
+      "version":"voxa.graph/v1",
+      "graph_id":"python-registered",
+      "nodes":[
+        {"id":"source","node_type":"builtin.text_source","language":"rust","factory_version":"1.0.0","node_config":{"text":"hello"}},
+        {"id":"upper","node_type":"example.python.uppercase","language":"python","factory_version":"1.0.0","node_config":{}},
+        {"id":"sink","node_type":"builtin.text_sink","language":"rust","factory_version":"1.0.0","node_config":{}}
+      ],
+      "edges":[
+        {"id":"source-upper","from":{"node_id":"source","port":"text_out"},"to":{"node_id":"upper","port":"text_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}},
+        {"id":"upper-sink","from":{"node_id":"upper","port":"text_out"},"to":{"node_id":"sink","port":"text_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}}
+      ]
+    }'''
+    factory = voxa.GraphNodeFactory("example.python.uppercase", Uppercase)
+    assert voxa.run_graph(graph, [factory]) == 3
+    assert calls == ["prepare", ("process", "hello"), "finish"]

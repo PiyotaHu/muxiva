@@ -26,6 +26,8 @@ cd "$consumer_dir"
 pnpm init >/dev/null
 pnpm pkg set type=module
 pnpm add "$package"
-cp "$repo/examples/typescript/tsconfig.json" "$repo/examples/typescript/uppercase-node.ts" .
+cp "$repo/examples/typescript/tsconfig.json" "$repo/examples/typescript/uppercase-node.ts" \
+  "$repo/examples/typescript/registered-graph.ts" .
 "$repo/bindings/node/node_modules/.bin/tsc" -p tsconfig.json
 node dist/uppercase-node.js
+node dist/registered-graph.js

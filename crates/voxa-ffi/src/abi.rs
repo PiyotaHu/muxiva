@@ -176,6 +176,8 @@ pub type ProcessCallback =
 pub type SignalCallback = extern "C" fn(*mut c_void, *const FrameView, *mut ErrorOutput) -> Status;
 pub type AbortCallback = extern "C" fn(*mut c_void, *const AbortReasonView);
 pub type DestroyCallback = extern "C" fn(*mut c_void);
+pub type FactoryCreateCallback =
+    extern "C" fn(*mut c_void, StrView, *mut NodeVtable, *mut ErrorOutput) -> Status;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -197,6 +199,29 @@ pub struct NodeVtable {
 // until destroy. The registry closes admission and drains active calls before destruction.
 unsafe impl Send for NodeVtable {}
 unsafe impl Sync for NodeVtable {}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct NodeFactoryView {
+    pub abi_version: u32,
+    pub struct_size: u32,
+    pub node_type: StrView,
+    pub version: StrView,
+    pub input_port: StrView,
+    pub output_port: StrView,
+    pub user_data: *mut c_void,
+    pub create: Option<FactoryCreateCallback>,
+    pub reserved: [u64; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GraphRunSummary {
+    pub abi_version: u32,
+    pub struct_size: u32,
+    pub worker_total: u32,
+    pub reserved: [u64; 4],
+}
 
 pub fn aligned<T>(pointer: *const T) -> bool {
     !pointer.is_null() && (pointer as usize) % mem::align_of::<T>() == 0

@@ -44,7 +44,7 @@ impl PythonNodeExecutionDomain {
     #[new]
     #[pyo3(signature = (node, *, inbox_capacity=16, completion_capacity=16, max_in_flight=1, call_deadline_ms=10_000, shutdown_deadline_ms=5_000, ordering="strict", isolation="in_process"))]
     #[allow(clippy::too_many_arguments)]
-    fn new(
+    pub(crate) fn new(
         node: Py<PyAny>,
         inbox_capacity: usize,
         completion_capacity: usize,
@@ -222,6 +222,107 @@ impl PythonNodeExecutionDomain {
 }
 
 impl PythonNodeExecutionDomain {
+    pub(crate) fn submit_blocking(
+        &self,
+        kind: ForeignCommandKind,
+    ) -> voxa_types::Result<ForeignCompletion> {
+        {
+            let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            if state.closed {
+                return Err(domain_error("VOXA-PY-CLOSED", "Python domain is closed"));
+            }
+        }
+        let mut next = self.sequence.lock().unwrap_or_else(|e| e.into_inner());
+        let sequence = *next;
+        match self
+            .driver
+            .try_submit(ForeignCommand::new(sequence, kind), Instant::now())
+            .map_err(|error| domain_error("VOXA-PY-DRIVER", error.to_string()))?
+        {
+            ForeignSubmitOutcome::Accepted => {
+                *next = next
+                    .checked_add(1)
+                    .ok_or_else(|| domain_error("VOXA-PY-SEQUENCE", "sequence exhausted"))?;
+            }
+            ForeignSubmitOutcome::Full => {
+                return Err(domain_error(
+                    "VOXA-PY-INBOX-FULL",
+                    "Python node inbox or in-flight quota is full",
+                ));
+            }
+            ForeignSubmitOutcome::Closed | ForeignSubmitOutcome::Cancelled => {
+                return Err(domain_error("VOXA-PY-CLOSED", "Python domain is stopping"));
+            }
+        }
+        drop(next);
+        let deadline = Instant::now() + self.call_timeout;
+        loop {
+            if let Some(completion) = self.driver.try_take_completion() {
+                if completion.sequence() != sequence {
+                    return Err(domain_error(
+                        "VOXA-PY-ORDER",
+                        "unexpected completion sequence",
+                    ));
+                }
+                if let ForeignCompletionKind::Failure(reason) = completion.kind() {
+                    return Err(domain_error(reason.root().code(), reason.root().message()));
+                }
+                return Ok(completion);
+            }
+            if let Some(reason) = self.driver.take_abort_reason() {
+                return Err(domain_error(reason.root().code(), reason.root().message()));
+            }
+            if Instant::now() >= deadline {
+                self.driver.expire_deadlines(Instant::now());
+                return Err(domain_error(
+                    "VOXA-PY-DEADLINE",
+                    "Python lifecycle callback exceeded its deadline",
+                ));
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    pub(crate) fn mark_terminal_callback_completed(&self) {
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .terminal_callback_completed = true;
+    }
+
+    pub(crate) fn close_blocking(&self) -> voxa_types::Result<bool> {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.closed {
+            return Ok(false);
+        }
+        state.closed = true;
+        if !state.terminal_callback_completed || !self.driver.begin_graceful_stop() {
+            self.driver.begin_stop(abort_reason(
+                "VOXA-PY-CANCELLED",
+                "Python domain closed",
+                AbortCategory::Cancelled,
+            ));
+        }
+        let done = state
+            .done
+            .take()
+            .expect("only the first close takes the receiver");
+        drop(state);
+        let completed = done.recv_timeout(self.shutdown_timeout).is_ok();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if completed {
+            if let Some(handle) = state.thread.take() {
+                let _ = handle.join();
+            }
+            Ok(true)
+        } else {
+            Err(domain_error(
+                "VOXA-PY-SHUTDOWN-DEADLINE",
+                "Python task did not stop before shutdown deadline; in-process thread cannot be killed",
+            ))
+        }
+    }
+
     fn submit(&self, py: Python<'_>, kind: ForeignCommandKind) -> PyResult<ForeignCompletion> {
         {
             let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -279,6 +380,21 @@ impl PythonNodeExecutionDomain {
             py.allow_threads(|| thread::sleep(Duration::from_millis(1)));
         }
     }
+}
+
+fn domain_error(code: &str, message: impl AsRef<str>) -> voxa_types::VoxaError {
+    voxa_types::VoxaError::try_new(
+        voxa_types::ErrorCategory::External,
+        code.to_owned(),
+        message.as_ref().to_owned(),
+    )
+    .unwrap_or_else(|_| {
+        voxa_types::VoxaError::new(
+            voxa_types::ErrorCategory::External,
+            "VOXA-PY-DOMAIN",
+            "Python execution domain failure",
+        )
+    })
 }
 
 impl Drop for PythonNodeExecutionDomain {

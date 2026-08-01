@@ -10,7 +10,7 @@
   "main": "index.js",
   "types": "index.d.ts",
   "exports": { ".": { "types": "./index.d.ts", "import": "./index.js" } },
-  "files": ["index.js", "index.d.ts", "worker.mjs", "README.md", "native/*.node", "npm"],
+  "files": ["index.js", "index.d.ts", "worker.mjs", "graph-worker.mjs", "README.md", "native/*.node", "npm"],
   "engines": { "node": ">=20 <25" },
   "napi": { "name": "voxa", "triples": { "defaults": false, "additional": ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu"] } },
   "scripts": {

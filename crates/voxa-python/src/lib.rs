@@ -4,6 +4,7 @@
 mod api;
 mod domain;
 mod frame;
+mod graph;
 mod isolated;
 mod subscription;
 
@@ -14,6 +15,7 @@ pub use domain::PythonNodeExecutionDomain;
 pub use frame::{
     PyAudioFrame, PyByteFrame, PyEventFrame, PyFrame, PySignalFrame, PyTextFrame, PyVideoFrame,
 };
+pub use graph::PyGraphNodeFactory;
 
 create_exception!(_native, VoxaError, PyException);
 
@@ -31,6 +33,8 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PySession>()?;
     module.add_class::<PyEventBus>()?;
     module.add_class::<PythonNodeExecutionDomain>()?;
+    module.add_class::<PyGraphNodeFactory>()?;
+    module.add_function(wrap_pyfunction!(graph::run_graph, module)?)?;
     Ok(())
 }
 

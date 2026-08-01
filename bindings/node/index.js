@@ -70,3 +70,38 @@ export class NodeRunner {
   abort(reason) { return this.#domain.abort(reason) }
   close() { return this.#domain.close() }
 }
+
+export class GraphNodeFactory {
+  constructor(nodeType, implementation, { version = '1.0.0', inputPort = 'text_in', outputPort = 'text_out' } = {}) {
+    if (typeof nodeType !== 'string' || nodeType.length === 0) throw new TypeError('nodeType must be a non-empty string')
+    defineTransformNode(implementation)
+    this.spec = { nodeType, version, inputPort, outputPort }
+    this.methods = Object.fromEntries(methodNames.map((name) => [name, typeof implementation[name] === 'function' ? String(implementation[name]) : null]))
+  }
+}
+
+export function runGraph(graphJson, factories, { timeoutMs = 30_000 } = {}) {
+  if (typeof graphJson !== 'string') return Promise.reject(new TypeError('graphJson must be a string'))
+  if (!Array.isArray(factories) || factories.some((factory) => !(factory instanceof GraphNodeFactory))) {
+    return Promise.reject(new TypeError('factories must contain GraphNodeFactory values'))
+  }
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./graph-worker.mjs', import.meta.url), {
+      workerData: {
+        addonPath: fileURLToPath(binary), graphJson, timeoutMs,
+        factories: factories.map(({ spec, methods }) => ({ spec, methods })),
+      },
+    })
+    let settled = false
+    worker.once('message', (message) => {
+      settled = true
+      void worker.terminate()
+      if (message.ok) resolve(message.workerTotal)
+      else reject(Object.assign(new Error(message.error.message), { code: message.error.code }))
+    })
+    worker.once('error', (error) => { if (!settled) { settled = true; reject(error) } })
+    worker.once('exit', (code) => {
+      if (!settled && code !== 0) reject(new Error(`Voxa Graph worker exited with code ${code}`))
+    })
+  })
+}

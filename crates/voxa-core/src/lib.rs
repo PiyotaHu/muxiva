@@ -10,6 +10,7 @@ pub mod edge_policy;
 pub mod event_bus;
 pub mod flow;
 pub mod foreign;
+pub mod foreign_registry;
 pub mod graph;
 pub mod logging;
 pub mod managed_stream;
@@ -49,6 +50,10 @@ pub use foreign::{
     ForeignCompletionOutcome, ForeignDriverConfig, ForeignDriverError, ForeignDriverSnapshot,
     ForeignFullPolicy, ForeignNodeDriver, ForeignOrdering, ForeignShutdownDiagnostics,
     ForeignSubmitOutcome,
+};
+pub use foreign_registry::{
+    ForeignNodeCallOutput, ForeignNodeEmission, ForeignNodeFactoryAdapter, ForeignNodeInstance,
+    ForeignNodeProvider,
 };
 pub use graph::{
     EdgeEndpoint, EndpointRole, GraphBuildError, GraphBuilder, GraphDefinition, NodeDefinition,

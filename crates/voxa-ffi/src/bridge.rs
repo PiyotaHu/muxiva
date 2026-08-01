@@ -6,21 +6,247 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
     },
+    time::Duration,
 };
 
 use voxa_core::{
-    AbortReason, ConfigSchema, EdgeDescriptor, EnabledCondition, GraphBuilder, GraphRunner,
-    LifecycleCapabilities, Node, NodeContext, NodeDescriptor, NodeInstances, NodeKind,
-    NodeTypeName, PortDescriptor, PortDirection, PortName, QueuePolicy, TransformPolicy,
-    ValidationPolicy, VisibilityDescriptor,
+    start_registered_runtime, AbortReason, ConfigMap, ConfigSchema, EdgeDescriptor, EdgePolicies,
+    EnabledCondition, ForeignNodeCallOutput, ForeignNodeFactoryAdapter, ForeignNodeInstance,
+    ForeignNodeProvider, GraphBuilder, GraphRunner, LifecycleCapabilities, Node, NodeContext,
+    NodeDescriptor, NodeFactoryError, NodeFactoryVersion, NodeInstances, NodeKind, NodeLanguage,
+    NodeRegistration, NodeTypeName, PortDescriptor, PortDirection, PortName, QueuePolicy,
+    RuntimeOptions, RuntimeWaitError, TransformPolicy, ValidationPolicy, VisibilityDescriptor,
 };
 use voxa_types::{EdgeId, ErrorCategory, Frame, FrameType, NodeId, SignalFrame, VoxaError};
 
 use crate::{
-    abi::{self, AbortReasonView, ErrorOutput, NodeVtable, StrView},
+    abi::{self, AbortReasonView, ErrorOutput, FactoryCreateCallback, NodeVtable, StrView},
     error::FfiError,
     frame::{borrowed_text_view, copy_frame},
 };
+
+#[derive(Clone)]
+pub struct CppFactorySpec {
+    pub node_type: NodeTypeName,
+    pub version: NodeFactoryVersion,
+    pub input_port: PortName,
+    pub output_port: PortName,
+    pub user_data: usize,
+    pub create: FactoryCreateCallback,
+}
+
+struct CppProvider {
+    spec: CppFactorySpec,
+}
+
+impl ForeignNodeProvider for CppProvider {
+    fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
+        if config.is_empty() {
+            Ok(())
+        } else {
+            Err(NodeFactoryError::new(
+                "VOXA-FFI-GRAPH-CONFIG",
+                "C++ Graph factory v1 accepts an empty node_config",
+            ))
+        }
+    }
+
+    fn create(
+        &self,
+        node_id: &NodeId,
+        _config: &ConfigMap,
+    ) -> Result<Box<dyn ForeignNodeInstance>, NodeFactoryError> {
+        let mut table = empty_node_vtable();
+        let mut output = empty_error();
+        let status = (self.spec.create)(
+            self.spec.user_data as *mut c_void,
+            str_view(node_id.as_str()),
+            &mut table,
+            &mut output,
+        );
+        if status != abi::OK {
+            return Err(factory_callback_error(&output));
+        }
+        if let Err(error) = validate_node_vtable(&table) {
+            if let Some(destroy) = table.destroy {
+                destroy(table.user_data);
+            }
+            return Err(error);
+        }
+        Ok(Box::new(CppInstance {
+            record: NodeRecord::new(table),
+            output_port: self.spec.output_port.clone(),
+        }))
+    }
+}
+
+struct CppInstance {
+    record: NodeRecord,
+    output_port: PortName,
+}
+
+impl ForeignNodeInstance for CppInstance {
+    fn on_prepare(&mut self) -> voxa_types::Result<ForeignNodeCallOutput> {
+        self.record.prepare()?;
+        Ok(ForeignNodeCallOutput::default())
+    }
+
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        _input_port: Option<&PortName>,
+    ) -> voxa_types::Result<ForeignNodeCallOutput> {
+        let input = input.ok_or_else(|| {
+            foreign_error(
+                abi::INVALID_ARGUMENT,
+                "VOXA-FFI-GRAPH-INPUT",
+                "C++ transform requires one input frame",
+            )
+        })?;
+        let output = self.record.process(&input)?;
+        Ok(ForeignNodeCallOutput::from_frame(
+            self.output_port.clone(),
+            output,
+        ))
+    }
+
+    fn on_signal(&mut self, signal: SignalFrame) -> voxa_types::Result<ForeignNodeCallOutput> {
+        self.record.signal(&signal)?;
+        Ok(ForeignNodeCallOutput::default())
+    }
+
+    fn on_finish(&mut self) -> voxa_types::Result<ForeignNodeCallOutput> {
+        self.record.finish()?;
+        Ok(ForeignNodeCallOutput::default())
+    }
+
+    fn on_abort(&mut self, reason: &AbortReason) {
+        self.record.abort(reason);
+    }
+}
+
+pub fn run_registered_graph(
+    graph_json: &str,
+    specs: &[CppFactorySpec],
+    timeout: Duration,
+) -> Result<usize, FfiError> {
+    let mut registry = voxa_graph_json::builtin_registry();
+    for spec in specs {
+        registry
+            .register(cpp_registration(spec.clone()))
+            .map_err(|_| {
+                FfiError::validation(
+                    "VOXA-FFI-GRAPH-REGISTRY",
+                    "invalid or duplicate C++ Graph factory",
+                )
+            })?;
+    }
+    let document = voxa_graph_json::parse(graph_json)
+        .map_err(|_| FfiError::validation("VOXA-FFI-GRAPH-JSON", "Graph v1 parsing failed"))?;
+    let graph = voxa_graph_json::compile_with_registry(&document, &registry).map_err(|_| {
+        FfiError::validation("VOXA-FFI-GRAPH-COMPILE", "Graph v1 compilation failed")
+    })?;
+    let runtime = start_registered_runtime(
+        graph,
+        &registry,
+        EdgePolicies::new(),
+        RuntimeOptions::default(),
+    )
+    .map_err(|_| FfiError::internal("VOXA-FFI-GRAPH-START", "Graph runtime startup failed"))?;
+    match runtime.wait(timeout) {
+        Ok(summary) => Ok(summary.worker_total()),
+        Err(RuntimeWaitError::Aborted(_)) => Err(FfiError {
+            status: abi::EXTERNAL,
+            category: 4,
+            code: "VOXA-FFI-GRAPH-ABORT",
+            message: "Graph runtime aborted",
+        }),
+        Err(RuntimeWaitError::Timeout(_)) => {
+            runtime.stop();
+            let _ = runtime.wait(Duration::from_secs(5));
+            Err(FfiError {
+                status: abi::TIMEOUT,
+                category: 3,
+                code: "VOXA-FFI-GRAPH-TIMEOUT",
+                message: "Graph runtime exceeded its deadline",
+            })
+        }
+    }
+}
+
+fn cpp_registration(spec: CppFactorySpec) -> NodeRegistration {
+    let template = NodeId::new(format!("template-{}", spec.node_type.as_str()))
+        .expect("valid node type produces valid template ID");
+    let descriptor = NodeDescriptor::new(
+        template.clone(),
+        spec.node_type.clone(),
+        NodeKind::Transform,
+        [
+            PortDescriptor::new(
+                template.clone(),
+                spec.input_port.clone(),
+                PortDirection::Input,
+                FrameType::Text,
+            ),
+            PortDescriptor::new(
+                template,
+                spec.output_port.clone(),
+                PortDirection::Output,
+                FrameType::Text,
+            ),
+        ],
+        ConfigSchema::empty(),
+        LifecycleCapabilities::new(true, true, true, true),
+    );
+    NodeRegistration::new(
+        NodeLanguage::Cpp,
+        descriptor,
+        spec.version.clone(),
+        Arc::new(ForeignNodeFactoryAdapter::new(Arc::new(CppProvider {
+            spec,
+        }))),
+    )
+}
+
+fn validate_node_vtable(table: &NodeVtable) -> Result<(), NodeFactoryError> {
+    let expected = u32::try_from(mem::size_of::<NodeVtable>()).unwrap_or(u32::MAX);
+    if table.abi_version != abi::ABI_VERSION || table.struct_size != expected {
+        return Err(NodeFactoryError::new(
+            "VOXA-FFI-GRAPH-VTABLE",
+            "C++ factory returned a mismatched Node vtable",
+        ));
+    }
+    if table.reserved != [0; 3] || table.on_process.is_none() {
+        return Err(NodeFactoryError::new(
+            "VOXA-FFI-GRAPH-VTABLE",
+            "C++ factory returned an invalid Node vtable",
+        ));
+    }
+    Ok(())
+}
+
+fn factory_callback_error(output: &ErrorOutput) -> NodeFactoryError {
+    NodeFactoryError::new(
+        c_string(&output.code).unwrap_or("VOXA-FFI-GRAPH-FACTORY"),
+        c_string(&output.message).unwrap_or("C++ Graph factory creation failed"),
+    )
+}
+
+fn empty_node_vtable() -> NodeVtable {
+    NodeVtable {
+        abi_version: abi::ABI_VERSION,
+        struct_size: u32::try_from(mem::size_of::<NodeVtable>()).unwrap_or(u32::MAX),
+        user_data: std::ptr::null_mut(),
+        on_prepare: None,
+        on_process: None,
+        on_signal: None,
+        on_finish: None,
+        on_abort: None,
+        destroy: None,
+        capabilities: 0,
+        reserved: [0; 3],
+    }
+}
 
 pub struct NodeRecord {
     vtable: NodeVtable,

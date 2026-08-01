@@ -44,7 +44,7 @@ D01 provides the executable registry contract, not the complete JSON runtime:
   the Registry as the only descriptor/config source.
 - D03 now materializes every graph Node and Edge policy and starts the complete
   concurrent runtime from `voxa run`.
-- D04 will register Python, TypeScript, and C++ bridge factories through this
+- D04 now registers Python, TypeScript, and C++ bridge factories through this
   same contract.
 
 There is no dynamic library loading, remote code fetch, implicit version

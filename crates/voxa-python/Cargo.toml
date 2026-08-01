@@ -15,6 +15,7 @@ extension-module = ["pyo3/extension-module"]
 [dependencies]
 pyo3 = "0.23"
 voxa-core = { path = "../voxa-core" }
+voxa-graph-json = { path = "../voxa-graph-json" }
 voxa-types.workspace = true
 
 [dev-dependencies]

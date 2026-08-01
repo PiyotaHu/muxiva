@@ -9,21 +9,23 @@ Voxa 现在为 Python、TypeScript 和 C++ 提供相同的最小完整链路：�
 
 | SDK | Install/build | Define Node | Execute | Independent example | Current limitation |
 | --- | --- | --- | --- | --- | --- |
-| [Python](python.md) | maturin wheel / `pip install` | `TransformNode` | `NodeRunner` | `examples/python` in a clean venv | in-process, one in-flight callback |
-| [TypeScript](typescript.md) | `@voxa/core` | `defineTransformNode` | `NodeRunner` + Worker | strict `tsc` consumer package | synchronous callbacks only |
-| [C++](cpp.md) | CMake install package | derive `TransformNode` | `Runtime::run_text` | external `find_package(Voxa)` project | focused single-node text runner |
+| [Python](python.md) | maturin wheel / `pip install` | `TransformNode` / `GraphNodeFactory` | `NodeRunner` or Graph v1 | clean-venv examples | in-process, one in-flight callback |
+| [TypeScript](typescript.md) | `@voxa/core` | `defineTransformNode` / `GraphNodeFactory` | Worker-hosted Graph v1 | packed strict `tsc` consumer | synchronous callbacks only |
+| [C++](cpp.md) | CMake install package | derive `TransformNode` / `GraphNodeFactory` | `Runtime::run_graph` | external `find_package(Voxa)` project | text Transform factories in v1 |
 
 ## Honest runtime boundary / 当前边界
 
-These SDKs execute Nodes through the foreign-language domains that Voxa
-currently implements. General registration of Python, TypeScript, or C++ Node
-factories into arbitrary Graph v1 JSON is not implemented yet. That work needs
-a versioned factory/port/config contract in `voxa-core`; the SDKs do not pretend
-that low-level registration metadata is an executable factory.
+Python, TypeScript, and C++ hosts can now register trusted, exact-version text
+Transform factories and execute them inside the same Graph v1 concurrent
+Runtime as Rust built-ins. Graph JSON remains pure data and never loads code.
+The host must supply implementations explicitly. D04 v1 intentionally accepts
+empty foreign `node_config`, one text input, and one text output; general
+schemas, media ports, sources, sinks, and package discovery remain follow-ups.
 
-当前 SDK 已能开发并运行外语 Node，但尚不能把任意 Python、TypeScript 或 C++
-Node Factory 注册到通用 Graph v1 JSON 后直接执行。后续需要在 `voxa-core` 中
-增加版本化 Factory、Port 与配置契约，本次实现没有用表面 API 掩盖这一缺口。
+Python、TypeScript 与 C++ 宿主现在都能注册受信任的精确版本文本 Transform
+Factory，并与 Rust 内置 Node 一起进入同一个 Graph v1 并发 Runtime。Graph
+JSON 仍是纯数据，代码必须由宿主显式提供。D04 v1 暂时限定为空配置、单文本
+输入和单文本输出；通用 Schema、媒体端口、Source、Sink 与包发现仍是后续工作。
 
 ## Acceptance gates / 验收门禁
 

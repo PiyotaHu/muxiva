@@ -32,3 +32,20 @@ owned `std::string`.
 See `examples/cpp/uppercase-node`. C++17 is required. The CMake installer is
 currently supported on Linux and macOS; Windows import-library packaging is a
 documented follow-up.
+
+## Register a Graph v1 Factory
+
+```cpp
+std::vector<voxa::GraphNodeFactory> factories{
+    voxa::GraphNodeFactory::make<Uppercase>("example.cpp.uppercase")};
+uint32_t workers = 0;
+runtime.run_graph(graph_json, factories, workers, error);
+```
+
+The versioned C ABI copies registration strings, asks the trusted C++ factory
+for a fresh Node vtable during materialization, and transfers lifecycle
+ownership to the Rust concurrent Runtime. C++ exceptions remain contained by
+the existing `noexcept` trampolines.
+
+D04 v1 supports text Transform factories with empty `node_config`. The Factory
+objects must remain alive for the synchronous `run_graph` call.

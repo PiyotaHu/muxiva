@@ -11,6 +11,7 @@ extern "C" {
 #define VOXA_ABI_VERSION_V1 UINT32_C(0x00010000)
 #define VOXA_CAP_COPY_INGRESS (UINT64_C(1) << 0)
 #define VOXA_CAP_RETAIN_RELEASE (UINT64_C(1) << 1) /* reserved; capability is clear in v1 */
+#define VOXA_CAP_GRAPH_FACTORIES (UINT64_C(1) << 2)
 
 typedef int32_t voxa_status_v1;
 enum {
@@ -131,6 +132,20 @@ typedef struct voxa_node_vtable_v1 {
   uint64_t reserved[3];
 } voxa_node_vtable_v1;
 
+typedef voxa_status_v1 (*voxa_node_factory_create_fn_v1)(
+    void *, voxa_str_v1, voxa_node_vtable_v1 *, voxa_error_v1 *);
+typedef struct voxa_node_factory_v1 {
+  uint32_t abi_version; uint32_t struct_size;
+  voxa_str_v1 node_type; voxa_str_v1 version;
+  voxa_str_v1 input_port; voxa_str_v1 output_port;
+  void *user_data; voxa_node_factory_create_fn_v1 create;
+  uint64_t reserved[4];
+} voxa_node_factory_v1;
+typedef struct voxa_graph_run_summary_v1 {
+  uint32_t abi_version; uint32_t struct_size; uint32_t worker_total;
+  uint64_t reserved[4];
+} voxa_graph_run_summary_v1;
+
 uint32_t voxa_abi_version_v1(void);
 uint64_t voxa_capabilities_v1(void);
 voxa_status_v1 voxa_runtime_create_v1(voxa_runtime_v1 *, voxa_error_v1 *);
@@ -157,6 +172,10 @@ voxa_status_v1 voxa_runtime_run_text_v1(voxa_runtime_v1, voxa_node_v1,
                                          const voxa_frame_view_v1 *,
                                          char *output, size_t output_capacity,
                                          size_t *output_len, voxa_error_v1 *);
+voxa_status_v1 voxa_runtime_run_graph_v1(
+    voxa_runtime_v1, voxa_str_v1,
+    const voxa_node_factory_v1 *, size_t, uint64_t,
+    voxa_graph_run_summary_v1 *, voxa_error_v1 *);
 
 #ifdef __cplusplus
 }

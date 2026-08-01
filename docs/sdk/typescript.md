@@ -33,3 +33,22 @@ synchronous and self-contained: returning a Promise produces
 `VOXA_NODE_PROMISE_UNSUPPORTED`, and callback source cannot capture lexical
 variables from the caller. The complete strict-TypeScript consumer is in
 `examples/typescript`.
+
+## Register a Graph v1 Factory
+
+```ts
+const factory = new GraphNodeFactory('example.typescript.uppercase', {
+  onProcess(frame: { text: string }) {
+    return { text: frame.text.toUpperCase() }
+  },
+})
+const workerTotal = await runGraph(graphJson, [factory])
+```
+
+`runGraph` creates a dedicated Worker. Rust compiles and runs the concurrent
+Graph on a background task while lifecycle calls are scheduled back onto that
+Worker's JavaScript event loop. Promise/thenable callbacks remain rejected in
+V1. See `examples/typescript/registered-graph.ts`.
+
+D04 v1 supports text Transform factories with empty `node_config`. Graph JSON
+never evaluates or imports JavaScript by itself.

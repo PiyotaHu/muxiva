@@ -11,8 +11,11 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 napi = { version = "2.16", features = ["napi8", "dyn-symbols"] }
 napi-derive = "2.16"
+serde.workspace = true
+serde_json.workspace = true
 voxa-types = { path = "../voxa-types" }
 voxa-core = { path = "../voxa-core" }
+voxa-graph-json = { path = "../voxa-graph-json" }
 
 [build-dependencies]
 napi-build = "2.1"

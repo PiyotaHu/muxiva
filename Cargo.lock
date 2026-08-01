@@ -675,6 +675,7 @@ name = "voxa-ffi"
 version = "0.1.0"
 dependencies = [
  "voxa-core",
+ "voxa-graph-json",
  "voxa-types",
 ]
 
@@ -695,7 +696,10 @@ dependencies = [
  "napi",
  "napi-build",
  "napi-derive",
+ "serde",
+ "serde_json",
  "voxa-core",
+ "voxa-graph-json",
  "voxa-types",
 ]
 
@@ -705,6 +709,7 @@ version = "0.1.0"
 dependencies = [
  "pyo3",
  "voxa-core",
+ "voxa-graph-json",
  "voxa-types",
 ]
 

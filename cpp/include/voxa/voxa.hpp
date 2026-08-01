@@ -5,10 +5,13 @@
 
 #include <algorithm>
 #include <cstring>
+#include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace voxa {
 
@@ -143,22 +146,26 @@ inline void destroy(void* data) noexcept {
   } catch (...) {
   }
 }
+inline voxa_node_vtable_v1 node_vtable(TransformNode* implementation) noexcept {
+  voxa_node_vtable_v1 table{};
+  table.abi_version = VOXA_ABI_VERSION_V1;
+  table.struct_size = sizeof(table);
+  table.user_data = implementation;
+  table.on_prepare = prepare;
+  table.on_process = process;
+  table.on_signal = signal;
+  table.on_finish = finish;
+  table.on_abort = abort;
+  table.destroy = destroy;
+  return table;
+}
 }  // namespace detail
 
 class Node final {
  public:
   Node() noexcept = default;
   explicit Node(TransformNode* implementation, Error& error) {
-    voxa_node_vtable_v1 table{};
-    table.abi_version = VOXA_ABI_VERSION_V1;
-    table.struct_size = sizeof(table);
-    table.user_data = implementation;
-    table.on_prepare = detail::prepare;
-    table.on_process = detail::process;
-    table.on_signal = detail::signal;
-    table.on_finish = detail::finish;
-    table.on_abort = detail::abort;
-    table.destroy = detail::destroy;
+    auto table = detail::node_vtable(implementation);
     const auto status = voxa_node_create_v1(&table, &handle_, error.out());
     if (status != VOXA_STATUS_OK) {
       delete implementation;
@@ -200,6 +207,68 @@ class Node final {
   bool open_ = false;
 };
 
+class GraphNodeFactory final {
+ public:
+  using Creator = std::function<TransformNode*()>;
+
+  GraphNodeFactory(std::string node_type, Creator creator,
+                   std::string version = "1.0.0",
+                   std::string input_port = "text_in",
+                   std::string output_port = "text_out")
+      : node_type_(std::move(node_type)),
+        version_(std::move(version)),
+        input_port_(std::move(input_port)),
+        output_port_(std::move(output_port)),
+        creator_(std::make_shared<Creator>(std::move(creator))) {}
+
+  template <typename T>
+  static GraphNodeFactory make(std::string node_type) {
+    static_assert(std::is_base_of<TransformNode, T>::value,
+                  "T must derive from voxa::TransformNode");
+    return GraphNodeFactory(std::move(node_type), []() -> TransformNode* {
+      return new T();
+    });
+  }
+
+  voxa_node_factory_v1 view() const noexcept {
+    voxa_node_factory_v1 result{};
+    result.abi_version = VOXA_ABI_VERSION_V1;
+    result.struct_size = sizeof(result);
+    result.node_type = borrow(node_type_);
+    result.version = borrow(version_);
+    result.input_port = borrow(input_port_);
+    result.output_port = borrow(output_port_);
+    result.user_data = creator_.get();
+    result.create = create;
+    return result;
+  }
+
+ private:
+  static voxa_str_v1 borrow(const std::string& value) noexcept {
+    return {value.data(), value.size()};
+  }
+  static voxa_status_v1 create(void* data, voxa_str_v1,
+                               voxa_node_vtable_v1* output,
+                               voxa_error_v1* error) noexcept {
+    try {
+      if (data == nullptr || output == nullptr) return VOXA_STATUS_INVALID_ARGUMENT;
+      auto* implementation = (*static_cast<Creator*>(data))();
+      if (implementation == nullptr) return VOXA_STATUS_INVALID_ARGUMENT;
+      *output = detail::node_vtable(implementation);
+      return VOXA_STATUS_OK;
+    } catch (...) {
+      detail::write_exception(error);
+      return VOXA_STATUS_FOREIGN_EXCEPTION;
+    }
+  }
+
+  std::string node_type_;
+  std::string version_;
+  std::string input_port_;
+  std::string output_port_;
+  std::shared_ptr<Creator> creator_;
+};
+
 class Runtime final {
  public:
   explicit Runtime(Error& error) {
@@ -232,6 +301,23 @@ class Runtime final {
                           std::string& output, Error& error) const {
     const auto borrowed = input.view();
     return run_text(node, borrowed, output, error);
+  }
+  voxa_status_v1 run_graph(const std::string& graph_json,
+                           const std::vector<GraphNodeFactory>& factories,
+                           uint32_t& worker_total, Error& error,
+                           uint64_t timeout_ms = 30000) const {
+    std::vector<voxa_node_factory_v1> views;
+    views.reserve(factories.size());
+    for (const auto& factory : factories) views.push_back(factory.view());
+    voxa_graph_run_summary_v1 summary{};
+    summary.abi_version = VOXA_ABI_VERSION_V1;
+    summary.struct_size = sizeof(summary);
+    const voxa_str_v1 json{graph_json.data(), graph_json.size()};
+    const auto status = voxa_runtime_run_graph_v1(
+        handle_, json, views.data(), views.size(), timeout_ms, &summary,
+        error.out());
+    if (status == VOXA_STATUS_OK) worker_total = summary.worker_total;
+    return status;
   }
 
  private:

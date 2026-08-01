@@ -15,7 +15,7 @@ use std::{
     ptr,
 };
 
-use abi::{ErrorOutput, FrameView, NodeVtable, Status, Token};
+use abi::{ErrorOutput, FrameView, GraphRunSummary, NodeFactoryView, NodeVtable, Status, Token};
 use error::{boundary, FfiError};
 use handles::{Entry, Kind};
 
@@ -49,7 +49,7 @@ pub extern "C" fn voxa_abi_version_v1() -> u32 {
 
 #[no_mangle]
 pub extern "C" fn voxa_capabilities_v1() -> u64 {
-    catch_unwind(AssertUnwindSafe(|| 1_u64 << 0)).unwrap_or(0)
+    catch_unwind(AssertUnwindSafe(|| (1_u64 << 0) | (1_u64 << 2))).unwrap_or(0)
 }
 
 #[no_mangle]
@@ -354,6 +354,109 @@ pub extern "C" fn voxa_runtime_run_text_v1(
             *output.add(result.len()) = 0;
         }
         Ok(())
+    })
+}
+
+#[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn voxa_runtime_run_graph_v1(
+    runtime: Token,
+    graph_json: abi::StrView,
+    factories: *const NodeFactoryView,
+    factory_count: usize,
+    timeout_ms: u64,
+    summary: *mut GraphRunSummary,
+    error: *mut ErrorOutput,
+) -> Status {
+    boundary(error, || {
+        handles::contains(runtime, Kind::Runtime)?;
+        require_output(summary)?;
+        if timeout_ms == 0 || timeout_ms > 60 * 60 * 1_000 {
+            return Err(FfiError::validation(
+                "VOXA-FFI-GRAPH-TIMEOUT",
+                "Graph timeout must be between 1 and 3600000 milliseconds",
+            ));
+        }
+        if factory_count > 4_096 || (factory_count != 0 && !abi::aligned(factories)) {
+            return Err(FfiError::validation(
+                "VOXA-FFI-GRAPH-FACTORIES",
+                "Graph factory array is null or exceeds the hard limit",
+            ));
+        }
+        let graph_json = abi::copy_utf8(graph_json).map_err(|_| {
+            FfiError::validation("VOXA-FFI-GRAPH-JSON", "Graph JSON is not valid UTF-8")
+        })?;
+        let views = if factory_count == 0 {
+            &[]
+        } else {
+            // SAFETY: the caller declares `factory_count` readable entries for this call.
+            unsafe { std::slice::from_raw_parts(factories, factory_count) }
+        };
+        let specs = views
+            .iter()
+            .map(cpp_factory_spec)
+            .collect::<Result<Vec<_>, _>>()?;
+        let worker_total = bridge::run_registered_graph(
+            &graph_json,
+            &specs,
+            std::time::Duration::from_millis(timeout_ms),
+        )?;
+        let worker_total = u32::try_from(worker_total).map_err(|_| {
+            FfiError::internal("VOXA-FFI-GRAPH-SUMMARY", "worker count exceeds u32")
+        })?;
+        let value = GraphRunSummary {
+            abi_version: abi::ABI_VERSION,
+            struct_size: u32::try_from(mem::size_of::<GraphRunSummary>()).unwrap_or(u32::MAX),
+            worker_total,
+            reserved: [0; 4],
+        };
+        let _ = abi::write_value(summary, value);
+        Ok(())
+    })
+}
+
+fn cpp_factory_spec(view: &NodeFactoryView) -> Result<bridge::CppFactorySpec, FfiError> {
+    let expected = u32::try_from(mem::size_of::<NodeFactoryView>()).unwrap_or(u32::MAX);
+    if view.abi_version != abi::ABI_VERSION || view.struct_size != expected {
+        return Err(FfiError::abi(
+            "Graph Node factory version or size does not match v1",
+        ));
+    }
+    if view.reserved != [0; 4] {
+        return Err(FfiError::validation(
+            "VOXA-FFI-GRAPH-FACTORY",
+            "Graph Node factory reserved fields must be zero",
+        ));
+    }
+    let required = |value| {
+        abi::copy_str(value, true).map_err(|_| {
+            FfiError::validation(
+                "VOXA-FFI-GRAPH-FACTORY",
+                "Graph Node factory contains an invalid string",
+            )
+        })
+    };
+    let node_type = voxa_core::NodeTypeName::new(required(view.node_type)?)
+        .map_err(|_| FfiError::validation("VOXA-FFI-GRAPH-FACTORY", "invalid node type"))?;
+    let version = voxa_core::NodeFactoryVersion::new(required(view.version)?)
+        .map_err(|_| FfiError::validation("VOXA-FFI-GRAPH-FACTORY", "invalid version"))?;
+    let input_port = voxa_core::PortName::new(required(view.input_port)?)
+        .map_err(|_| FfiError::validation("VOXA-FFI-GRAPH-FACTORY", "invalid input port"))?;
+    let output_port = voxa_core::PortName::new(required(view.output_port)?)
+        .map_err(|_| FfiError::validation("VOXA-FFI-GRAPH-FACTORY", "invalid output port"))?;
+    let create = view.create.ok_or_else(|| {
+        FfiError::validation(
+            "VOXA-FFI-GRAPH-FACTORY",
+            "Graph Node factory requires a create callback",
+        )
+    })?;
+    Ok(bridge::CppFactorySpec {
+        node_type,
+        version,
+        input_port,
+        output_port,
+        user_data: view.user_data as usize,
+        create,
     })
 }
 

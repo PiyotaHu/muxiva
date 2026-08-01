@@ -28,3 +28,7 @@ Callbacks may use `def` or `async def`: `on_prepare`, `on_process`,
 
 See the [Python SDK guide](../../docs/sdk/python.md) and
 [`examples/python`](../../examples/python).
+
+`GraphNodeFactory` plus `run_graph` registers an exact-version Python text
+Transform into Graph v1. Rust owns the concurrent graph while each Python Node
+keeps its dedicated execution thread and asyncio loop.
