@@ -37,6 +37,7 @@ struct FakeState final {
   voxa::agora::SdkObserver* observer = nullptr;
   std::atomic<unsigned> audio_pushed{0};
   std::atomic<unsigned> video_pushed{0};
+  std::atomic<unsigned> tokens_renewed{0};
   std::atomic<unsigned> shutdowns{0};
 };
 
@@ -61,6 +62,11 @@ class FakeSdk final : public voxa::agora::Sdk {
   }
 
   int leave() noexcept override { return 0; }
+  int renew_token(const std::string& token) noexcept override {
+    if (token != "fresh-token") return -9;
+    ++state_->tokens_renewed;
+    return 0;
+  }
   int push_audio(const voxa::agora::Pcm16FrameView&) noexcept override {
     ++state_->audio_pushed;
     return 0;
@@ -117,13 +123,42 @@ int main() {
 
   assert(adapter->send_audio(audio_frame));
   assert(adapter->send_video(video_frame));
+  assert(adapter->renew_token("fresh-token"));
+  assert(!adapter->renew_token("rejected-token"));
+  state->observer->on_token_expiring();
+  state->observer->on_token_required();
+  state->observer->on_network_quality(42, 3, 5);
+  state->observer->on_rtc_stats({60, 1000, 2000, 2, 45});
+  state->observer->on_connection_state(
+      voxa::agora::ConnectionState::reconnecting, 2);
+  state->observer->on_connection_lost();
+  state->observer->on_connection_state(voxa::agora::ConnectionState::connected, 0);
+  state->observer->on_rejoined(7, 123);
   const auto before_leave = adapter->stats();
-  assert(before_leave.accepted == 5);
+  assert(before_leave.accepted == 13);
   assert(before_leave.invalid_dropped == 0);
   assert(before_leave.outbound_audio == 1);
   assert(before_leave.outbound_video == 1);
+  assert(before_leave.connection_epoch == 2);
+  assert(before_leave.reconnects == 1);
+  assert(before_leave.connection_losses == 1);
+  assert(before_leave.token_expiring == 1);
+  assert(before_leave.token_required == 1);
+  assert(before_leave.token_renewals == 1);
+  assert(before_leave.token_renewal_failures == 1);
+  assert(before_leave.network_quality_samples == 1);
+  assert(before_leave.rtc_stats_samples == 1);
+  assert(before_leave.latest_rtc.duration_seconds == 60);
+  assert(before_leave.latest_rtc.tx_bytes == 1000);
+  assert(before_leave.latest_rtc.rx_bytes == 2000);
+  assert(before_leave.latest_rtc.user_count == 2);
+  assert(before_leave.latest_rtc.lastmile_delay_ms == 45);
+  assert(before_leave.worst_tx_quality == 3);
+  assert(before_leave.worst_rx_quality == 5);
+  assert(before_leave.connection_state == voxa::agora::ConnectionState::connected);
   assert(state->audio_pushed == 1);
   assert(state->video_pushed == 1);
+  assert(state->tokens_renewed == 1);
 
   drains_ingress(core);
   std::atomic<bool> first_left{false};
@@ -141,4 +176,5 @@ int main() {
   state->observer->on_audio_frame(audio_frame);
   assert(adapter->stats().late_dropped == 1);
   assert(!adapter->send_audio(audio_frame));
+  assert(!adapter->renew_token("fresh-token"));
 }

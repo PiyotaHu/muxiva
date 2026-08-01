@@ -195,7 +195,7 @@ voxa/
 1. 稳定 Rust、C++、Python 和 TypeScript 公开 SDK 契约。
 2. 将外语 Graph Factory 从空配置文本 Transform 扩展到 Schema 驱动的多模态 Source、Transform 与 Sink。
 3. 为可视化 Studio 增加实时 Runtime 指标和执行控制。
-4. 完成 Agora 实房长稳认证，并将 D08 扩展到压缩 Codec 与设备 Provider。
+4. 在每个发布平台执行并留存 D09 Agora 实房长稳认证，并将 D08 扩展到压缩 Codec 与设备 Provider。
 5. 实现版本化 Python 进程隔离与 TypeScript Promise 支持。
 6. 发布多语言包、兼容矩阵、性能基线和 Release Artifact。
 

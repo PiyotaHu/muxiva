@@ -51,10 +51,25 @@ struct I420FrameView final {
   std::uint32_t remote_uid = 0;
 };
 
+struct RtcStatsSnapshot final {
+  std::uint32_t duration_seconds = 0;
+  std::uint64_t tx_bytes = 0;
+  std::uint64_t rx_bytes = 0;
+  std::uint32_t user_count = 0;
+  std::uint32_t lastmile_delay_ms = 0;
+};
+
 class SdkObserver {
  public:
   virtual ~SdkObserver() = default;
   virtual void on_connection_state(ConnectionState state, int reason) noexcept = 0;
+  virtual void on_rejoined(std::uint32_t uid, int elapsed_ms) noexcept = 0;
+  virtual void on_connection_lost() noexcept = 0;
+  virtual void on_token_expiring() noexcept = 0;
+  virtual void on_token_required() noexcept = 0;
+  virtual void on_network_quality(std::uint32_t uid, int tx_quality,
+                                  int rx_quality) noexcept = 0;
+  virtual void on_rtc_stats(const RtcStatsSnapshot& stats) noexcept = 0;
   virtual void on_participant_joined(std::uint32_t uid) noexcept = 0;
   virtual void on_participant_left(std::uint32_t uid, int reason) noexcept = 0;
   virtual void on_error(int code) noexcept = 0;
@@ -71,6 +86,7 @@ class Sdk {
   virtual int join(const std::string& token, const std::string& channel,
                    std::uint32_t uid) noexcept = 0;
   virtual int leave() noexcept = 0;
+  virtual int renew_token(const std::string& token) noexcept = 0;
   virtual int push_audio(const Pcm16FrameView& frame) noexcept = 0;
   virtual int push_video(const I420FrameView& frame) noexcept = 0;
   virtual void shutdown() noexcept = 0;
@@ -92,6 +108,19 @@ struct AdapterStats final {
   std::uint64_t outbound_video = 0;
   std::uint64_t in_flight = 0;
   std::uint64_t last_sequence = 0;
+  std::uint64_t connection_epoch = 0;
+  std::uint64_t reconnects = 0;
+  std::uint64_t connection_losses = 0;
+  std::uint64_t token_expiring = 0;
+  std::uint64_t token_required = 0;
+  std::uint64_t token_renewals = 0;
+  std::uint64_t token_renewal_failures = 0;
+  std::uint64_t network_quality_samples = 0;
+  std::uint64_t rtc_stats_samples = 0;
+  RtcStatsSnapshot latest_rtc{};
+  int worst_tx_quality = 0;
+  int worst_rx_quality = 0;
+  ConnectionState connection_state = ConnectionState::disconnected;
 };
 
 class RtcAdapter final : private SdkObserver {
@@ -108,6 +137,7 @@ class RtcAdapter final : private SdkObserver {
                  const std::string& channel, std::uint32_t uid) noexcept;
   Status send_audio(const Pcm16FrameView& frame) noexcept;
   Status send_video(const I420FrameView& frame) noexcept;
+  Status renew_token(const std::string& token) noexcept;
   Status leave() noexcept;
   AdapterStats stats() const noexcept;
 
@@ -116,6 +146,13 @@ class RtcAdapter final : private SdkObserver {
   explicit RtcAdapter(std::unique_ptr<Impl> impl) noexcept;
 
   void on_connection_state(ConnectionState state, int reason) noexcept override;
+  void on_rejoined(std::uint32_t uid, int elapsed_ms) noexcept override;
+  void on_connection_lost() noexcept override;
+  void on_token_expiring() noexcept override;
+  void on_token_required() noexcept override;
+  void on_network_quality(std::uint32_t uid, int tx_quality,
+                          int rx_quality) noexcept override;
+  void on_rtc_stats(const RtcStatsSnapshot& stats) noexcept override;
   void on_participant_joined(std::uint32_t uid) noexcept override;
   void on_participant_left(std::uint32_t uid, int reason) noexcept override;
   void on_error(int code) noexcept override;

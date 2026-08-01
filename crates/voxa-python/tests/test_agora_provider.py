@@ -15,6 +15,7 @@ class FakeEngine:
         self.calls = []
 
     def initEventHandler(self, _handler):
+        self.handler = _handler
         self.calls.append("handler")
         return 0
 
@@ -33,6 +34,10 @@ class FakeEngine:
     def leaveChannel(self):
         self.calls.append("leave")
         return 0
+
+    def renewToken(self, token):
+        self.calls.append(("renew", token))
+        return 0 if token == "fresh-token" else -9
 
     def release(self):
         self.calls.append("release")
@@ -90,3 +95,73 @@ def test_client_releases_engine_when_initialization_fails():
     with pytest.raises(RuntimeError, match="initialize failed with code -4"):
         AgoraRtcClient("app", agora=module)
     assert engine.calls[-1] == "release"
+
+
+def test_client_tracks_reconnect_token_and_quality_without_leaking_credentials():
+    module, engine = fake_agora()
+    client = AgoraRtcClient("app", agora=module, event_capacity=16)
+    engine.handler.onConnectionStateChanged(2, 0)
+    engine.handler.onConnectionStateChanged(3, 0)
+    engine.handler.onTokenPrivilegeWillExpire("secret-old-token")
+    client.renew_token("fresh-token")
+    engine.handler.onConnectionStateChanged(4, 2)
+    engine.handler.onConnectionLost()
+    engine.handler.onConnectionStateChanged(3, 0)
+    engine.handler.onRejoinChannelSuccess("room", 7, 123)
+    engine.handler.onNetworkQuality(42, 3, 5)
+    engine.handler.onRtcStats(
+        SimpleNamespace(
+            duration=60,
+            txBytes=1000,
+            rxBytes=2000,
+            userCount=2,
+            lastmileDelay=45,
+        )
+    )
+
+    events = []
+    while (event := client.try_pop_event()) is not None:
+        events.append(event)
+    assert [event.kind for event in events] == [
+        "connection_state",
+        "connection_state",
+        "token_will_expire",
+        "connection_state",
+        "connection_lost",
+        "connection_state",
+        "rejoined",
+        "network_quality",
+        "rtc_stats",
+    ]
+    assert "secret-old-token" not in repr(events)
+    assert "fresh-token" not in repr(events)
+    stats = client.rtc_stats
+    assert stats.connection_epoch == 2
+    assert stats.reconnects == 1
+    assert stats.connection_losses == 1
+    assert stats.token_expiring == 1
+    assert stats.token_renewals == 1
+    assert stats.network_quality_samples == 1
+    assert stats.worst_tx_quality == 3
+    assert stats.worst_rx_quality == 5
+    assert stats.rtc_stats_samples == 1
+    assert stats.duration_seconds == 60
+    assert stats.tx_bytes == 1000
+    assert stats.rx_bytes == 2000
+    assert stats.user_count == 2
+    assert stats.lastmile_delay_ms == 45
+    client.close()
+
+
+def test_control_event_queue_is_bounded_and_renewal_failures_are_counted():
+    module, engine = fake_agora()
+    client = AgoraRtcClient("app", agora=module, event_capacity=1)
+    engine.handler.onRequestToken()
+    engine.handler.onRequestToken()
+    with pytest.raises(RuntimeError, match="renewToken failed with code -9"):
+        client.renew_token("bad-token")
+    assert client.rtc_stats.events_accepted == 1
+    assert client.rtc_stats.events_dropped == 1
+    assert client.rtc_stats.token_required == 2
+    assert client.rtc_stats.token_renewal_failures == 1
+    client.close()

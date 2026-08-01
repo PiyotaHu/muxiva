@@ -140,6 +140,24 @@ struct RtcAdapter::Impl final {
   std::atomic<std::uint64_t> outbound_video{0};
   std::atomic<std::uint64_t> in_flight{0};
   std::atomic<std::uint64_t> last_sequence{0};
+  std::atomic<std::uint64_t> connection_epoch{0};
+  std::atomic<std::uint64_t> reconnects{0};
+  std::atomic<std::uint64_t> connection_losses{0};
+  std::atomic<std::uint64_t> token_expiring{0};
+  std::atomic<std::uint64_t> token_required{0};
+  std::atomic<std::uint64_t> token_renewals{0};
+  std::atomic<std::uint64_t> token_renewal_failures{0};
+  std::atomic<std::uint64_t> network_quality_samples{0};
+  std::atomic<std::uint64_t> rtc_stats_samples{0};
+  std::atomic<std::uint32_t> rtc_duration_seconds{0};
+  std::atomic<std::uint64_t> rtc_tx_bytes{0};
+  std::atomic<std::uint64_t> rtc_rx_bytes{0};
+  std::atomic<std::uint32_t> rtc_user_count{0};
+  std::atomic<std::uint32_t> rtc_lastmile_delay_ms{0};
+  std::atomic<int> worst_tx_quality{0};
+  std::atomic<int> worst_rx_quality{0};
+  std::atomic<ConnectionState> connection_state{ConnectionState::disconnected};
+  std::atomic<bool> reconnecting{false};
 };
 
 std::unique_ptr<RtcAdapter> RtcAdapter::create(AdapterConfig config,
@@ -245,6 +263,24 @@ Status RtcAdapter::send_video(const I420FrameView& frame) noexcept {
   return Status::success();
 }
 
+Status RtcAdapter::renew_token(const std::string& token) noexcept {
+  if (!valid_text(token, 4096)) {
+    return Status::failure(kInvalidArgument, "invalid Agora token");
+  }
+  std::lock_guard<std::mutex> lock(impl_->lifecycle);
+  if (impl_->closed_once.load(std::memory_order_acquire) ||
+      !impl_->accepting.load(std::memory_order_acquire)) {
+    return Status::failure(kInvalidState, "Agora adapter is not connected");
+  }
+  const int result = impl_->sdk->renew_token(token);
+  if (result != 0) {
+    impl_->token_renewal_failures.fetch_add(1, std::memory_order_relaxed);
+    return Status::failure(result, "Agora token renewal failed");
+  }
+  impl_->token_renewals.fetch_add(1, std::memory_order_relaxed);
+  return Status::success();
+}
+
 Status RtcAdapter::leave() noexcept {
   int leave_result = 0;
   bool owns_shutdown = false;
@@ -278,15 +314,128 @@ AdapterStats RtcAdapter::stats() const noexcept {
           impl_->outbound_audio.load(std::memory_order_relaxed),
           impl_->outbound_video.load(std::memory_order_relaxed),
           impl_->in_flight.load(std::memory_order_relaxed),
-          impl_->last_sequence.load(std::memory_order_relaxed)};
+          impl_->last_sequence.load(std::memory_order_relaxed),
+          impl_->connection_epoch.load(std::memory_order_relaxed),
+          impl_->reconnects.load(std::memory_order_relaxed),
+          impl_->connection_losses.load(std::memory_order_relaxed),
+          impl_->token_expiring.load(std::memory_order_relaxed),
+          impl_->token_required.load(std::memory_order_relaxed),
+          impl_->token_renewals.load(std::memory_order_relaxed),
+          impl_->token_renewal_failures.load(std::memory_order_relaxed),
+          impl_->network_quality_samples.load(std::memory_order_relaxed),
+          impl_->rtc_stats_samples.load(std::memory_order_relaxed),
+          {impl_->rtc_duration_seconds.load(std::memory_order_relaxed),
+           impl_->rtc_tx_bytes.load(std::memory_order_relaxed),
+           impl_->rtc_rx_bytes.load(std::memory_order_relaxed),
+           impl_->rtc_user_count.load(std::memory_order_relaxed),
+           impl_->rtc_lastmile_delay_ms.load(std::memory_order_relaxed)},
+          impl_->worst_tx_quality.load(std::memory_order_relaxed),
+          impl_->worst_rx_quality.load(std::memory_order_relaxed),
+          impl_->connection_state.load(std::memory_order_relaxed)};
 }
 
 void RtcAdapter::on_connection_state(ConnectionState state, int reason) noexcept {
   try {
+    const auto previous =
+        impl_->connection_state.exchange(state, std::memory_order_acq_rel);
+    if (state == ConnectionState::reconnecting) {
+      impl_->reconnecting.store(true, std::memory_order_release);
+    }
+    if (state == ConnectionState::connected) {
+      const bool was_reconnecting =
+          impl_->reconnecting.exchange(false, std::memory_order_acq_rel);
+      if (was_reconnecting) {
+        impl_->reconnects.fetch_add(1, std::memory_order_relaxed);
+      }
+      if (previous != ConnectionState::connected) {
+        impl_->connection_epoch.fetch_add(1, std::memory_order_relaxed);
+      }
+    }
     impl_->submit_control(false, "agora.connection_state",
                           "{\"schema_version\":1,\"state\":" +
                               std::to_string(static_cast<std::uint32_t>(state)) +
-                              ",\"reason\":" + std::to_string(reason) + "}");
+                              ",\"previous_state\":" +
+                              std::to_string(static_cast<std::uint32_t>(previous)) +
+                              ",\"reason\":" + std::to_string(reason) +
+                              ",\"epoch\":" +
+                              std::to_string(impl_->connection_epoch.load(
+                                  std::memory_order_relaxed)) + "}");
+  } catch (...) {
+    impl_->invalid.fetch_add(1, std::memory_order_relaxed);
+  }
+}
+
+void RtcAdapter::on_rejoined(std::uint32_t uid, int elapsed_ms) noexcept {
+  try {
+    impl_->submit_control(false, "agora.rejoined",
+                          "{\"schema_version\":1,\"uid\":" +
+                              std::to_string(uid) + ",\"elapsed_ms\":" +
+                              std::to_string(elapsed_ms) + "}");
+  } catch (...) {
+    impl_->invalid.fetch_add(1, std::memory_order_relaxed);
+  }
+}
+
+void RtcAdapter::on_connection_lost() noexcept {
+  impl_->connection_losses.fetch_add(1, std::memory_order_relaxed);
+  impl_->reconnecting.store(true, std::memory_order_release);
+  impl_->submit_control(true, "agora.connection_lost",
+                        "{\"schema_version\":1}");
+}
+
+void RtcAdapter::on_token_expiring() noexcept {
+  impl_->token_expiring.fetch_add(1, std::memory_order_relaxed);
+  impl_->submit_control(true, "agora.token",
+                        "{\"schema_version\":1,\"kind\":\"will_expire\"}");
+}
+
+void RtcAdapter::on_token_required() noexcept {
+  impl_->token_required.fetch_add(1, std::memory_order_relaxed);
+  impl_->submit_control(true, "agora.token",
+                        "{\"schema_version\":1,\"kind\":\"required\"}");
+}
+
+void RtcAdapter::on_network_quality(std::uint32_t uid, int tx_quality,
+                                    int rx_quality) noexcept {
+  impl_->network_quality_samples.fetch_add(1, std::memory_order_relaxed);
+  int current = impl_->worst_tx_quality.load(std::memory_order_relaxed);
+  while (tx_quality > current &&
+         !impl_->worst_tx_quality.compare_exchange_weak(
+             current, tx_quality, std::memory_order_relaxed)) {}
+  current = impl_->worst_rx_quality.load(std::memory_order_relaxed);
+  while (rx_quality > current &&
+         !impl_->worst_rx_quality.compare_exchange_weak(
+             current, rx_quality, std::memory_order_relaxed)) {}
+  try {
+    impl_->submit_control(true, "agora.network_quality",
+                          "{\"schema_version\":1,\"uid\":" +
+                              std::to_string(uid) + ",\"tx_quality\":" +
+                              std::to_string(tx_quality) + ",\"rx_quality\":" +
+                              std::to_string(rx_quality) + "}");
+  } catch (...) {
+    impl_->invalid.fetch_add(1, std::memory_order_relaxed);
+  }
+}
+
+void RtcAdapter::on_rtc_stats(const RtcStatsSnapshot& stats) noexcept {
+  impl_->rtc_stats_samples.fetch_add(1, std::memory_order_relaxed);
+  impl_->rtc_duration_seconds.store(stats.duration_seconds,
+                                    std::memory_order_relaxed);
+  impl_->rtc_tx_bytes.store(stats.tx_bytes, std::memory_order_relaxed);
+  impl_->rtc_rx_bytes.store(stats.rx_bytes, std::memory_order_relaxed);
+  impl_->rtc_user_count.store(stats.user_count, std::memory_order_relaxed);
+  impl_->rtc_lastmile_delay_ms.store(stats.lastmile_delay_ms,
+                                     std::memory_order_relaxed);
+  try {
+    impl_->submit_control(true, "agora.rtc_stats",
+                          "{\"schema_version\":1,\"duration_seconds\":" +
+                              std::to_string(stats.duration_seconds) +
+                              ",\"tx_bytes\":" + std::to_string(stats.tx_bytes) +
+                              ",\"rx_bytes\":" + std::to_string(stats.rx_bytes) +
+                              ",\"user_count\":" +
+                              std::to_string(stats.user_count) +
+                              ",\"lastmile_delay_ms\":" +
+                              std::to_string(stats.lastmile_delay_ms) + "}");
   } catch (...) {
     impl_->invalid.fetch_add(1, std::memory_order_relaxed);
   }

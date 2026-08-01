@@ -196,7 +196,7 @@ Near-term priorities:
 1. Stabilize public Rust, C++, Python, and TypeScript SDK contracts.
 2. Stabilize the new schema-driven multimodal Source, Transform, Sink, and named multi-output foreign Factory APIs.
 3. Stabilize Studio live runtime metrics and execution-control contracts.
-4. Certify the Agora adapter with live-room soak tests and extend D08 into compressed codec/device providers.
+4. Run and retain D09 Agora live-room certification on each release platform; extend D08 into compressed codec/device providers.
 5. Implement versioned Python process isolation and TypeScript Promise support.
 6. Publish packages, compatibility matrices, performance baselines, and release artifacts.
 

@@ -31,6 +31,8 @@ as executed coverage.
 | D07 Agora Python | `VOXA_AGORA_PYTHON=/path/to/python3.9 ./scripts/check-agora-python.sh` | imports the real community extension and checks its engine/audio/video observer surface | CPython 3.9 with `agora-python-sdk==3.4.2.1`; otherwise explicit `SKIP` |
 | D08 media | `./scripts/check-media.sh` | exact PCM/video shapes, rate conversion, I420/RGBA conversion, timestamp continuity/discontinuity, byte budget, concurrent admission, flush/reset | C++17 compiler; real FFmpeg test runs when development libraries are discoverable |
 | D08 media safety | `./scripts/check-media-asan.sh` | provider-independent contract and, when discoverable, the real FFmpeg backend under ASan/UBSan | clang with ASan/UBSan |
+| D09 Agora resilience | `./scripts/check-rtc.sh` and `./scripts/check-agora-python.sh` | token rotation, reconnect epochs, bounded control events, quality/call metrics, shutdown; real SDK header/engine probes when installed | deterministic fake provider; optional Agora SDK |
+| D09 Agora live soak | `VOXA_AGORA_PYTHON=/path/to/python3.9 ./scripts/check-agora-live.sh` | real join, long-run callback flow, token-file hot rotation, credential-free summary | App ID/channel, optional token, real remote audio when required; otherwise explicit `SKIP` |
 
 The Linux `check-native-tsan.sh` gate also executes the D08 concurrent-admission
 contract under ThreadSanitizer.

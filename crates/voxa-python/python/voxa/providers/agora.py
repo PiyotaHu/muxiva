@@ -10,6 +10,7 @@ from __future__ import annotations
 import ctypes
 import importlib
 import queue
+import threading
 from dataclasses import dataclass
 from types import ModuleType
 from typing import Optional
@@ -24,6 +25,133 @@ class AgoraIngressStats:
     invalid_dropped: int
     closed_dropped: int
     queued: int
+
+
+@dataclass(frozen=True)
+class AgoraRtcEvent:
+    """Credential-free control event copied from an Agora callback."""
+
+    kind: str
+    state: int = 0
+    reason: int = 0
+    uid: int = 0
+    elapsed_ms: int = 0
+    tx_quality: int = 0
+    rx_quality: int = 0
+
+
+@dataclass(frozen=True)
+class AgoraRtcStats:
+    state: int
+    connection_epoch: int
+    reconnects: int
+    connection_losses: int
+    token_expiring: int
+    token_required: int
+    token_renewals: int
+    token_renewal_failures: int
+    network_quality_samples: int
+    rtc_stats_samples: int
+    duration_seconds: int
+    tx_bytes: int
+    rx_bytes: int
+    user_count: int
+    lastmile_delay_ms: int
+    worst_tx_quality: int
+    worst_rx_quality: int
+    events_accepted: int
+    events_dropped: int
+    events_queued: int
+
+
+class _AgoraEventStream:
+    def __init__(self, capacity: int) -> None:
+        if capacity <= 0:
+            raise ValueError("event_capacity must be positive")
+        self.queue: queue.Queue[AgoraRtcEvent] = queue.Queue(maxsize=capacity)
+        self.lock = threading.Lock()
+        self.state = 1
+        self.epoch = 0
+        self.reconnects = 0
+        self.losses = 0
+        self.expiring = 0
+        self.required = 0
+        self.renewals = 0
+        self.renewal_failures = 0
+        self.quality_samples = 0
+        self.rtc_samples = 0
+        self.duration_seconds = 0
+        self.tx_bytes = 0
+        self.rx_bytes = 0
+        self.user_count = 0
+        self.lastmile_delay_ms = 0
+        self.worst_tx = 0
+        self.worst_rx = 0
+        self.accepted = 0
+        self.dropped = 0
+        self.was_reconnecting = False
+
+    def emit(self, event: AgoraRtcEvent) -> None:
+        try:
+            self.queue.put_nowait(event)
+            with self.lock:
+                self.accepted += 1
+        except queue.Full:
+            with self.lock:
+                self.dropped += 1
+
+    def connection(self, state: int, reason: int) -> None:
+        with self.lock:
+            previous = self.state
+            self.state = state
+            if state == 4:
+                self.was_reconnecting = True
+            elif state == 3 and previous != 3:
+                self.epoch += 1
+                if self.was_reconnecting:
+                    self.reconnects += 1
+                self.was_reconnecting = False
+        self.emit(AgoraRtcEvent("connection_state", state=state, reason=reason))
+
+    def quality(self, uid: int, tx_quality: int, rx_quality: int) -> None:
+        with self.lock:
+            self.quality_samples += 1
+            self.worst_tx = max(self.worst_tx, tx_quality)
+            self.worst_rx = max(self.worst_rx, rx_quality)
+        self.emit(
+            AgoraRtcEvent(
+                "network_quality",
+                uid=uid,
+                tx_quality=tx_quality,
+                rx_quality=rx_quality,
+            )
+        )
+
+    @property
+    def stats(self) -> AgoraRtcStats:
+        with self.lock:
+            return AgoraRtcStats(
+                self.state,
+                self.epoch,
+                self.reconnects,
+                self.losses,
+                self.expiring,
+                self.required,
+                self.renewals,
+                self.renewal_failures,
+                self.quality_samples,
+                self.rtc_samples,
+                self.duration_seconds,
+                self.tx_bytes,
+                self.rx_bytes,
+                self.user_count,
+                self.lastmile_delay_ms,
+                self.worst_tx,
+                self.worst_rx,
+                self.accepted,
+                self.dropped,
+                self.queue.qsize(),
+            )
 
 
 class AgoraAudioIngress:
@@ -157,13 +285,56 @@ class AgoraRtcClient:
         app_id: str,
         ingress: Optional[AgoraAudioIngress] = None,
         agora: Optional[ModuleType] = None,
+        event_capacity: int = 64,
     ) -> None:
         if not app_id:
             raise ValueError("app_id is required")
         self._agora = agora or _load_agora()
         self._ingress = ingress or AgoraAudioIngress()
+        self._events = _AgoraEventStream(event_capacity)
         self._engine = self._agora.createRtcEngineBridge()
-        self._handler = self._agora.RtcEngineEventHandlerBase()
+        events = self._events
+
+        class Handler(self._agora.RtcEngineEventHandlerBase):
+            def onConnectionStateChanged(self, state, reason):
+                events.connection(int(state), int(reason))
+
+            def onRejoinChannelSuccess(self, _channel, uid, elapsed):
+                events.emit(AgoraRtcEvent("rejoined", uid=int(uid), elapsed_ms=int(elapsed)))
+
+            def onConnectionLost(self):
+                with events.lock:
+                    events.losses += 1
+                    events.was_reconnecting = True
+                events.emit(AgoraRtcEvent("connection_lost"))
+
+            def onTokenPrivilegeWillExpire(self, _token):
+                with events.lock:
+                    events.expiring += 1
+                events.emit(AgoraRtcEvent("token_will_expire"))
+
+            def onRequestToken(self):
+                with events.lock:
+                    events.required += 1
+                events.emit(AgoraRtcEvent("token_required"))
+
+            def onNetworkQuality(self, uid, tx_quality, rx_quality):
+                events.quality(int(uid), int(tx_quality), int(rx_quality))
+
+            def onRtcStats(self, stats):
+                with events.lock:
+                    events.rtc_samples += 1
+                    events.duration_seconds = int(getattr(stats, "duration", 0))
+                    events.tx_bytes = int(getattr(stats, "txBytes", 0))
+                    events.rx_bytes = int(getattr(stats, "rxBytes", 0))
+                    events.user_count = int(getattr(stats, "userCount", 0))
+                    events.lastmile_delay_ms = int(getattr(stats, "lastmileDelay", 0))
+                events.emit(AgoraRtcEvent("rtc_stats"))
+
+            def onError(self, error, _message):
+                events.emit(AgoraRtcEvent("error", reason=int(error)))
+
+        self._handler = Handler()
         self._observer = self._ingress.create_observer(self._agora)
         self._closed = False
         self._observer_registered = False
@@ -202,6 +373,30 @@ class AgoraRtcClient:
         if not channel:
             raise ValueError("channel is required")
         _require_ok(self._engine.joinChannel(token, channel, "", uid), "joinChannel")
+
+    def renew_token(self, token: str) -> None:
+        """Hot-swap a token without leaving the channel or exposing it in events."""
+        if self._closed:
+            raise RuntimeError("AgoraRtcClient is closed")
+        if not token or len(token) > 4096:
+            raise ValueError("token must contain 1..4096 characters")
+        result = self._engine.renewToken(token)
+        with self._events.lock:
+            if result == 0:
+                self._events.renewals += 1
+            else:
+                self._events.renewal_failures += 1
+        _require_ok(result, "renewToken")
+
+    def try_pop_event(self) -> Optional[AgoraRtcEvent]:
+        try:
+            return self._events.queue.get_nowait()
+        except queue.Empty:
+            return None
+
+    @property
+    def rtc_stats(self) -> AgoraRtcStats:
+        return self._events.stats
 
     def close(self) -> bool:
         if self._closed:

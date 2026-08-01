@@ -138,6 +138,16 @@ class NativeSdk final : public Sdk,
     return executor_.call([this] { return engine_ == nullptr ? 0 : engine_->leaveChannel(); });
   }
 
+  int renew_token(const std::string& token) noexcept override {
+    try {
+      return executor_.call([this, token] {
+        return engine_ == nullptr ? -7 : engine_->renewToken(token.c_str());
+      });
+    } catch (...) {
+      return -1;
+    }
+  }
+
   int push_audio(const Pcm16FrameView& value) noexcept override {
     try {
       std::vector<std::uint8_t> bytes(value.data, value.data + value.size);
@@ -289,6 +299,40 @@ class NativeSdk final : public Sdk,
     if (auto* observer = observer_.load(std::memory_order_acquire)) {
       observer->on_connection_state(static_cast<ConnectionState>(state),
                                     static_cast<int>(reason));
+    }
+  }
+  void onRejoinChannelSuccess(const char*, ::agora::rtc::uid_t uid,
+                              int elapsed) override {
+    if (auto* observer = observer_.load(std::memory_order_acquire)) {
+      observer->on_rejoined(uid, elapsed);
+    }
+  }
+  void onConnectionLost() override {
+    if (auto* observer = observer_.load(std::memory_order_acquire)) {
+      observer->on_connection_lost();
+    }
+  }
+  void onTokenPrivilegeWillExpire(const char*) override {
+    if (auto* observer = observer_.load(std::memory_order_acquire)) {
+      observer->on_token_expiring();
+    }
+  }
+  void onRequestToken() override {
+    if (auto* observer = observer_.load(std::memory_order_acquire)) {
+      observer->on_token_required();
+    }
+  }
+  void onNetworkQuality(::agora::rtc::uid_t uid, int tx_quality,
+                        int rx_quality) override {
+    if (auto* observer = observer_.load(std::memory_order_acquire)) {
+      observer->on_network_quality(uid, tx_quality, rx_quality);
+    }
+  }
+  void onRtcStats(const ::agora::rtc::RtcStats& stats) override {
+    if (auto* observer = observer_.load(std::memory_order_acquire)) {
+      observer->on_rtc_stats(
+          {stats.duration, stats.txBytes, stats.rxBytes, stats.userCount,
+           stats.lastmileDelay});
     }
   }
   void onUserJoined(::agora::rtc::uid_t uid, int) override {

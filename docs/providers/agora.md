@@ -25,6 +25,11 @@ render frames. The vendor runtime library must be packaged according to Agora's
 platform instructions. A header compile is not a substitute for a binary test
 on the intended Linux/Windows deployment target.
 
+`RtcAdapter::renew_token` updates credentials without rebuilding the engine.
+Connection callbacks expose epochs/reconnect counts, and bounded control frames
+cover token warnings, connection loss, network quality, and call statistics.
+The adapter never copies a token into a frame or metrics snapshot.
+
 ## Python SDK
 
 The community package has a narrow binary compatibility window. Use CPython 3.9:
@@ -48,11 +53,31 @@ Do not commit App IDs, certificates, or tokens. The example only receives
 playback audio into a bounded queue; it does not execute application code on an
 Agora callback thread.
 
+`AgoraRtcClient` provides the same operational surface through `renew_token()`,
+`try_pop_event()`, and `rtc_stats`. Its control-event queue is separately
+bounded with `event_capacity`; a slow consumer cannot block an SDK callback.
+
+For a real-room soak with optional token-file rotation:
+
+```sh
+export VOXA_AGORA_APP_ID='...'
+export VOXA_AGORA_CHANNEL='voxa-test'
+export VOXA_AGORA_TOKEN_FILE='/secure/runtime/token'
+export VOXA_AGORA_SOAK_SECONDS=3600
+export VOXA_AGORA_REQUIRE_AUDIO=1
+VOXA_AGORA_PYTHON=.venv-agora/bin/python ./scripts/check-agora-live.sh
+```
+
+No credential is printed. Without an App ID and channel, the live gate reports
+an explicit `SKIP`. See
+[`D09 Agora production readiness`](../design/d09-agora-production-readiness.md).
+
 ## Live acceptance checklist
 
 1. Join with two clients and verify participant and connection events.
 2. Receive 48 kHz PCM16 and I420 for ten minutes with bounded queue metrics.
 3. Publish Voxa PCM16/I420 custom tracks and verify remote playout/render.
-4. Disconnect/reconnect, expire the token, then close during active callbacks.
+4. Disconnect/reconnect, rotate a short-lived token through the token file,
+   then close during active callbacks.
 5. Confirm no callback after `leave()` touches freed state and no vendor thread
    remains after shutdown.
