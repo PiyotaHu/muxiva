@@ -1,0 +1,58 @@
+site_name: Voxa Documentation
+site_description: Real-time multimodal agent runtime for Rust, C++, Python, and TypeScript
+site_url: https://piyotahu.github.io/Voxa/
+repo_url: https://github.com/PiyotaHu/Voxa
+repo_name: PiyotaHu/Voxa
+docs_dir: docs
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.tabs.link
+  palette:
+    - scheme: slate
+      primary: teal
+      accent: cyan
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+nav:
+  - Home: index.md
+  - Get started:
+      - Installation: installation.md
+      - Studio: studio.md
+      - Graph v1: graph-v1-reference.md
+  - Build Nodes:
+      - Overview: nodes/README.md
+      - Package Manifest: nodes/package-manifest.md
+      - Python: nodes/python.md
+      - TypeScript: nodes/typescript.md
+      - Rust: nodes/rust.md
+      - C++: nodes/cpp.md
+  - SDKs:
+      - Overview: sdk/README.md
+      - Python: sdk/python.md
+      - TypeScript: sdk/typescript.md
+      - C++: sdk/cpp.md
+  - Providers:
+      - Agora: providers/agora.md
+      - FFmpeg: providers/ffmpeg.md
+  - Testing: testing/README.md
+  - Architecture:
+      - Product contract: design/01-product-and-technical-contract.md
+      - Frame ownership: design/03-frame-and-ownership-contract.md
+      - Graph runtime: design/04-node-graph-and-sync-runner.md
+      - Concurrent runtime: design/05-concurrent-runtime-and-flow-control.md
+      - Control plane: design/06-signal-eventbus-turn-control.md

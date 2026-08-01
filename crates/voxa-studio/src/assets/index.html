@@ -6,6 +6,7 @@
   <title>Voxa Studio</title>
   <link rel="stylesheet" href="/assets/studio.css">
   <link rel="stylesheet" href="/assets/runtime.css">
+  <link rel="stylesheet" href="/assets/node-lab.css">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -30,7 +31,7 @@
 
     <main class="workspace">
       <aside class="sidebar palette-panel">
-        <div class="panel-heading"><span>NODE PALETTE</span><small>Click to add</small></div>
+        <div class="panel-heading"><span>NODE PALETTE</span><button id="open-node-lab" class="mini-button">＋ Create Node</button></div>
         <div id="node-palette"></div>
 
         <div class="panel-heading edges-heading"><span>EDGES</span><button id="add-edge" class="mini-button">＋ Add</button></div>
@@ -62,7 +63,7 @@
           <button id="zoom-in" aria-label="Zoom in">＋</button>
           <button id="fit-view" title="Fit graph">Fit</button>
         </div>
-        <div class="canvas-hint">Drag nodes to arrange · Select a node to configure</div>
+        <div class="canvas-hint">Drag a Palette Node onto the canvas · Drag an output port to a matching input</div>
         <section id="runtime-panel" class="runtime-panel idle" aria-live="polite">
           <div class="runtime-header">
             <div><span id="runtime-light" class="runtime-light"></span><div><span class="eyebrow">RUNTIME</span><b id="runtime-status">Idle</b></div></div>
@@ -110,13 +111,35 @@
 
     <dialog id="edge-dialog">
       <form method="dialog" id="edge-form">
-        <div class="dialog-title"><div><span class="eyebrow">ROUTING</span><h2>Add edge</h2></div><button value="cancel" class="icon-button">×</button></div>
+        <div class="dialog-title"><div><span class="eyebrow">ROUTING</span><h2 id="edge-dialog-title">Add edge</h2></div><button value="cancel" class="icon-button">×</button></div>
         <label>From node<select id="edge-from-node"></select></label>
         <label>Output port<select id="edge-from-port"></select></label>
         <label>To node<select id="edge-to-node"></select></label>
         <label>Input port<select id="edge-to-port"></select></label>
         <div class="form-row"><label>Capacity<input id="edge-capacity" type="number" min="1" max="65536" value="32"></label><label>Overflow<select id="edge-overflow"><option>block</option><option>drop_oldest</option><option>drop_newest</option><option>abort</option></select></label></div>
         <div class="dialog-actions"><button value="cancel" class="button ghost">Cancel</button><button id="edge-submit" value="default" class="button primary">Create edge</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="node-lab-dialog" class="node-lab-dialog">
+      <form id="node-lab-form">
+        <div class="dialog-title"><div><span class="eyebrow">PROJECT NODE LIBRARY</span><h2>Create a Node</h2></div><button id="node-lab-close" type="button" class="icon-button">×</button></div>
+        <p class="dialog-copy">Edit a starter directly in Studio. Save &amp; Register writes code and a <code>voxa.node/v1</code> Manifest under <code>.voxa/nodes/</code>, then adds it to this project's Palette.</p>
+        <div class="form-row">
+          <label>Language<select id="node-lab-language"><option>python</option><option>typescript</option><option>rust</option><option>cpp</option></select></label>
+          <label>Kind<select id="node-lab-kind"><option>transform</option><option>source</option><option>sink</option></select></label>
+        </div>
+        <div class="form-row">
+          <label>Package ID<input id="node-lab-package" value="my_python_node" spellcheck="false"></label>
+          <label>Display name<input id="node-lab-display" value="My Python Node"></label>
+        </div>
+        <label>Node type<input id="node-lab-type" value="example.my_python_node" spellcheck="false"></label>
+        <label>Typed Ports (JSON)<textarea id="node-lab-ports" rows="5" spellcheck="false"></textarea></label>
+        <label>Configuration Schema (JSON)<textarea id="node-lab-schema" rows="4" spellcheck="false">{"type":"object","properties":{},"additionalProperties":false}</textarea></label>
+        <label>Node code<textarea id="node-lab-code" class="code-editor" rows="16" spellcheck="false"></textarea></label>
+        <div class="node-lab-help"><span id="node-lab-runtime-note"></span><a id="node-lab-docs" href="https://github.com/PiyotaHu/Voxa/blob/main/docs/sdk/python.md" target="_blank" rel="noreferrer">Open Python Node guide ↗</a></div>
+        <p id="node-lab-error" class="field-error"></p>
+        <div class="dialog-actions"><button id="node-lab-cancel" type="button" class="button ghost">Cancel</button><button type="submit" class="button primary">Save &amp; Register</button></div>
       </form>
     </dialog>
 

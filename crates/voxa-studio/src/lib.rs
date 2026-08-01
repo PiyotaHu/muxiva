@@ -1,5 +1,7 @@
 //! Local-only Voxa Graph Studio server with bundled, dependency-free assets.
 
+mod node_library;
+
 use std::{
     fs::{self, OpenOptions},
     io::{Read, Write},
@@ -22,6 +24,7 @@ const MAX_HEADER_BYTES: usize = 16 * 1024;
 const INDEX: &str = include_str!("assets/index.html");
 const STYLES: &str = include_str!("assets/studio.css");
 const RUNTIME_STYLES: &str = include_str!("assets/runtime.css");
+const NODE_LAB_STYLES: &str = include_str!("assets/node-lab.css");
 const SCRIPT: &str = include_str!("assets/studio.js");
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 
@@ -210,6 +213,11 @@ fn route(
             "text/css; charset=utf-8",
             RUNTIME_STYLES.to_owned(),
         ),
+        ("GET", "/assets/node-lab.css") => (
+            "200 OK",
+            "text/css; charset=utf-8",
+            NODE_LAB_STYLES.to_owned(),
+        ),
         ("GET", "/assets/studio.js") => (
             "200 OK",
             "text/javascript; charset=utf-8",
@@ -225,12 +233,36 @@ fn route(
             "application/json",
             voxa_graph_json::GRAPH_V1_SCHEMA.to_owned(),
         ),
-        ("GET", "/api/v1/registry/nodes") => (
-            "200 OK",
-            "application/json",
-            serde_json::to_string(&voxa_graph_json::builtin_node_catalog())
-                .unwrap_or_else(|_| "[]".into()),
-        ),
+        ("GET", "/api/v1/registry/nodes") => catalog_response(graph),
+        ("GET", "/api/v1/node-library") => match node_library::list(graph) {
+            Ok(packages) => (
+                "200 OK",
+                "application/json",
+                serde_json::to_string(&packages).unwrap_or_else(|_| "[]".into()),
+            ),
+            Err(error) => (
+                "500 Internal Server Error",
+                "application/json",
+                json_message(&format!("failed to read the project Node Library: {error}")),
+            ),
+        },
+        ("PUT", "/api/v1/node-library") => match node_library::save(graph, &request.body) {
+            Ok(package) => (
+                "200 OK",
+                "application/json",
+                serde_json::to_string(&package).unwrap_or_else(|_| "{}".into()),
+            ),
+            Err(node_library::SaveError::Invalid(message)) => (
+                "400 Bad Request",
+                "application/json",
+                json_message(&message),
+            ),
+            Err(node_library::SaveError::Io(error)) => (
+                "500 Internal Server Error",
+                "application/json",
+                json_message(&format!("failed to save the Node package: {error}")),
+            ),
+        },
         ("GET", "/api/v1/graph") => match fs::read_to_string(graph) {
             Ok(document) => ("200 OK", "application/json", document),
             Err(error) => (
@@ -247,14 +279,14 @@ fn route(
             });
             ("200 OK", "application/json", payload.to_string())
         }
-        ("POST", "/api/v1/graph/validate") => match validate(&request.body) {
+        ("POST", "/api/v1/graph/validate") => match validate(&request.body, graph) {
             Ok(_) => ("200 OK", "application/json", "[]".into()),
             Err(errors) => diagnostics_response(errors),
         },
         ("GET", "/api/v1/runtime") => ("200 OK", "application/json", runtime_snapshot(runtime)),
-        ("POST", "/api/v1/runtime/start") => start_runtime(runtime, &request.body),
+        ("POST", "/api/v1/runtime/start") => start_runtime(runtime, &request.body, graph),
         ("POST", "/api/v1/runtime/stop") => stop_runtime(runtime),
-        ("PUT", "/api/v1/graph") => match validate(&request.body) {
+        ("PUT", "/api/v1/graph") => match validate(&request.body, graph) {
             Ok(document) => match save_graph(graph, &document) {
                 Ok(bytes) => (
                     "200 OK",
@@ -277,17 +309,60 @@ fn route(
     }
 }
 
-fn validate(input: &str) -> Result<GraphDocument, Vec<GraphDiagnostic>> {
-    voxa_graph_json::parse(input)
-        .and_then(|document| voxa_graph_json::compile(&document).map(|_| document))
+fn project_registry(graph: &Path) -> Result<voxa_core::NodeRegistry, String> {
+    let mut registry = voxa_graph_json::builtin_registry();
+    node_library::register_project_nodes(graph, &mut registry)?;
+    Ok(registry)
 }
 
-fn start_runtime(state: &StudioRuntime, input: &str) -> (&'static str, &'static str, String) {
+fn catalog_response(graph: &Path) -> (&'static str, &'static str, String) {
+    match project_registry(graph) {
+        Ok(registry) => (
+            "200 OK",
+            "application/json",
+            serde_json::to_string(&voxa_graph_json::node_catalog(&registry))
+                .unwrap_or_else(|_| "[]".into()),
+        ),
+        Err(error) => (
+            "400 Bad Request",
+            "application/json",
+            json_message(&format!("invalid project Node Library: {error}")),
+        ),
+    }
+}
+
+fn validate(input: &str, graph_path: &Path) -> Result<GraphDocument, Vec<GraphDiagnostic>> {
+    let registry = project_registry(graph_path).map_err(|message| {
+        vec![GraphDiagnostic {
+            code: "VOXA-STUDIO-NODE-LIBRARY".into(),
+            message,
+            pointer: "/.voxa/nodes".into(),
+        }]
+    })?;
+    voxa_graph_json::parse(input).and_then(|document| {
+        voxa_graph_json::compile_with_registry(&document, &registry).map(|_| document)
+    })
+}
+
+fn start_runtime(
+    state: &StudioRuntime,
+    input: &str,
+    graph_path: &Path,
+) -> (&'static str, &'static str, String) {
     let document = match voxa_graph_json::parse(input) {
         Ok(document) => document,
         Err(errors) => return diagnostics_response(errors),
     };
-    let registry = voxa_graph_json::builtin_registry();
+    let registry = match project_registry(graph_path) {
+        Ok(registry) => registry,
+        Err(error) => {
+            return (
+                "400 Bad Request",
+                "application/json",
+                json_message(&format!("invalid project Node Library: {error}")),
+            )
+        }
+    };
     let graph = match voxa_graph_json::compile_with_registry(&document, &registry) {
         Ok(graph) => graph,
         Err(errors) => return diagnostics_response(errors),

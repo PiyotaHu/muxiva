@@ -2,7 +2,7 @@
 
 > A Rust-native, real-time multimodal agent runtime with one graph and lifecycle contract across Rust, C++, Python, and TypeScript.
 
-[简体中文](README.zh-CN.md) · [Install](docs/installation.md) · [Architecture](docs/design/01-product-and-technical-contract.md) · [Language SDKs](docs/sdk/README.md) · [Studio](docs/studio.md) · [Graph v1](docs/graph-v1-reference.md) · [Testing](docs/testing/README.md)
+[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/Voxa/) · [Install](docs/installation.md) · [Build Nodes](docs/nodes/README.md) · [Studio](docs/studio.md) · [Graph v1](docs/graph-v1-reference.md) · [Testing](docs/testing/README.md)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -39,7 +39,7 @@ Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but
 | Python/PyO3 package | Experimental | Dedicated thread/asyncio loop and hosted Graph v1 text factories; `isolated_process` is rejected |
 | Node-API package | Experimental | Dedicated Worker and hosted Graph v1 text factories; Promise-returning transforms are rejected |
 | JSON Graph v1 and CLI | Experimental | Exact-version Registry compilation, concurrent execution of compiled-in factories, bounded waits, initialization, and local Studio |
-| Local Studio | Available | Bundled visual canvas, Node/Edge editing, validation and atomic save |
+| Local Studio | Available | Project Node Lab, drag-to-canvas, typed port wiring, validation, local Run/Stop and atomic save |
 | Model providers | Planned | Not included in Core or the current build |
 
 ## Architecture
@@ -124,7 +124,12 @@ set bounded execution and cleanup waits.
 voxa studio my-agent.voxa.json
 ```
 
-Studio opens a bundled visual Graph v1 editor with a Node palette, SVG canvas, Inspector, Edge editor, diagnostics, JSON source view, Undo/Redo, and atomic save. It listens on `127.0.0.1` by default and generates a local access token. Binding a non-loopback address requires an explicit `--host` and prints a security warning. See the [Studio guide](docs/studio.md).
+Studio opens a bundled visual Graph v1 editor. Drag Nodes from the Palette,
+wire compatible typed ports, inspect live runtime metrics, or open **Create
+Node** to edit and register a project Node without leaving the browser. Text
+Python project Nodes run through the trusted local development Host. Studio
+listens on `127.0.0.1` by default and generates a local access token. See the
+[Studio guide](docs/studio.md).
 
 ### Build and test the language SDKs
 

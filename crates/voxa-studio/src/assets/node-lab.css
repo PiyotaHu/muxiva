@@ -1,0 +1,14 @@
+dialog.node-lab-dialog{width:min(900px,92vw);max-height:92vh;overflow:auto}
+.node-lab-dialog textarea{display:block;width:100%;margin-top:6px;background:#0d131c;color:#dbe2ec;border:1px solid #2a3748;border-radius:7px;padding:9px;font-size:11px;outline:0;resize:vertical}
+.node-lab-dialog .code-editor{font:12px/1.55 "SFMono-Regular",Consolas,monospace;tab-size:2;color:#c9e8ed}
+.dialog-copy{margin:-8px 0 18px;color:var(--muted);font-size:11px;line-height:1.6}
+.dialog-copy code{color:var(--cyan)}
+.node-lab-help{display:flex;justify-content:space-between;gap:20px;color:var(--muted);font-size:10px}
+.node-lab-help a{color:var(--cyan);text-decoration:none}
+.palette-item[draggable="true"]{user-select:none}
+.graph-edge{pointer-events:stroke;cursor:pointer}
+.graph-edge.connecting{stroke:var(--cyan);stroke-dasharray:6 5;marker-end:none;pointer-events:none}
+.port-dot{cursor:crosshair;transition:r .12s ease,fill .12s ease,stroke .12s ease}
+.port-dot:hover{r:8;fill:#1c3941}
+.port-dot.input.compatible{stroke:var(--green);fill:#173428;filter:drop-shadow(0 0 5px #63d39199)}
+.edge-route{cursor:pointer}

@@ -20,7 +20,9 @@ voxa studio graph.json --port 4173 --no-open
 
 ## Visual workflow
 
-- Add trusted built-in source, transform, and sink Nodes from the palette.
+- Drag trusted built-in or project Nodes from the Palette onto the canvas.
+- Drag an output port onto a compatible input port. Studio derives the Edge
+  Frame type from the port schemas and rejects incompatible connections.
 - Drag Nodes to arrange the local canvas.
 - Select a Node to edit its ID, type, and JSON configuration.
 - Add or remove typed edges and configure capacity/overflow policy.
@@ -36,6 +38,25 @@ voxa studio graph.json --port 4173 --no-open
 Canvas positions are presentation state and are intentionally not written into
 Graph v1. Reopening Studio derives a deterministic layout from the graph.
 
+## Create and register a project Node
+
+Click **Create Node** in the Palette to open Node Lab. Pick a language, edit the
+starter code, declare named typed ports and configuration JSON Schema, then
+press **Save & Register**. Studio writes a package beside the Graph:
+
+```text
+.voxa/nodes/my_python_node/
+├── voxa.node.json
+└── node.py
+```
+
+The package appears in the current project Palette immediately. Text Python
+Source, Transform, and Sink packages run through the local Python development
+Host. TypeScript, Rust, and C++ packages are authorable now and remain disabled
+on runnable Graphs until their corresponding build Host is available. See the
+[Node authoring overview](nodes/README.md) and language guides for the exact
+contracts.
+
 ## Security boundary
 
 Studio defaults to `127.0.0.1`, serves no remote assets, enables no CORS, and
@@ -50,11 +71,9 @@ plane, and must not be exposed directly to the internet.
 
 ## Current boundary
 
-The palette is generated from the trusted runtime Registry returned by
-`GET /api/v1/registry/nodes`. Node type, language, exact Factory version,
-ports, and configuration schema therefore match Graph compilation. The built-in
-Registry currently contains `builtin.text_source`, `builtin.uppercase`,
-`builtin.text_sink`, and the explicitly side-effecting development node
-`builtin.stdout_text_sink` at version `1.0.0`. Studio runs that trusted Registry and
-exposes authenticated local runtime metrics and Run/Stop control. General SDK
-plugin discovery and remote production control remain follow-up work.
+The Palette merges the trusted built-in Registry with this Graph's project Node
+Library. Node type, language, exact Factory version, ports, and configuration
+schema therefore match Graph compilation. Studio loads project source only
+when a trusted local user presses **Run**; saving and browsing never execute it.
+Remote package discovery, signed dependencies, and production control remain
+follow-up work.

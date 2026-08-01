@@ -2,7 +2,7 @@
 
 > 一个以 Rust 为核心的实时多模态 Agent Runtime，让 Rust、C++、Python 与 TypeScript 共享同一套图、生命周期和安全边界。
 
-[English](README.md) · [安装](docs/installation.md) · [架构设计](docs/design/01-product-and-technical-contract.md) · [多语言 SDK](docs/sdk/README.md) · [Studio](docs/studio.md) · [Graph v1](docs/graph-v1-reference.md) · [测试体系](docs/testing/README.md)
+[English](README.md) · [文档网站](https://piyotahu.github.io/Voxa/) · [安装](docs/installation.md) · [开发 Node](docs/nodes/README.md) · [Studio](docs/studio.md) · [Graph v1](docs/graph-v1-reference.md) · [测试体系](docs/testing/README.md)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -39,7 +39,7 @@ Voxa 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部
 | Python/PyO3 包 | 实验性 | 独立线程/asyncio loop 与宿主 Graph v1 文本 Factory；明确拒绝 `isolated_process` |
 | Node-API 包 | 实验性 | 独立 Worker 与宿主 Graph v1 文本 Factory；明确拒绝返回 Promise 的 Transform |
 | JSON Graph v1 与 CLI | 实验性 | 精确版本 Registry 编译、内置 Factory 并发执行、有界等待、初始化和本地 Studio |
-| 本地 Studio | 可用 | 内置可视化画布、Node/Edge 编辑、校验与原子保存 |
+| 本地 Studio | 可用 | 项目 Node Lab、拖入画布、类型化端口连线、校验、本地 Run/Stop 与原子保存 |
 | 模型 Provider | 规划中 | 当前不属于 Core，也不是构建依赖 |
 
 ## 架构
@@ -120,7 +120,11 @@ Registry 编译 Graph，实例化每个精确版本的 Factory，并通过并发
 voxa studio my-agent.voxa.json
 ```
 
-Studio 会打开内置的 Graph v1 可视化编辑器，提供 Node Palette、SVG 画布、Inspector、Edge 编辑、诊断、JSON 源码、Undo/Redo 和原子保存。它默认只监听 `127.0.0.1`，并生成本地访问 Token。监听非 loopback 地址时必须显式设置 `--host`，终端会输出安全警告。详见 [Studio 指南](docs/studio.md)。
+Studio 会打开内置 Graph v1 可视化编辑器。开发者可以把 Node 从 Palette
+拖进画布，在类型兼容的端口之间直接拉线，也可以点击 **Create Node**，在网页里
+编辑代码、声明端口并保存注册到项目 Node Library。当前文本 Python Node 可由
+可信本地开发 Host 直接运行。Studio 默认只监听 `127.0.0.1` 并生成本地访问
+Token。详见 [Studio 指南](docs/studio.md)。
 
 ### 构建并测试多语言 SDK
 

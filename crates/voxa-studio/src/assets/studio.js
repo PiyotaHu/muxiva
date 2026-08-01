@@ -2,10 +2,12 @@
 
 const NS = 'http://www.w3.org/2000/svg'
 const catalog = new Map()
+let nodePackages = []
 const state = {
   token: '', graph: null, selected: null, positions: {}, diagnostics: [],
   history: [], future: [], dirty: false, zoom: 1, validating: null,
   runtime: { status: 'idle', nodes: [], edges: [] }, runtimeTimer: null,
+  connection: null, editingEdge: null,
 }
 
 const $ = (selector) => document.querySelector(selector)
@@ -43,12 +45,13 @@ async function loadStudio() {
   state.token = bootToken()
   if (!state.token) return fatal('The access token is missing from this Studio URL.')
   try {
-    const [graph, metadata, registrations, runtime] = await Promise.all([
-      api('/api/v1/graph'), api('/api/v1/studio'), api('/api/v1/registry/nodes'), api('/api/v1/runtime'),
+    const [graph, metadata, registrations, packages, runtime] = await Promise.all([
+      api('/api/v1/graph'), api('/api/v1/studio'), api('/api/v1/registry/nodes'), api('/api/v1/node-library'), api('/api/v1/runtime'),
     ])
     state.graph = typeof graph === 'string' ? JSON.parse(graph) : graph
     state.runtime = runtime
-    installCatalog(registrations)
+    nodePackages = packages
+    installCatalog([...registrations, ...packages.map(packageCatalogEntry)])
     renderPalette()
     $('#graph-path').textContent = metadata.graph_path
     $('#connection-status').textContent = metadata.writable ? 'Local runtime · writable' : 'Local runtime · read only'
@@ -63,27 +66,32 @@ async function loadStudio() {
 }
 
 function factoryKey(value) { return JSON.stringify([value.node_type, value.language, value.factory_version]) }
+function packageCatalogEntry(value) { return { ...value, runtime_available: value.runtime_available } }
 function nodeInfo(node) {
   return catalog.get(factoryKey(node)) || {
     kind: 'transform', label: node.node_type, language: node.language || 'unknown',
-    inputs: [], outputs: [], frameTypes: [], config_schema: {},
+    inputs: [], outputs: [], inputPorts: [], outputPorts: [], frameTypes: [], config_schema: {},
   }
 }
 function installCatalog(registrations) {
   if (!Array.isArray(registrations) || !registrations.length) throw new Error('The runtime Node Registry is empty.')
   for (const entry of registrations) {
-    const info = { ...entry, inputs: [], outputs: [], frameTypes: [...new Set((entry.ports || []).map((port) => port.frame_type))] }
-    for (const port of entry.ports || []) (port.direction === 'input' ? info.inputs : info.outputs).push(port.name)
+    const info = { ...entry, inputs: [], outputs: [], inputPorts: [], outputPorts: [], frameTypes: [...new Set((entry.ports || []).map((port) => port.frame_type))] }
+    for (const port of entry.ports || []) {
+      const direction = port.direction === 'input' ? 'input' : 'output'
+      info[`${direction}s`].push(port.name)
+      info[`${direction}Ports`].push(port)
+    }
     info.label = entry.node_type.split('.').pop().split('_').map((part) => part[0].toUpperCase() + part.slice(1)).join(' ')
     catalog.set(factoryKey(entry), info)
   }
 }
 function renderPalette() {
   const buttons = [...catalog.entries()].map(([key, entry]) => {
-    const button = document.createElement('button'); button.className = `palette-item ${entry.kind}`; button.dataset.addNode = key
+    const button = document.createElement('button'); button.className = `palette-item ${entry.kind}`; button.dataset.addNode = key; button.draggable = true
     const icon = document.createElement('span'); icon.className = 'node-icon'; icon.textContent = entry.kind[0].toUpperCase()
     const copy = document.createElement('span'), label = document.createElement('b'), detail = document.createElement('small')
-    label.textContent = entry.label; detail.textContent = `${entry.language} · v${entry.factory_version}`; copy.append(label, detail)
+    label.textContent = entry.display_name || entry.label; detail.textContent = `${entry.language} · v${entry.factory_version}${entry.package_id ? ' · project' : ''}`; copy.append(label, detail)
     const add = document.createElement('span'); add.textContent = '＋'; button.append(icon, copy, add); return button
   })
   $('#node-palette').replaceChildren(...buttons)
@@ -102,17 +110,23 @@ function defaultConfig(entry) {
 }
 
 function bindEvents() {
-  $$('[data-add-node]').forEach((button) => button.addEventListener('click', () => addNode(button.dataset.addNode)))
+  bindPaletteEvents()
   $('#graph-id').addEventListener('change', (event) => mutate(() => { state.graph.graph_id = event.target.value.trim() }))
   $('#node-id').addEventListener('change', updateSelectedNode)
   $('#node-type').addEventListener('change', updateSelectedNode)
   $('#node-config').addEventListener('change', updateSelectedNode)
   $('#node-config').addEventListener('blur', updateSelectedNode)
   $('#delete-node').addEventListener('click', deleteSelectedNode)
-  $('#add-edge').addEventListener('click', openEdgeDialog)
+  $('#add-edge').addEventListener('click', () => openEdgeDialog())
+  $('#open-node-lab').addEventListener('click', openNodeLab)
+  $('#node-lab-close').addEventListener('click', closeNodeLab)
+  $('#node-lab-cancel').addEventListener('click', closeNodeLab)
+  $('#node-lab-language').addEventListener('change', applyNodeTemplate)
+  $('#node-lab-form').addEventListener('submit', saveNodePackage)
   $('#edge-form').addEventListener('submit', submitEdge)
   $('#edge-from-node').addEventListener('change', refreshEdgePorts)
-  $('#edge-to-node').addEventListener('change', refreshEdgePorts)
+  $('#edge-from-port').addEventListener('change', refreshCompatibleInputPorts)
+  $('#edge-to-node').addEventListener('change', refreshCompatibleInputPorts)
   $('#validate').addEventListener('click', () => validateGraph(true))
   $('#run').addEventListener('click', startRuntime)
   $('#stop').addEventListener('click', stopRuntime)
@@ -127,7 +141,61 @@ function bindEvents() {
   $('#zoom-out').addEventListener('click', () => setZoom(state.zoom - .1))
   $('#fit-view').addEventListener('click', fitView)
   $('#graph-canvas').addEventListener('click', (event) => { if (event.target.id === 'graph-canvas') selectNode(null) })
+  $('#graph-canvas').addEventListener('dragover', (event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' })
+  $('#graph-canvas').addEventListener('drop', dropPaletteNode)
   window.addEventListener('keydown', keyboardShortcut)
+}
+
+function bindPaletteEvents() {
+  $$('[data-add-node]').forEach((button) => button.addEventListener('click', () => addNode(button.dataset.addNode)))
+  $$('[data-add-node]').forEach((button) => button.addEventListener('dragstart', beginPaletteDrag))
+}
+
+const nodeTemplates = {
+  python: `import voxa\n\nclass MyNode:\n    def on_process(self, frame, input_port):\n        text = frame.text.upper()\n        return {"text_out": voxa.TextFrame(text, sequence=frame.sequence)}\n`,
+  typescript: `import type { GraphFrame, GraphNodeImplementation } from '@voxa/core'\n\nexport const node: GraphNodeImplementation = {\n  onProcess(frame) {\n    return { text_out: { ...frame, text: frame.text.toUpperCase() } }\n  },\n}\n`,
+  rust: `use voxa_core::{Node, NodeContext};\nuse voxa_types::Frame;\n\npub struct MyNode;\n\nimpl Node for MyNode {\n    fn on_process(&mut self, input: Option<Frame>, context: &mut NodeContext) -> voxa_types::Result<()> {\n        // Emit a derived Frame through text_out.\n        Ok(())\n    }\n}\n`,
+  cpp: `#include <voxa/voxa.hpp>\n\nclass MyNode final : public voxa::MultimodalGraphNode {\n public:\n  std::vector<voxa::GraphEmission> on_process(\n      const voxa_frame_view_v1* input, std::string_view input_port) override {\n    return {};\n  }\n};\n`,
+}
+const defaultPorts = JSON.stringify([
+  { name: 'text_in', direction: 'input', frame_type: 'text' },
+  { name: 'text_out', direction: 'output', frame_type: 'text' },
+], null, 2)
+
+function openNodeLab() {
+  $('#node-lab-ports').value = defaultPorts
+  $('#node-lab-error').textContent = ''
+  applyNodeTemplate()
+  $('#node-lab-dialog').showModal()
+}
+function closeNodeLab() { $('#node-lab-dialog').close() }
+function applyNodeTemplate() {
+  const language = $('#node-lab-language').value
+  $('#node-lab-code').value = nodeTemplates[language]
+  const documentName = language === 'rust' ? 'rust' : language
+  $('#node-lab-docs').href = `https://github.com/PiyotaHu/Voxa/blob/main/docs/nodes/${documentName}.md`
+  $('#node-lab-docs').textContent = `Open ${language === 'cpp' ? 'C++' : language[0].toUpperCase() + language.slice(1)} Node guide ↗`
+  $('#node-lab-runtime-note').textContent = language === 'python' ? 'Text Python Nodes load only when you Run the Graph; saving never executes code.' : `${language} is registered for authoring; Studio will report its build Host requirements.`
+}
+async function saveNodePackage(event) {
+  event.preventDefault()
+  let ports, configSchema
+  try { ports = JSON.parse($('#node-lab-ports').value); configSchema = JSON.parse($('#node-lab-schema').value) }
+  catch (error) { $('#node-lab-error').textContent = error.message; return }
+  const language = $('#node-lab-language').value
+  const payload = {
+    format: 'voxa.node/v1', package_id: $('#node-lab-package').value.trim(), display_name: $('#node-lab-display').value.trim(),
+    node_type: $('#node-lab-type').value.trim(), language, factory_version: '1.0.0', kind: $('#node-lab-kind').value,
+    entrypoint: language === 'python' ? 'node:MyNode' : language === 'typescript' ? 'node:node' : language === 'rust' ? 'node::MyNode' : 'MyNode',
+    ports, config_schema: configSchema, code: $('#node-lab-code').value, runtime_available: false,
+  }
+  try {
+    await api('/api/v1/node-library', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    nodePackages = await api('/api/v1/node-library')
+    const registrations = await api('/api/v1/registry/nodes')
+    catalog.clear(); installCatalog([...registrations, ...nodePackages.map(packageCatalogEntry)]); renderPalette(); bindPaletteEvents()
+    closeNodeLab(); toast(`${payload.display_name} registered in this project`)
+  } catch (error) { $('#node-lab-error').textContent = error.message }
 }
 
 function keyboardShortcut(event) {
@@ -176,9 +244,22 @@ function reconcilePositions() {
   if (!state.graph.nodes.some((node) => node.id === state.selected)) state.selected = null
 }
 
-function addNode(key) {
+function beginPaletteDrag(event) {
+  event.dataTransfer.effectAllowed = 'copy'
+  event.dataTransfer.setData('application/x-voxa-node-factory', event.currentTarget.dataset.addNode)
+}
+function dropPaletteNode(event) {
+  event.preventDefault()
+  const key = event.dataTransfer.getData('application/x-voxa-node-factory')
+  if (!key) return
+  const point = canvasPoint(event.clientX, event.clientY)
+  addNode(key, { x: point.x - 110, y: point.y - 70 })
+}
+
+function addNode(key, position = null) {
   const info = catalog.get(key)
   if (!info) return toast('Node Factory is no longer registered', true)
+  if (info.runtime_available === false) return toast(`${info.display_name || info.node_type} is saved; activate its ${info.language} execution Host before adding it to a runnable Graph`, true)
   const base = info.kind === 'source' ? 'source' : info.kind === 'sink' ? 'sink' : 'transform'
   let number = 1
   while (state.graph.nodes.some((node) => node.id === `${base}-${number}`)) number++
@@ -190,7 +271,7 @@ function addNode(key) {
     })
     const sameKind = state.graph.nodes.filter((node) => nodeInfo(node).kind === info.kind).length - 1
     const x = info.kind === 'source' ? 110 : info.kind === 'sink' ? 840 : 475
-    state.positions[id] = { x, y: 130 + sameKind * 175 }
+    state.positions[id] = position || { x, y: 130 + sameKind * 175 }
     state.selected = id
   })
 }
@@ -238,12 +319,27 @@ function updateSelectedNode() {
   })
 }
 
-function openEdgeDialog() {
+function openEdgeDialog(edgeId = null, preset = null) {
+  const edge = edgeId ? state.graph.edges.find((candidate) => candidate.id === edgeId) : null
+  state.editingEdge = edge?.id || null
   const sources = state.graph.nodes.filter((node) => nodeInfo(node).outputs.length)
   const targets = state.graph.nodes.filter((node) => nodeInfo(node).inputs.length)
   fillSelect($('#edge-from-node'), sources)
   fillSelect($('#edge-to-node'), targets)
+  if (edge || preset) {
+    $('#edge-from-node').value = (edge || preset).from.node_id
+    $('#edge-to-node').value = (edge || preset).to.node_id
+  }
   refreshEdgePorts()
+  if (edge || preset) {
+    $('#edge-from-port').value = (edge || preset).from.port
+    refreshCompatibleInputPorts()
+    $('#edge-to-port').value = (edge || preset).to.port
+  }
+  $('#edge-capacity').value = edge?.queue_policy?.capacity || 32
+  $('#edge-overflow').value = edge?.queue_policy?.overflow || 'block'
+  $('#edge-dialog-title').textContent = edge ? 'Edit edge' : 'Add edge'
+  $('#edge-submit').textContent = edge ? 'Save edge' : 'Create edge'
   $('#edge-dialog').showModal()
 }
 function fillSelect(select, nodes) {
@@ -251,9 +347,18 @@ function fillSelect(select, nodes) {
 }
 function refreshEdgePorts() {
   const source = state.graph.nodes.find((node) => node.id === $('#edge-from-node').value)
-  const target = state.graph.nodes.find((node) => node.id === $('#edge-to-node').value)
   fillStringSelect($('#edge-from-port'), source ? nodeInfo(source).outputs : [])
-  fillStringSelect($('#edge-to-port'), target ? nodeInfo(target).inputs : [])
+  refreshCompatibleInputPorts()
+}
+function portInfo(node, direction, name) {
+  return nodeInfo(node)[direction === 'input' ? 'inputPorts' : 'outputPorts'].find((port) => port.name === name)
+}
+function refreshCompatibleInputPorts() {
+  const source = state.graph.nodes.find((node) => node.id === $('#edge-from-node').value)
+  const target = state.graph.nodes.find((node) => node.id === $('#edge-to-node').value)
+  const output = source ? portInfo(source, 'output', $('#edge-from-port').value) : null
+  const inputs = target ? nodeInfo(target).inputPorts.filter((port) => !output || port.frame_type === output.frame_type) : []
+  fillStringSelect($('#edge-to-port'), inputs.map((port) => port.name))
 }
 function fillStringSelect(select, values) {
   select.replaceChildren(...values.map((value) => { const option = document.createElement('option'); option.value = value; option.textContent = value; return option }))
@@ -263,12 +368,23 @@ function submitEdge(event) {
   event.preventDefault()
   const from = $('#edge-from-node').value, to = $('#edge-to-node').value
   if (!from || !to) return toast('Add compatible source and target nodes first', true)
+  const source = state.graph.nodes.find((node) => node.id === from)
+  const target = state.graph.nodes.find((node) => node.id === to)
+  const output = source && portInfo(source, 'output', $('#edge-from-port').value)
+  const input = target && portInfo(target, 'input', $('#edge-to-port').value)
+  if (!output || !input || output.frame_type !== input.frame_type) return toast('Choose ports with the same Frame type', true)
   let base = `${from}-${to}`, id = base, number = 2
-  while (state.graph.edges.some((edge) => edge.id === id)) id = `${base}-${number++}`
-  mutate(() => state.graph.edges.push({
+  while (state.graph.edges.some((edge) => edge.id === id && edge.id !== state.editingEdge)) id = `${base}-${number++}`
+  const next = {
     id, from: { node_id: from, port: $('#edge-from-port').value }, to: { node_id: to, port: $('#edge-to-port').value },
-    frame_type: 'text', queue_policy: { capacity: Number($('#edge-capacity').value), overflow: $('#edge-overflow').value },
-  }))
+    frame_type: output.frame_type, queue_policy: { capacity: Number($('#edge-capacity').value), overflow: $('#edge-overflow').value },
+  }
+  mutate(() => {
+    const index = state.graph.edges.findIndex((edge) => edge.id === state.editingEdge)
+    if (index === -1) state.graph.edges.push(next)
+    else state.graph.edges[index] = next
+  })
+  state.editingEdge = null
   $('#edge-dialog').close()
 }
 function deleteEdge(id) { mutate(() => { state.graph.edges = state.graph.edges.filter((edge) => edge.id !== id) }) }
@@ -295,13 +411,36 @@ function renderEdgeLayer(edgeLayer = $('#edge-layer')) {
   for (const edge of state.graph.edges) {
     const from = state.positions[edge.from.node_id], to = state.positions[edge.to.node_id]
     if (!from || !to) continue
-    const x1 = from.x + 220, y1 = from.y + 68, x2 = to.x, y2 = to.y + 68
-    const bend = Math.max(80, Math.abs(x2 - x1) * .48)
+    const source = state.graph.nodes.find((node) => node.id === edge.from.node_id)
+    const target = state.graph.nodes.find((node) => node.id === edge.to.node_id)
+    const x1 = from.x + 220, y1 = from.y + portY(source, 'output', edge.from.port), x2 = to.x, y2 = to.y + portY(target, 'input', edge.to.port)
     const metrics = (state.runtime.edges || []).find((value) => value.edge_id === edge.id)
     const runtimeClass = metrics?.drop_total ? ' runtime-drop' : metrics?.enqueue_total ? ' runtime-flow' : ''
-    edgeLayer.append(svg('path', { d: `M${x1},${y1} C${x1 + bend},${y1} ${x2 - bend},${y2} ${x2},${y2}`, class: `graph-edge${runtimeClass}`, 'data-edge': edge.id }))
+    const path = svg('path', { d: edgePath(x1, y1, x2, y2), class: `graph-edge${runtimeClass}`, 'data-edge': edge.id })
+    path.addEventListener('click', (event) => { event.stopPropagation(); openEdgeDialog(edge.id) })
+    edgeLayer.append(path)
+  }
+  if (state.connection) {
+    const { from, point } = state.connection
+    const position = state.positions[from.node_id]
+    const node = state.graph.nodes.find((candidate) => candidate.id === from.node_id)
+    if (position && node) {
+      const x1 = position.x + 220, y1 = position.y + portY(node, 'output', from.port)
+      edgeLayer.append(svg('path', { d: edgePath(x1, y1, point.x, point.y), class: 'graph-edge connecting' }))
+    }
   }
 }
+
+function edgePath(x1, y1, x2, y2) {
+  const bend = Math.max(60, Math.abs(x2 - x1) * .48)
+  return `M${x1},${y1} C${x1 + bend},${y1} ${x2 - bend},${y2} ${x2},${y2}`
+}
+function portY(node, direction, name) {
+  if (!node) return 116
+  const ports = nodeInfo(node)[direction === 'input' ? 'inputPorts' : 'outputPorts']
+  return 116 + Math.max(0, ports.findIndex((port) => port.name === name)) * 20
+}
+function nodeHeight(info) { return Math.max(146, 128 + Math.max(info.inputs.length, info.outputs.length) * 20) }
 
 function renderNode(node) {
   const info = nodeInfo(node)
@@ -310,23 +449,79 @@ function renderNode(node) {
   const active = (state.runtime.active_nodes || []).includes(node.id) ? ' runtime-active' : ''
   const failed = metrics?.error_total ? ' runtime-error' : ''
   const group = svg('g', { class: `node-group${node.id === state.selected ? ' selected' : ''}${active}${failed}`, transform: `translate(${position.x} ${position.y})`, 'data-node': node.id, tabindex: '0' })
-  group.append(svg('rect', { class: 'node-card', width: 220, height: 108, rx: 11 }))
-  group.append(svg('rect', { class: `node-accent ${info.kind}`, width: 4, height: 78, x: 0, y: 15, rx: 2 }))
+  const height = nodeHeight(info)
+  group.append(svg('rect', { class: 'node-card', width: 220, height, rx: 11 }))
+  group.append(svg('rect', { class: `node-accent ${info.kind}`, width: 4, height: height - 30, x: 0, y: 15, rx: 2 }))
   addText(group, 19, 27, info.kind.toUpperCase(), 'node-kind-label')
   addText(group, 19, 51, node.id, 'node-title')
   addText(group, 19, 72, node.node_type, 'node-type-label')
   addText(group, 19, 94, `${info.language} · ${info.frameTypes.join('/') || 'control'}`, 'node-type-label')
   if (metrics) { const runtime = addText(group, 211, 94, `${metrics.process_total} calls · ${formatNanos(metrics.max_callback_duration_ns)} max`, 'node-runtime-label'); runtime.setAttribute('text-anchor', 'end') }
-  info.inputs.forEach((name, index) => { group.append(svg('circle', { cx: 0, cy: 68 + index * 18, r: 5, class: 'port-dot input' })); addText(group, 9, 72 + index * 18, name, 'port-label') })
-  info.outputs.forEach((name, index) => { group.append(svg('circle', { cx: 220, cy: 68 + index * 18, r: 5, class: 'port-dot output' })); const text = addText(group, 211, 72 + index * 18, name, 'port-label'); text.setAttribute('text-anchor', 'end') })
+  info.inputPorts.forEach((port, index) => {
+    const dot = svg('circle', { cx: 0, cy: 116 + index * 20, r: 6, class: 'port-dot input', 'data-node': node.id, 'data-port': port.name, 'data-frame-type': port.frame_type })
+    group.append(dot); addText(group, 9, 120 + index * 20, `${port.name} · ${port.frame_type}`, 'port-label')
+  })
+  info.outputPorts.forEach((port, index) => {
+    const dot = svg('circle', { cx: 220, cy: 116 + index * 20, r: 6, class: 'port-dot output', 'data-node': node.id, 'data-port': port.name, 'data-frame-type': port.frame_type })
+    dot.addEventListener('pointerdown', beginConnection)
+    group.append(dot); const text = addText(group, 211, 120 + index * 20, `${port.name} · ${port.frame_type}`, 'port-label'); text.setAttribute('text-anchor', 'end')
+  })
   group.addEventListener('click', (event) => { event.stopPropagation(); selectNode(node.id) })
   group.addEventListener('pointerdown', (event) => beginDrag(event, node.id))
   return group
 }
 function addText(parent, x, y, value, className) { const text = svg('text', { x, y, class: className }); text.textContent = value; parent.append(text); return text }
 
-function beginDrag(event, id) {
+function canvasPoint(clientX, clientY) {
+  const canvas = $('#graph-canvas')
+  const point = canvas.createSVGPoint(); point.x = clientX; point.y = clientY
+  const matrix = canvas.getScreenCTM()
+  return matrix ? point.matrixTransform(matrix.inverse()) : { x: clientX, y: clientY }
+}
+
+function beginConnection(event) {
   if (event.button !== 0) return
+  event.preventDefault(); event.stopPropagation()
+  const dot = event.currentTarget
+  state.connection = {
+    from: { node_id: dot.dataset.node, port: dot.dataset.port },
+    frameType: dot.dataset.frameType,
+    point: canvasPoint(event.clientX, event.clientY),
+  }
+  dot.setPointerCapture(event.pointerId)
+  highlightCompatiblePorts(state.connection.frameType)
+  const move = (next) => { state.connection.point = canvasPoint(next.clientX, next.clientY); renderEdgeLayer() }
+  const stop = (next) => {
+    const target = document.elementFromPoint(next.clientX, next.clientY)?.closest?.('.port-dot.input')
+    const connection = state.connection
+    dot.removeEventListener('pointermove', move); dot.removeEventListener('pointerup', stop); dot.removeEventListener('pointercancel', cancel)
+    if (dot.hasPointerCapture(event.pointerId)) dot.releasePointerCapture(event.pointerId)
+    state.connection = null; highlightCompatiblePorts(null)
+    if (target && target.dataset.frameType === connection.frameType) createConnectedEdge(connection.from, { node_id: target.dataset.node, port: target.dataset.port }, connection.frameType)
+    else renderEdgeLayer()
+  }
+  const cancel = () => {
+    dot.removeEventListener('pointermove', move); dot.removeEventListener('pointerup', stop); dot.removeEventListener('pointercancel', cancel)
+    state.connection = null; highlightCompatiblePorts(null); renderEdgeLayer()
+  }
+  dot.addEventListener('pointermove', move); dot.addEventListener('pointerup', stop); dot.addEventListener('pointercancel', cancel)
+  renderEdgeLayer()
+}
+function highlightCompatiblePorts(frameType) {
+  $$('.port-dot.input').forEach((dot) => dot.classList.toggle('compatible', Boolean(frameType) && dot.dataset.frameType === frameType))
+}
+function createConnectedEdge(from, to, frameType) {
+  if (from.node_id === to.node_id) return toast('An Edge cannot connect a Node to itself', true)
+  const duplicate = state.graph.edges.some((edge) => edge.from.node_id === from.node_id && edge.from.port === from.port && edge.to.node_id === to.node_id && edge.to.port === to.port)
+  if (duplicate) return toast('That port connection already exists', true)
+  let base = `${from.node_id}-${to.node_id}`, id = base, number = 2
+  while (state.graph.edges.some((edge) => edge.id === id)) id = `${base}-${number++}`
+  mutate(() => state.graph.edges.push({ id, from, to, frame_type: frameType, queue_policy: { capacity: 32, overflow: 'block' } }))
+  toast(`${from.node_id}.${from.port} → ${to.node_id}.${to.port}`)
+}
+
+function beginDrag(event, id) {
+  if (event.button !== 0 || event.target.closest('.port-dot')) return
   const target = event.currentTarget
   target.setPointerCapture(event.pointerId)
   const start = { clientX: event.clientX, clientY: event.clientY, nodeX: state.positions[id].x, nodeY: state.positions[id].y }
@@ -351,7 +546,7 @@ function renderEdgesList() {
   if (!state.graph.edges.length) { const empty = document.createElement('div'); empty.className = 'edge-row'; empty.textContent = 'No edges yet'; list.replaceChildren(empty); return }
   list.replaceChildren(...state.graph.edges.map((edge) => {
     const row = document.createElement('div'); row.className = 'edge-row'
-    const route = document.createElement('div'); route.className = 'edge-route'
+    const route = document.createElement('div'); route.className = 'edge-route'; route.title = 'Click to edit this Edge'; route.addEventListener('click', () => openEdgeDialog(edge.id))
     const from = document.createElement('b'); from.textContent = edge.from.node_id
     const to = document.createElement('b'); to.textContent = edge.to.node_id
     route.append(from, document.createTextNode(' → '), to)
