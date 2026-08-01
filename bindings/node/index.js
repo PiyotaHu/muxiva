@@ -5,7 +5,12 @@ import { fileURLToPath } from 'node:url'
 
 const require = createRequire(import.meta.url)
 const platform = `${process.platform}-${process.arch}`
-const candidates = [new URL(`./native/voxa.${platform}.node`, import.meta.url), new URL('./native/voxa.node', import.meta.url)]
+const candidates = [
+  new URL(`./native/voxa.${platform}.node`, import.meta.url),
+  new URL(`./native/voxa.${platform}-gnu.node`, import.meta.url),
+  new URL(`./native/voxa.${platform}-musl.node`, import.meta.url),
+  new URL('./native/voxa.node', import.meta.url),
+]
 const binary = candidates.find((url) => existsSync(fileURLToPath(url)))
 if (!binary) throw new Error(`@voxa/core has no native binary for ${platform}; run npm run build`)
 const native = require(fileURLToPath(binary))
@@ -43,4 +48,3 @@ export class TypeScriptTransformNode {
   get outstanding() { return this.#pending.size }
   #failAll(error) { for (const pending of this.#pending.values()) pending.reject(error); this.#pending.clear() }
 }
-
