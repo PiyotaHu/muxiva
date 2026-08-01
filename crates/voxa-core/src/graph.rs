@@ -1,9 +1,9 @@
-use std::{collections::BTreeMap, collections::BTreeSet, error::Error, fmt};
+use std::{collections::BTreeMap, collections::BTreeSet, error::Error, fmt, fmt::Write};
 
 use voxa_types::{EdgeId, FrameType, GraphId, NodeId};
 
 use crate::{
-    edge::EdgeDescriptor,
+    edge::{EdgeDescriptor, QueueOverflowPolicy},
     node::{ConfigMap, NodeDescriptor, NodeKind, PortDirection, PortName},
     NodeFactorySelection,
 };
@@ -299,6 +299,98 @@ impl GraphDefinition {
     /// Returns whether this definition contains no nodes and no Edges.
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
+    }
+
+    /// Renders a deterministic, human-readable DSL for logs and developer tools.
+    ///
+    /// This presentation is intentionally not a machine-readable replacement
+    /// for JSON Graph v1. It exposes node roles, typed ports, Edges, queue
+    /// policies, and topological order without including payloads or secrets.
+    pub fn render_human_dsl(&self) -> String {
+        let mut output = String::new();
+        writeln!(output, "graph \"{}\" {{", self.graph_id)
+            .expect("writing to a String cannot fail");
+        for node in &self.nodes {
+            let descriptor = node.descriptor();
+            writeln!(
+                output,
+                "  node \"{}\" kind={} type=\"{}\"",
+                descriptor.node_id(),
+                node_kind_name(descriptor.kind()),
+                descriptor.node_type()
+            )
+            .expect("writing to a String cannot fail");
+            for port in descriptor.ports() {
+                writeln!(
+                    output,
+                    "    {} {}: {}",
+                    port_direction_name(port.direction()),
+                    port.name(),
+                    frame_type_name(port.frame_type())
+                )
+                .expect("writing to a String cannot fail");
+            }
+        }
+        for edge in &self.edges {
+            let queue = edge.queue_policy();
+            writeln!(
+                output,
+                "  edge \"{}\" {}.{} -> {}.{} frame={} queue={}/{}",
+                edge.edge_id(),
+                edge.from_node_id(),
+                edge.from_output_port(),
+                edge.to_node_id(),
+                edge.to_input_port(),
+                frame_type_name(edge.frame_type()),
+                queue.capacity(),
+                overflow_policy_name(queue.overflow())
+            )
+            .expect("writing to a String cannot fail");
+        }
+        output.push_str("}\n");
+        let topology = self
+            .topological_order
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(" -> ");
+        writeln!(output, "topology: {topology}").expect("writing to a String cannot fail");
+        output
+    }
+}
+
+const fn node_kind_name(kind: NodeKind) -> &'static str {
+    match kind {
+        NodeKind::Source => "source",
+        NodeKind::Transform => "transform",
+        NodeKind::Sink => "sink",
+    }
+}
+
+const fn port_direction_name(direction: PortDirection) -> &'static str {
+    match direction {
+        PortDirection::Input => "input",
+        PortDirection::Output => "output",
+    }
+}
+
+const fn frame_type_name(kind: FrameType) -> &'static str {
+    match kind {
+        FrameType::Audio => "audio",
+        FrameType::Video => "video",
+        FrameType::Text => "text",
+        FrameType::Byte => "byte",
+        FrameType::Signal => "signal",
+        FrameType::Event => "event",
+    }
+}
+
+const fn overflow_policy_name(policy: QueueOverflowPolicy) -> &'static str {
+    match policy {
+        QueueOverflowPolicy::Block => "block",
+        QueueOverflowPolicy::DropOldest => "drop_oldest",
+        QueueOverflowPolicy::DropNewest => "drop_newest",
+        QueueOverflowPolicy::Abort => "abort",
     }
 }
 

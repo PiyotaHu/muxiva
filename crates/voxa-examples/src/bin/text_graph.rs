@@ -7,15 +7,15 @@ use std::{
 };
 
 use voxa_core::{
-    ConfigSchema, EdgeDescriptor, EnabledCondition, GraphBuilder, GraphRunner,
+    ConfigSchema, EdgeDescriptor, EnabledCondition, GraphBuilder, GraphDefinition, GraphRunner,
     LifecycleCapabilities, Node, NodeContext, NodeDescriptor, NodeInstances, NodeKind,
     NodeTypeName, PortDescriptor, PortDirection, PortName, QueuePolicy, TransformPolicy,
     ValidationPolicy, VisibilityDescriptor,
 };
 use voxa_types::{
     ClockDomain, ClockDomainId, ClockKind, EdgeId, Extensions, Frame, FrameHeader, FrameId,
-    FramePayload, FrameType, Lineage, Metadata, NodeId, SequenceId, StreamId, TextData, Timestamp,
-    TraceId,
+    FramePayload, FrameType, GraphId, Lineage, Metadata, NodeId, SequenceId, StreamId, TextData,
+    Timestamp, TraceId,
 };
 
 const SOURCE_ID: &str = "text-source";
@@ -99,6 +99,8 @@ impl Node for CollectSink {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let graph = text_graph();
+    print_graph(&graph);
+    println!("[VOXA][INFO][runtime.started] mode=sync source_frames=2");
     let collected = Arc::new(Mutex::new(Vec::new()));
     let instances: NodeInstances = BTreeMap::from([
         (
@@ -131,11 +133,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         ))
     })?;
 
-    println!(
-        "Collected uppercase text: {}",
-        collected.lock().unwrap().join(", ")
-    );
+    let output = collected.lock().unwrap().join(", ");
+    println!("[VOXA][INFO][runtime.completed] status=success outputs=2");
+    println!("[VOXA][RESULT] {output}");
     Ok(())
+}
+
+fn print_graph(graph: &GraphDefinition) {
+    println!(
+        "[VOXA][INFO][graph.loaded] id={} nodes={} edges={}",
+        graph.graph_id(),
+        graph.nodes().len(),
+        graph.edges().len()
+    );
+    println!("[VOXA][GRAPH] human-readable DSL");
+    print!("{}", graph.render_human_dsl());
 }
 
 fn text_graph() -> voxa_core::GraphDefinition {
@@ -161,7 +173,9 @@ fn text_graph() -> voxa_core::GraphDefinition {
         [(SINK_PORT, PortDirection::Input)],
     );
 
-    let mut builder = GraphBuilder::new();
+    let mut builder = GraphBuilder::with_graph_id(
+        GraphId::new("example.text-uppercase").expect("the example graph ID is valid"),
+    );
     builder
         .add_node(source)
         .expect("the source descriptor is valid")

@@ -129,6 +129,10 @@ fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(
     let graph_id = graph.graph_id().as_str().to_owned();
     let node_total = graph.nodes().len();
     let edge_total = graph.edges().len();
+    println!("[VOXA][INFO][graph.loaded] id={graph_id} nodes={node_total} edges={edge_total}");
+    println!("[VOXA][GRAPH] human-readable DSL");
+    print!("{}", graph.render_human_dsl());
+    println!("[VOXA][INFO][runtime.started] mode=concurrent");
     let runtime = start_registered_runtime(
         graph,
         &registry,
@@ -140,7 +144,7 @@ fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(
     match runtime.wait(timeout) {
         Ok(summary) => {
             println!(
-                "completed graph `{graph_id}`: nodes={node_total} edges={edge_total} workers={}",
+                "[VOXA][INFO][runtime.completed] status=success workers={}",
                 summary.worker_total()
             );
             Ok(())

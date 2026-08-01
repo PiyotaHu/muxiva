@@ -91,7 +91,24 @@ fn run_executes_the_initialized_graph_through_the_concurrent_runtime() {
     assert!(output.stderr.is_empty());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "completed graph `text-uppercase`: nodes=3 edges=2 workers=3\n"
+        concat!(
+            "[VOXA][INFO][graph.loaded] id=text-uppercase nodes=3 edges=2\n",
+            "[VOXA][GRAPH] human-readable DSL\n",
+            "graph \"text-uppercase\" {\n",
+            "  node \"sink\" kind=sink type=\"builtin.text_sink\"\n",
+            "    input text_in: text\n",
+            "  node \"source\" kind=source type=\"builtin.text_source\"\n",
+            "    output text_out: text\n",
+            "  node \"upper\" kind=transform type=\"builtin.uppercase\"\n",
+            "    input text_in: text\n",
+            "    output text_out: text\n",
+            "  edge \"source-upper\" source.text_out -> upper.text_in frame=text queue=32/block\n",
+            "  edge \"upper-sink\" upper.text_out -> sink.text_in frame=text queue=32/block\n",
+            "}\n",
+            "topology: source -> upper -> sink\n",
+            "[VOXA][INFO][runtime.started] mode=concurrent\n",
+            "[VOXA][INFO][runtime.completed] status=success workers=3\n",
+        )
     );
 }
 
