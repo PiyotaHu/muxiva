@@ -55,3 +55,13 @@ multi-port emission. A Sink returns `None`. When `pass_config=True`, the
 constructor receives the Graph `node_config` dict. Graph JSON still cannot
 import Python code. The end-to-end contract is exercised in
 `crates/voxa-python/tests/test_voxa.py`.
+
+## Agora audio ingress
+
+`voxa.providers.agora` lazily integrates the community Agora Python RTC SDK.
+`AgoraRtcClient` owns SDK lifecycle while `AgoraAudioIngress` copies playback
+PCM16 into a fixed-capacity queue for application or Node-domain consumption.
+It requires `agora-python-sdk==3.4.2.1` on CPython 3.9 and remains optional; the
+ordinary Voxa package import does not load Agora. See
+[`docs/providers/agora.md`](../providers/agora.md) and
+`examples/python/agora_audio.py`.

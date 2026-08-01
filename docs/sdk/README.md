@@ -11,7 +11,7 @@ Voxa 现在为 Python、TypeScript 和 C++ 提供相同的最小完整链路：�
 | --- | --- | --- | --- | --- | --- |
 | [Python](python.md) | maturin wheel / `pip install` | `TransformNode` / schema-driven `GraphNodeFactory` | `NodeRunner` or Graph v1 | multimodal Source/Sink tests | in-process, one in-flight callback |
 | [TypeScript](typescript.md) | `@voxa/core` | `defineTransformNode` / schema-driven `GraphNodeFactory` | Worker-hosted Graph v1 | packed strict `tsc` consumer | synchronous callbacks only |
-| [C++](cpp.md) | CMake install package | `TransformNode` / `MultimodalGraphNode` | `run_graph` / `run_multimodal_graph` | external CMake plus multimodal executable | packed RGBA8 video in D05 ABI |
+| [C++](cpp.md) | CMake install package | `TransformNode` / `MultimodalGraphNode` | `run_graph` / `run_multimodal_graph` | external CMake plus multimodal executable | packed RGBA8 and I420 video |
 
 ## Honest runtime boundary / 当前边界
 

@@ -53,6 +53,15 @@ For multimodal nodes, derive from `voxa::MultimodalGraphNode`, return
 `Runtime::run_multimodal_graph` uses the additive multimodal ABI, so the D04
 text ABI remains layout-compatible. A null input identifies a Source call, an
 empty emission vector implements a Sink, and named emissions implement
-multi-port output. Audio PCM, packed RGBA8 video, text, and bytes are copied
+multi-port output. Audio PCM, packed RGBA8 or I420 video, text, and bytes are copied
 and validated by Rust before queue admission. See
 `cpp/examples/multimodal_graph.cpp`.
+
+## Agora RTC adapter
+
+`Voxa::agora` is an optional C++17 adapter target. Its contract implementation
+is always available; the real provider is enabled with `VOXA_ENABLE_AGORA=ON`
+and `VOXA_AGORA_SDK_ROOT=/path/to/sdk`. It keeps Agora callbacks outside graph
+execution and feeds owned frames through bounded external ingress. See
+[`docs/providers/agora.md`](../providers/agora.md) for SDK compatibility,
+build, credentials, and live acceptance steps.

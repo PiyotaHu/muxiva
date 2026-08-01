@@ -34,12 +34,12 @@ Voxa 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部
 | 背压与实时流控 | 可用 | 有界队列、音频合帧、Managed Stream |
 | Signal、EventBus、turn 控制 | 可用 | 相邻 Signal 与隔离的全局 Event |
 | C ABI 与 C++ SDK | 可用 | 版本化 ABI、RAII Wrapper、可安装 CMake 包与宿主注册的 Graph v1 文本 Factory |
-| Mock RTC Adapter | 可用 | 确定性故障和回调安全关闭；不含真实 RTC SDK |
+| RTC Adapter | 实验性 | Mock 契约，以及可选的 Agora C++ PCM16/I420 与 Python 音频 Provider；尚需带凭证实房认证 |
 | Python/PyO3 包 | 实验性 | 独立线程/asyncio loop 与宿主 Graph v1 文本 Factory；明确拒绝 `isolated_process` |
 | Node-API 包 | 实验性 | 独立 Worker 与宿主 Graph v1 文本 Factory；明确拒绝返回 Promise 的 Transform |
 | JSON Graph v1 与 CLI | 实验性 | 精确版本 Registry 编译、内置 Factory 并发执行、有界等待、初始化和本地 Studio |
 | 本地 Studio | 可用 | 内置可视化画布、Node/Edge 编辑、校验与原子保存 |
-| 真实 RTC、FFmpeg、模型 Provider | 规划中 | 当前不属于 Core，也不是构建依赖 |
+| FFmpeg、模型 Provider | 规划中 | 当前不属于 Core，也不是构建依赖 |
 
 ## 架构
 
@@ -194,7 +194,7 @@ voxa/
 1. 稳定 Rust、C++、Python 和 TypeScript 公开 SDK 契约。
 2. 将外语 Graph Factory 从空配置文本 Transform 扩展到 Schema 驱动的多模态 Source、Transform 与 Sink。
 3. 为可视化 Studio 增加实时 Runtime 指标和执行控制。
-4. 接入经过生产评审的 RTC Adapter 与媒体/Codec 能力。
+4. 完成 Agora 实房长稳认证并接入媒体/Codec 能力。
 5. 实现版本化 Python 进程隔离与 TypeScript Promise 支持。
 6. 发布多语言包、兼容矩阵、性能基线和 Release Artifact。
 

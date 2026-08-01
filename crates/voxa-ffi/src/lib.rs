@@ -756,4 +756,54 @@ mod tests {
             _ => panic!("text payload expected"),
         }
     }
+
+    #[test]
+    fn i420_video_is_tightly_validated_and_copied() {
+        fn string_view(value: &str) -> abi::StrView {
+            abi::StrView {
+                data: value.as_ptr().cast(),
+                len: value.len(),
+            }
+        }
+        let frame_id = String::from("i420-frame");
+        let clock = String::from("media");
+        let stream = String::from("camera");
+        let trace = String::from("trace");
+        let mut pixels = [7_u8; 24]; // 4x4 Y plus 2x2 U and V.
+        let mut view = abi::empty_frame_view();
+        view.header.frame_type = 2;
+        view.header.clock_kind = 2;
+        view.header.frame_id = string_view(&frame_id);
+        view.header.clock_domain_id = string_view(&clock);
+        view.header.stream_id = string_view(&stream);
+        view.header.trace_id = string_view(&trace);
+        view.payload = abi::FramePayload {
+            video: abi::VideoPayload {
+                width: 4,
+                height: 4,
+                pixel_format: 2,
+                plane_count: 3,
+                bytes: abi::BytesView {
+                    data: pixels.as_ptr(),
+                    len: pixels.len(),
+                },
+                reserved: [0; 4],
+            },
+        };
+        let owned = frame::copy_frame(&view).unwrap();
+        pixels.fill(9);
+        match &owned.payload {
+            frame::OwnedPayload::Video { bytes, .. } => assert_eq!(bytes, &[7_u8; 24]),
+            _ => panic!("video payload expected"),
+        }
+        let rust = owned.to_rust().unwrap();
+        assert_eq!(
+            rust.as_video().unwrap().data().pixel_format(),
+            voxa_types::PixelFormat::Yuv420p
+        );
+
+        // The ABI is intentionally tight; a missing chroma byte is rejected.
+        view.payload.video.bytes.len = 23;
+        assert!(frame::copy_frame(&view).is_err());
+    }
 }

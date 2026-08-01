@@ -123,18 +123,27 @@ pub fn copy_frame(pointer: *const FrameView) -> Result<OwnedFrame, FfiError> {
         2 => {
             // SAFETY: the discriminating frame_type selects the initialized C union member.
             let value = unsafe { frame.payload.video };
-            if value.reserved != [0; 4]
-                || value.width == 0
-                || value.height == 0
-                || !(1..=8).contains(&value.pixel_format)
-                || !(1..=4).contains(&value.plane_count)
-            {
+            if value.reserved != [0; 4] || value.width == 0 || value.height == 0 {
                 return Err(invalid("invalid video payload"));
             }
-            let _pixels = value
+            let pixels = value
                 .width
                 .checked_mul(value.height)
                 .ok_or_else(|| invalid("video dimension arithmetic overflow"))?;
+            let pixels = usize::try_from(pixels)
+                .map_err(|_| invalid("video dimension arithmetic overflow"))?;
+            let expected = match (value.pixel_format, value.plane_count) {
+                (1, 1) => pixels
+                    .checked_mul(4)
+                    .ok_or_else(|| invalid("video byte-count arithmetic overflow"))?,
+                (2, 3) if value.width % 2 == 0 && value.height % 2 == 0 => pixels
+                    .checked_add(pixels / 2)
+                    .ok_or_else(|| invalid("video byte-count arithmetic overflow"))?,
+                _ => return Err(invalid("unsupported video pixel format or plane count")),
+            };
+            if expected != value.bytes.len {
+                return Err(invalid("video byte length does not match its tight layout"));
+            }
             OwnedPayload::Video {
                 bytes: abi::copy_bytes(value.bytes).map_err(invalid)?,
                 width: value.width,
@@ -320,24 +329,32 @@ impl OwnedFrame {
                 pixel_format,
                 plane_count,
             } => {
-                if *pixel_format != 1 || *plane_count != 1 {
-                    return Err(invalid("C++ graph video currently requires packed RGBA8"));
-                }
-                let stride = bytes
-                    .len()
-                    .checked_div(
-                        usize::try_from(*height).map_err(|_| invalid("invalid video height"))?,
-                    )
-                    .ok_or_else(|| invalid("invalid video stride"))?;
-                RustPayload::Video(
-                    VideoData::rgba8(
-                        FrameBuffer::from_vec(bytes.clone()),
+                let buffer = FrameBuffer::from_vec(bytes.clone());
+                let data = match (*pixel_format, *plane_count) {
+                    (1, 1) => VideoData::rgba8(
+                        buffer,
                         *width,
                         *height,
-                        stride,
+                        usize::try_from(*width)
+                            .ok()
+                            .and_then(|width| width.checked_mul(4))
+                            .ok_or_else(|| invalid("invalid RGBA8 video stride"))?,
                     )
                     .map_err(|_| invalid("invalid RGBA8 video"))?,
-                )
+                    (2, 3) => VideoData::yuv420p(
+                        buffer,
+                        *width,
+                        *height,
+                        usize::try_from(*width).map_err(|_| invalid("invalid I420 width"))?,
+                        usize::try_from(*width / 2)
+                            .map_err(|_| invalid("invalid I420 chroma width"))?,
+                        usize::try_from(*width / 2)
+                            .map_err(|_| invalid("invalid I420 chroma width"))?,
+                    )
+                    .map_err(|_| invalid("invalid I420 video"))?,
+                    _ => return Err(invalid("unsupported C++ graph video layout")),
+                };
+                RustPayload::Video(data)
             }
             OwnedPayload::Signal(_) | OwnedPayload::Event(_) => {
                 return Err(invalid("control frames cannot use graph data ports"))
@@ -449,18 +466,17 @@ pub fn borrowed_frame_view(frame: &Frame) -> Result<FrameView, FfiError> {
         }
         Frame::Video(frame) => {
             let data = frame.data();
-            if data.pixel_format() != PixelFormat::Rgba8 {
-                return Err(invalid("C++ graph video currently requires packed RGBA8"));
-            }
-            let VideoLayout::Rgba8 { .. } = data.layout() else {
-                unreachable!()
+            let (pixel_format, plane_count) = match (data.pixel_format(), data.layout()) {
+                (PixelFormat::Rgba8, VideoLayout::Rgba8 { .. }) => (1, 1),
+                (PixelFormat::Yuv420p, VideoLayout::Yuv420p { .. }) => (2, 3),
+                _ => return Err(invalid("video pixel format and layout disagree")),
             };
             abi::FramePayload {
                 video: abi::VideoPayload {
                     width: data.width(),
                     height: data.height(),
-                    pixel_format: 1,
-                    plane_count: 1,
+                    pixel_format,
+                    plane_count,
                     bytes: abi::BytesView {
                         data: data.buffer().as_slice().as_ptr(),
                         len: data.buffer().len(),

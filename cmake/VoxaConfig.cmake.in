@@ -22,4 +22,27 @@ if(NOT TARGET Voxa::cpp)
     INTERFACE_LINK_LIBRARIES Voxa::ffi)
 endif()
 
+find_library(VOXA_AGORA_LIBRARY
+  NAMES voxa_agora
+  PATHS "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_LIBDIR@"
+  NO_DEFAULT_PATH)
+if(VOXA_AGORA_LIBRARY AND NOT TARGET Voxa::agora)
+  add_library(Voxa::agora STATIC IMPORTED)
+  set_target_properties(Voxa::agora PROPERTIES
+    IMPORTED_LOCATION "${VOXA_AGORA_LIBRARY}"
+    INTERFACE_COMPILE_FEATURES cxx_std_17
+    INTERFACE_INCLUDE_DIRECTORIES "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_INCLUDEDIR@"
+    INTERFACE_LINK_LIBRARIES Voxa::cpp)
+  if(@VOXA_ENABLE_AGORA@)
+    set(VOXA_AGORA_SDK_ROOT "" CACHE PATH "Agora Native C++ SDK root")
+    find_library(VOXA_AGORA_VENDOR_LIBRARY
+      NAMES agora_rtc_sdk AgoraRtcKit
+      PATHS "${VOXA_AGORA_SDK_ROOT}"
+      PATH_SUFFIXES lib libs libs/x86_64
+      REQUIRED)
+    set_property(TARGET Voxa::agora APPEND PROPERTY
+      INTERFACE_LINK_LIBRARIES "${VOXA_AGORA_VENDOR_LIBRARY}")
+  endif()
+endif()
+
 check_required_components(Voxa)

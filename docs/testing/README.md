@@ -27,6 +27,8 @@ as executed coverage.
 | Stage 9 Node | `VOXA_NODE_HOME=/path/to/node ./scripts/check-node.sh` | Native package build, dedicated Worker execution, throws, rejected Promise returns, bounded admission, close behavior | Node 20–24 and `pnpm`; dependency store must already be populated for offline use |
 | Stage 9 combined | `VOXA_PYTHON=/path/to/python ./scripts/check-stage9-sanitizers.sh` | workspace Rust tests followed by both built binding packages | all Python and Node prerequisites above |
 | Stage 10 CLI/Studio | `cargo test --offline -p voxa-studio -p voxa-cli` | shared Graph v1 diagnostics, create-only init, bearer-token rejection, authenticated validation, and exact occupied-port failure | loopback sockets must be permitted by the test sandbox |
+| D07 Agora C++ | `./scripts/check-rtc.sh` and `./scripts/check-rtc-asan.sh` | fake-SDK PCM16/I420 copy, bounded ingress, signals/events, outbound media, idempotent close, deliberately late callback | C++17 compiler; vendor SDK is not required |
+| D07 Agora Python | `VOXA_AGORA_PYTHON=/path/to/python3.9 ./scripts/check-agora-python.sh` | imports the real community extension and checks its engine/audio/video observer surface | CPython 3.9 with `agora-python-sdk==3.4.2.1`; otherwise explicit `SKIP` |
 
 The Stage 8 delay setting models an adapter fault. Test completion is observed
 through adapter state/counters and a bounded deadline; the delay is not used to
