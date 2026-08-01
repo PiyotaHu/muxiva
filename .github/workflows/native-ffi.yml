@@ -13,6 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Fetch locked Rust dependencies
+        run: cargo fetch --locked
       - run: ./scripts/check-ffi.sh
       - run: ./scripts/check-rtc.sh
-
