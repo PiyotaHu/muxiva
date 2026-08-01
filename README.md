@@ -2,7 +2,7 @@
 
 > A Rust-native, real-time multimodal agent runtime with one graph and lifecycle contract across Rust, C++, Python, and TypeScript.
 
-[简体中文](README.zh-CN.md) · [Architecture](docs/design/01-product-and-technical-contract.md) · [Language SDKs](docs/sdk/README.md) · [Graph v1](docs/graph-v1-reference.md) · [Testing](docs/testing/README.md)
+[简体中文](README.zh-CN.md) · [Architecture](docs/design/01-product-and-technical-contract.md) · [Language SDKs](docs/sdk/README.md) · [Studio](docs/studio.md) · [Graph v1](docs/graph-v1-reference.md) · [Testing](docs/testing/README.md)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -38,7 +38,7 @@ Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but
 | Python/PyO3 package | Experimental | Dedicated thread and asyncio loop; `isolated_process` is rejected |
 | Node-API package | Experimental | Dedicated Worker; Promise-returning transforms are rejected |
 | JSON Graph v1 and CLI | Experimental | Parse, validate, initialize, and local Studio; runtime factories are limited |
-| Local Studio | Foundation | Token-authenticated local HTTP/schema view; full visual canvas is planned |
+| Local Studio | Available | Bundled visual canvas, Node/Edge editing, validation and atomic save |
 | Real RTC, FFmpeg, model providers | Planned | Not included in Core or the current build |
 
 ## Architecture
@@ -84,13 +84,13 @@ cargo run -p voxa-cli -- run examples/graphs/text-uppercase.v1.json
 
 `voxa run` currently validates the graph and reports the compiled-in runtime-factory boundary. It does not yet execute arbitrary registered JSON nodes.
 
-### Start the local Studio foundation
+### Start the local visual Studio
 
 ```bash
-cargo run -p voxa-cli -- studio examples/graphs/text-uppercase.v1.json --no-open
+cargo run -p voxa-cli -- studio examples/graphs/text-uppercase.v1.json
 ```
 
-Studio listens on `127.0.0.1` by default and generates a local access token. Binding a non-loopback address requires an explicit `--host` and prints a security warning.
+Studio opens a bundled visual Graph v1 editor with a Node palette, SVG canvas, Inspector, Edge editor, diagnostics, JSON source view, Undo/Redo, and atomic save. It listens on `127.0.0.1` by default and generates a local access token. Binding a non-loopback address requires an explicit `--host` and prints a security warning. See the [Studio guide](docs/studio.md).
 
 ### Build and test the language SDKs
 
@@ -188,7 +188,7 @@ Near-term priorities:
 
 1. Stabilize public Rust, C++, Python, and TypeScript SDK contracts.
 2. Connect registered Graph v1 node factories to general runtime execution.
-3. Complete the visual Studio graph editor and live metrics views.
+3. Add live runtime metrics and execution controls to the visual Studio.
 4. Add a production-reviewed RTC adapter and media/codec integration.
 5. Implement versioned Python process isolation and TypeScript Promise support.
 6. Publish packages, compatibility matrices, performance baselines, and release artifacts.

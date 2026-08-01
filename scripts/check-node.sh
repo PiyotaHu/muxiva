@@ -6,6 +6,7 @@ if ! command -v node >/dev/null 2>&1 || ! command -v pnpm >/dev/null 2>&1; then
   exit 0
 fi
 export CI=true
+node --check "$repo/crates/voxa-studio/src/assets/studio.js"
 cd "$repo/bindings/node"
 if ! pnpm install --offline --frozen-lockfile; then
   echo "SKIP Node binding gate: one or more locked build dependencies are absent from the offline pnpm store"

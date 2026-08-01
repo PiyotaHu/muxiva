@@ -1,70 +1,302 @@
-//! Minimal local-only Studio HTTP server. It serves no remote assets or CORS.
+//! Local-only Voxa Graph Studio server with bundled, dependency-free assets.
+
 use std::{
-    fs,
+    fs::{self, OpenOptions},
     io::{Read, Write},
     net::{TcpListener, TcpStream},
-    path::PathBuf,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
 };
+
+use voxa_graph_json::{GraphDiagnostic, GraphDocument, MAX_DOCUMENT_BYTES};
+
+const MAX_HEADER_BYTES: usize = 16 * 1024;
+const INDEX: &str = include_str!("assets/index.html");
+const STYLES: &str = include_str!("assets/studio.css");
+const SCRIPT: &str = include_str!("assets/studio.js");
+static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
+
 pub fn random_token() -> std::io::Result<String> {
-    let mut b = [0u8; 32];
-    fs::File::open("/dev/urandom")?.read_exact(&mut b)?;
-    Ok(b.iter().map(|x| format!("{x:02x}")).collect())
+    let mut bytes = [0_u8; 32];
+    fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
+
 pub fn serve(listener: TcpListener, graph: PathBuf, token: String) -> std::io::Result<()> {
-    for s in listener.incoming() {
-        handle_connection(s?, &graph, &token)?;
+    for stream in listener.incoming() {
+        let stream = stream?;
+        if let Err(error) = handle_connection(stream, &graph, &token) {
+            eprintln!("Studio connection error: {error}");
+        }
     }
     Ok(())
 }
 
-fn handle_connection(mut stream: TcpStream, graph: &PathBuf, token: &str) -> std::io::Result<()> {
-    let mut bytes = [0_u8; 16 * 1024];
-    let count = stream.read(&mut bytes)?;
-    let request = String::from_utf8_lossy(&bytes[..count]);
-    let (headers, body) = request.split_once("\r\n\r\n").unwrap_or((&request, ""));
-    let mut lines = headers.lines();
-    let request_line = lines.next().unwrap_or("");
-    let authorized = lines.any(|line| line.trim() == format!("Authorization: Bearer {token}"));
-    let (status, content_type, payload) = match request_line
-        .split_whitespace()
-        .take(2)
-        .collect::<Vec<_>>()
-        .as_slice()
-    {
-        ["GET", "/"] => ("200 OK", "text/html", INDEX.to_string()),
-        ["GET", "/api/v1/schema/graph-v1"] if authorized => (
-            "200 OK",
-            "application/json",
-            voxa_graph_json::GRAPH_V1_SCHEMA.to_string(),
-        ),
-        ["GET", "/api/v1/graph"] if authorized => (
-            "200 OK",
-            "application/json",
-            fs::read_to_string(graph).unwrap_or_default(),
-        ),
-        ["POST", "/api/v1/graph/validate"] if authorized => {
-            match voxa_graph_json::parse(body)
-                .and_then(|document| voxa_graph_json::compile(&document).map(|_| document))
-            {
-                Ok(_) => ("200 OK", "application/json", "[]".into()),
-                Err(errors) => (
-                    "400 Bad Request",
-                    "application/json",
-                    serde_json::to_string(&errors).unwrap(),
-                ),
-            }
+struct HttpRequest {
+    method: String,
+    path: String,
+    authorization: Option<String>,
+    body: String,
+}
+
+struct RequestError {
+    status: &'static str,
+    message: &'static str,
+}
+
+fn read_request(stream: &mut TcpStream) -> Result<HttpRequest, RequestError> {
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let mut bytes = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    let header_end = loop {
+        let count = stream.read(&mut buffer).map_err(|_| RequestError {
+            status: "400 Bad Request",
+            message: "failed to read request",
+        })?;
+        if count == 0 {
+            return Err(RequestError {
+                status: "400 Bad Request",
+                message: "incomplete request",
+            });
         }
-        _ if !authorized => ("401 Unauthorized", "text/plain", "unauthorized".into()),
-        _ => ("404 Not Found", "text/plain", "not found".into()),
+        bytes.extend_from_slice(&buffer[..count]);
+        if let Some(position) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
+            let end = position + 4;
+            if end > MAX_HEADER_BYTES {
+                return Err(RequestError {
+                    status: "431 Request Header Fields Too Large",
+                    message: "request headers exceed 16 KiB",
+                });
+            }
+            break end;
+        }
+        if bytes.len() > MAX_HEADER_BYTES {
+            return Err(RequestError {
+                status: "431 Request Header Fields Too Large",
+                message: "request headers exceed 16 KiB",
+            });
+        }
     };
+
+    let headers = std::str::from_utf8(&bytes[..header_end]).map_err(|_| RequestError {
+        status: "400 Bad Request",
+        message: "request headers must be UTF-8",
+    })?;
+    let mut lines = headers.lines();
+    let mut request_line = lines.next().unwrap_or_default().split_whitespace();
+    let method = request_line.next().unwrap_or_default().to_owned();
+    let path = request_line
+        .next()
+        .unwrap_or_default()
+        .split('?')
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    if method.is_empty() || path.is_empty() {
+        return Err(RequestError {
+            status: "400 Bad Request",
+            message: "invalid request line",
+        });
+    }
+
+    let mut content_length = 0_usize;
+    let mut authorization = None;
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        match name.trim().to_ascii_lowercase().as_str() {
+            "content-length" => {
+                content_length = value.trim().parse().map_err(|_| RequestError {
+                    status: "400 Bad Request",
+                    message: "invalid Content-Length",
+                })?;
+            }
+            "authorization" => authorization = Some(value.trim().to_owned()),
+            _ => {}
+        }
+    }
+    if content_length > MAX_DOCUMENT_BYTES {
+        return Err(RequestError {
+            status: "413 Payload Too Large",
+            message: "graph document exceeds 1 MiB",
+        });
+    }
+
+    let expected = header_end.saturating_add(content_length);
+    while bytes.len() < expected {
+        let count = stream.read(&mut buffer).map_err(|_| RequestError {
+            status: "400 Bad Request",
+            message: "failed to read request body",
+        })?;
+        if count == 0 {
+            return Err(RequestError {
+                status: "400 Bad Request",
+                message: "incomplete request body",
+            });
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+        if bytes.len() > expected {
+            bytes.truncate(expected);
+        }
+    }
+    let body =
+        String::from_utf8(bytes[header_end..expected].to_vec()).map_err(|_| RequestError {
+            status: "400 Bad Request",
+            message: "request body must be UTF-8",
+        })?;
+    Ok(HttpRequest {
+        method,
+        path,
+        authorization,
+        body,
+    })
+}
+
+fn handle_connection(mut stream: TcpStream, graph: &Path, token: &str) -> std::io::Result<()> {
+    let request = match read_request(&mut stream) {
+        Ok(request) => request,
+        Err(error) => {
+            return write_response(&mut stream, error.status, "text/plain", error.message)
+        }
+    };
+    let authorized = request.authorization.as_deref() == Some(&format!("Bearer {token}"));
+    let (status, content_type, payload) = route(&request, graph, authorized);
+    write_response(&mut stream, status, content_type, &payload)
+}
+
+fn route(
+    request: &HttpRequest,
+    graph: &Path,
+    authorized: bool,
+) -> (&'static str, &'static str, String) {
+    match (request.method.as_str(), request.path.as_str()) {
+        ("GET", "/") => ("200 OK", "text/html; charset=utf-8", INDEX.to_owned()),
+        ("GET", "/assets/studio.css") => ("200 OK", "text/css; charset=utf-8", STYLES.to_owned()),
+        ("GET", "/assets/studio.js") => (
+            "200 OK",
+            "text/javascript; charset=utf-8",
+            SCRIPT.to_owned(),
+        ),
+        _ if !authorized => (
+            "401 Unauthorized",
+            "text/plain; charset=utf-8",
+            "unauthorized".into(),
+        ),
+        ("GET", "/api/v1/schema/graph-v1") => (
+            "200 OK",
+            "application/json",
+            voxa_graph_json::GRAPH_V1_SCHEMA.to_owned(),
+        ),
+        ("GET", "/api/v1/graph") => match fs::read_to_string(graph) {
+            Ok(document) => ("200 OK", "application/json", document),
+            Err(error) => (
+                "500 Internal Server Error",
+                "application/json",
+                json_message(&format!("failed to read graph: {error}")),
+            ),
+        },
+        ("GET", "/api/v1/studio") => {
+            let payload = serde_json::json!({
+                "graph_path": graph.display().to_string(),
+                "max_document_bytes": MAX_DOCUMENT_BYTES,
+                "writable": fs::metadata(graph).map(|metadata| !metadata.permissions().readonly()).unwrap_or(false),
+            });
+            ("200 OK", "application/json", payload.to_string())
+        }
+        ("POST", "/api/v1/graph/validate") => match validate(&request.body) {
+            Ok(_) => ("200 OK", "application/json", "[]".into()),
+            Err(errors) => diagnostics_response(errors),
+        },
+        ("PUT", "/api/v1/graph") => match validate(&request.body) {
+            Ok(document) => match save_graph(graph, &document) {
+                Ok(bytes) => (
+                    "200 OK",
+                    "application/json",
+                    serde_json::json!({"saved": true, "bytes": bytes}).to_string(),
+                ),
+                Err(error) => (
+                    "500 Internal Server Error",
+                    "application/json",
+                    json_message(&format!("failed to save graph: {error}")),
+                ),
+            },
+            Err(errors) => diagnostics_response(errors),
+        },
+        _ => (
+            "404 Not Found",
+            "text/plain; charset=utf-8",
+            "not found".into(),
+        ),
+    }
+}
+
+fn validate(input: &str) -> Result<GraphDocument, Vec<GraphDiagnostic>> {
+    voxa_graph_json::parse(input)
+        .and_then(|document| voxa_graph_json::compile(&document).map(|_| document))
+}
+
+fn diagnostics_response(errors: Vec<GraphDiagnostic>) -> (&'static str, &'static str, String) {
+    (
+        "400 Bad Request",
+        "application/json",
+        serde_json::to_string(&errors).unwrap_or_else(|_| "[]".into()),
+    )
+}
+
+fn save_graph(path: &Path, document: &GraphDocument) -> std::io::Result<usize> {
+    let mut payload = serde_json::to_string_pretty(document)
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    payload.push('\n');
+    let sequence = NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed);
+    let temporary = temporary_path(path, sequence);
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)?;
+        file.write_all(payload.as_bytes())?;
+        file.sync_all()?;
+        if let Ok(metadata) = fs::metadata(path) {
+            fs::set_permissions(&temporary, metadata.permissions())?;
+        }
+        fs::rename(&temporary, path)?;
+        Ok(payload.len())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn temporary_path(path: &Path, sequence: u64) -> PathBuf {
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("graph.json");
+    path.with_file_name(format!(
+        ".{filename}.studio-{}-{sequence}.tmp",
+        std::process::id()
+    ))
+}
+
+fn json_message(message: &str) -> String {
+    serde_json::json!({"message": message}).to_string()
+}
+
+fn write_response(
+    stream: &mut TcpStream,
+    status: &str,
+    content_type: &str,
+    payload: &str,
+) -> std::io::Result<()> {
     let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nContent-Security-Policy: default-src 'self'\r\nConnection: close\r\n\r\n{payload}",
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nContent-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
     );
     stream.write_all(response.as_bytes())
 }
-
-const INDEX: &str = "<!doctype html><meta charset=utf-8><title>Voxa Studio</title><h1>Voxa Studio</h1><pre id=o>Loading schema…</pre><script>let t=location.hash.slice(1);history.replaceState(null,'','/');fetch('/api/v1/schema/graph-v1',{headers:{Authorization:'Bearer '+t}}).then(r=>r.text()).then(x=>o.textContent=x)</script>";
 
 #[cfg(test)]
 mod tests {
@@ -73,7 +305,7 @@ mod tests {
         fs,
         io::{Read, Write},
         net::{TcpListener, TcpStream},
-        path::PathBuf,
+        path::{Path, PathBuf},
         sync::atomic::{AtomicU64, Ordering},
         thread,
     };
@@ -94,22 +326,21 @@ mod tests {
         path
     }
 
-    fn request(graph: PathBuf, token: &str, raw_request: String) -> Option<String> {
+    fn request(graph: &Path, token: &str, raw_request: String) -> Option<String> {
         let listener = match TcpListener::bind(("127.0.0.1", 0)) {
             Ok(listener) => listener,
             Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
                 eprintln!("SKIP Studio HTTP contract: sandbox denies socket binding");
-                fs::remove_file(graph).unwrap();
                 return None;
             }
             Err(error) => panic!("failed to bind Studio contract server: {error}"),
         };
         let address = listener.local_addr().unwrap();
         let token = token.to_owned();
+        let graph = graph.to_path_buf();
         let server = thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
             handle_connection(stream, &graph, &token).unwrap();
-            fs::remove_file(graph).unwrap();
         });
         let mut client = TcpStream::connect(address).unwrap();
         client.write_all(raw_request.as_bytes()).unwrap();
@@ -121,15 +352,34 @@ mod tests {
     }
 
     #[test]
+    fn bundled_page_uses_external_assets_and_strict_csp() {
+        let graph = graph_path();
+        let Some(response) = request(
+            &graph,
+            "token",
+            "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".into(),
+        ) else {
+            return;
+        };
+        fs::remove_file(graph).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(response.contains("script-src 'self'"));
+        assert!(response.contains("/assets/studio.js"));
+        assert!(!response.contains("<script>"));
+    }
+
+    #[test]
     fn graph_api_rejects_missing_and_forged_bearer_tokens() {
         for authorization in ["", "Authorization: Bearer forged\r\n"] {
+            let graph = graph_path();
             let Some(response) = request(
-                graph_path(),
+                &graph,
                 "expected-token",
                 format!("GET /api/v1/graph HTTP/1.1\r\nHost: localhost\r\n{authorization}\r\n"),
             ) else {
                 return;
             };
+            fs::remove_file(graph).unwrap();
             assert!(response.starts_with("HTTP/1.1 401 Unauthorized\r\n"));
             assert!(!response.contains("text-uppercase"));
             assert!(!response.contains("expected-token"));
@@ -137,25 +387,52 @@ mod tests {
     }
 
     #[test]
-    fn authorized_graph_and_validation_routes_share_graph_v1_contract() {
-        let Some(graph_response) = request(
-            graph_path(),
-            "contract-token",
-            "GET /api/v1/graph HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer contract-token\r\n\r\n".into(),
-        ) else { return };
-        assert!(graph_response.starts_with("HTTP/1.1 200 OK\r\n"));
-        assert!(graph_response.contains("\"version\":\"voxa.graph/v1\""));
-
+    fn authorized_validation_and_atomic_save_share_graph_v1_contract() {
+        let graph = graph_path();
         let invalid = r#"{"version":"voxa.graph/v1","graph_id":"broken","nodes":[],"edges":[],"unexpected":true}"#;
         let Some(validation_response) = request(
-            graph_path(),
+            &graph,
             "contract-token",
             format!(
                 "POST /api/v1/graph/validate HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer contract-token\r\nContent-Length: {}\r\n\r\n{invalid}",
                 invalid.len()
             ),
-        ) else { return };
+        ) else {
+            return;
+        };
         assert!(validation_response.starts_with("HTTP/1.1 400 Bad Request\r\n"));
         assert!(validation_response.contains("VOXA-GRAPH-JSON"));
+
+        let original = fs::read_to_string(&graph).unwrap();
+        let Some(invalid_save_response) = request(
+            &graph,
+            "contract-token",
+            format!(
+                "PUT /api/v1/graph HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer contract-token\r\nContent-Length: {}\r\n\r\n{invalid}",
+                invalid.len()
+            ),
+        ) else {
+            return;
+        };
+        assert!(invalid_save_response.starts_with("HTTP/1.1 400 Bad Request\r\n"));
+        assert_eq!(fs::read_to_string(&graph).unwrap(), original);
+
+        let mut saved: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&graph).unwrap()).unwrap();
+        saved["graph_id"] = "studio-saved".into();
+        let saved = serde_json::to_string(&saved).unwrap();
+        let Some(save_response) = request(
+            &graph,
+            "contract-token",
+            format!(
+                "PUT /api/v1/graph HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer contract-token\r\nContent-Length: {}\r\n\r\n{saved}",
+                saved.len()
+            ),
+        ) else {
+            return;
+        };
+        assert!(save_response.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(fs::read_to_string(&graph).unwrap().contains("studio-saved"));
+        fs::remove_file(graph).unwrap();
     }
 }

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Voxa Studio</title>
+  <link rel="stylesheet" href="/assets/studio.css">
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">V</span><span>Voxa <b>Studio</b></span></div>
+      <div class="graph-title">
+        <span class="eyebrow">GRAPH</span>
+        <input id="graph-id" aria-label="Graph ID" spellcheck="false">
+        <span id="dirty-dot" class="dirty-dot" title="Saved"></span>
+      </div>
+      <div class="toolbar">
+        <button id="undo" class="icon-button" title="Undo (⌘Z)" aria-label="Undo">↶</button>
+        <button id="redo" class="icon-button" title="Redo (⇧⌘Z)" aria-label="Redo">↷</button>
+        <span class="divider"></span>
+        <button id="raw-toggle" class="button ghost">{ } JSON</button>
+        <button id="validate" class="button ghost"><span class="button-dot"></span> Validate</button>
+        <button id="save" class="button primary">Save graph</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="sidebar palette-panel">
+        <div class="panel-heading"><span>NODE PALETTE</span><small>Click to add</small></div>
+        <button class="palette-item source" data-add-node="builtin.text_source">
+          <span class="node-icon">S</span><span><b>Text Source</b><small>Produces text frames</small></span><span>＋</span>
+        </button>
+        <button class="palette-item transform" data-add-node="builtin.uppercase">
+          <span class="node-icon">T</span><span><b>Uppercase</b><small>Transforms text</small></span><span>＋</span>
+        </button>
+        <button class="palette-item sink" data-add-node="builtin.text_sink">
+          <span class="node-icon">K</span><span><b>Text Sink</b><small>Consumes text frames</small></span><span>＋</span>
+        </button>
+
+        <div class="panel-heading edges-heading"><span>EDGES</span><button id="add-edge" class="mini-button">＋ Add</button></div>
+        <div id="edge-list" class="edge-list"></div>
+
+        <div class="studio-meta">
+          <div><span class="status-light"></span><span id="connection-status">Local runtime</span></div>
+          <small id="graph-path">Loading graph…</small>
+        </div>
+      </aside>
+
+      <section class="canvas-panel">
+        <div class="canvas-grid"></div>
+        <svg id="graph-canvas" role="img" aria-label="Graph canvas" viewBox="0 0 1200 760">
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L8,4 L0,8 Z" class="arrow-head"></path>
+            </marker>
+            <filter id="node-shadow" x="-30%" y="-30%" width="160%" height="180%">
+              <feDropShadow dx="0" dy="8" stdDeviation="10" flood-opacity=".26"></feDropShadow>
+            </filter>
+          </defs>
+          <g id="edge-layer"></g>
+          <g id="node-layer"></g>
+        </svg>
+        <div class="canvas-actions">
+          <button id="zoom-out" aria-label="Zoom out">−</button>
+          <span id="zoom-label">100%</span>
+          <button id="zoom-in" aria-label="Zoom in">＋</button>
+          <button id="fit-view" title="Fit graph">Fit</button>
+        </div>
+        <div class="canvas-hint">Drag nodes to arrange · Select a node to configure</div>
+      </section>
+
+      <aside class="sidebar inspector-panel">
+        <div class="panel-heading"><span>INSPECTOR</span><button id="delete-node" class="danger-link" disabled>Delete</button></div>
+        <div id="empty-inspector" class="empty-inspector">
+          <div class="empty-orbit"><span></span></div>
+          <b>No node selected</b>
+          <p>Select a node on the canvas to edit its identity and configuration.</p>
+        </div>
+        <form id="node-inspector" class="node-inspector hidden">
+          <label>Node ID<input id="node-id" spellcheck="false"></label>
+          <label>Node type<select id="node-type">
+            <option value="builtin.text_source">builtin.text_source</option>
+            <option value="builtin.uppercase">builtin.uppercase</option>
+            <option value="builtin.text_sink">builtin.text_sink</option>
+          </select></label>
+          <label>Language<input id="node-language" value="rust" readonly></label>
+          <label>Configuration<textarea id="node-config" rows="10" spellcheck="false"></textarea></label>
+          <p id="config-error" class="field-error"></p>
+        </form>
+
+        <div class="diagnostics-panel">
+          <div class="panel-heading"><span>DIAGNOSTICS</span><span id="diagnostic-count" class="count-badge">0</span></div>
+          <div id="diagnostics" class="diagnostics"><div class="valid-message">Waiting for graph…</div></div>
+        </div>
+      </aside>
+    </main>
+
+    <section id="raw-drawer" class="raw-drawer" aria-hidden="true">
+      <div class="raw-header"><div><span class="eyebrow">SOURCE</span><b>Graph v1 JSON</b></div><div><button id="format-json" class="button ghost">Format</button><button id="apply-json" class="button primary">Apply JSON</button><button id="raw-close" class="icon-button">×</button></div></div>
+      <textarea id="raw-json" spellcheck="false" aria-label="Graph JSON"></textarea>
+      <p id="raw-error" class="field-error"></p>
+    </section>
+
+    <dialog id="edge-dialog">
+      <form method="dialog" id="edge-form">
+        <div class="dialog-title"><div><span class="eyebrow">ROUTING</span><h2>Add edge</h2></div><button value="cancel" class="icon-button">×</button></div>
+        <label>From node<select id="edge-from-node"></select></label>
+        <label>Output port<select id="edge-from-port"></select></label>
+        <label>To node<select id="edge-to-node"></select></label>
+        <label>Input port<select id="edge-to-port"></select></label>
+        <div class="form-row"><label>Capacity<input id="edge-capacity" type="number" min="1" max="65536" value="32"></label><label>Overflow<select id="edge-overflow"><option>block</option><option>drop_oldest</option><option>drop_newest</option><option>abort</option></select></label></div>
+        <div class="dialog-actions"><button value="cancel" class="button ghost">Cancel</button><button id="edge-submit" value="default" class="button primary">Create edge</button></div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status"></div>
+    <div id="fatal" class="fatal hidden"><div><span class="brand-mark">V</span><h1>Studio could not start</h1><p id="fatal-message"></p><p>Launch Studio again from <code>voxa studio &lt;graph.json&gt;</code>.</p></div></div>
+  </div>
+  <script src="/assets/studio.js" defer></script>
+</body>
+</html>
