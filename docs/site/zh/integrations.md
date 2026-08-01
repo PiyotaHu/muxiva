@@ -15,6 +15,20 @@ Provider 将 Voxa 连接到 RTC SDK、媒体库、模型 API、Transport 和设�
 真实凭据永远不能提交到仓库。生产认证仍需保留各平台实房证据、长时间测试、重连
 与晚到回调故障结果，以及与 Release 对应的 SDK 兼容记录。
 
+## 门面语音方案：Agora + Qwen
+
+规划中的真实 Voice Playground 使用 Agora Web SDK 承担浏览器麦克风采集与播放。
+Voxa Bot 通过 Native Adapter 加入同一房间，接收每个用户的 PCM，并通过自定义
+音频轨道回推生成的 PCM。
+
+智能层首个 Profile 选择阿里云百炼 Qwen Audio Realtime。一条服务端 WebSocket
+提供轮次检测、语音识别、推理、流式语音与打断事件；类型化 Frame、`TurnId`、
+取消、旧输出过滤、有界队列、路由和指标仍由 Voxa 管理。浏览器永远不能获得
+DashScope API Key 或 Agora App Certificate。
+
+确定性脚本图只用于 CI 模拟，不能替代需要凭据的真实链路。仓库中的 D10 设计记录
+定义了媒体格式、配置与打断契约。
+
 ## FFmpeg
 
 可选媒体层提供流式音频重采样，以及 RGBA8、I420 等 Video Scale 与颜色转换。

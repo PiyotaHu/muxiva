@@ -17,6 +17,23 @@ Live credentials are never committed. Production certification still requires
 retained per-platform live-room evidence, long-duration tests, reconnect and
 late-callback faults, and release-specific SDK compatibility.
 
+## Flagship voice profile: Agora + Qwen
+
+The planned live Voice Playground uses Agora Web SDK for browser microphone and
+playback transport. A Voxa Bot joins the same room through the Native adapter,
+receives per-user PCM, and sends generated PCM through a custom audio track.
+
+Alibaba Cloud Model Studio Qwen Audio Realtime is the first intelligence
+provider profile. One server-side WebSocket supplies turn detection,
+transcription, reasoning, streaming speech, and interruption events. Voxa still
+owns typed Frames, `TurnId`, cancellation, stale-output filtering, bounded
+queues, routing, and metrics. The browser never receives a DashScope API key or
+Agora App Certificate.
+
+The deterministic scripted graph is a CI simulation, not a substitute for this
+credentialed live path. See the D10 design record in the repository for the
+media, configuration, and interruption contracts.
+
 ## FFmpeg
 
 The optional media layer provides streaming audio resampling and video scale or
