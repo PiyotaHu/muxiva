@@ -20,7 +20,7 @@ const STARTER: &str = r#"{
   "nodes": [
     {"id":"source","node_type":"builtin.text_source","language":"rust","factory_version":"1.0.0","node_config":{"text":"hello"}},
     {"id":"upper","node_type":"builtin.uppercase","language":"rust","factory_version":"1.0.0","node_config":{}},
-    {"id":"sink","node_type":"builtin.text_sink","language":"rust","factory_version":"1.0.0","node_config":{}}
+    {"id":"sink","node_type":"builtin.stdout_text_sink","language":"rust","factory_version":"1.0.0","node_config":{}}
   ],
   "edges": [
     {"id":"source-upper","from":{"node_id":"source","port":"text_out"},"to":{"node_id":"upper","port":"text_in"},"frame_type":"text","queue_policy":{"capacity":32,"overflow":"block"}},
@@ -29,7 +29,11 @@ const STARTER: &str = r#"{
 }"#;
 
 #[derive(Parser)]
-#[command(name = "voxa", about = "Voxa local graph tooling")]
+#[command(
+    name = "voxa",
+    version,
+    about = "Build and run real-time multimodal agent graphs"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -37,6 +41,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Run the built-in text graph without requiring a project checkout.
+    Demo,
     Init {
         #[arg(default_value = "voxa.graph.json")]
         path: PathBuf,
@@ -68,7 +74,11 @@ enum Command {
 
 fn load(path: &Path, registry: &NodeRegistry) -> Result<voxa_core::GraphDefinition, String> {
     let data = fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let document = voxa_graph_json::parse(&data).map_err(render)?;
+    load_source(&data, registry)
+}
+
+fn load_source(data: &str, registry: &NodeRegistry) -> Result<voxa_core::GraphDefinition, String> {
+    let document = voxa_graph_json::parse(data).map_err(render)?;
     voxa_graph_json::compile_with_registry(&document, registry).map_err(render)
 }
 
@@ -90,7 +100,7 @@ fn init(path: &Path) -> Result<(), String> {
     }
     fs::write(path, STARTER).map_err(|error| error.to_string())?;
     println!(
-        "created {}; configure credentials outside Graph v1",
+        "[VOXA][INFO][graph.created] path={} credentials=external",
         path.display()
     );
     Ok(())
@@ -101,9 +111,7 @@ fn studio(graph: PathBuf, port: Option<u16>, host: IpAddr, no_open: bool) -> Res
     let graph = fs::canonicalize(&graph)
         .map_err(|error| format!("cannot resolve {}: {error}", graph.display()))?;
     if !host.is_loopback() {
-        eprintln!(
-            "WARNING: Studio is binding a non-loopback address; access token protections are required."
-        );
+        eprintln!("[VOXA][WARN][studio.non-loopback] access token protections are required");
     }
     let requested = port.unwrap_or(0);
     let listener = TcpListener::bind((host, requested))
@@ -111,11 +119,11 @@ fn studio(graph: PathBuf, port: Option<u16>, host: IpAddr, no_open: bool) -> Res
     let address = listener.local_addr().map_err(|error| error.to_string())?;
     let token = voxa_studio::random_token().map_err(|error| error.to_string())?;
     let url = format!("http://{address}/#{token}");
-    println!("Voxa Studio visual editor: {url}");
-    println!("Editing: {}", graph.display());
+    println!("[VOXA][INFO][studio.ready] url={url}");
+    println!("[VOXA][INFO][studio.graph] path={}", graph.display());
     if !no_open {
         if let Err(error) = open_browser(&url) {
-            eprintln!("WARNING: could not open the browser automatically: {error}");
+            eprintln!("[VOXA][WARN][studio.browser-open] {error}");
         }
     }
     voxa_studio::serve(listener, graph, token).map_err(|error| error.to_string())
@@ -126,6 +134,29 @@ fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(
     let shutdown_timeout = cli_timeout("shutdown-timeout-ms", shutdown_timeout_ms)?;
     let registry = voxa_graph_json::builtin_registry();
     let graph = load(graph_path, &registry)?;
+    run_graph(graph, &registry, timeout, shutdown_timeout, timeout_ms)
+}
+
+fn demo() -> Result<(), String> {
+    let registry = voxa_graph_json::builtin_registry();
+    let graph = load_source(STARTER, &registry)?;
+    println!("[VOXA][INFO][demo.started] name=text-uppercase");
+    run_graph(
+        graph,
+        &registry,
+        Duration::from_millis(DEFAULT_RUN_TIMEOUT_MS),
+        Duration::from_millis(DEFAULT_SHUTDOWN_TIMEOUT_MS),
+        DEFAULT_RUN_TIMEOUT_MS,
+    )
+}
+
+fn run_graph(
+    graph: voxa_core::GraphDefinition,
+    registry: &NodeRegistry,
+    timeout: Duration,
+    shutdown_timeout: Duration,
+    timeout_ms: u64,
+) -> Result<(), String> {
     let graph_id = graph.graph_id().as_str().to_owned();
     let node_total = graph.nodes().len();
     let edge_total = graph.edges().len();
@@ -135,7 +166,7 @@ fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(
     println!("[VOXA][INFO][runtime.started] mode=concurrent");
     let runtime = start_registered_runtime(
         graph,
-        &registry,
+        registry,
         EdgePolicies::new(),
         RuntimeOptions::default(),
     )
@@ -227,9 +258,10 @@ fn open_browser(url: &str) -> Result<(), String> {
 
 fn main() {
     let result = match Cli::parse().command {
+        Command::Demo => demo(),
         Command::Init { path } => init(&path),
         Command::Validate { graph } => {
-            validate(&graph).map(|_| println!("valid: {}", graph.display()))
+            validate(&graph).map(|_| println!("[VOXA][INFO][graph.valid] path={}", graph.display()))
         }
         Command::Run {
             graph,
@@ -244,7 +276,7 @@ fn main() {
         } => studio(graph, port, host, no_open),
     };
     if let Err(error) = result {
-        eprintln!("error: {error}");
+        eprintln!("[VOXA][ERROR][command.failed] {error}");
         std::process::exit(2);
     }
 }

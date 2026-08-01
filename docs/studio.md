@@ -7,7 +7,7 @@ runtime compiler—there is no separate browser-only graph format.
 ## Launch
 
 ```bash
-cargo run -p voxa-cli -- studio examples/graphs/text-uppercase.v1.json
+voxa studio examples/graphs/text-uppercase.v1.json
 ```
 
 The CLI validates the graph, binds an ephemeral loopback port, prints a
@@ -15,7 +15,7 @@ tokenized URL, and opens the default browser. Use `--no-open` when running over
 SSH or when you want to open the printed URL yourself:
 
 ```bash
-cargo run -p voxa-cli -- studio graph.json --port 4173 --no-open
+voxa studio graph.json --port 4173 --no-open
 ```
 
 ## Visual workflow
@@ -53,7 +53,8 @@ plane, and must not be exposed directly to the internet.
 The palette is generated from the trusted runtime Registry returned by
 `GET /api/v1/registry/nodes`. Node type, language, exact Factory version,
 ports, and configuration schema therefore match Graph compilation. The built-in
-Registry currently contains `builtin.text_source`, `builtin.uppercase`, and
-`builtin.text_sink` at version `1.0.0`. Studio runs that trusted Registry and
+Registry currently contains `builtin.text_source`, `builtin.uppercase`,
+`builtin.text_sink`, and the explicitly side-effecting development node
+`builtin.stdout_text_sink` at version `1.0.0`. Studio runs that trusted Registry and
 exposes authenticated local runtime metrics and Run/Stop control. General SDK
 plugin discovery and remote production control remain follow-up work.

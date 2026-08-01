@@ -2,7 +2,7 @@
 
 > 一个以 Rust 为核心的实时多模态 Agent Runtime，让 Rust、C++、Python 与 TypeScript 共享同一套图、生命周期和安全边界。
 
-[English](README.md) · [架构设计](docs/design/01-product-and-technical-contract.md) · [多语言 SDK](docs/sdk/README.md) · [Studio](docs/studio.md) · [Graph v1](docs/graph-v1-reference.md) · [测试体系](docs/testing/README.md)
+[English](README.md) · [安装](docs/installation.md) · [架构设计](docs/design/01-product-and-technical-contract.md) · [多语言 SDK](docs/sdk/README.md) · [Studio](docs/studio.md) · [Graph v1](docs/graph-v1-reference.md) · [测试体系](docs/testing/README.md)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -67,20 +67,33 @@ ASR、LLM、TTS、Transport 和 Codec 不属于 Runtime Core，它们应该作�
 - 可选：CPython 3.13 与 maturin，用于 Python Binding
 - 可选：Node.js 22 与 pnpm，用于 Node-API Binding
 
-### 构建并运行 Rust 示例
+### 一次安装 `voxa` CLI
 
 ```bash
-git clone https://github.com/PiyotaHu/Voxa.git
+git clone https://github.com/PiyotaHu/Voxa.git voxa
 cd voxa
-cargo build --workspace
-cargo run -p voxa-examples --bin text_graph
+cargo install --locked --path crates/voxa-cli
+voxa --version
 ```
 
-### 校验并运行 Graph
+首次二进制 Release 发布前，安装过程会从源码构建 CLI。完成这一次安装后，
+日常使用不再需要 `cargo run -p ...`，也不需要理解 Rust workspace。
+
+### 运行无需项目文件的内置 Demo
 
 ```bash
-cargo run -p voxa-cli -- validate examples/graphs/text-uppercase.v1.json
-cargo run -p voxa-cli -- run examples/graphs/text-uppercase.v1.json
+voxa demo
+```
+
+Demo 会打印 Graph DSL、类型化拓扑、Runtime 生命周期和真实的大写转换结果，
+所有产品输出都带有 `[VOXA]` 标识。
+
+### 创建、校验并运行 Graph
+
+```bash
+voxa init my-agent.voxa.json
+voxa validate my-agent.voxa.json
+voxa run my-agent.voxa.json
 ```
 
 `voxa validate` 是无副作用的，不会创建或启动 Node。`voxa run` 会使用内置
@@ -91,7 +104,7 @@ Registry 编译 Graph，实例化每个精确版本的 Factory，并通过并发
 ### 启动本地可视化 Studio
 
 ```bash
-cargo run -p voxa-cli -- studio examples/graphs/text-uppercase.v1.json
+voxa studio my-agent.voxa.json
 ```
 
 Studio 会打开内置的 Graph v1 可视化编辑器，提供 Node Palette、SVG 画布、Inspector、Edge 编辑、诊断、JSON 源码、Undo/Redo 和原子保存。它默认只监听 `127.0.0.1`，并生成本地访问 Token。监听非 loopback 地址时必须显式设置 `--host`，终端会输出安全警告。详见 [Studio 指南](docs/studio.md)。
@@ -165,6 +178,9 @@ voxa/
 ```
 
 ## 质量门禁
+
+下面的命令供修改 Voxa 仓库本身的贡献者使用，不是安装 `voxa` 二进制后的
+应用开发方式。
 
 执行统一的本地检查：
 

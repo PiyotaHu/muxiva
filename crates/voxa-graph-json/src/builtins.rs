@@ -18,6 +18,7 @@ pub const BUILTIN_FACTORY_VERSION: &str = "1.0.0";
 pub const TEXT_SOURCE: &str = "builtin.text_source";
 pub const UPPERCASE: &str = "builtin.uppercase";
 pub const TEXT_SINK: &str = "builtin.text_sink";
+pub const STDOUT_TEXT_SINK: &str = "builtin.stdout_text_sink";
 const TEXT_INPUT: &str = "text_in";
 const TEXT_OUTPUT: &str = "text_out";
 const MAX_TEXT_BYTES: usize = 256 * 1024;
@@ -57,6 +58,16 @@ pub fn registry() -> NodeRegistry {
             empty_schema(),
         ),
         Arc::new(TextSinkFactory),
+    );
+    register(
+        &mut registry,
+        descriptor(
+            STDOUT_TEXT_SINK,
+            NodeKind::Sink,
+            &[(TEXT_INPUT, PortDirection::Input)],
+            empty_schema(),
+        ),
+        Arc::new(StdoutTextSinkFactory),
     );
     registry
 }
@@ -277,6 +288,52 @@ impl Node for TextSink {
             )
         })?;
         input.ensure_type(FrameType::Text)
+    }
+}
+
+struct StdoutTextSinkFactory;
+
+impl NodeFactory for StdoutTextSinkFactory {
+    fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
+        validate_empty_config(config, "stdout text sink")
+    }
+
+    fn create(
+        &self,
+        _node_id: &NodeId,
+        _config: &ConfigMap,
+    ) -> Result<Box<dyn Node>, NodeFactoryError> {
+        Ok(Box::new(StdoutTextSink))
+    }
+}
+
+/// An explicitly side-effecting development sink used by CLI demos.
+struct StdoutTextSink;
+
+impl Node for StdoutTextSink {
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> voxa_types::Result<()> {
+        let input = input.ok_or_else(|| {
+            node_error(
+                "VOXA-BUILTIN-INPUT-MISSING",
+                "stdout text sink requires a text input",
+            )
+        })?;
+        let text = input.as_text().ok_or_else(|| {
+            node_error(
+                "VOXA-BUILTIN-INPUT-TYPE",
+                "stdout text sink requires a text frame",
+            )
+        })?;
+        println!(
+            "[VOXA][RESULT][{}] {}",
+            context.node_id(),
+            text.data().as_str()
+        );
+        Ok(())
     }
 }
 

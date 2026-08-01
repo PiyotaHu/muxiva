@@ -2,7 +2,7 @@
 
 > A Rust-native, real-time multimodal agent runtime with one graph and lifecycle contract across Rust, C++, Python, and TypeScript.
 
-[简体中文](README.zh-CN.md) · [Architecture](docs/design/01-product-and-technical-contract.md) · [Language SDKs](docs/sdk/README.md) · [Studio](docs/studio.md) · [Graph v1](docs/graph-v1-reference.md) · [Testing](docs/testing/README.md)
+[简体中文](README.zh-CN.md) · [Install](docs/installation.md) · [Architecture](docs/design/01-product-and-technical-contract.md) · [Language SDKs](docs/sdk/README.md) · [Studio](docs/studio.md) · [Graph v1](docs/graph-v1-reference.md) · [Testing](docs/testing/README.md)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -67,20 +67,34 @@ The runtime never treats ASR, LLM, TTS, transport, or codec behavior as Core res
 - Optional: CPython 3.13 with maturin for Python bindings
 - Optional: Node.js 22 and pnpm for Node-API bindings
 
-### Build and run the Rust example
+### Install the `voxa` CLI once
 
 ```bash
-git clone https://github.com/PiyotaHu/Voxa.git
+git clone https://github.com/PiyotaHu/Voxa.git voxa
 cd voxa
-cargo build --workspace
-cargo run -p voxa-examples --bin text_graph
+cargo install --locked --path crates/voxa-cli
+voxa --version
 ```
 
-### Validate and run a graph
+Until the first binary release, installation builds the CLI from the checkout.
+After that one-time step, normal usage never needs `cargo run -p ...` or
+knowledge of the Rust workspace.
+
+### Run a self-contained demo
 
 ```bash
-cargo run -p voxa-cli -- validate examples/graphs/text-uppercase.v1.json
-cargo run -p voxa-cli -- run examples/graphs/text-uppercase.v1.json
+voxa demo
+```
+
+The demo prints the Graph DSL, typed topology, runtime lifecycle, and the real
+uppercase result with `[VOXA]`-branded output.
+
+### Create, validate, and run a graph
+
+```bash
+voxa init my-agent.voxa.json
+voxa validate my-agent.voxa.json
+voxa run my-agent.voxa.json
 ```
 
 `voxa validate` is side-effect free: it never creates or starts a Node. `voxa run`
@@ -92,7 +106,7 @@ set bounded execution and cleanup waits.
 ### Start the local visual Studio
 
 ```bash
-cargo run -p voxa-cli -- studio examples/graphs/text-uppercase.v1.json
+voxa studio my-agent.voxa.json
 ```
 
 Studio opens a bundled visual Graph v1 editor with a Node palette, SVG canvas, Inspector, Edge editor, diagnostics, JSON source view, Undo/Redo, and atomic save. It listens on `127.0.0.1` by default and generates a local access token. Binding a non-loopback address requires an explicit `--host` and prints a security warning. See the [Studio guide](docs/studio.md).
@@ -166,6 +180,9 @@ voxa/
 ```
 
 ## Quality gates
+
+The commands below are for Voxa contributors working on the repository, not
+for application developers using the installed `voxa` binary.
 
 Run the consolidated local gate:
 

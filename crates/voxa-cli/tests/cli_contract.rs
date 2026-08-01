@@ -47,7 +47,7 @@ fn init_is_create_only_and_its_output_validates_with_the_same_cli() {
     assert!(validate.status.success());
     assert!(String::from_utf8(validate.stdout)
         .unwrap()
-        .contains("valid:"));
+        .contains("[VOXA][INFO][graph.valid]"));
 
     let original = fs::read(&graph).unwrap();
     let refused = voxa(&["init", graph.to_str().unwrap()], &directory.0);
@@ -95,7 +95,7 @@ fn run_executes_the_initialized_graph_through_the_concurrent_runtime() {
             "[VOXA][INFO][graph.loaded] id=text-uppercase nodes=3 edges=2\n",
             "[VOXA][GRAPH] human-readable DSL\n",
             "graph \"text-uppercase\" {\n",
-            "  node \"sink\" kind=sink type=\"builtin.text_sink\"\n",
+            "  node \"sink\" kind=sink type=\"builtin.stdout_text_sink\"\n",
             "    input text_in: text\n",
             "  node \"source\" kind=source type=\"builtin.text_source\"\n",
             "    output text_out: text\n",
@@ -107,9 +107,27 @@ fn run_executes_the_initialized_graph_through_the_concurrent_runtime() {
             "}\n",
             "topology: source -> upper -> sink\n",
             "[VOXA][INFO][runtime.started] mode=concurrent\n",
+            "[VOXA][RESULT][sink] HELLO\n",
             "[VOXA][INFO][runtime.completed] status=success workers=3\n",
         )
     );
+}
+
+#[test]
+fn installed_binary_has_a_self_contained_branded_demo_and_version() {
+    let directory = TestDirectory::new("demo");
+    let version = voxa(&["--version"], &directory.0);
+    assert!(version.status.success());
+    assert_eq!(String::from_utf8(version.stdout).unwrap(), "voxa 0.1.0\n");
+
+    let output = voxa(&["demo"], &directory.0);
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.starts_with("[VOXA][INFO][demo.started] name=text-uppercase\n"));
+    assert!(stdout.contains("graph \"text-uppercase\""));
+    assert!(stdout.contains("[VOXA][RESULT][sink] HELLO\n"));
+    assert!(stdout.ends_with("[VOXA][INFO][runtime.completed] status=success workers=3\n"));
 }
 
 #[test]
