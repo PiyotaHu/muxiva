@@ -37,7 +37,7 @@ Voxa 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部
 | Mock RTC Adapter | 可用 | 确定性故障和回调安全关闭；不含真实 RTC SDK |
 | Python/PyO3 包 | 实验性 | 独立线程和 asyncio loop；明确拒绝 `isolated_process` |
 | Node-API 包 | 实验性 | 独立 Worker；明确拒绝返回 Promise 的 Transform |
-| JSON Graph v1 与 CLI | 实验性 | 精确版本 Registry 编译、配置校验、初始化和本地 Studio；CLI 执行仍待完成 |
+| JSON Graph v1 与 CLI | 实验性 | 精确版本 Registry 编译、内置 Factory 并发执行、有界等待、初始化和本地 Studio |
 | 本地 Studio | 可用 | 内置可视化画布、Node/Edge 编辑、校验与原子保存 |
 | 真实 RTC、FFmpeg、模型 Provider | 规划中 | 当前不属于 Core，也不是构建依赖 |
 
@@ -75,14 +75,17 @@ cargo build --workspace
 cargo run -p voxa-examples --bin text_graph
 ```
 
-### 校验 Graph
+### 校验并运行 Graph
 
 ```bash
 cargo run -p voxa-cli -- validate examples/graphs/text-uppercase.v1.json
 cargo run -p voxa-cli -- run examples/graphs/text-uppercase.v1.json
 ```
 
-当前 `voxa run` 会校验图并报告内置 Runtime Factory 的能力边界，尚不能执行任意注册的 JSON Node。
+`voxa validate` 是无副作用的，不会创建或启动 Node。`voxa run` 会使用内置
+Registry 编译 Graph，实例化每个精确版本的 Factory，并通过并发 Runtime
+真正执行。默认执行期限为 30 秒；可用 `--timeout-ms` 和
+`--shutdown-timeout-ms` 设置有界的执行与清理等待时间。
 
 ### 启动本地可视化 Studio
 
@@ -189,7 +192,7 @@ voxa/
 近期优先级：
 
 1. 稳定 Rust、C++、Python 和 TypeScript 公开 SDK 契约。
-2. 将 Graph v1 选择的 Registry Node 实例化，并通过 CLI 接入通用 Runtime 执行。
+2. 将 Python、TypeScript 和 C++ Node Factory 注册到同一条 Graph v1 执行链路。
 3. 为可视化 Studio 增加实时 Runtime 指标和执行控制。
 4. 接入经过生产评审的 RTC Adapter 与媒体/Codec 能力。
 5. 实现版本化 Python 进程隔离与 TypeScript Promise 支持。

@@ -37,7 +37,7 @@ Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but
 | Mock RTC adapter | Available | Deterministic faults and callback-safe shutdown; no real RTC SDK |
 | Python/PyO3 package | Experimental | Dedicated thread and asyncio loop; `isolated_process` is rejected |
 | Node-API package | Experimental | Dedicated Worker; Promise-returning transforms are rejected |
-| JSON Graph v1 and CLI | Experimental | exact-version Registry compilation, config validation, initialization, and local Studio; CLI execution is pending |
+| JSON Graph v1 and CLI | Experimental | Exact-version Registry compilation, concurrent execution of compiled-in factories, bounded waits, initialization, and local Studio |
 | Local Studio | Available | Bundled visual canvas, Node/Edge editing, validation and atomic save |
 | Real RTC, FFmpeg, model providers | Planned | Not included in Core or the current build |
 
@@ -75,14 +75,18 @@ cargo build --workspace
 cargo run -p voxa-examples --bin text_graph
 ```
 
-### Validate a graph
+### Validate and run a graph
 
 ```bash
 cargo run -p voxa-cli -- validate examples/graphs/text-uppercase.v1.json
 cargo run -p voxa-cli -- run examples/graphs/text-uppercase.v1.json
 ```
 
-`voxa run` currently validates the graph and reports the compiled-in runtime-factory boundary. It does not yet execute arbitrary registered JSON nodes.
+`voxa validate` is side-effect free: it never creates or starts a Node. `voxa run`
+compiles the graph against the built-in Registry, materializes every exact
+Factory selection, and executes it through the concurrent Runtime. Runs have a
+30-second default deadline; use `--timeout-ms` and `--shutdown-timeout-ms` to
+set bounded execution and cleanup waits.
 
 ### Start the local visual Studio
 
@@ -189,7 +193,7 @@ The test framework covers deterministic graph faults, queue pressure, managed-st
 Near-term priorities:
 
 1. Stabilize public Rust, C++, Python, and TypeScript SDK contracts.
-2. Materialize Registry-selected Graph v1 Nodes and run them through the general Runtime from the CLI.
+2. Register Python, TypeScript, and C++ Node factories into the same Graph v1 execution path.
 3. Add live runtime metrics and execution controls to the visual Studio.
 4. Add a production-reviewed RTC adapter and media/codec integration.
 5. Implement versioned Python process isolation and TypeScript Promise support.

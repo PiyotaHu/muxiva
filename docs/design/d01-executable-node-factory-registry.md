@@ -42,8 +42,8 @@ D01 provides the executable registry contract, not the complete JSON runtime:
 
 - D02 now makes Graph v1 carry and validate exact Factory versions and uses
   the Registry as the only descriptor/config source.
-- D03 will materialize every graph Node and Edge policy and start the complete
-  runtime from `voxa run`.
+- D03 now materializes every graph Node and Edge policy and starts the complete
+  concurrent runtime from `voxa run`.
 - D04 will register Python, TypeScript, and C++ bridge factories through this
   same contract.
 

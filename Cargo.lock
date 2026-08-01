@@ -648,6 +648,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "serde_json",
+ "voxa-core",
  "voxa-graph-json",
  "voxa-studio",
 ]

@@ -79,6 +79,41 @@ fn validate_and_run_report_the_same_graph_diagnostic() {
 }
 
 #[test]
+fn run_executes_the_initialized_graph_through_the_concurrent_runtime() {
+    let directory = TestDirectory::new("run");
+    let graph = directory.0.join("starter.json");
+    assert!(voxa(&["init", graph.to_str().unwrap()], &directory.0)
+        .status
+        .success());
+
+    let output = voxa(&["run", graph.to_str().unwrap()], &directory.0);
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "completed graph `text-uppercase`: nodes=3 edges=2 workers=3\n"
+    );
+}
+
+#[test]
+fn run_rejects_unbounded_or_zero_wait_configuration_before_loading() {
+    let directory = TestDirectory::new("run-timeouts");
+
+    for (flag, value) in [
+        ("--timeout-ms", "0"),
+        ("--timeout-ms", "3600001"),
+        ("--shutdown-timeout-ms", "0"),
+        ("--shutdown-timeout-ms", "3600001"),
+    ] {
+        let output = voxa(&["run", "missing.json", flag, value], &directory.0);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("must be between 1 and 3600000 milliseconds"));
+    }
+}
+
+#[test]
 fn studio_reports_an_exact_requested_port_collision() {
     let directory = TestDirectory::new("port");
     let graph = directory.0.join("starter.json");

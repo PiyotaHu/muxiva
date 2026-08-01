@@ -33,9 +33,10 @@ The built-in source requires exactly one `text` field. The uppercase and sink
 Factories require empty configuration. Errors identify the Node and
 `node_config` JSON Pointer before runtime startup.
 
-## Deliberate follow-up
+## Implemented follow-up
 
-D02 compiles reproducible executable selections but does not change the CLI
-run command into a runtime supervisor. D03 will materialize all selected Node
-instances from `NodeDefinition::factory()`, attach Edge policies, execute the
-graph, and report its terminal outcome.
+D03 now materializes all selected Node instances from
+`NodeDefinition::factory()`, attaches Edge policies, executes the graph through
+the general concurrent Runtime, and reports its terminal outcome. D04 remains
+responsible for registering Python, TypeScript, and C++ bridge factories into
+this execution path.

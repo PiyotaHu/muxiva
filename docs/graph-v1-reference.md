@@ -77,3 +77,20 @@ are rejected instead of guessed.
 
 Run `voxa validate` before `voxa run` or saving from Studio. Diagnostics carry
 a stable code and JSON Pointer such as `/nodes/0/node_config`.
+
+## Validation and execution
+
+`voxa validate` parses and compiles against the Registry without allocating a
+Node or invoking a lifecycle callback. `voxa run` performs the same compilation,
+creates every exact Factory selection before startup, attaches the declared
+bounded Edge policies, and starts the graph through `ConcurrentRuntime`.
+
+The CLI currently installs the built-in Rust Registry. Embedders can call
+`start_registered_runtime` with their own trusted registrations. Foreign-language
+SDK factories are a separate integration milestone; Graph files never load code
+or fetch implementations by themselves.
+
+Execution and shutdown waits are bounded with `--timeout-ms` (default 30000)
+and `--shutdown-timeout-ms` (default 5000). A terminal abort reports its stable
+error code, category, stage, Node, and message. A timeout reports active Nodes,
+requests runtime stop, and performs only the configured bounded cleanup wait.

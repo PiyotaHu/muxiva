@@ -4,7 +4,15 @@ use std::{
     net::{IpAddr, TcpListener},
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
+    time::Duration,
 };
+use voxa_core::{
+    start_registered_runtime, EdgePolicies, NodeRegistry, RuntimeOptions, RuntimeWaitError,
+};
+
+const DEFAULT_RUN_TIMEOUT_MS: u64 = 30_000;
+const DEFAULT_SHUTDOWN_TIMEOUT_MS: u64 = 5_000;
+const MAX_CLI_TIMEOUT_MS: u64 = 60 * 60 * 1_000;
 
 const STARTER: &str = r#"{
   "version": "voxa.graph/v1",
@@ -38,6 +46,12 @@ enum Command {
     },
     Run {
         graph: PathBuf,
+        /// Maximum wall-clock time to wait for graph completion.
+        #[arg(long, default_value_t = DEFAULT_RUN_TIMEOUT_MS)]
+        timeout_ms: u64,
+        /// Bounded cleanup wait after a run timeout.
+        #[arg(long, default_value_t = DEFAULT_SHUTDOWN_TIMEOUT_MS)]
+        shutdown_timeout_ms: u64,
     },
     /// Launch the local visual Graph v1 editor.
     Studio {
@@ -52,12 +66,14 @@ enum Command {
     },
 }
 
-fn load(path: &Path) -> Result<(), String> {
+fn load(path: &Path, registry: &NodeRegistry) -> Result<voxa_core::GraphDefinition, String> {
     let data = fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let document = voxa_graph_json::parse(&data).map_err(render)?;
-    voxa_graph_json::compile(&document)
-        .map(|_| ())
-        .map_err(render)
+    voxa_graph_json::compile_with_registry(&document, registry).map_err(render)
+}
+
+fn validate(path: &Path) -> Result<(), String> {
+    load(path, &voxa_graph_json::builtin_registry()).map(|_| ())
 }
 
 fn render(errors: Vec<voxa_graph_json::GraphDiagnostic>) -> String {
@@ -81,7 +97,7 @@ fn init(path: &Path) -> Result<(), String> {
 }
 
 fn studio(graph: PathBuf, port: Option<u16>, host: IpAddr, no_open: bool) -> Result<(), String> {
-    load(&graph)?;
+    validate(&graph)?;
     let graph = fs::canonicalize(&graph)
         .map_err(|error| format!("cannot resolve {}: {error}", graph.display()))?;
     if !host.is_loopback() {
@@ -103,6 +119,78 @@ fn studio(graph: PathBuf, port: Option<u16>, host: IpAddr, no_open: bool) -> Res
         }
     }
     voxa_studio::serve(listener, graph, token).map_err(|error| error.to_string())
+}
+
+fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(), String> {
+    let timeout = cli_timeout("timeout-ms", timeout_ms)?;
+    let shutdown_timeout = cli_timeout("shutdown-timeout-ms", shutdown_timeout_ms)?;
+    let registry = voxa_graph_json::builtin_registry();
+    let graph = load(graph_path, &registry)?;
+    let graph_id = graph.graph_id().as_str().to_owned();
+    let node_total = graph.nodes().len();
+    let edge_total = graph.edges().len();
+    let runtime = start_registered_runtime(
+        graph,
+        &registry,
+        EdgePolicies::new(),
+        RuntimeOptions::default(),
+    )
+    .map_err(|error| format!("cannot start graph `{graph_id}`: {error}"))?;
+
+    match runtime.wait(timeout) {
+        Ok(summary) => {
+            println!(
+                "completed graph `{graph_id}`: nodes={node_total} edges={edge_total} workers={}",
+                summary.worker_total()
+            );
+            Ok(())
+        }
+        Err(RuntimeWaitError::Aborted(reason)) => Err(format!(
+            "graph `{graph_id}` aborted: code={} category={:?} stage={:?} node={} message={}",
+            reason.root().code(),
+            reason.category(),
+            reason.stage(),
+            reason
+                .node_id()
+                .map(|node_id| node_id.as_str())
+                .unwrap_or("<runtime>"),
+            reason.root().message()
+        )),
+        Err(RuntimeWaitError::Timeout(diagnostics)) => {
+            let active = diagnostics
+                .active_nodes()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            runtime.stop();
+            let cleanup = match runtime.wait(shutdown_timeout) {
+                Err(RuntimeWaitError::Timeout(remaining)) => format!(
+                    "cleanup timed out with active nodes [{}]",
+                    remaining
+                        .active_nodes()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(",")
+                ),
+                _ => "cleanup completed".to_owned(),
+            };
+            Err(format!(
+                "graph `{graph_id}` timed out after {timeout_ms} ms in state {:?} with active nodes [{active}]; {cleanup}",
+                diagnostics.state()
+            ))
+        }
+    }
+}
+
+fn cli_timeout(name: &str, milliseconds: u64) -> Result<Duration, String> {
+    if milliseconds == 0 || milliseconds > MAX_CLI_TIMEOUT_MS {
+        return Err(format!(
+            "--{name} must be between 1 and {MAX_CLI_TIMEOUT_MS} milliseconds"
+        ));
+    }
+    Ok(Duration::from_millis(milliseconds))
 }
 
 fn open_browser(url: &str) -> Result<(), String> {
@@ -136,13 +224,14 @@ fn open_browser(url: &str) -> Result<(), String> {
 fn main() {
     let result = match Cli::parse().command {
         Command::Init { path } => init(&path),
-        Command::Validate { graph } => load(&graph).map(|_| println!("valid: {}", graph.display())),
-        Command::Run { graph } => load(&graph).map(|_| {
-            println!(
-                "validated graph {}; runnable factories are intentionally limited to compiled-in builtins",
-                graph.display()
-            )
-        }),
+        Command::Validate { graph } => {
+            validate(&graph).map(|_| println!("valid: {}", graph.display()))
+        }
+        Command::Run {
+            graph,
+            timeout_ms,
+            shutdown_timeout_ms,
+        } => run(&graph, timeout_ms, shutdown_timeout_ms),
         Command::Studio {
             graph,
             port,

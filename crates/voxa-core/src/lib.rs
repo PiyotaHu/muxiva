@@ -16,6 +16,7 @@ pub mod managed_stream;
 pub mod node;
 pub mod queue;
 pub mod realtime;
+pub mod registered_runtime;
 pub mod registry;
 pub mod resource;
 pub mod runner;
@@ -70,6 +71,10 @@ pub use queue::{
 pub use realtime::{
     AudioDurationRange, AudioOverflowPolicy, DeliveryGuarantee, DeliveryOrdering, RealtimeContract,
     RealtimeInputProfile, RealtimeProfileError, RuntimeInputTuning,
+};
+pub use registered_runtime::{
+    materialize_registered_nodes, start_registered_runtime, GraphMaterializationError,
+    RegisteredRuntimeStartError,
 };
 pub use registry::{
     EdgePolicyRegistration, EdgePolicyRegistry, NodeCreateError, NodeCreationStage, NodeFactory,
