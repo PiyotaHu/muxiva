@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Voxa Studio</title>
   <link rel="stylesheet" href="/assets/studio.css">
+  <link rel="stylesheet" href="/assets/runtime.css">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -21,6 +22,8 @@
         <span class="divider"></span>
         <button id="raw-toggle" class="button ghost">{ } JSON</button>
         <button id="validate" class="button ghost"><span class="button-dot"></span> Validate</button>
+        <button id="run" class="button run-button">▶ Run</button>
+        <button id="stop" class="button stop-button" disabled>■ Stop</button>
         <button id="save" class="button primary">Save graph</button>
       </div>
     </header>
@@ -60,6 +63,20 @@
           <button id="fit-view" title="Fit graph">Fit</button>
         </div>
         <div class="canvas-hint">Drag nodes to arrange · Select a node to configure</div>
+        <section id="runtime-panel" class="runtime-panel idle" aria-live="polite">
+          <div class="runtime-header">
+            <div><span id="runtime-light" class="runtime-light"></span><div><span class="eyebrow">RUNTIME</span><b id="runtime-status">Idle</b></div></div>
+            <div class="runtime-clock"><span id="runtime-elapsed">—</span><small id="runtime-session">No session</small></div>
+          </div>
+          <div class="runtime-summary">
+            <div><span>NODE CALLS</span><b id="metric-node-calls">0</b></div>
+            <div><span>FRAMES</span><b id="metric-frames">0</b></div>
+            <div><span>QUEUED</span><b id="metric-queued">0</b></div>
+            <div><span>DROPS</span><b id="metric-drops">0</b></div>
+          </div>
+          <div id="runtime-edges" class="runtime-edges"><p>Run the graph to inspect live Edge metrics.</p></div>
+          <div id="runtime-terminal" class="runtime-terminal hidden"></div>
+        </section>
       </section>
 
       <aside class="sidebar inspector-panel">

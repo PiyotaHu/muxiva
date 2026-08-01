@@ -28,8 +28,9 @@ pub use admission::{AdmissionError, AdmissionLease, AdmissionSlots, AdmissionSna
 pub use audio_merge::{merge_audio_prefix, FrameIdSource, MergedAudioFrame};
 pub use cancellation::{Cancellation, StopToken};
 pub use concurrent::{
-    ConcurrentRunSummary, ConcurrentRuntime, ConcurrentRuntimeState, GraphRuntime, RuntimeOptions,
-    RuntimeStartError, RuntimeThreadRole, RuntimeWaitError, ShutdownDiagnostics,
+    ConcurrentRunSummary, ConcurrentRuntime, ConcurrentRuntimeState, GraphRuntime,
+    NodeMetricsSnapshot, RuntimeOptions, RuntimeStartError, RuntimeThreadRole, RuntimeWaitError,
+    ShutdownDiagnostics,
 };
 pub use edge::{
     EdgeDescriptor, EdgeMetrics, EdgeMetricsSnapshot, EdgePolicyName, EnabledCondition,

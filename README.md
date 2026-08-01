@@ -194,7 +194,7 @@ Near-term priorities:
 
 1. Stabilize public Rust, C++, Python, and TypeScript SDK contracts.
 2. Stabilize the new schema-driven multimodal Source, Transform, Sink, and named multi-output foreign Factory APIs.
-3. Add live runtime metrics and execution controls to the visual Studio.
+3. Stabilize Studio live runtime metrics and execution-control contracts.
 4. Add a production-reviewed RTC adapter and media/codec integration.
 5. Implement versioned Python process isolation and TypeScript Promise support.
 6. Publish packages, compatibility matrices, performance baselines, and release artifacts.

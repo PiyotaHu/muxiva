@@ -4,9 +4,12 @@ use std::{
     fmt, io,
     num::NonZeroUsize,
     panic::{catch_unwind, AssertUnwindSafe},
-    sync::{mpsc, Arc, Condvar, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc, Arc, Condvar, Mutex,
+    },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use voxa_types::{
@@ -101,6 +104,129 @@ pub enum ConcurrentRuntimeState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConcurrentRunSummary {
     worker_total: usize,
+}
+
+/// A lock-free counter snapshot for one Node's serialized lifecycle domain.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodeMetricsSnapshot {
+    node_id: NodeId,
+    prepare_total: u64,
+    process_total: u64,
+    signal_total: u64,
+    finish_total: u64,
+    abort_total: u64,
+    error_total: u64,
+    panic_total: u64,
+    callback_duration_ns: u64,
+    max_callback_duration_ns: u64,
+}
+
+impl NodeMetricsSnapshot {
+    pub fn node_id(&self) -> &NodeId {
+        &self.node_id
+    }
+    pub const fn prepare_total(&self) -> u64 {
+        self.prepare_total
+    }
+    pub const fn process_total(&self) -> u64 {
+        self.process_total
+    }
+    pub const fn signal_total(&self) -> u64 {
+        self.signal_total
+    }
+    pub const fn finish_total(&self) -> u64 {
+        self.finish_total
+    }
+    pub const fn abort_total(&self) -> u64 {
+        self.abort_total
+    }
+    pub const fn error_total(&self) -> u64 {
+        self.error_total
+    }
+    pub const fn panic_total(&self) -> u64 {
+        self.panic_total
+    }
+    pub const fn callback_duration_ns(&self) -> u64 {
+        self.callback_duration_ns
+    }
+    pub const fn max_callback_duration_ns(&self) -> u64 {
+        self.max_callback_duration_ns
+    }
+}
+
+struct NodeMetrics {
+    node_id: NodeId,
+    prepare_total: AtomicU64,
+    process_total: AtomicU64,
+    signal_total: AtomicU64,
+    finish_total: AtomicU64,
+    abort_total: AtomicU64,
+    error_total: AtomicU64,
+    panic_total: AtomicU64,
+    callback_duration_ns: AtomicU64,
+    max_callback_duration_ns: AtomicU64,
+}
+
+enum NodeCallbackKind {
+    Prepare,
+    Process,
+    Signal,
+    Finish,
+    Abort,
+}
+
+impl NodeMetrics {
+    fn new(node_id: NodeId) -> Self {
+        Self {
+            node_id,
+            prepare_total: AtomicU64::new(0),
+            process_total: AtomicU64::new(0),
+            signal_total: AtomicU64::new(0),
+            finish_total: AtomicU64::new(0),
+            abort_total: AtomicU64::new(0),
+            error_total: AtomicU64::new(0),
+            panic_total: AtomicU64::new(0),
+            callback_duration_ns: AtomicU64::new(0),
+            max_callback_duration_ns: AtomicU64::new(0),
+        }
+    }
+
+    fn record(&self, kind: NodeCallbackKind, elapsed: Duration, failed: bool, panicked: bool) {
+        let counter = match kind {
+            NodeCallbackKind::Prepare => &self.prepare_total,
+            NodeCallbackKind::Process => &self.process_total,
+            NodeCallbackKind::Signal => &self.signal_total,
+            NodeCallbackKind::Finish => &self.finish_total,
+            NodeCallbackKind::Abort => &self.abort_total,
+        };
+        counter.fetch_add(1, Ordering::Relaxed);
+        if failed {
+            self.error_total.fetch_add(1, Ordering::Relaxed);
+        }
+        if panicked {
+            self.panic_total.fetch_add(1, Ordering::Relaxed);
+        }
+        let nanos = u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX);
+        self.callback_duration_ns
+            .fetch_add(nanos, Ordering::Relaxed);
+        self.max_callback_duration_ns
+            .fetch_max(nanos, Ordering::Relaxed);
+    }
+
+    fn snapshot(&self) -> NodeMetricsSnapshot {
+        NodeMetricsSnapshot {
+            node_id: self.node_id.clone(),
+            prepare_total: self.prepare_total.load(Ordering::Relaxed),
+            process_total: self.process_total.load(Ordering::Relaxed),
+            signal_total: self.signal_total.load(Ordering::Relaxed),
+            finish_total: self.finish_total.load(Ordering::Relaxed),
+            abort_total: self.abort_total.load(Ordering::Relaxed),
+            error_total: self.error_total.load(Ordering::Relaxed),
+            panic_total: self.panic_total.load(Ordering::Relaxed),
+            callback_duration_ns: self.callback_duration_ns.load(Ordering::Relaxed),
+            max_callback_duration_ns: self.max_callback_duration_ns.load(Ordering::Relaxed),
+        }
+    }
 }
 
 impl ConcurrentRunSummary {
@@ -299,6 +425,16 @@ impl ConcurrentRuntime {
         let all_queues = Arc::new(queues);
         let all_signal_queues = Arc::new(signal_queues);
         let worker_total = self.graph.nodes().len();
+        let node_metrics = Arc::new(
+            self.graph
+                .nodes()
+                .iter()
+                .map(|node| {
+                    let node_id = node.descriptor().node_id().clone();
+                    (node_id.clone(), NodeMetrics::new(node_id))
+                })
+                .collect::<BTreeMap<_, _>>(),
+        );
         let gate = Arc::new(PrepareGate::new(worker_total));
         let shared = Arc::new(WorkerShared {
             graph: self.graph.clone(),
@@ -313,6 +449,7 @@ impl ConcurrentRuntime {
             event_bus: self.event_bus.clone(),
             resources: self.resources.clone(),
             transport: self.transport.clone(),
+            node_metrics: node_metrics.clone(),
         });
 
         let mut incoming = BTreeMap::<NodeId, Vec<InputEdge>>::new();
@@ -464,6 +601,7 @@ impl ConcurrentRuntime {
             event_bus: self.event_bus,
             resources: self.resources,
             transport: self.transport,
+            node_metrics,
         })
     }
 }
@@ -480,6 +618,7 @@ pub struct GraphRuntime {
     event_bus: EventBus,
     resources: ResourceStore,
     transport: TransportControl,
+    node_metrics: Arc<BTreeMap<NodeId, NodeMetrics>>,
 }
 
 impl GraphRuntime {
@@ -504,6 +643,10 @@ impl GraphRuntime {
 
     pub fn edge_metrics(&self, edge_id: &EdgeId) -> Option<EdgeMetricsSnapshot> {
         self.queues.get(edge_id).map(crate::EdgeQueue::snapshot)
+    }
+
+    pub fn node_metrics(&self, node_id: &NodeId) -> Option<NodeMetricsSnapshot> {
+        self.node_metrics.get(node_id).map(NodeMetrics::snapshot)
     }
 
     pub fn signal_metrics(&self, edge_id: &EdgeId) -> Option<SignalQueueSnapshot> {
@@ -772,6 +915,7 @@ struct WorkerShared {
     event_bus: EventBus,
     resources: ResourceStore,
     transport: TransportControl,
+    node_metrics: Arc<BTreeMap<NodeId, NodeMetrics>>,
 }
 
 struct InputEdge {
@@ -837,6 +981,10 @@ impl NodeWorker {
             &self.node_id,
             &self.shared.graph,
             self.shared.options.emission_budget(),
+            self.shared
+                .node_metrics
+                .get(&self.node_id)
+                .expect("node metrics"),
         ) {
             Ok(()) => true,
             Err(reason) => {
@@ -886,6 +1034,10 @@ impl NodeWorker {
             &self.shared.graph,
             self.shared.options.emission_budget(),
             !self.outgoing.is_empty(),
+            self.shared
+                .node_metrics
+                .get(&self.node_id)
+                .expect("node metrics"),
         )?;
         self.route(output)
     }
@@ -913,6 +1065,10 @@ impl NodeWorker {
                     &self.shared.graph,
                     self.shared.options.emission_budget(),
                     !self.outgoing.is_empty(),
+                    self.shared
+                        .node_metrics
+                        .get(&self.node_id)
+                        .expect("node metrics"),
                 )?;
                 self.route(output)?;
                 continue;
@@ -959,6 +1115,10 @@ impl NodeWorker {
                     &self.shared.graph,
                     self.shared.options.emission_budget(),
                     !self.outgoing.is_empty(),
+                    self.shared
+                        .node_metrics
+                        .get(&self.node_id)
+                        .expect("node metrics"),
                 )?;
                 self.route(output)?;
                 continue;
@@ -1177,6 +1337,7 @@ fn coordinate(
                     node_id,
                     &shared.graph,
                     shared.options.emission_budget(),
+                    shared.node_metrics.get(node_id).expect("node metrics"),
                 ) {
                     shared.control.lifecycle_exit(node_id);
                     fail_graph(&shared, error);
@@ -1212,9 +1373,19 @@ fn coordinate(
         );
         if let Some(node) = nodes.get_mut(node_id) {
             shared.control.lifecycle_enter(node_id.clone());
-            if let Err(payload) =
-                catch_unwind(AssertUnwindSafe(|| node.on_abort(&reason, &mut context)))
-            {
+            let started = Instant::now();
+            let outcome = catch_unwind(AssertUnwindSafe(|| node.on_abort(&reason, &mut context)));
+            shared
+                .node_metrics
+                .get(node_id)
+                .expect("node metrics")
+                .record(
+                    NodeCallbackKind::Abort,
+                    started.elapsed(),
+                    outcome.is_err(),
+                    outcome.is_err(),
+                );
+            if let Err(payload) = outcome {
                 diagnostics.lock().unwrap_or_else(|e| e.into_inner()).push(
                     AbortHookDiagnostic::new(node_id.clone(), panic_message(payload.as_ref())),
                 );
@@ -1235,12 +1406,21 @@ fn call_prepare(
     node_id: &NodeId,
     graph: &GraphDefinition,
     emission_budget: usize,
+    metrics: &NodeMetrics,
 ) -> Result<(), AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
     let mut context =
         NodeContext::with_emission_limit(node_id.clone(), config, None, emission_budget);
+    let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_prepare(&mut context)));
-    if context.emission_overflowed() {
+    let overflowed = context.emission_overflowed();
+    metrics.record(
+        NodeCallbackKind::Prepare,
+        started.elapsed(),
+        overflowed || !matches!(&outcome, Ok(Ok(()))),
+        outcome.is_err(),
+    );
+    if overflowed {
         return Err(emission_limit_abort(node_id, emission_budget));
     }
     match outcome {
@@ -1255,6 +1435,7 @@ fn call_prepare(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn call_process(
     node: &mut dyn Node,
     node_id: &NodeId,
@@ -1263,6 +1444,7 @@ fn call_process(
     graph: &GraphDefinition,
     emission_budget: usize,
     has_signal_routes: bool,
+    metrics: &NodeMetrics,
 ) -> Result<NodeCallOutput, AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
     let mut context = NodeContext::with_routing_limits(
@@ -1272,8 +1454,16 @@ fn call_process(
         emission_budget,
         has_signal_routes,
     );
+    let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_process(input, &mut context)));
-    if context.emission_overflowed() {
+    let overflowed = context.emission_overflowed();
+    metrics.record(
+        NodeCallbackKind::Process,
+        started.elapsed(),
+        overflowed || !matches!(&outcome, Ok(Ok(()))),
+        outcome.is_err(),
+    );
+    if overflowed {
         return Err(emission_limit_abort(node_id, emission_budget));
     }
     match outcome {
@@ -1291,6 +1481,7 @@ fn call_process(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn call_signal(
     node: &mut dyn Node,
     node_id: &NodeId,
@@ -1299,6 +1490,7 @@ fn call_signal(
     graph: &GraphDefinition,
     emission_budget: usize,
     has_signal_routes: bool,
+    metrics: &NodeMetrics,
 ) -> Result<NodeCallOutput, AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
     let mut context = NodeContext::with_routing_limits(
@@ -1308,8 +1500,16 @@ fn call_signal(
         emission_budget,
         has_signal_routes,
     );
+    let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_signal(signal, &mut context)));
-    if context.emission_overflowed() {
+    let overflowed = context.emission_overflowed();
+    metrics.record(
+        NodeCallbackKind::Signal,
+        started.elapsed(),
+        overflowed || !matches!(&outcome, Ok(Ok(()))),
+        outcome.is_err(),
+    );
+    if overflowed {
         return Err(emission_limit_abort(node_id, emission_budget));
     }
     match outcome {
@@ -1332,12 +1532,21 @@ fn call_finish(
     node_id: &NodeId,
     graph: &GraphDefinition,
     emission_budget: usize,
+    metrics: &NodeMetrics,
 ) -> Result<(), AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
     let mut context =
         NodeContext::with_emission_limit(node_id.clone(), config, None, emission_budget);
+    let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_finish(&mut context)));
-    if context.emission_overflowed() {
+    let overflowed = context.emission_overflowed();
+    metrics.record(
+        NodeCallbackKind::Finish,
+        started.elapsed(),
+        overflowed || !matches!(&outcome, Ok(Ok(()))),
+        outcome.is_err(),
+    );
+    if overflowed {
         return Err(emission_limit_abort(node_id, emission_budget));
     }
     match outcome {

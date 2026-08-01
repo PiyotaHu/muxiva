@@ -27,6 +27,11 @@ cargo run -p voxa-cli -- studio graph.json --port 4173 --no-open
 - Use Undo/Redo or edit the complete Graph v1 source in the JSON drawer.
 - Validate at any time; diagnostics point back to the affected Node.
 - Save writes formatted Graph v1 JSON atomically to the file passed to the CLI.
+- Run starts the current canvas as an isolated local runtime snapshot; saving is
+  not required first.
+- Stop requests the Runtime's idempotent bounded shutdown path.
+- The runtime panel shows Node callback counts/duration, active/error Nodes,
+  Edge queue pressure, throughput, drops, and the retained terminal outcome.
 
 Canvas positions are presentation state and are intentionally not written into
 Graph v1. Reopening Studio derives a deterministic layout from the graph.
@@ -49,5 +54,6 @@ The palette is generated from the trusted runtime Registry returned by
 `GET /api/v1/registry/nodes`. Node type, language, exact Factory version,
 ports, and configuration schema therefore match Graph compilation. The built-in
 Registry currently contains `builtin.text_source`, `builtin.uppercase`, and
-`builtin.text_sink` at version `1.0.0`. General SDK plugin discovery and live
-runtime metrics remain follow-up work.
+`builtin.text_sink` at version `1.0.0`. Studio runs that trusted Registry and
+exposes authenticated local runtime metrics and Run/Stop control. General SDK
+plugin discovery and remote production control remain follow-up work.

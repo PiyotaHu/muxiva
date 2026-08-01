@@ -6,4 +6,6 @@ rust-version.workspace = true
 publish.workspace = true
 [dependencies]
 serde_json.workspace = true
+voxa-core = { path = "../voxa-core" }
 voxa-graph-json = { path = "../voxa-graph-json" }
+voxa-types.workspace = true

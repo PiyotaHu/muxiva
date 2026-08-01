@@ -5,6 +5,7 @@ const catalog = new Map()
 const state = {
   token: '', graph: null, selected: null, positions: {}, diagnostics: [],
   history: [], future: [], dirty: false, zoom: 1, validating: null,
+  runtime: { status: 'idle', nodes: [], edges: [] }, runtimeTimer: null,
 }
 
 const $ = (selector) => document.querySelector(selector)
@@ -42,10 +43,11 @@ async function loadStudio() {
   state.token = bootToken()
   if (!state.token) return fatal('The access token is missing from this Studio URL.')
   try {
-    const [graph, metadata, registrations] = await Promise.all([
-      api('/api/v1/graph'), api('/api/v1/studio'), api('/api/v1/registry/nodes'),
+    const [graph, metadata, registrations, runtime] = await Promise.all([
+      api('/api/v1/graph'), api('/api/v1/studio'), api('/api/v1/registry/nodes'), api('/api/v1/runtime'),
     ])
     state.graph = typeof graph === 'string' ? JSON.parse(graph) : graph
+    state.runtime = runtime
     installCatalog(registrations)
     renderPalette()
     $('#graph-path').textContent = metadata.graph_path
@@ -54,6 +56,7 @@ async function loadStudio() {
     bindEvents()
     renderAll()
     await validateGraph(false)
+    scheduleRuntimePoll()
   } catch (error) {
     fatal(error.status === 401 ? 'The Studio access token is invalid or expired.' : error.message)
   }
@@ -61,12 +64,15 @@ async function loadStudio() {
 
 function factoryKey(value) { return JSON.stringify([value.node_type, value.language, value.factory_version]) }
 function nodeInfo(node) {
-  return catalog.get(factoryKey(node)) || { kind: 'transform', label: node.node_type, inputs: [], outputs: [], config_schema: {} }
+  return catalog.get(factoryKey(node)) || {
+    kind: 'transform', label: node.node_type, language: node.language || 'unknown',
+    inputs: [], outputs: [], frameTypes: [], config_schema: {},
+  }
 }
 function installCatalog(registrations) {
   if (!Array.isArray(registrations) || !registrations.length) throw new Error('The runtime Node Registry is empty.')
   for (const entry of registrations) {
-    const info = { ...entry, inputs: [], outputs: [] }
+    const info = { ...entry, inputs: [], outputs: [], frameTypes: [...new Set((entry.ports || []).map((port) => port.frame_type))] }
     for (const port of entry.ports || []) (port.direction === 'input' ? info.inputs : info.outputs).push(port.name)
     info.label = entry.node_type.split('.').pop().split('_').map((part) => part[0].toUpperCase() + part.slice(1)).join(' ')
     catalog.set(factoryKey(entry), info)
@@ -108,6 +114,8 @@ function bindEvents() {
   $('#edge-from-node').addEventListener('change', refreshEdgePorts)
   $('#edge-to-node').addEventListener('change', refreshEdgePorts)
   $('#validate').addEventListener('click', () => validateGraph(true))
+  $('#run').addEventListener('click', startRuntime)
+  $('#stop').addEventListener('click', stopRuntime)
   $('#save').addEventListener('click', saveGraph)
   $('#undo').addEventListener('click', undo)
   $('#redo').addEventListener('click', redo)
@@ -270,7 +278,7 @@ function renderAll() {
   $('#raw-json').value = JSON.stringify(state.graph, null, 2)
   $('#undo').disabled = !state.history.length
   $('#redo').disabled = !state.future.length
-  renderCanvas(); renderEdgesList(); renderInspector()
+  renderCanvas(); renderEdgesList(); renderInspector(); renderRuntime()
 }
 
 function renderCanvas() {
@@ -289,20 +297,26 @@ function renderEdgeLayer(edgeLayer = $('#edge-layer')) {
     if (!from || !to) continue
     const x1 = from.x + 220, y1 = from.y + 68, x2 = to.x, y2 = to.y + 68
     const bend = Math.max(80, Math.abs(x2 - x1) * .48)
-    edgeLayer.append(svg('path', { d: `M${x1},${y1} C${x1 + bend},${y1} ${x2 - bend},${y2} ${x2},${y2}`, class: 'graph-edge', 'data-edge': edge.id }))
+    const metrics = (state.runtime.edges || []).find((value) => value.edge_id === edge.id)
+    const runtimeClass = metrics?.drop_total ? ' runtime-drop' : metrics?.enqueue_total ? ' runtime-flow' : ''
+    edgeLayer.append(svg('path', { d: `M${x1},${y1} C${x1 + bend},${y1} ${x2 - bend},${y2} ${x2},${y2}`, class: `graph-edge${runtimeClass}`, 'data-edge': edge.id }))
   }
 }
 
 function renderNode(node) {
   const info = nodeInfo(node)
   const position = state.positions[node.id] || { x: 100, y: 100 }
-  const group = svg('g', { class: `node-group${node.id === state.selected ? ' selected' : ''}`, transform: `translate(${position.x} ${position.y})`, 'data-node': node.id, tabindex: '0' })
+  const metrics = (state.runtime.nodes || []).find((value) => value.node_id === node.id)
+  const active = (state.runtime.active_nodes || []).includes(node.id) ? ' runtime-active' : ''
+  const failed = metrics?.error_total ? ' runtime-error' : ''
+  const group = svg('g', { class: `node-group${node.id === state.selected ? ' selected' : ''}${active}${failed}`, transform: `translate(${position.x} ${position.y})`, 'data-node': node.id, tabindex: '0' })
   group.append(svg('rect', { class: 'node-card', width: 220, height: 108, rx: 11 }))
   group.append(svg('rect', { class: `node-accent ${info.kind}`, width: 4, height: 78, x: 0, y: 15, rx: 2 }))
   addText(group, 19, 27, info.kind.toUpperCase(), 'node-kind-label')
   addText(group, 19, 51, node.id, 'node-title')
   addText(group, 19, 72, node.node_type, 'node-type-label')
-  addText(group, 19, 94, 'rust · text', 'node-type-label')
+  addText(group, 19, 94, `${info.language} · ${info.frameTypes.join('/') || 'control'}`, 'node-type-label')
+  if (metrics) { const runtime = addText(group, 211, 94, `${metrics.process_total} calls · ${formatNanos(metrics.max_callback_duration_ns)} max`, 'node-runtime-label'); runtime.setAttribute('text-anchor', 'end') }
   info.inputs.forEach((name, index) => { group.append(svg('circle', { cx: 0, cy: 68 + index * 18, r: 5, class: 'port-dot input' })); addText(group, 9, 72 + index * 18, name, 'port-label') })
   info.outputs.forEach((name, index) => { group.append(svg('circle', { cx: 220, cy: 68 + index * 18, r: 5, class: 'port-dot output' })); const text = addText(group, 211, 72 + index * 18, name, 'port-label'); text.setAttribute('text-anchor', 'end') })
   group.addEventListener('click', (event) => { event.stopPropagation(); selectNode(node.id) })
@@ -384,6 +398,84 @@ function renderDiagnostics() {
     item.addEventListener('click', () => { const match = diagnostic.pointer?.match(/^\/nodes\/(\d+)/); if (match) selectNode(state.graph.nodes[Number(match[1])]?.id || null) })
     return item
   }))
+}
+
+function runtimeIsActive() { return ['starting', 'running', 'stopping', 'finishing'].includes(state.runtime.status) }
+function scheduleRuntimePoll() {
+  clearTimeout(state.runtimeTimer)
+  state.runtimeTimer = setTimeout(refreshRuntime, runtimeIsActive() ? 350 : 1500)
+}
+async function refreshRuntime() {
+  try {
+    state.runtime = await api('/api/v1/runtime')
+    renderRuntime(); renderCanvas()
+  } catch (error) {
+    toast(`Runtime metrics unavailable: ${error.message}`, true)
+  }
+  scheduleRuntimePoll()
+}
+async function startRuntime() {
+  if (runtimeIsActive()) return
+  if (!await validateGraph(false)) return toast('Fix validation errors before running', true)
+  state.runtime = { status: 'starting', nodes: [], edges: [], active_nodes: [] }
+  renderRuntime()
+  try {
+    state.runtime = await api('/api/v1/runtime/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state.graph) })
+    toast('Graph runtime started')
+    renderRuntime(); renderCanvas(); scheduleRuntimePoll()
+  } catch (error) {
+    state.runtime = { status: 'idle', nodes: [], edges: [] }
+    toast(error.status === 409 ? 'A graph run is already active' : error.message, true)
+    renderRuntime()
+  }
+}
+async function stopRuntime() {
+  if (!runtimeIsActive()) return
+  $('#stop').disabled = true
+  try {
+    state.runtime = await api('/api/v1/runtime/stop', { method: 'POST' })
+    toast(state.runtime.accepted ? 'Stop requested' : 'Runtime is already stopping')
+    renderRuntime(); renderCanvas(); scheduleRuntimePoll()
+  } catch (error) { toast(error.message, true); renderRuntime() }
+}
+function renderRuntime() {
+  const runtime = state.runtime || { status: 'idle', nodes: [], edges: [] }
+  const panel = $('#runtime-panel')
+  panel.className = `runtime-panel ${runtime.status || 'idle'}`
+  $('#runtime-status').textContent = runtime.status || 'idle'
+  $('#runtime-elapsed').textContent = runtime.elapsed_ms === undefined ? '—' : formatDuration(runtime.elapsed_ms)
+  $('#runtime-session').textContent = runtime.session_id == null ? 'No session' : `Session #${runtime.session_id} · ${runtime.runtime_state || runtime.status}`
+  const nodes = runtime.nodes || [], edges = runtime.edges || []
+  $('#metric-node-calls').textContent = nodes.reduce((total, node) => total + node.prepare_total + node.process_total + node.signal_total + node.finish_total + node.abort_total, 0)
+  $('#metric-frames').textContent = edges.reduce((total, edge) => total + edge.enqueue_total, 0)
+  $('#metric-queued').textContent = edges.reduce((total, edge) => total + edge.queue_len, 0)
+  $('#metric-drops').textContent = edges.reduce((total, edge) => total + edge.drop_total, 0)
+  $('#run').disabled = runtimeIsActive()
+  $('#stop').disabled = !runtimeIsActive() || runtime.status === 'stopping'
+  const edgeRows = edges.map((edge) => {
+    const row = document.createElement('div'); row.className = 'runtime-edge'
+    const label = document.createElement('b'); label.textContent = edge.edge_id
+    const meter = document.createElement('span'); meter.className = 'runtime-edge-meter'
+    const fill = document.createElement('i'); fill.style.width = `${Math.min(100, edge.queue_capacity ? edge.high_watermark / edge.queue_capacity * 100 : 0)}%`; meter.append(fill)
+    const detail = document.createElement('small'); detail.textContent = `${edge.dequeue_total} out · ${edge.drop_total} drop`
+    row.append(label, meter, detail); return row
+  })
+  if (edgeRows.length) $('#runtime-edges').replaceChildren(...edgeRows)
+  else { const empty = document.createElement('p'); empty.textContent = runtime.status === 'idle' ? 'Run the graph to inspect live Edge metrics.' : 'This graph has no Edges.'; $('#runtime-edges').replaceChildren(empty) }
+  const terminal = $('#runtime-terminal')
+  if (runtime.terminal?.kind && runtime.terminal.kind !== 'success' && runtime.terminal.message) {
+    terminal.textContent = `${runtime.terminal.code || 'VOXA-RUNTIME'} · ${runtime.terminal.message}`
+    terminal.classList.remove('hidden')
+  } else terminal.classList.add('hidden')
+}
+function formatDuration(milliseconds) {
+  if (milliseconds < 1000) return `${milliseconds} ms`
+  return `${(milliseconds / 1000).toFixed(milliseconds < 10000 ? 1 : 0)} s`
+}
+function formatNanos(nanos) {
+  if (nanos < 1000) return `${nanos}ns`
+  if (nanos < 1000000) return `${(nanos / 1000).toFixed(1)}µs`
+  return `${(nanos / 1000000).toFixed(1)}ms`
 }
 
 async function saveGraph() {

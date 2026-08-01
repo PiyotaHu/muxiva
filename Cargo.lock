@@ -722,7 +722,9 @@ name = "voxa-studio"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "voxa-core",
  "voxa-graph-json",
+ "voxa-types",
 ]
 
 [[package]]

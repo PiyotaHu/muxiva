@@ -5,17 +5,41 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-    time::Duration,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
+    time::{Duration, Instant},
 };
 
+use voxa_core::{
+    start_registered_runtime, EdgePolicies, GraphRuntime, RuntimeOptions, RuntimeWaitError,
+};
 use voxa_graph_json::{GraphDiagnostic, GraphDocument, MAX_DOCUMENT_BYTES};
+use voxa_types::{EdgeId, NodeId};
 
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const INDEX: &str = include_str!("assets/index.html");
 const STYLES: &str = include_str!("assets/studio.css");
+const RUNTIME_STYLES: &str = include_str!("assets/runtime.css");
 const SCRIPT: &str = include_str!("assets/studio.js");
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
+
+struct RuntimeSession {
+    id: u64,
+    graph_id: String,
+    node_ids: Vec<NodeId>,
+    edge_ids: Vec<EdgeId>,
+    runtime: GraphRuntime,
+    started: Instant,
+    stop_requested: bool,
+}
+
+#[derive(Default)]
+struct StudioRuntime {
+    next_session: AtomicU64,
+    session: Mutex<Option<RuntimeSession>>,
+}
 
 pub fn random_token() -> std::io::Result<String> {
     let mut bytes = [0_u8; 32];
@@ -24,9 +48,10 @@ pub fn random_token() -> std::io::Result<String> {
 }
 
 pub fn serve(listener: TcpListener, graph: PathBuf, token: String) -> std::io::Result<()> {
+    let runtime = StudioRuntime::default();
     for stream in listener.incoming() {
         let stream = stream?;
-        if let Err(error) = handle_connection(stream, &graph, &token) {
+        if let Err(error) = handle_connection(stream, &graph, &token, &runtime) {
             eprintln!("Studio connection error: {error}");
         }
     }
@@ -154,7 +179,12 @@ fn read_request(stream: &mut TcpStream) -> Result<HttpRequest, RequestError> {
     })
 }
 
-fn handle_connection(mut stream: TcpStream, graph: &Path, token: &str) -> std::io::Result<()> {
+fn handle_connection(
+    mut stream: TcpStream,
+    graph: &Path,
+    token: &str,
+    runtime: &StudioRuntime,
+) -> std::io::Result<()> {
     let request = match read_request(&mut stream) {
         Ok(request) => request,
         Err(error) => {
@@ -162,7 +192,7 @@ fn handle_connection(mut stream: TcpStream, graph: &Path, token: &str) -> std::i
         }
     };
     let authorized = request.authorization.as_deref() == Some(&format!("Bearer {token}"));
-    let (status, content_type, payload) = route(&request, graph, authorized);
+    let (status, content_type, payload) = route(&request, graph, authorized, runtime);
     write_response(&mut stream, status, content_type, &payload)
 }
 
@@ -170,10 +200,16 @@ fn route(
     request: &HttpRequest,
     graph: &Path,
     authorized: bool,
+    runtime: &StudioRuntime,
 ) -> (&'static str, &'static str, String) {
     match (request.method.as_str(), request.path.as_str()) {
         ("GET", "/") => ("200 OK", "text/html; charset=utf-8", INDEX.to_owned()),
         ("GET", "/assets/studio.css") => ("200 OK", "text/css; charset=utf-8", STYLES.to_owned()),
+        ("GET", "/assets/runtime.css") => (
+            "200 OK",
+            "text/css; charset=utf-8",
+            RUNTIME_STYLES.to_owned(),
+        ),
         ("GET", "/assets/studio.js") => (
             "200 OK",
             "text/javascript; charset=utf-8",
@@ -215,6 +251,9 @@ fn route(
             Ok(_) => ("200 OK", "application/json", "[]".into()),
             Err(errors) => diagnostics_response(errors),
         },
+        ("GET", "/api/v1/runtime") => ("200 OK", "application/json", runtime_snapshot(runtime)),
+        ("POST", "/api/v1/runtime/start") => start_runtime(runtime, &request.body),
+        ("POST", "/api/v1/runtime/stop") => stop_runtime(runtime),
         ("PUT", "/api/v1/graph") => match validate(&request.body) {
             Ok(document) => match save_graph(graph, &document) {
                 Ok(bytes) => (
@@ -241,6 +280,205 @@ fn route(
 fn validate(input: &str) -> Result<GraphDocument, Vec<GraphDiagnostic>> {
     voxa_graph_json::parse(input)
         .and_then(|document| voxa_graph_json::compile(&document).map(|_| document))
+}
+
+fn start_runtime(state: &StudioRuntime, input: &str) -> (&'static str, &'static str, String) {
+    let document = match voxa_graph_json::parse(input) {
+        Ok(document) => document,
+        Err(errors) => return diagnostics_response(errors),
+    };
+    let registry = voxa_graph_json::builtin_registry();
+    let graph = match voxa_graph_json::compile_with_registry(&document, &registry) {
+        Ok(graph) => graph,
+        Err(errors) => return diagnostics_response(errors),
+    };
+    let mut session = state
+        .session
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if session.as_ref().is_some_and(RuntimeSession::is_active) {
+        return (
+            "409 Conflict",
+            "application/json",
+            json_message("a Studio runtime session is already active"),
+        );
+    }
+    let graph_id = graph.graph_id().as_str().to_owned();
+    let node_ids = graph
+        .nodes()
+        .iter()
+        .map(|node| node.descriptor().node_id().clone())
+        .collect();
+    let edge_ids = graph
+        .edges()
+        .iter()
+        .map(|edge| edge.edge_id().clone())
+        .collect();
+    let runtime = match start_registered_runtime(
+        graph,
+        &registry,
+        EdgePolicies::new(),
+        RuntimeOptions::default(),
+    ) {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            return (
+                "500 Internal Server Error",
+                "application/json",
+                json_message(&format!("failed to start graph runtime: {error}")),
+            )
+        }
+    };
+    let id = state.next_session.fetch_add(1, Ordering::Relaxed) + 1;
+    *session = Some(RuntimeSession {
+        id,
+        graph_id,
+        node_ids,
+        edge_ids,
+        runtime,
+        started: Instant::now(),
+        stop_requested: false,
+    });
+    (
+        "201 Created",
+        "application/json",
+        session_snapshot(session.as_ref().expect("installed session")).to_string(),
+    )
+}
+
+fn stop_runtime(state: &StudioRuntime) -> (&'static str, &'static str, String) {
+    let mut session = state
+        .session
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let Some(session) = session.as_mut() else {
+        return (
+            "200 OK",
+            "application/json",
+            serde_json::json!({"accepted": false, "status": "idle"}).to_string(),
+        );
+    };
+    let accepted = session.runtime.stop();
+    session.stop_requested = true;
+    let mut snapshot = session_snapshot(session);
+    snapshot["accepted"] = accepted.into();
+    ("200 OK", "application/json", snapshot.to_string())
+}
+
+fn runtime_snapshot(state: &StudioRuntime) -> String {
+    let session = state
+        .session
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    session.as_ref().map_or_else(
+        || serde_json::json!({"status": "idle", "session_id": null}).to_string(),
+        |session| session_snapshot(session).to_string(),
+    )
+}
+
+impl RuntimeSession {
+    fn is_active(&self) -> bool {
+        matches!(
+            self.runtime.wait(Duration::ZERO),
+            Err(RuntimeWaitError::Timeout(_))
+        )
+    }
+}
+
+fn session_snapshot(session: &RuntimeSession) -> serde_json::Value {
+    let (status, active_nodes, worker_total, terminal) = match session.runtime.wait(Duration::ZERO)
+    {
+        Ok(summary) => (
+            "completed",
+            Vec::new(),
+            Some(summary.worker_total()),
+            serde_json::json!({"kind": "success"}),
+        ),
+        Err(RuntimeWaitError::Timeout(diagnostics)) => (
+            if session.stop_requested {
+                "stopping"
+            } else {
+                "running"
+            },
+            diagnostics
+                .active_nodes()
+                .iter()
+                .map(|node| node.as_str().to_owned())
+                .collect(),
+            None,
+            serde_json::Value::Null,
+        ),
+        Err(RuntimeWaitError::Aborted(reason)) => (
+            if session.stop_requested {
+                "stopped"
+            } else {
+                "aborted"
+            },
+            Vec::new(),
+            None,
+            serde_json::json!({
+                "kind": if session.stop_requested { "cancelled" } else { "failure" },
+                "code": reason.root().code(),
+                "message": reason.root().message(),
+                "node_id": reason.node_id().map(NodeId::as_str),
+                "category": format!("{:?}", reason.category()).to_lowercase(),
+                "stage": format!("{:?}", reason.stage()).to_lowercase(),
+            }),
+        ),
+    };
+    let nodes = session
+        .node_ids
+        .iter()
+        .filter_map(|node_id| session.runtime.node_metrics(node_id))
+        .map(|metrics| {
+            serde_json::json!({
+                "node_id": metrics.node_id().as_str(),
+                "prepare_total": metrics.prepare_total(),
+                "process_total": metrics.process_total(),
+                "signal_total": metrics.signal_total(),
+                "finish_total": metrics.finish_total(),
+                "abort_total": metrics.abort_total(),
+                "error_total": metrics.error_total(),
+                "panic_total": metrics.panic_total(),
+                "callback_duration_ns": metrics.callback_duration_ns(),
+                "max_callback_duration_ns": metrics.max_callback_duration_ns(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let edges = session
+        .edge_ids
+        .iter()
+        .filter_map(|edge_id| session.runtime.edge_metrics(edge_id))
+        .map(|metrics| {
+            serde_json::json!({
+                "edge_id": metrics.edge_id().as_str(),
+                "queue_capacity": metrics.queue_capacity(),
+                "queue_len": metrics.queue_len(),
+                "high_watermark": metrics.high_watermark(),
+                "enqueue_total": metrics.enqueue_total(),
+                "dequeue_total": metrics.dequeue_total(),
+                "drop_total": metrics.drop_total(),
+                "signal_total": metrics.signal_total(),
+                "full_total": metrics.full_total(),
+                "blocked_duration_ns": metrics.blocked_duration_ns(),
+                "oldest_frame_age_ns": metrics.oldest_frame_age_ns(),
+                "latest_error_reason": metrics.latest_error_reason(),
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "session_id": session.id,
+        "graph_id": session.graph_id,
+        "status": status,
+        "runtime_state": format!("{:?}", session.runtime.state()).to_lowercase(),
+        "elapsed_ms": u64::try_from(session.started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        "worker_total": worker_total,
+        "active_nodes": active_nodes,
+        "stop_requested": session.stop_requested,
+        "nodes": nodes,
+        "edges": edges,
+        "terminal": terminal,
+    })
 }
 
 fn diagnostics_response(errors: Vec<GraphDiagnostic>) -> (&'static str, &'static str, String) {
@@ -306,7 +544,7 @@ fn write_response(
 
 #[cfg(test)]
 mod tests {
-    use super::handle_connection;
+    use super::{handle_connection, route, HttpRequest, StudioRuntime};
     use std::{
         fs,
         io::{Read, Write},
@@ -346,7 +584,7 @@ mod tests {
         let graph = graph.to_path_buf();
         let server = thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
-            handle_connection(stream, &graph, &token).unwrap();
+            handle_connection(stream, &graph, &token, &StudioRuntime::default()).unwrap();
         });
         let mut client = TcpStream::connect(address).unwrap();
         client.write_all(raw_request.as_bytes()).unwrap();
@@ -376,19 +614,21 @@ mod tests {
 
     #[test]
     fn graph_api_rejects_missing_and_forged_bearer_tokens() {
-        for authorization in ["", "Authorization: Bearer forged\r\n"] {
-            let graph = graph_path();
-            let Some(response) = request(
-                &graph,
-                "expected-token",
-                format!("GET /api/v1/graph HTTP/1.1\r\nHost: localhost\r\n{authorization}\r\n"),
-            ) else {
-                return;
-            };
-            fs::remove_file(graph).unwrap();
-            assert!(response.starts_with("HTTP/1.1 401 Unauthorized\r\n"));
-            assert!(!response.contains("text-uppercase"));
-            assert!(!response.contains("expected-token"));
+        for path in ["/api/v1/graph", "/api/v1/runtime"] {
+            for authorization in ["", "Authorization: Bearer forged\r\n"] {
+                let graph = graph_path();
+                let Some(response) = request(
+                    &graph,
+                    "expected-token",
+                    format!("GET {path} HTTP/1.1\r\nHost: localhost\r\n{authorization}\r\n"),
+                ) else {
+                    return;
+                };
+                fs::remove_file(graph).unwrap();
+                assert!(response.starts_with("HTTP/1.1 401 Unauthorized\r\n"));
+                assert!(!response.contains("text-uppercase"));
+                assert!(!response.contains("expected-token"));
+            }
         }
     }
 
@@ -456,6 +696,47 @@ mod tests {
         };
         assert!(save_response.starts_with("HTTP/1.1 200 OK\r\n"));
         assert!(fs::read_to_string(&graph).unwrap().contains("studio-saved"));
+        fs::remove_file(graph).unwrap();
+    }
+
+    #[test]
+    fn runtime_api_starts_observes_and_retains_terminal_metrics() {
+        let graph = graph_path();
+        let body = fs::read_to_string(&graph).unwrap();
+        let runtime = StudioRuntime::default();
+        let start = HttpRequest {
+            method: "POST".into(),
+            path: "/api/v1/runtime/start".into(),
+            authorization: None,
+            body,
+        };
+        let (status, _, payload) = route(&start, &graph, true, &runtime);
+        assert_eq!(status, "201 Created");
+        assert!(payload.contains("session_id"));
+
+        let snapshot = HttpRequest {
+            method: "GET".into(),
+            path: "/api/v1/runtime".into(),
+            authorization: None,
+            body: String::new(),
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        loop {
+            let (_, _, payload) = route(&snapshot, &graph, true, &runtime);
+            let value: serde_json::Value = serde_json::from_str(&payload).unwrap();
+            if value["status"] == "completed" {
+                assert_eq!(value["nodes"].as_array().unwrap().len(), 3);
+                assert_eq!(value["edges"].as_array().unwrap().len(), 2);
+                assert_eq!(value["edges"][0]["enqueue_total"], 1);
+                assert_eq!(value["nodes"][0]["prepare_total"], 1);
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "runtime did not complete"
+            );
+            thread::yield_now();
+        }
         fs::remove_file(graph).unwrap();
     }
 }

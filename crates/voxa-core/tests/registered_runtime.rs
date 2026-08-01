@@ -154,6 +154,12 @@ fn exact_registered_factory_materializes_and_runs_concurrently() {
     let summary = runtime.wait(Duration::from_secs(1)).unwrap();
     assert_eq!(summary.worker_total(), 1);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let metrics = runtime.node_metrics(&node_id()).unwrap();
+    assert_eq!(metrics.prepare_total(), 1);
+    assert_eq!(metrics.process_total(), 1);
+    assert_eq!(metrics.finish_total(), 1);
+    assert_eq!(metrics.error_total(), 0);
+    assert!(metrics.callback_duration_ns() >= metrics.max_callback_duration_ns());
 }
 
 #[test]
@@ -192,6 +198,11 @@ fn registered_node_abort_reaches_the_runtime_terminal_result() {
     };
     assert_eq!(reason.category(), AbortCategory::ExternalSdkError);
     assert_eq!(reason.root().code(), "VOXA-TEST-ABORT");
+    let metrics = runtime.node_metrics(&node_id()).unwrap();
+    assert_eq!(metrics.process_total(), 1);
+    assert_eq!(metrics.abort_total(), 1);
+    assert_eq!(metrics.error_total(), 1);
+    assert_eq!(metrics.panic_total(), 0);
 }
 
 #[test]
