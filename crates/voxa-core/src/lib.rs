@@ -79,7 +79,8 @@ pub use realtime::{
     RealtimeInputProfile, RealtimeProfileError, RuntimeInputTuning,
 };
 pub use registered_runtime::{
-    materialize_registered_nodes, start_registered_runtime, GraphMaterializationError,
+    materialize_registered_nodes, start_registered_runtime,
+    start_registered_runtime_with_resources, GraphMaterializationError,
     RegisteredRuntimeStartError,
 };
 pub use registry::{

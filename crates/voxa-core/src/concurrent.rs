@@ -983,6 +983,7 @@ impl NodeWorker {
             &self.shared.graph,
             self.shared.options.emission_budget(),
             &self.shared.event_bus,
+            &self.shared.resources,
             self.shared
                 .node_metrics
                 .get(&self.node_id)
@@ -1038,6 +1039,7 @@ impl NodeWorker {
                 self.shared.options.emission_budget(),
                 !self.outgoing.is_empty(),
                 &self.shared.event_bus,
+                &self.shared.resources,
                 self.shared
                     .node_metrics
                     .get(&self.node_id)
@@ -1078,6 +1080,7 @@ impl NodeWorker {
                     self.shared.options.emission_budget(),
                     !self.outgoing.is_empty(),
                     &self.shared.event_bus,
+                    &self.shared.resources,
                     self.shared
                         .node_metrics
                         .get(&self.node_id)
@@ -1129,6 +1132,7 @@ impl NodeWorker {
                     self.shared.options.emission_budget(),
                     !self.outgoing.is_empty(),
                     &self.shared.event_bus,
+                    &self.shared.resources,
                     self.shared
                         .node_metrics
                         .get(&self.node_id)
@@ -1352,6 +1356,7 @@ fn coordinate(
                     &shared.graph,
                     shared.options.emission_budget(),
                     &shared.event_bus,
+                    &shared.resources,
                     shared.node_metrics.get(node_id).expect("node metrics"),
                 ) {
                     shared.control.lifecycle_exit(node_id);
@@ -1387,6 +1392,7 @@ fn coordinate(
             shared.options.emission_budget(),
             false,
             shared.event_bus.clone(),
+            shared.resources.clone(),
         );
         if let Some(node) = nodes.get_mut(node_id) {
             shared.control.lifecycle_enter(node_id.clone());
@@ -1424,6 +1430,7 @@ fn call_prepare(
     graph: &GraphDefinition,
     emission_budget: usize,
     event_bus: &EventBus,
+    resources: &ResourceStore,
     metrics: &NodeMetrics,
 ) -> Result<(), AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
@@ -1434,6 +1441,7 @@ fn call_prepare(
         emission_budget,
         false,
         event_bus.clone(),
+        resources.clone(),
     );
     let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_prepare(&mut context)));
@@ -1469,6 +1477,7 @@ fn call_process(
     emission_budget: usize,
     has_signal_routes: bool,
     event_bus: &EventBus,
+    resources: &ResourceStore,
     metrics: &NodeMetrics,
 ) -> Result<NodeCallOutput, AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
@@ -1479,6 +1488,7 @@ fn call_process(
         emission_budget,
         has_signal_routes,
         event_bus.clone(),
+        resources.clone(),
     );
     let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_process(input, &mut context)));
@@ -1518,6 +1528,7 @@ fn call_signal(
     emission_budget: usize,
     has_signal_routes: bool,
     event_bus: &EventBus,
+    resources: &ResourceStore,
     metrics: &NodeMetrics,
 ) -> Result<NodeCallOutput, AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
@@ -1528,6 +1539,7 @@ fn call_signal(
         emission_budget,
         has_signal_routes,
         event_bus.clone(),
+        resources.clone(),
     );
     let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_signal(signal, &mut context)));
@@ -1563,6 +1575,7 @@ fn call_finish(
     graph: &GraphDefinition,
     emission_budget: usize,
     event_bus: &EventBus,
+    resources: &ResourceStore,
     metrics: &NodeMetrics,
 ) -> Result<(), AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
@@ -1573,6 +1586,7 @@ fn call_finish(
         emission_budget,
         false,
         event_bus.clone(),
+        resources.clone(),
     );
     let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_finish(&mut context)));

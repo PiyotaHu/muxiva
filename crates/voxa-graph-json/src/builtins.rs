@@ -25,6 +25,7 @@ pub const TEXT_SOURCE: &str = "builtin.text_source";
 pub const UPPERCASE: &str = "builtin.uppercase";
 pub const TEXT_SINK: &str = "builtin.text_sink";
 pub const STDOUT_TEXT_SINK: &str = "builtin.stdout_text_sink";
+pub const AUDIO_RESAMPLE: &str = "builtin.audio_resample";
 pub const DEMO_MICROPHONE: &str = "builtin.demo.microphone";
 pub const DEMO_STREAMING_ASR: &str = "builtin.demo.streaming_asr";
 pub const DEMO_VOICE_ACTIVITY: &str = "builtin.demo.voice_activity";
@@ -83,7 +84,24 @@ pub fn registry() -> NodeRegistry {
         Arc::new(StdoutTextSinkFactory),
     );
     register_demo_nodes(&mut registry);
+    register_audio_nodes(&mut registry);
     registry
+}
+
+fn register_audio_nodes(registry: &mut NodeRegistry) {
+    register(
+        registry,
+        typed_descriptor(
+            AUDIO_RESAMPLE,
+            NodeKind::Transform,
+            &[
+                ("audio_in", PortDirection::Input, FrameType::Audio),
+                ("audio_out", PortDirection::Output, FrameType::Audio),
+            ],
+            audio_resample_schema(),
+        ),
+        Arc::new(AudioResampleFactory),
+    );
 }
 
 fn register_demo_nodes(registry: &mut NodeRegistry) {
@@ -622,6 +640,150 @@ fn map<const N: usize>(entries: [(&str, Value); N]) -> Value {
     Value::Map(ValueMap::try_from_iter(entries).expect("valid built-in schema"))
 }
 
+fn audio_resample_schema() -> ConfigSchema {
+    ConfigSchema::new(map([
+        ("type", Value::String("object".into())),
+        (
+            "properties",
+            map([(
+                "sample_rate_hz",
+                map([
+                    ("type", Value::String("integer".into())),
+                    ("minimum", Value::Integer(8_000)),
+                    ("maximum", Value::Integer(192_000)),
+                    ("default", Value::Integer(16_000)),
+                ]),
+            )]),
+        ),
+        (
+            "required",
+            Value::List(vec![Value::String("sample_rate_hz".into())].into_boxed_slice()),
+        ),
+        ("additionalProperties", Value::Bool(false)),
+    ]))
+}
+
+struct AudioResampleFactory;
+
+impl NodeFactory for AudioResampleFactory {
+    fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
+        if config.len() != 1 {
+            return Err(config_error(
+                "audio resampler accepts exactly `sample_rate_hz`",
+            ));
+        }
+        match config.get("sample_rate_hz") {
+            Some(Value::Integer(rate)) if (8_000..=192_000).contains(rate) => Ok(()),
+            _ => Err(config_error(
+                "audio resampler sample_rate_hz must be an integer from 8000 through 192000",
+            )),
+        }
+    }
+
+    fn create(
+        &self,
+        _node_id: &NodeId,
+        config: &ConfigMap,
+    ) -> Result<Box<dyn Node>, NodeFactoryError> {
+        let Some(Value::Integer(rate)) = config.get("sample_rate_hz") else {
+            return Err(config_error("validated sample_rate_hz is unavailable"));
+        };
+        Ok(Box::new(AudioResample {
+            target_rate_hz: *rate as u32,
+        }))
+    }
+}
+
+struct AudioResample {
+    target_rate_hz: u32,
+}
+
+impl Node for AudioResample {
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> voxa_types::Result<()> {
+        let input = required_type(input, FrameType::Audio, "audio resampler requires audio")?;
+        let source = input.as_audio().expect("validated audio").data();
+        if source.sample_format() != PcmSampleFormat::I16Le
+            || source.layout() != AudioLayout::Interleaved
+        {
+            return Err(node_error(
+                "VOXA-AUDIO-RESAMPLE-FORMAT",
+                "audio resampler requires interleaved PCM s16le",
+            ));
+        }
+        let payload = if source.sample_rate_hz() == self.target_rate_hz {
+            source.clone()
+        } else {
+            resample_pcm16(source, self.target_rate_hz)?
+        };
+        let serial = NEXT_FRAME.fetch_add(1, Ordering::Relaxed);
+        let output = input.derive(
+            FrameDerivation::new(
+                FrameId::new(format!("builtin-audio-resample-{serial}")).expect("bounded frame ID"),
+                input.header().timestamp(),
+                input.header().sequence_id(),
+                TransformOrigin::new(Some(context.node_id().clone()), None)?,
+                "builtin_audio_resample",
+            )?
+            .with_payload(FramePayload::Audio(payload)),
+        )?;
+        context.emit(PortName::new("audio_out").unwrap(), output)?;
+        Ok(())
+    }
+}
+
+fn resample_pcm16(source: &AudioData, target_rate_hz: u32) -> voxa_types::Result<AudioData> {
+    let source_samples = source.samples_per_channel();
+    let target_samples = source_samples
+        .checked_mul(u64::from(target_rate_hz))
+        .and_then(|value| value.checked_add(u64::from(source.sample_rate_hz()) / 2))
+        .map(|value| value / u64::from(source.sample_rate_hz()))
+        .ok_or_else(|| node_error("VOXA-AUDIO-RESAMPLE-SIZE", "resampled audio size overflow"))?;
+    if target_samples == 0 {
+        return Err(node_error(
+            "VOXA-AUDIO-RESAMPLE-SIZE",
+            "resampled audio would contain no samples",
+        ));
+    }
+    let channels = usize::from(source.channels());
+    let source_values = source
+        .buffer()
+        .as_slice()
+        .chunks_exact(2)
+        .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
+        .collect::<Vec<_>>();
+    let capacity = usize::try_from(target_samples)
+        .ok()
+        .and_then(|samples| samples.checked_mul(channels))
+        .and_then(|samples| samples.checked_mul(2))
+        .ok_or_else(|| node_error("VOXA-AUDIO-RESAMPLE-SIZE", "resampled audio size overflow"))?;
+    let mut output = Vec::with_capacity(capacity);
+    for target_index in 0..target_samples {
+        let numerator = target_index * u64::from(source.sample_rate_hz());
+        let left = (numerator / u64::from(target_rate_hz)).min(source_samples - 1);
+        let right = (left + 1).min(source_samples - 1);
+        let fraction = (numerator % u64::from(target_rate_hz)) as f64 / f64::from(target_rate_hz);
+        for channel in 0..channels {
+            let left_index = usize::try_from(left).unwrap() * channels + channel;
+            let right_index = usize::try_from(right).unwrap() * channels + channel;
+            let value = f64::from(source_values[left_index]) * (1.0 - fraction)
+                + f64::from(source_values[right_index]) * fraction;
+            output.extend_from_slice(&(value.round() as i16).to_le_bytes());
+        }
+    }
+    AudioData::new(
+        FrameBuffer::from_vec(output),
+        target_rate_hz,
+        source.channels(),
+        PcmSampleFormat::I16Le,
+        AudioLayout::Interleaved,
+        target_samples,
+    )
+}
+
 struct TextSourceFactory;
 
 impl NodeFactory for TextSourceFactory {
@@ -933,4 +1095,38 @@ fn derive_payload(
         )?
         .with_payload(payload),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pcm16_resampler_preserves_duration_in_both_demo_directions() {
+        let source = AudioData::new(
+            FrameBuffer::from_vec(vec![0; 1_920]),
+            48_000,
+            1,
+            PcmSampleFormat::I16Le,
+            AudioLayout::Interleaved,
+            960,
+        )
+        .unwrap();
+        let at_16k = resample_pcm16(&source, 16_000).unwrap();
+        assert_eq!(at_16k.samples_per_channel(), 320);
+        assert_eq!(at_16k.duration_ns(), 20_000_000);
+
+        let qwen_output = AudioData::new(
+            FrameBuffer::from_vec(vec![0; 960]),
+            24_000,
+            1,
+            PcmSampleFormat::I16Le,
+            AudioLayout::Interleaved,
+            480,
+        )
+        .unwrap();
+        let at_48k = resample_pcm16(&qwen_output, 48_000).unwrap();
+        assert_eq!(at_48k.samples_per_channel(), 960);
+        assert_eq!(at_48k.duration_ns(), 20_000_000);
+    }
 }

@@ -115,10 +115,28 @@ pub fn start_registered_runtime(
     policies: EdgePolicies,
     options: RuntimeOptions,
 ) -> Result<GraphRuntime, RegisteredRuntimeStartError> {
+    start_registered_runtime_with_resources(
+        graph,
+        registry,
+        policies,
+        options,
+        crate::ResourceStore::new(),
+    )
+}
+
+/// Materializes and starts one graph with graph-local typed resources.
+pub fn start_registered_runtime_with_resources(
+    graph: GraphDefinition,
+    registry: &NodeRegistry,
+    policies: EdgePolicies,
+    options: RuntimeOptions,
+    resources: crate::ResourceStore,
+) -> Result<GraphRuntime, RegisteredRuntimeStartError> {
     let nodes = materialize_registered_nodes(&graph, registry)
         .map_err(RegisteredRuntimeStartError::Materialization)?;
     ConcurrentRuntime::new(graph, nodes, policies, options)
         .map_err(RegisteredRuntimeStartError::Attachments)?
+        .with_resources(resources)
         .start()
         .map_err(RegisteredRuntimeStartError::Threads)
 }

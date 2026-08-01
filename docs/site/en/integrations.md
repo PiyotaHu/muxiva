@@ -19,7 +19,7 @@ late-callback faults, and release-specific SDK compatibility.
 
 ## Flagship voice profile: Agora + Qwen
 
-The planned live Voice Playground uses Agora Web SDK for browser microphone and
+The live Voice Playground architecture uses Agora Web SDK for browser microphone and
 playback transport. A Voxa Bot joins the same room through the Native adapter,
 receives per-user PCM, and sends generated PCM through a custom audio track.
 
@@ -41,6 +41,15 @@ API or saved with the Graph. The Voice Graph Gallery shows both a recommended
 six-Node end-to-end Realtime topology and an inspectable ten-Node VAD → ASR →
 LLM → TTS cascade. Applying either graph remains disabled until all of its exact
 Provider Factories are installed.
+
+The first implementation slice is now executable: `voxa-provider-qwen`
+authenticates the Qwen Audio Realtime WebSocket, sends 16 kHz mono PCM, decodes
+24 kHz response audio and incremental transcripts, and maps an adjacent Voxa
+interrupt Signal to `response.cancel`. Credentials reach the Node only through
+the runtime `ResourceStore`. The built-in PCM16 resampler covers both demo
+directions. Agora Node wrappers, browser room controls, and the separate
+cascade Providers remain the next integration slices; Studio keeps those
+templates disabled until those exact Factories exist.
 
 ## FFmpeg
 

@@ -129,3 +129,22 @@ Tests must also cover bounded queues, provider reconnect, invalid credentials,
 token expiry, late events after cancellation, browser disconnect, and shutdown
 during active callbacks. A credential-free test double remains mandatory for
 public CI; it must identify itself as simulation rather than a live demo.
+
+## Implementation status
+
+Implemented in the first live-provider slice:
+
+- graph-local typed resources are exposed through `NodeContext`, so credentials
+  never enter serializable Node configuration;
+- the Qwen Audio Realtime Rust Provider performs authenticated WebSocket setup,
+  session configuration, PCM append, event decoding, and response cancellation;
+- the executable `provider.qwen.audio_realtime` Factory accepts 16 kHz mono
+  PCM16 and emits 24 kHz PCM16 plus incremental text;
+- the built-in PCM16 resampler covers 48 → 16 kHz and 24 → 48 kHz;
+- credential-free protocol and local fake-WebSocket tests cover authentication,
+  audio append, transcript decode, cancellation, bounds, and secret redaction.
+
+Still required before the credentialed demo meets this record's acceptance:
+Agora Factory wrappers and browser room controls, full cascade Providers,
+bounded reconnect/mailbox behavior, TurnId stale-output gating, and retained
+live-room evidence.

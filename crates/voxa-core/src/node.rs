@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, error::Error, fmt, time::Duration};
 
 use voxa_types::{EventFrame, Frame, FrameType, NodeId, Result, SignalFrame, Value};
 
-use crate::{EventBus, PublishReport};
+use crate::{EventBus, PublishReport, ResourceStore};
 
 /// The role a node has in a graph.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -432,6 +432,7 @@ pub struct NodeContext {
     emission_overflowed: bool,
     has_signal_routes: bool,
     event_bus: EventBus,
+    resources: ResourceStore,
     next_source_tick: Option<Duration>,
 }
 
@@ -546,6 +547,7 @@ impl NodeContext {
             emission_limit,
             false,
             EventBus::default(),
+            ResourceStore::new(),
         )
     }
 
@@ -556,6 +558,7 @@ impl NodeContext {
         emission_limit: usize,
         has_signal_routes: bool,
         event_bus: EventBus,
+        resources: ResourceStore,
     ) -> Self {
         Self {
             node_id,
@@ -567,17 +570,21 @@ impl NodeContext {
             emission_overflowed: false,
             has_signal_routes,
             event_bus,
+            resources,
             next_source_tick: None,
         }
     }
 
-    pub(crate) fn with_event_bus(
+    pub(crate) fn with_runtime_services(
         node_id: NodeId,
         config: ConfigMap,
         input_port: Option<PortName>,
         event_bus: EventBus,
+        resources: ResourceStore,
     ) -> Self {
-        Self::with_routing_limits(node_id, config, input_port, 16_384, false, event_bus)
+        Self::with_routing_limits(
+            node_id, config, input_port, 16_384, false, event_bus, resources,
+        )
     }
 
     /// Returns the node currently being called.
@@ -588,6 +595,14 @@ impl NodeContext {
     /// Returns immutable node configuration.
     pub const fn config(&self) -> &ConfigMap {
         &self.config
+    }
+
+    /// Returns the graph-local typed resources available to this runtime.
+    ///
+    /// Secrets and provider clients belong here rather than in serializable
+    /// node configuration.
+    pub const fn resources(&self) -> &ResourceStore {
+        &self.resources
     }
 
     /// Returns the explicit input port for an edge delivery.

@@ -17,7 +17,7 @@ Provider 将 Voxa 连接到 RTC SDK、媒体库、模型 API、Transport 和设�
 
 ## 门面语音方案：Agora + Qwen
 
-规划中的真实 Voice Playground 使用 Agora Web SDK 承担浏览器麦克风采集与播放。
+真实 Voice Playground 的架构使用 Agora Web SDK 承担浏览器麦克风采集与播放。
 Voxa Bot 通过 Native Adapter 加入同一房间，接收每个用户的 PCM，并通过自定义
 音频轨道回推生成的 PCM。
 
@@ -35,6 +35,13 @@ Graph 也不会保存。Voice Graph Gallery 同时展示推荐的 6-Node 端到�
 拓扑，以及可检查、可替换的 10-Node VAD → ASR → LLM → TTS 级联拓扑。只有当
 对应的精确 Provider Factory 全部安装后，Studio 才允许应用模板，避免生成无法
 校验和运行的图。
+
+第一段真实实现已经可执行：`voxa-provider-qwen` 会鉴权连接 Qwen Audio Realtime
+WebSocket，发送 16 kHz 单声道 PCM，解析 24 kHz 响应音频与增量字幕，并把相邻的
+Voxa interrupt Signal 映射为 `response.cancel`。凭据只通过运行时 `ResourceStore`
+进入 Node；内置 PCM16 重采样器覆盖演示所需的两个采样率方向。Agora Node Wrapper、
+浏览器房间控制以及级联方案的独立 Provider 是后续集成切片；在这些精确 Factory
+存在前，Studio 会继续禁用对应模板。
 
 ## FFmpeg
 

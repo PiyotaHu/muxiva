@@ -15,7 +15,8 @@ use std::{
 };
 
 use voxa_core::{
-    start_registered_runtime, EdgePolicies, GraphRuntime, RuntimeOptions, RuntimeWaitError,
+    start_registered_runtime_with_resources, EdgePolicies, GraphRuntime, ResourceKey,
+    ResourceStore, RuntimeOptions, RuntimeWaitError,
 };
 use voxa_graph_json::{GraphDiagnostic, GraphDocument, MAX_DOCUMENT_BYTES};
 use voxa_types::{EdgeId, NodeId};
@@ -105,6 +106,10 @@ impl SecretValue {
 
     fn is_set(&self) -> bool {
         !self.0.is_empty()
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        &self.0
     }
 }
 
@@ -529,6 +534,8 @@ fn provider_field_error(message: &str) -> (&'static str, &'static str, String) {
 
 fn project_registry(graph: &Path) -> Result<voxa_core::NodeRegistry, String> {
     let mut registry = voxa_graph_json::builtin_registry();
+    voxa_provider_qwen::register_qwen_nodes(&mut registry)
+        .map_err(|error| format!("failed to register Qwen provider Nodes: {error}"))?;
     node_library::register_project_nodes(graph, &mut registry)?;
     Ok(registry)
 }
@@ -607,11 +614,22 @@ fn start_runtime(
         .iter()
         .map(|edge| edge.edge_id().clone())
         .collect();
-    let runtime = match start_registered_runtime(
+    let resources = match provider_resources(state) {
+        Ok(resources) => resources,
+        Err(message) => {
+            return (
+                "400 Bad Request",
+                "application/json",
+                json_message(&message),
+            )
+        }
+    };
+    let runtime = match start_registered_runtime_with_resources(
         graph,
         &registry,
         EdgePolicies::new(),
         RuntimeOptions::default(),
+        resources,
     ) {
         Ok(runtime) => runtime,
         Err(error) => {
@@ -637,6 +655,27 @@ fn start_runtime(
         "application/json",
         session_snapshot(session.as_ref().expect("installed session")).to_string(),
     )
+}
+
+fn provider_resources(state: &StudioRuntime) -> Result<ResourceStore, String> {
+    let resources = ResourceStore::new();
+    let providers = state
+        .providers
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if providers.dashscope_api_key.is_set() && !providers.dashscope_workspace_id.is_empty() {
+        let credentials = voxa_provider_qwen::QwenCredentials::new(
+            providers.dashscope_api_key.as_bytes(),
+            providers.dashscope_workspace_id.clone(),
+        )
+        .map_err(|error| error.to_string())?;
+        let key = ResourceKey::new(voxa_provider_qwen::QWEN_CREDENTIALS_RESOURCE)
+            .map_err(|error| error.to_string())?;
+        resources
+            .insert(key, std::sync::Arc::new(credentials))
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(resources)
 }
 
 fn stop_runtime(state: &StudioRuntime) -> (&'static str, &'static str, String) {
