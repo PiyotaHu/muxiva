@@ -47,6 +47,12 @@ can run in the trusted local development Host today.
 [Open the Studio guide](studio.md){ .md-button .md-button--primary }
 [Build a Node](nodes/README.md){ .md-button }
 
+## Participate
+
+Read the [contribution and support guide](contributing.md) before proposing a
+public contract or Runtime change. Security vulnerabilities must be reported
+privately through GitHub, never through a public Issue.
+
 ## 中文快速说明
 
 Voxa 是 Rust 驱动的实时多模态 Agent Runtime。推荐先运行八节点、带两处分叉

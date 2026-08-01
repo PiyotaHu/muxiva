@@ -1,0 +1,47 @@
+name: Feature request
+description: Propose a focused user-visible capability
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: checkboxes
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing Issues, Discussions, and the Roadmap.
+          required: true
+        - label: I have described the user problem before proposing an implementation.
+          required: true
+  - type: textarea
+    attributes:
+      label: Problem
+      description: Who is blocked, what are they trying to achieve, and why are current APIs insufficient?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed outcome
+      description: Describe observable behavior and a small usage example.
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Primary area
+      options:
+        - Runtime / Graph
+        - Multimodal Frames / Ports
+        - CLI / Studio
+        - Python SDK
+        - TypeScript SDK
+        - C / C++ SDK
+        - Provider / RTC / Media
+        - Documentation / Developer Experience
+        - Release / Operations
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Contract and compatibility impact
+      description: Note API, ABI, Schema, lifecycle, threading, security, latency, and migration implications.
+  - type: textarea
+    attributes:
+      label: Alternatives considered

@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible Voxa defect
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. For vulnerabilities, stop and use Private Vulnerability Reporting instead.
+  - type: checkboxes
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing Issues and Discussions.
+          required: true
+        - label: This report contains no credentials, RTC tokens, personal data, or undisclosed vulnerability.
+          required: true
+  - type: input
+    attributes:
+      label: Voxa version or commit
+      placeholder: v0.x.y or git SHA
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Area
+      options:
+        - Runtime / Graph
+        - Frames / Schema
+        - CLI
+        - Studio
+        - Python SDK
+        - TypeScript SDK
+        - C / C++ SDK
+        - RTC / Agora
+        - Media / FFmpeg
+        - Documentation
+        - Build / CI
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Environment
+      description: OS, architecture, Rust/CMake/Python/Node versions, and relevant feature flags.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Minimal reproduction
+      description: Include the smallest Graph, Node, code, and commands needed to reproduce the behavior.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Actual behavior and diagnostics
+      description: Include complete VOXA diagnostics or a short log with secrets removed.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Additional context

@@ -6,6 +6,9 @@
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
+[![CI](https://github.com/PiyotaHu/Voxa/actions/workflows/ci.yml/badge.svg)](https://github.com/PiyotaHu/Voxa/actions/workflows/ci.yml)
+[![Bindings](https://github.com/PiyotaHu/Voxa/actions/workflows/bindings.yml/badge.svg)](https://github.com/PiyotaHu/Voxa/actions/workflows/bindings.yml)
+[![Documentation](https://github.com/PiyotaHu/Voxa/actions/workflows/docs.yml/badge.svg)](https://piyotahu.github.io/Voxa/)
 ![Rust](https://img.shields.io/badge/Rust-1.85%2B-black?logo=rust)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-blue?logo=cplusplus)
 ![Python](https://img.shields.io/badge/Python-3.13-tested-blue?logo=python)
@@ -209,17 +212,20 @@ voxa/
 
 ## 参与贡献
 
-欢迎提交设计反馈、Bug、可复现测试用例和范围清晰的 Pull Request。修改 Runtime 契约前，请阅读[产品与技术契约](docs/design/01-product-and-technical-contract.md)和[测试指南](docs/testing/README.md)。
+欢迎提交设计反馈、Bug、可复现测试用例和范围清晰的 Pull Request。参与前请阅读
+[贡献指南](CONTRIBUTING.md)、[行为准则](CODE_OF_CONDUCT.md)和
+[治理方式](GOVERNANCE.md)。公开 API、Graph/Manifest Schema、Runtime、
+Studio、CLI、Provider 或架构变化必须在同一个 PR 更新 `docs/`。
 
 变更应保持有界、确定性，并且不能包含真实服务凭据。新增外语、RTC 或网络集成时，必须包含所有权、线程、取消、晚到回调和关闭测试。
 
-独立的 `CONTRIBUTING.md`、行为准则、Issue Template 和 Pull Request Template 将在首次公开发布前补齐。
-
 ## 安全
 
-Voxa 仍处于 pre-alpha 阶段，不能用于执行不可信代码，也不应将 Studio 直接暴露到公网。Graph 文件不得包含密钥；应使用本地凭据引用，并保持 Studio 默认监听 loopback 地址。
+Voxa 仍处于 pre-alpha 阶段，不能用于执行不可信代码，也不应将 Studio 直接
+暴露到公网。Graph 文件不得包含密钥；漏洞请按照[安全策略](SECURITY.md)私密报告。
 
-公开部署前应启用 GitHub Private Vulnerability Reporting，并增加独立的 `SECURITY.md`。
+重要变化记录在 [CHANGELOG.md](CHANGELOG.md)，支持渠道参见
+[SUPPORT.md](SUPPORT.md)。
 
 ## 许可证
 

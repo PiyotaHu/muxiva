@@ -20,7 +20,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/PiyotaHu/Voxa"
-Documentation = "https://github.com/PiyotaHu/Voxa/tree/main/docs/sdk"
+Documentation = "https://piyotahu.github.io/Voxa/sdk/python/"
 Repository = "https://github.com/PiyotaHu/Voxa"
 Issues = "https://github.com/PiyotaHu/Voxa/issues"
 

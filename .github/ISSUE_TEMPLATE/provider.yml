@@ -1,0 +1,35 @@
+name: Provider proposal
+description: Propose an RTC, model, transport, codec, or media provider
+title: "[Provider]: "
+labels: [provider]
+body:
+  - type: input
+    attributes:
+      label: Provider and capability
+      placeholder: ExampleRTC — real-time PCM16 audio ingress/egress
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: User journey
+      description: Show installation, configuration without secrets, Graph placement, and expected Frames.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: SDK and platform matrix
+      description: Languages, SDK versions, OS, architectures, and licensing constraints.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Runtime boundaries
+      description: Threading, callbacks, ownership, queue bounds, backpressure, cancellation, late events, and shutdown.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Test and certification plan
+      description: Mock tests, fault injection, live credential tests, soak duration, metrics, and artifact retention.
+    validations:
+      required: true

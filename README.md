@@ -6,6 +6,9 @@
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
+[![CI](https://github.com/PiyotaHu/Voxa/actions/workflows/ci.yml/badge.svg)](https://github.com/PiyotaHu/Voxa/actions/workflows/ci.yml)
+[![Bindings](https://github.com/PiyotaHu/Voxa/actions/workflows/bindings.yml/badge.svg)](https://github.com/PiyotaHu/Voxa/actions/workflows/bindings.yml)
+[![Documentation](https://github.com/PiyotaHu/Voxa/actions/workflows/docs.yml/badge.svg)](https://piyotahu.github.io/Voxa/)
 ![Rust](https://img.shields.io/badge/Rust-1.85%2B-black?logo=rust)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-blue?logo=cplusplus)
 ![Python](https://img.shields.io/badge/Python-3.13-tested-blue?logo=python)
@@ -214,17 +217,23 @@ Real provider integrations should remain adapters or nodes and must not become m
 
 ## Contributing
 
-Design feedback, bug reports, reproducible test cases, and focused pull requests are welcome. Before changing runtime contracts, read the [product and technical contract](docs/design/01-product-and-technical-contract.md) and the [testing guide](docs/testing/README.md).
+Design feedback, bug reports, reproducible test cases, and focused pull requests
+are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), the
+[Code of Conduct](CODE_OF_CONDUCT.md), and the
+[governance model](GOVERNANCE.md) before participating. Public API, Graph or
+Manifest Schema, Runtime, Studio, CLI, provider, and architecture changes must
+update `docs/` in the same pull request.
 
 Please keep changes bounded, deterministic, and free of real service credentials. New foreign-language, RTC, or network integrations must include ownership, threading, cancellation, late-callback, and shutdown tests.
 
-Dedicated `CONTRIBUTING.md`, Code of Conduct, issue templates, and pull-request templates are planned before the first public release.
-
 ## Security
 
-Voxa is pre-alpha and must not be used to execute untrusted code or expose Studio directly to the public internet. Graph files must never contain secrets. Use local credential references and keep Studio on its default loopback address.
+Voxa is pre-alpha and must not be used to execute untrusted code or expose
+Studio directly to the public internet. Graph files must never contain secrets.
+Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 
-GitHub private vulnerability reporting and a dedicated `SECURITY.md` should be enabled before public deployment.
+See [CHANGELOG.md](CHANGELOG.md) for notable unreleased changes and
+[SUPPORT.md](SUPPORT.md) for help channels and report requirements.
 
 ## License
 

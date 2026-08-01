@@ -1,0 +1,24 @@
+# Default ownership
+* @PiyotaHu
+
+# Runtime and public data contracts
+/crates/voxa-core/ @PiyotaHu
+/crates/voxa-types/ @PiyotaHu
+/crates/voxa-graph-json/ @PiyotaHu
+
+# Native ABI, C++, media, and RTC providers
+/crates/voxa-ffi/ @PiyotaHu
+/cpp/ @PiyotaHu
+/cmake/ @PiyotaHu
+/CMakeLists.txt @PiyotaHu
+
+# Foreign-language SDKs
+/crates/voxa-python/ @PiyotaHu
+/crates/voxa-node/ @PiyotaHu
+/bindings/node/ @PiyotaHu
+
+# Studio, security, workflows, and release infrastructure
+/crates/voxa-studio/ @PiyotaHu
+/.github/ @PiyotaHu
+/SECURITY.md @PiyotaHu
+/Cargo.lock @PiyotaHu

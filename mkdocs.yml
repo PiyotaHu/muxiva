@@ -50,6 +50,7 @@ nav:
       - Agora: providers/agora.md
       - FFmpeg: providers/ffmpeg.md
   - Testing: testing/README.md
+  - Contributing: contributing.md
   - Architecture:
       - Product contract: design/01-product-and-technical-contract.md
       - Frame ownership: design/03-frame-and-ownership-contract.md
