@@ -29,6 +29,13 @@ DashScope API Key 或 Agora App Certificate。
 确定性脚本图只用于 CI 模拟，不能替代需要凭据的真实链路。仓库中的 D10 设计记录
 定义了媒体格式、配置与打断契约。
 
+Studio 提供 DashScope 与 Agora 的 **Connections** 配置界面。Secret 使用密码
+输入框，提交后立即清空；初版只保留在本地 Studio 进程内存中，状态接口不回显，
+Graph 也不会保存。Voice Graph Gallery 同时展示推荐的 6-Node 端到端 Realtime
+拓扑，以及可检查、可替换的 10-Node VAD → ASR → LLM → TTS 级联拓扑。只有当
+对应的精确 Provider Factory 全部安装后，Studio 才允许应用模板，避免生成无法
+校验和运行的图。
+
 ## FFmpeg
 
 可选媒体层提供流式音频重采样，以及 RGBA8、I420 等 Video Scale 与颜色转换。

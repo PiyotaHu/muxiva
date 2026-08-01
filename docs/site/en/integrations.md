@@ -34,6 +34,14 @@ The deterministic scripted graph is a CI simulation, not a substitute for this
 credentialed live path. See the D10 design record in the repository for the
 media, configuration, and interruption contracts.
 
+Studio provides a **Connections** dialog for DashScope and Agora. Secret values
+are password inputs, are cleared after submission, remain only in local process
+memory for the initial implementation, and are never returned by the status
+API or saved with the Graph. The Voice Graph Gallery shows both a recommended
+six-Node end-to-end Realtime topology and an inspectable ten-Node VAD → ASR →
+LLM → TTS cascade. Applying either graph remains disabled until all of its exact
+Provider Factories are installed.
+
 ## FFmpeg
 
 The optional media layer provides streaming audio resampling and video scale or

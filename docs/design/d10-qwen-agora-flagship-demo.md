@@ -95,6 +95,31 @@ actionable setup screen.
 The old deterministic path becomes `voxa demo --mock`. A future local-device
 transport can reuse the same Qwen provider without Agora.
 
+## Studio connection and template experience
+
+Studio owns a first-class **Connections** surface. A developer can paste the
+DashScope API key and Agora user/Bot tokens, set non-secret workspace, App ID,
+channel and region fields, and see readiness without editing an environment
+file. Password fields are cleared immediately after submission. The browser
+does not store secrets and the status API never echoes them. Initial storage is
+process memory and is erased when Studio exits; durable storage may only use an
+OS credential vault, never Graph JSON or browser storage.
+
+The Voice Graph Gallery exposes two choices:
+
+1. **Qwen Realtime**: Agora ingress, input resampler, one Qwen Audio Realtime
+   Node, captions, output resampler, and Agora Sink. This is the recommended
+   lowest-latency product path.
+2. **Qwen Cascade**: Agora ingress, input resampler, local VAD, Qwen realtime
+   ASR, turn/context fusion, Qwen streaming text LLM, Qwen realtime TTS,
+   captions, output resampler, and Agora Sink. This makes each stage observable
+   and replaceable.
+
+A template is visible before its optional Provider is installed, but Studio
+must not apply it until every exact Factory identity is present in the Runtime
+Registry. This prevents a gallery action from creating a Graph that cannot
+validate or run.
+
 ## Acceptance
 
 The first live release is accepted only when a new developer can speak in the

@@ -38,10 +38,80 @@ struct RuntimeSession {
     stop_requested: bool,
 }
 
-#[derive(Default)]
 struct StudioRuntime {
     next_session: AtomicU64,
     session: Mutex<Option<RuntimeSession>>,
+    providers: Mutex<ProviderConfiguration>,
+}
+
+impl Default for StudioRuntime {
+    fn default() -> Self {
+        Self {
+            next_session: AtomicU64::new(0),
+            session: Mutex::new(None),
+            providers: Mutex::new(ProviderConfiguration::from_environment()),
+        }
+    }
+}
+
+#[derive(Default)]
+struct ProviderConfiguration {
+    dashscope_api_key: SecretValue,
+    dashscope_workspace_id: String,
+    dashscope_region: String,
+    qwen_realtime_model: String,
+    agora_app_id: String,
+    agora_channel: String,
+    agora_user_token: SecretValue,
+    agora_bot_token: SecretValue,
+}
+
+impl ProviderConfiguration {
+    fn from_environment() -> Self {
+        let mut value = Self::default();
+        set_secret_from_env("DASHSCOPE_API_KEY", &mut value.dashscope_api_key);
+        set_text_from_env("DASHSCOPE_WORKSPACE_ID", &mut value.dashscope_workspace_id);
+        set_text_from_env("VOXA_QWEN_REGION", &mut value.dashscope_region);
+        set_text_from_env("VOXA_QWEN_MODEL", &mut value.qwen_realtime_model);
+        set_text_from_env("VOXA_AGORA_APP_ID", &mut value.agora_app_id);
+        set_text_from_env("VOXA_AGORA_CHANNEL", &mut value.agora_channel);
+        set_secret_from_env("VOXA_AGORA_USER_TOKEN", &mut value.agora_user_token);
+        set_secret_from_env("VOXA_AGORA_BOT_TOKEN", &mut value.agora_bot_token);
+        value
+    }
+}
+
+fn set_text_from_env(name: &str, target: &mut String) {
+    if let Some(value) = std::env::var_os(name).and_then(|value| value.into_string().ok()) {
+        target.push_str(value.trim());
+    }
+}
+
+fn set_secret_from_env(name: &str, target: &mut SecretValue) {
+    if let Some(value) = std::env::var_os(name).and_then(|value| value.into_string().ok()) {
+        target.replace(value.trim());
+    }
+}
+
+#[derive(Default)]
+struct SecretValue(Vec<u8>);
+
+impl SecretValue {
+    fn replace(&mut self, value: &str) {
+        self.0.fill(0);
+        self.0.clear();
+        self.0.extend_from_slice(value.as_bytes());
+    }
+
+    fn is_set(&self) -> bool {
+        !self.0.is_empty()
+    }
+}
+
+impl Drop for SecretValue {
+    fn drop(&mut self) {
+        self.0.fill(0);
+    }
 }
 
 pub fn random_token() -> std::io::Result<String> {
@@ -279,6 +349,8 @@ fn route(
             });
             ("200 OK", "application/json", payload.to_string())
         }
+        ("GET", "/api/v1/providers") => provider_status(runtime),
+        ("PUT", "/api/v1/providers") => update_providers(runtime, &request.body),
         ("POST", "/api/v1/graph/validate") => match validate(&request.body, graph) {
             Ok(_) => ("200 OK", "application/json", "[]".into()),
             Err(errors) => diagnostics_response(errors),
@@ -307,6 +379,152 @@ fn route(
             "not found".into(),
         ),
     }
+}
+
+fn provider_status(runtime: &StudioRuntime) -> (&'static str, &'static str, String) {
+    let providers = runtime
+        .providers
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let dashscope_key_set = providers.dashscope_api_key.is_set();
+    let agora_user_token_set = providers.agora_user_token.is_set();
+    let agora_bot_token_set = providers.agora_bot_token.is_set();
+    let value = serde_json::json!({
+        "dashscope": {
+            "configured": dashscope_key_set && !providers.dashscope_workspace_id.is_empty(),
+            "api_key_set": dashscope_key_set,
+            "workspace_id": providers.dashscope_workspace_id,
+            "region": defaulted(&providers.dashscope_region, "cn-beijing"),
+            "realtime_model": defaulted(&providers.qwen_realtime_model, "qwen-audio-3.0-realtime-flash"),
+        },
+        "agora": {
+            "configured": !providers.agora_app_id.is_empty()
+                && !providers.agora_channel.is_empty()
+                && agora_user_token_set
+                && agora_bot_token_set,
+            "app_id": providers.agora_app_id,
+            "channel": providers.agora_channel,
+            "user_token_set": agora_user_token_set,
+            "bot_token_set": agora_bot_token_set,
+        },
+        "storage": "process-memory",
+    });
+    ("200 OK", "application/json", value.to_string())
+}
+
+fn update_providers(runtime: &StudioRuntime, input: &str) -> (&'static str, &'static str, String) {
+    let value: serde_json::Value = match serde_json::from_str(input) {
+        Ok(value) => value,
+        Err(_) => {
+            return (
+                "400 Bad Request",
+                "application/json",
+                json_message("provider configuration must be valid JSON"),
+            )
+        }
+    };
+    let Some(root) = value.as_object() else {
+        return (
+            "400 Bad Request",
+            "application/json",
+            json_message("provider configuration must be an object"),
+        );
+    };
+    let mut providers = runtime
+        .providers
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if let Some(value) = root.get("dashscope") {
+        let Some(object) = value.as_object() else {
+            return provider_field_error("dashscope must be an object");
+        };
+        if let Err(message) = apply_secret(object, "api_key", &mut providers.dashscope_api_key)
+            .and_then(|_| {
+                apply_text(
+                    object,
+                    "workspace_id",
+                    &mut providers.dashscope_workspace_id,
+                    256,
+                )
+            })
+            .and_then(|_| apply_text(object, "region", &mut providers.dashscope_region, 64))
+            .and_then(|_| {
+                apply_text(
+                    object,
+                    "realtime_model",
+                    &mut providers.qwen_realtime_model,
+                    128,
+                )
+            })
+        {
+            return provider_field_error(message);
+        }
+    }
+    if let Some(value) = root.get("agora") {
+        let Some(object) = value.as_object() else {
+            return provider_field_error("agora must be an object");
+        };
+        if let Err(message) = apply_text(object, "app_id", &mut providers.agora_app_id, 256)
+            .and_then(|_| apply_text(object, "channel", &mut providers.agora_channel, 256))
+            .and_then(|_| apply_secret(object, "user_token", &mut providers.agora_user_token))
+            .and_then(|_| apply_secret(object, "bot_token", &mut providers.agora_bot_token))
+        {
+            return provider_field_error(message);
+        }
+    }
+    drop(providers);
+    provider_status(runtime)
+}
+
+fn defaulted<'a>(value: &'a str, fallback: &'a str) -> &'a str {
+    if value.is_empty() {
+        fallback
+    } else {
+        value
+    }
+}
+
+fn apply_text(
+    object: &serde_json::Map<String, serde_json::Value>,
+    name: &'static str,
+    target: &mut String,
+    maximum: usize,
+) -> Result<(), &'static str> {
+    let Some(value) = object.get(name) else {
+        return Ok(());
+    };
+    let Some(value) = value.as_str() else {
+        return Err("provider fields must be strings");
+    };
+    let value = value.trim();
+    if value.len() > maximum {
+        return Err("provider field exceeds its size limit");
+    }
+    target.clear();
+    target.push_str(value);
+    Ok(())
+}
+
+fn apply_secret(
+    object: &serde_json::Map<String, serde_json::Value>,
+    name: &'static str,
+    target: &mut SecretValue,
+) -> Result<(), &'static str> {
+    let Some(value) = object.get(name) else {
+        return Ok(());
+    };
+    let Some(value) = value.as_str() else {
+        return Err("provider secrets must be strings");
+    };
+    if value.len() > 16 * 1024 {
+        return Err("provider secret exceeds 16 KiB");
+    }
+    target.replace(value.trim());
+    Ok(())
+}
+
+fn provider_field_error(message: &str) -> (&'static str, &'static str, String) {
+    ("400 Bad Request", "application/json", json_message(message))
 }
 
 fn project_registry(graph: &Path) -> Result<voxa_core::NodeRegistry, String> {
@@ -812,6 +1030,56 @@ mod tests {
             );
             thread::yield_now();
         }
+        fs::remove_file(graph).unwrap();
+    }
+
+    #[test]
+    fn provider_configuration_never_echoes_or_persists_secrets() {
+        let graph = graph_path();
+        let original = fs::read_to_string(&graph).unwrap();
+        let runtime = StudioRuntime::default();
+        let api_key = "dashscope-private-test-key";
+        let user_token = "agora-private-user-token";
+        let bot_token = "agora-private-bot-token";
+        let update = HttpRequest {
+            method: "PUT".into(),
+            path: "/api/v1/providers".into(),
+            authorization: None,
+            body: serde_json::json!({
+                "dashscope": {
+                    "api_key": api_key,
+                    "workspace_id": "workspace-test",
+                    "region": "cn-beijing",
+                    "realtime_model": "qwen-audio-3.0-realtime-flash"
+                },
+                "agora": {
+                    "app_id": "app-test",
+                    "channel": "voxa-test",
+                    "user_token": user_token,
+                    "bot_token": bot_token
+                }
+            })
+            .to_string(),
+        };
+        let (status, _, payload) = route(&update, &graph, true, &runtime);
+        assert_eq!(status, "200 OK");
+        assert!(payload.contains(r#""configured":true"#));
+        for secret in [api_key, user_token, bot_token] {
+            assert!(!payload.contains(secret));
+            assert!(!fs::read_to_string(&graph).unwrap().contains(secret));
+        }
+
+        let status_request = HttpRequest {
+            method: "GET".into(),
+            path: "/api/v1/providers".into(),
+            authorization: None,
+            body: String::new(),
+        };
+        let (_, _, payload) = route(&status_request, &graph, true, &runtime);
+        assert!(payload.contains(r#""api_key_set":true"#));
+        assert!(payload.contains(r#""user_token_set":true"#));
+        assert!(payload.contains(r#""bot_token_set":true"#));
+        assert_eq!(fs::read_to_string(&graph).unwrap(), original);
         fs::remove_file(graph).unwrap();
     }
 }
