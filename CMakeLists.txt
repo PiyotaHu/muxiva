@@ -36,33 +36,6 @@ target_include_directories(voxa_cpp INTERFACE
   "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 target_link_libraries(voxa_cpp INTERFACE "${VOXA_FFI_LIBRARY}")
 
-option(VOXA_ENABLE_AGORA "Build the Agora Native C++ RTC provider" OFF)
-set(VOXA_AGORA_SDK_ROOT "" CACHE PATH "Agora Native C++ SDK root")
-add_library(voxa_agora STATIC cpp/adapters/src/agora_rtc_adapter.cc)
-add_library(Voxa::agora ALIAS voxa_agora)
-target_compile_features(voxa_agora PUBLIC cxx_std_17)
-target_include_directories(voxa_agora PUBLIC
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/cpp/include>"
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/cpp/adapters/include>"
-  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
-target_link_libraries(voxa_agora PUBLIC voxa_cpp)
-if(APPLE)
-  execute_process(COMMAND xcrun --show-sdk-path
-    OUTPUT_VARIABLE VOXA_APPLE_SDK_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
-  target_include_directories(voxa_agora SYSTEM PRIVATE
-    "${VOXA_APPLE_SDK_PATH}/usr/include/c++/v1")
-endif()
-if(VOXA_ENABLE_AGORA)
-  find_path(VOXA_AGORA_INCLUDE_DIR IAgoraRtcEngine.h
-    PATHS "${VOXA_AGORA_SDK_ROOT}" PATH_SUFFIXES include sdk/include REQUIRED)
-  find_library(VOXA_AGORA_LIBRARY NAMES agora_rtc_sdk AgoraRtcKit
-    PATHS "${VOXA_AGORA_SDK_ROOT}" PATH_SUFFIXES lib libs libs/x86_64 REQUIRED)
-  target_sources(voxa_agora PRIVATE cpp/adapters/src/agora_native_sdk.cc)
-  target_compile_definitions(voxa_agora PRIVATE VOXA_ENABLE_AGORA=1)
-  target_include_directories(voxa_agora PRIVATE "${VOXA_AGORA_INCLUDE_DIR}")
-  target_link_libraries(voxa_agora PUBLIC "${VOXA_AGORA_LIBRARY}")
-endif()
-
 option(VOXA_ENABLE_FFMPEG "Build the FFmpeg media conversion backend" OFF)
 set(VOXA_FFMPEG_ROOT "" CACHE PATH "FFmpeg installation prefix")
 add_library(voxa_media STATIC cpp/media/src/media_pipeline.cc)
@@ -72,6 +45,8 @@ target_include_directories(voxa_media PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/cpp/media/include>"
   "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 if(APPLE)
+  execute_process(COMMAND xcrun --show-sdk-path
+    OUTPUT_VARIABLE VOXA_APPLE_SDK_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
   target_include_directories(voxa_media SYSTEM PRIVATE
     "${VOXA_APPLE_SDK_PATH}/usr/include/c++/v1")
 endif()
@@ -95,7 +70,7 @@ install(DIRECTORY cpp/include/ DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 install(DIRECTORY cpp/adapters/include/ DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 install(DIRECTORY cpp/media/include/ DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 install(FILES "${VOXA_FFI_LIBRARY}" DESTINATION "${CMAKE_INSTALL_LIBDIR}")
-install(TARGETS voxa_agora voxa_media ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+install(TARGETS voxa_media ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
 
 configure_package_config_file(
   cmake/VoxaConfig.cmake.in

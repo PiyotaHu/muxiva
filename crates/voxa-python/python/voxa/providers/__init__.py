@@ -1,17 +1,7 @@
-"""Optional real-time media providers for Voxa."""
+"""Provider-neutral extension namespace.
 
-from .agora import (
-    AgoraAudioIngress,
-    AgoraIngressStats,
-    AgoraRtcClient,
-    AgoraRtcEvent,
-    AgoraRtcStats,
-)
+Vendor integrations are distributed as external Node Packs and are not part
+of the Voxa Python framework package.
+"""
 
-__all__ = [
-    "AgoraAudioIngress",
-    "AgoraIngressStats",
-    "AgoraRtcClient",
-    "AgoraRtcEvent",
-    "AgoraRtcStats",
-]
+__all__: list[str] = []

@@ -15,8 +15,7 @@ use std::{
 };
 
 use voxa_core::{
-    start_registered_runtime_with_resources, EdgePolicies, GraphRuntime, ResourceKey,
-    ResourceStore, RuntimeOptions, RuntimeWaitError,
+    start_registered_runtime, EdgePolicies, GraphRuntime, RuntimeOptions, RuntimeWaitError,
 };
 use voxa_graph_json::{GraphDiagnostic, GraphDocument, MAX_DOCUMENT_BYTES};
 use voxa_types::{EdgeId, NodeId};
@@ -42,80 +41,16 @@ struct RuntimeSession {
 struct StudioRuntime {
     next_session: AtomicU64,
     session: Mutex<Option<RuntimeSession>>,
-    providers: Mutex<ProviderConfiguration>,
+    connections: node_library::ConnectionStore,
 }
 
-impl Default for StudioRuntime {
-    fn default() -> Self {
-        Self {
+impl StudioRuntime {
+    fn new(graph: &Path) -> Result<Self, String> {
+        Ok(Self {
             next_session: AtomicU64::new(0),
             session: Mutex::new(None),
-            providers: Mutex::new(ProviderConfiguration::from_environment()),
-        }
-    }
-}
-
-#[derive(Default)]
-struct ProviderConfiguration {
-    dashscope_api_key: SecretValue,
-    dashscope_workspace_id: String,
-    dashscope_region: String,
-    qwen_realtime_model: String,
-    agora_app_id: String,
-    agora_channel: String,
-    agora_user_token: SecretValue,
-    agora_bot_token: SecretValue,
-}
-
-impl ProviderConfiguration {
-    fn from_environment() -> Self {
-        let mut value = Self::default();
-        set_secret_from_env("DASHSCOPE_API_KEY", &mut value.dashscope_api_key);
-        set_text_from_env("DASHSCOPE_WORKSPACE_ID", &mut value.dashscope_workspace_id);
-        set_text_from_env("VOXA_QWEN_REGION", &mut value.dashscope_region);
-        set_text_from_env("VOXA_QWEN_MODEL", &mut value.qwen_realtime_model);
-        set_text_from_env("VOXA_AGORA_APP_ID", &mut value.agora_app_id);
-        set_text_from_env("VOXA_AGORA_CHANNEL", &mut value.agora_channel);
-        set_secret_from_env("VOXA_AGORA_USER_TOKEN", &mut value.agora_user_token);
-        set_secret_from_env("VOXA_AGORA_BOT_TOKEN", &mut value.agora_bot_token);
-        value
-    }
-}
-
-fn set_text_from_env(name: &str, target: &mut String) {
-    if let Some(value) = std::env::var_os(name).and_then(|value| value.into_string().ok()) {
-        target.push_str(value.trim());
-    }
-}
-
-fn set_secret_from_env(name: &str, target: &mut SecretValue) {
-    if let Some(value) = std::env::var_os(name).and_then(|value| value.into_string().ok()) {
-        target.replace(value.trim());
-    }
-}
-
-#[derive(Default)]
-struct SecretValue(Vec<u8>);
-
-impl SecretValue {
-    fn replace(&mut self, value: &str) {
-        self.0.fill(0);
-        self.0.clear();
-        self.0.extend_from_slice(value.as_bytes());
-    }
-
-    fn is_set(&self) -> bool {
-        !self.0.is_empty()
-    }
-
-    fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl Drop for SecretValue {
-    fn drop(&mut self) {
-        self.0.fill(0);
+            connections: node_library::ConnectionStore::load(graph)?,
+        })
     }
 }
 
@@ -126,7 +61,7 @@ pub fn random_token() -> std::io::Result<String> {
 }
 
 pub fn serve(listener: TcpListener, graph: PathBuf, token: String) -> std::io::Result<()> {
-    let runtime = StudioRuntime::default();
+    let runtime = StudioRuntime::new(&graph).map_err(std::io::Error::other)?;
     for stream in listener.incoming() {
         let stream = stream?;
         if let Err(error) = handle_connection(stream, &graph, &token, &runtime) {
@@ -308,7 +243,7 @@ fn route(
             "application/json",
             voxa_graph_json::GRAPH_V1_SCHEMA.to_owned(),
         ),
-        ("GET", "/api/v1/registry/nodes") => catalog_response(graph),
+        ("GET", "/api/v1/registry/nodes") => catalog_response(graph, runtime),
         ("GET", "/api/v1/node-library") => match node_library::list(graph) {
             Ok(packages) => (
                 "200 OK",
@@ -319,6 +254,18 @@ fn route(
                 "500 Internal Server Error",
                 "application/json",
                 json_message(&format!("failed to read the project Node Library: {error}")),
+            ),
+        },
+        ("GET", "/api/v1/templates") => match project_templates(graph) {
+            Ok(templates) => (
+                "200 OK",
+                "application/json",
+                serde_json::Value::Array(templates).to_string(),
+            ),
+            Err(error) => (
+                "500 Internal Server Error",
+                "application/json",
+                json_message(&format!("failed to load project templates: {error}")),
             ),
         },
         ("PUT", "/api/v1/node-library") => match node_library::save(graph, &request.body) {
@@ -354,16 +301,31 @@ fn route(
             });
             ("200 OK", "application/json", payload.to_string())
         }
-        ("GET", "/api/v1/providers") => provider_status(runtime),
-        ("PUT", "/api/v1/providers") => update_providers(runtime, &request.body),
-        ("POST", "/api/v1/graph/validate") => match validate(&request.body, graph) {
+        ("GET", "/api/v1/providers") => (
+            "200 OK",
+            "application/json",
+            runtime.connections.status_json().to_string(),
+        ),
+        ("PUT", "/api/v1/providers") => match runtime.connections.update_json(&request.body) {
+            Ok(()) => (
+                "200 OK",
+                "application/json",
+                runtime.connections.status_json().to_string(),
+            ),
+            Err(message) => (
+                "400 Bad Request",
+                "application/json",
+                json_message(&message),
+            ),
+        },
+        ("POST", "/api/v1/graph/validate") => match validate(&request.body, graph, runtime) {
             Ok(_) => ("200 OK", "application/json", "[]".into()),
             Err(errors) => diagnostics_response(errors),
         },
         ("GET", "/api/v1/runtime") => ("200 OK", "application/json", runtime_snapshot(runtime)),
         ("POST", "/api/v1/runtime/start") => start_runtime(runtime, &request.body, graph),
         ("POST", "/api/v1/runtime/stop") => stop_runtime(runtime),
-        ("PUT", "/api/v1/graph") => match validate(&request.body, graph) {
+        ("PUT", "/api/v1/graph") => match validate(&request.body, graph, runtime) {
             Ok(document) => match save_graph(graph, &document) {
                 Ok(bytes) => (
                     "200 OK",
@@ -386,162 +348,63 @@ fn route(
     }
 }
 
-fn provider_status(runtime: &StudioRuntime) -> (&'static str, &'static str, String) {
-    let providers = runtime
-        .providers
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    let dashscope_key_set = providers.dashscope_api_key.is_set();
-    let agora_user_token_set = providers.agora_user_token.is_set();
-    let agora_bot_token_set = providers.agora_bot_token.is_set();
-    let value = serde_json::json!({
-        "dashscope": {
-            "configured": dashscope_key_set && !providers.dashscope_workspace_id.is_empty(),
-            "api_key_set": dashscope_key_set,
-            "workspace_id": providers.dashscope_workspace_id,
-            "region": defaulted(&providers.dashscope_region, "cn-beijing"),
-            "realtime_model": defaulted(&providers.qwen_realtime_model, "qwen-audio-3.0-realtime-flash"),
-        },
-        "agora": {
-            "configured": !providers.agora_app_id.is_empty()
-                && !providers.agora_channel.is_empty()
-                && agora_user_token_set
-                && agora_bot_token_set,
-            "app_id": providers.agora_app_id,
-            "channel": providers.agora_channel,
-            "user_token_set": agora_user_token_set,
-            "bot_token_set": agora_bot_token_set,
-        },
-        "storage": "process-memory",
-    });
-    ("200 OK", "application/json", value.to_string())
+fn project_templates(graph: &Path) -> std::io::Result<Vec<serde_json::Value>> {
+    let root = graph
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(".voxa/templates");
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let mut paths = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|value| value == "json"))
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|path| {
+            let bytes = fs::read(&path)?;
+            if bytes.len() > MAX_DOCUMENT_BYTES {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "template exceeds the Graph document size limit",
+                ));
+            }
+            let value: serde_json::Value = serde_json::from_slice(&bytes)
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+            if !value.get("id").is_some_and(serde_json::Value::is_string)
+                || !value.get("name").is_some_and(serde_json::Value::is_string)
+                || !value.get("graph").is_some_and(serde_json::Value::is_object)
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "template requires string id/name and a graph object",
+                ));
+            }
+            Ok(value)
+        })
+        .collect()
 }
 
-fn update_providers(runtime: &StudioRuntime, input: &str) -> (&'static str, &'static str, String) {
-    let value: serde_json::Value = match serde_json::from_str(input) {
-        Ok(value) => value,
-        Err(_) => {
-            return (
-                "400 Bad Request",
-                "application/json",
-                json_message("provider configuration must be valid JSON"),
-            )
-        }
-    };
-    let Some(root) = value.as_object() else {
-        return (
-            "400 Bad Request",
-            "application/json",
-            json_message("provider configuration must be an object"),
-        );
-    };
-    let mut providers = runtime
-        .providers
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    if let Some(value) = root.get("dashscope") {
-        let Some(object) = value.as_object() else {
-            return provider_field_error("dashscope must be an object");
-        };
-        if let Err(message) = apply_secret(object, "api_key", &mut providers.dashscope_api_key)
-            .and_then(|_| {
-                apply_text(
-                    object,
-                    "workspace_id",
-                    &mut providers.dashscope_workspace_id,
-                    256,
-                )
-            })
-            .and_then(|_| apply_text(object, "region", &mut providers.dashscope_region, 64))
-            .and_then(|_| {
-                apply_text(
-                    object,
-                    "realtime_model",
-                    &mut providers.qwen_realtime_model,
-                    128,
-                )
-            })
-        {
-            return provider_field_error(message);
-        }
-    }
-    if let Some(value) = root.get("agora") {
-        let Some(object) = value.as_object() else {
-            return provider_field_error("agora must be an object");
-        };
-        if let Err(message) = apply_text(object, "app_id", &mut providers.agora_app_id, 256)
-            .and_then(|_| apply_text(object, "channel", &mut providers.agora_channel, 256))
-            .and_then(|_| apply_secret(object, "user_token", &mut providers.agora_user_token))
-            .and_then(|_| apply_secret(object, "bot_token", &mut providers.agora_bot_token))
-        {
-            return provider_field_error(message);
-        }
-    }
-    drop(providers);
-    provider_status(runtime)
-}
-
-fn defaulted<'a>(value: &'a str, fallback: &'a str) -> &'a str {
-    if value.is_empty() {
-        fallback
-    } else {
-        value
-    }
-}
-
-fn apply_text(
-    object: &serde_json::Map<String, serde_json::Value>,
-    name: &'static str,
-    target: &mut String,
-    maximum: usize,
-) -> Result<(), &'static str> {
-    let Some(value) = object.get(name) else {
-        return Ok(());
-    };
-    let Some(value) = value.as_str() else {
-        return Err("provider fields must be strings");
-    };
-    let value = value.trim();
-    if value.len() > maximum {
-        return Err("provider field exceeds its size limit");
-    }
-    target.clear();
-    target.push_str(value);
-    Ok(())
-}
-
-fn apply_secret(
-    object: &serde_json::Map<String, serde_json::Value>,
-    name: &'static str,
-    target: &mut SecretValue,
-) -> Result<(), &'static str> {
-    let Some(value) = object.get(name) else {
-        return Ok(());
-    };
-    let Some(value) = value.as_str() else {
-        return Err("provider secrets must be strings");
-    };
-    if value.len() > 16 * 1024 {
-        return Err("provider secret exceeds 16 KiB");
-    }
-    target.replace(value.trim());
-    Ok(())
-}
-
-fn provider_field_error(message: &str) -> (&'static str, &'static str, String) {
-    ("400 Bad Request", "application/json", json_message(message))
-}
-
-fn project_registry(graph: &Path) -> Result<voxa_core::NodeRegistry, String> {
+fn project_registry(
+    graph: &Path,
+    runtime: &StudioRuntime,
+) -> Result<voxa_core::NodeRegistry, String> {
     let mut registry = voxa_graph_json::builtin_registry();
-    voxa_provider_qwen::register_qwen_nodes(&mut registry)
-        .map_err(|error| format!("failed to register Qwen provider Nodes: {error}"))?;
-    node_library::register_project_nodes(graph, &mut registry)?;
+    node_library::register_project_nodes_with_connections(
+        graph,
+        &mut registry,
+        runtime.connections.clone(),
+    )?;
     Ok(registry)
 }
 
-fn catalog_response(graph: &Path) -> (&'static str, &'static str, String) {
-    match project_registry(graph) {
+fn catalog_response(graph: &Path, runtime: &StudioRuntime) -> (&'static str, &'static str, String) {
+    match project_registry(graph, runtime) {
         Ok(registry) => (
             "200 OK",
             "application/json",
@@ -556,8 +419,12 @@ fn catalog_response(graph: &Path) -> (&'static str, &'static str, String) {
     }
 }
 
-fn validate(input: &str, graph_path: &Path) -> Result<GraphDocument, Vec<GraphDiagnostic>> {
-    let registry = project_registry(graph_path).map_err(|message| {
+fn validate(
+    input: &str,
+    graph_path: &Path,
+    runtime: &StudioRuntime,
+) -> Result<GraphDocument, Vec<GraphDiagnostic>> {
+    let registry = project_registry(graph_path, runtime).map_err(|message| {
         vec![GraphDiagnostic {
             code: "VOXA-STUDIO-NODE-LIBRARY".into(),
             message,
@@ -578,7 +445,7 @@ fn start_runtime(
         Ok(document) => document,
         Err(errors) => return diagnostics_response(errors),
     };
-    let registry = match project_registry(graph_path) {
+    let registry = match project_registry(graph_path, state) {
         Ok(registry) => registry,
         Err(error) => {
             return (
@@ -614,22 +481,11 @@ fn start_runtime(
         .iter()
         .map(|edge| edge.edge_id().clone())
         .collect();
-    let resources = match provider_resources(state) {
-        Ok(resources) => resources,
-        Err(message) => {
-            return (
-                "400 Bad Request",
-                "application/json",
-                json_message(&message),
-            )
-        }
-    };
-    let runtime = match start_registered_runtime_with_resources(
+    let runtime = match start_registered_runtime(
         graph,
         &registry,
         EdgePolicies::new(),
         RuntimeOptions::default(),
-        resources,
     ) {
         Ok(runtime) => runtime,
         Err(error) => {
@@ -655,27 +511,6 @@ fn start_runtime(
         "application/json",
         session_snapshot(session.as_ref().expect("installed session")).to_string(),
     )
-}
-
-fn provider_resources(state: &StudioRuntime) -> Result<ResourceStore, String> {
-    let resources = ResourceStore::new();
-    let providers = state
-        .providers
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    if providers.dashscope_api_key.is_set() && !providers.dashscope_workspace_id.is_empty() {
-        let credentials = voxa_provider_qwen::QwenCredentials::new(
-            providers.dashscope_api_key.as_bytes(),
-            providers.dashscope_workspace_id.clone(),
-        )
-        .map_err(|error| error.to_string())?;
-        let key = ResourceKey::new(voxa_provider_qwen::QWEN_CREDENTIALS_RESOURCE)
-            .map_err(|error| error.to_string())?;
-        resources
-            .insert(key, std::sync::Arc::new(credentials))
-            .map_err(|error| error.to_string())?;
-    }
-    Ok(resources)
 }
 
 fn stop_runtime(state: &StudioRuntime) -> (&'static str, &'static str, String) {
@@ -916,7 +751,8 @@ mod tests {
         let graph = graph.to_path_buf();
         let server = thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
-            handle_connection(stream, &graph, &token, &StudioRuntime::default()).unwrap();
+            let runtime = StudioRuntime::new(&graph).unwrap();
+            handle_connection(stream, &graph, &token, &runtime).unwrap();
         });
         let mut client = TcpStream::connect(address).unwrap();
         client.write_all(raw_request.as_bytes()).unwrap();
@@ -1035,7 +871,7 @@ mod tests {
     fn runtime_api_starts_observes_and_retains_terminal_metrics() {
         let graph = graph_path();
         let body = fs::read_to_string(&graph).unwrap();
-        let runtime = StudioRuntime::default();
+        let runtime = StudioRuntime::new(&graph).unwrap();
         let start = HttpRequest {
             method: "POST".into(),
             path: "/api/v1/runtime/start".into(),
@@ -1076,26 +912,26 @@ mod tests {
     fn provider_configuration_never_echoes_or_persists_secrets() {
         let graph = graph_path();
         let original = fs::read_to_string(&graph).unwrap();
-        let runtime = StudioRuntime::default();
-        let api_key = "dashscope-private-test-key";
-        let user_token = "agora-private-user-token";
-        let bot_token = "agora-private-bot-token";
+        let package_dir = graph.parent().unwrap().join(".voxa/nodes/connection_test");
+        fs::create_dir_all(&package_dir).unwrap();
+        fs::write(
+            package_dir.join("voxa.node.json"),
+            r#"{"format":"voxa.node/v1","package_id":"connection_test","display_name":"Connection Test","node_type":"test.connection","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:Node","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object"},"connection":{"id":"test_provider","display_name":"Test Provider","description":"Generic manifest connection","fields":[{"name":"api_key","label":"API Key","environment":"TEST_PROVIDER_API_KEY","secret":true,"required":true,"default":""},{"name":"endpoint","label":"Endpoint","environment":"TEST_PROVIDER_ENDPOINT","secret":false,"required":true,"default":"https://example.test"}]}}"#,
+        )
+        .unwrap();
+        fs::write(package_dir.join("node.py"), "class Node: pass\n").unwrap();
+        let runtime = StudioRuntime::new(&graph).unwrap();
+        let api_key = "private-test-key";
         let update = HttpRequest {
             method: "PUT".into(),
             path: "/api/v1/providers".into(),
             authorization: None,
             body: serde_json::json!({
-                "dashscope": {
-                    "api_key": api_key,
-                    "workspace_id": "workspace-test",
-                    "region": "cn-beijing",
-                    "realtime_model": "qwen-audio-3.0-realtime-flash"
-                },
-                "agora": {
-                    "app_id": "app-test",
-                    "channel": "voxa-test",
-                    "user_token": user_token,
-                    "bot_token": bot_token
+                "connections": {
+                    "test_provider": {
+                        "api_key": api_key,
+                        "endpoint": "https://custom.example"
+                    }
                 }
             })
             .to_string(),
@@ -1103,10 +939,8 @@ mod tests {
         let (status, _, payload) = route(&update, &graph, true, &runtime);
         assert_eq!(status, "200 OK");
         assert!(payload.contains(r#""configured":true"#));
-        for secret in [api_key, user_token, bot_token] {
-            assert!(!payload.contains(secret));
-            assert!(!fs::read_to_string(&graph).unwrap().contains(secret));
-        }
+        assert!(!payload.contains(api_key));
+        assert!(!fs::read_to_string(&graph).unwrap().contains(api_key));
 
         let status_request = HttpRequest {
             method: "GET".into(),
@@ -1115,9 +949,9 @@ mod tests {
             body: String::new(),
         };
         let (_, _, payload) = route(&status_request, &graph, true, &runtime);
-        assert!(payload.contains(r#""api_key_set":true"#));
-        assert!(payload.contains(r#""user_token_set":true"#));
-        assert!(payload.contains(r#""bot_token_set":true"#));
+        assert!(payload.contains(r#""name":"api_key"#));
+        assert!(payload.contains(r#""set":true"#));
+        assert!(payload.contains("https://custom.example"));
         assert_eq!(fs::read_to_string(&graph).unwrap(), original);
         fs::remove_file(graph).unwrap();
     }

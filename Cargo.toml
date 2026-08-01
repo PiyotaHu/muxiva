@@ -10,7 +10,6 @@ members = [
     "crates/voxa-testkit",
     "crates/voxa-node",
     "crates/voxa-python",
-    "crates/voxa-provider-qwen",
     "crates/voxa-types",
 ]
 resolver = "2"
@@ -28,6 +27,4 @@ tracing-subscriber = { version = "0.3", features = ["fmt"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
-base64 = "0.23"
-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 voxa-types = { path = "crates/voxa-types", version = "0.1.0" }

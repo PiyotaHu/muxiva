@@ -37,7 +37,7 @@ Voxa 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部
 | 背压与实时流控 | 可用 | 有界队列、音频合帧、Managed Stream |
 | Signal、EventBus、turn 控制 | 可用 | 相邻 Signal 与隔离的全局 Event |
 | C ABI 与 C++ SDK | 可用 | 版本化 ABI、RAII Wrapper、可安装 CMake 包与宿主注册的 Graph v1 文本 Factory |
-| RTC Adapter | 实验性 | Mock 契约，以及可选的 Agora C++ PCM16/I420 与 Python 音频 Provider；尚需带凭证实房认证 |
+| RTC Adapter | 实验性 | Mock 契约与隔离的 Agora C++ PCM16/I420 Provider；尚需带凭证实房认证 |
 | 媒体归一化 | 实验性 | 可选 FFmpeg 流式音频重采样，以及 RGBA8/I420 缩放和色彩转换 |
 | Python/PyO3 包 | 实验性 | 独立线程/asyncio loop 与宿主 Graph v1 文本 Factory；明确拒绝 `isolated_process` |
 | Node-API 包 | 实验性 | 独立 Worker 与宿主 Graph v1 文本 Factory；明确拒绝返回 Promise 的 Transform |

@@ -9,5 +9,4 @@ serde.workspace = true
 serde_json.workspace = true
 voxa-core = { path = "../voxa-core" }
 voxa-graph-json = { path = "../voxa-graph-json" }
-voxa-provider-qwen = { path = "../voxa-provider-qwen" }
 voxa-types.workspace = true

@@ -103,7 +103,7 @@ fn schema_is_machine_readable_and_declares_exact_factory_fields() {
 #[test]
 fn studio_catalog_is_derived_from_registry_descriptors_and_schemas() {
     let catalog = builtin_node_catalog();
-    assert_eq!(catalog.len(), 12);
+    assert_eq!(catalog.len(), 13);
     let json = serde_json::to_value(catalog).unwrap();
     let source = json
         .as_array()

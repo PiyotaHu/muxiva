@@ -9,7 +9,6 @@ Provider 将 Voxa 连接到 RTC SDK、媒体库、模型 API、Transport 和设�
 
 - In-memory Mock RTC 契约；
 - 可选的 Agora C++ PCM16 Audio 与 I420 Video Adapter；
-- 可选的 Python Audio Provider；
 - 带凭据实房与长稳测试脚本。
 
 真实凭据永远不能提交到仓库。生产认证仍需保留各平台实房证据、长时间测试、重连
@@ -31,17 +30,18 @@ DashScope API Key 或 Agora App Certificate。
 
 Studio 提供 DashScope 与 Agora 的 **Connections** 配置界面。Secret 使用密码
 输入框，提交后立即清空；初版只保留在本地 Studio 进程内存中，状态接口不回显，
-Graph 也不会保存。Voice Graph Gallery 同时展示推荐的 6-Node 端到端 Realtime
-拓扑，以及可检查、可替换的 10-Node VAD → ASR → LLM → TTS 级联拓扑。只有当
+Graph 也不会保存。Voice Graph Gallery 同时展示推荐的 7-Node 端到端 Realtime
+拓扑，以及可检查、可替换的 11-Node VAD → ASR → LLM → TTS 级联拓扑。只有当
 对应的精确 Provider Factory 全部安装后，Studio 才允许应用模板，避免生成无法
 校验和运行的图。
 
-第一段真实实现已经可执行：`voxa-provider-qwen` 会鉴权连接 Qwen Audio Realtime
-WebSocket，发送 16 kHz 单声道 PCM，解析 24 kHz 响应音频与增量字幕，并把相邻的
-Voxa interrupt Signal 映射为 `response.cancel`。凭据只通过运行时 `ResourceStore`
-进入 Node；内置 PCM16 重采样器覆盖演示所需的两个采样率方向。Agora Node Wrapper、
-浏览器房间控制以及级联方案的独立 Provider 是后续集成切片；在这些精确 Factory
-存在前，Studio 会继续禁用对应模板。
+Provider 代码现在严格归应用所有。Qwen Audio Realtime Node Pack 使用 Python，位于
+`examples/voice-agent`；Agora Transport 使用 C++，位于 `providers/agora/cpp` 以及
+应用自己的 C++ Node 中。Core、Graph Builtin 与 Studio 不包含任何 Qwen、DashScope
+或 Agora 代码。根 CMake 工程也不声明 Agora Target；Provider 使用自己的独立
+CMake 工程，并且只单向依赖 Voxa 公共 ABI。Studio 只从项目 Manifest 发现通用连接字段和图模板。Python Qwen
+协议测试覆盖 PCM 发送、流式音频/文本与 `response.cancel`；C++ 门禁会编译 Agora
+Node 与 Adapter。
 
 ## FFmpeg
 

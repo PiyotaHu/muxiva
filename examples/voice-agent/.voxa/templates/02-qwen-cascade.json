@@ -1,0 +1,37 @@
+{
+  "id": "qwen-cascade",
+  "name": "Qwen Cascade",
+  "badge": "Inspectable",
+  "description": "Architecture preview: independent Python ASR, LLM and TTS Nodes connected to C++ Agora. Disabled until every declared Node Pack is installed.",
+  "traits": ["replaceable stages", "Python intelligence", "C++ RTC"],
+  "graph": {
+    "version": "voxa.graph/v1",
+    "graph_id": "agora-qwen-cascade",
+    "nodes": [
+      { "id": "rtc-clock", "node_type": "builtin.interval_tick", "language": "rust", "factory_version": "1.0.0", "node_config": { "interval_ms": 20 } },
+      { "id": "agora-in", "node_type": "provider.agora.audio_source", "language": "cpp", "factory_version": "1.0.0", "node_config": {} },
+      { "id": "input-16k", "node_type": "builtin.audio_resample", "language": "rust", "factory_version": "1.0.0", "node_config": { "sample_rate_hz": 16000 } },
+      { "id": "vad", "node_type": "builtin.webrtc_vad", "language": "rust", "factory_version": "1.0.0", "node_config": {} },
+      { "id": "asr", "node_type": "provider.qwen.asr_realtime", "language": "python", "factory_version": "1.0.0", "node_config": { "model": "qwen3-asr-flash-realtime" } },
+      { "id": "turn-context", "node_type": "builtin.voice_turn_context", "language": "rust", "factory_version": "1.0.0", "node_config": {} },
+      { "id": "llm", "node_type": "provider.qwen.llm_stream", "language": "python", "factory_version": "1.0.0", "node_config": { "model": "qwen-flash" } },
+      { "id": "tts", "node_type": "provider.qwen.tts_realtime", "language": "python", "factory_version": "1.0.0", "node_config": { "model": "qwen3-tts-flash-realtime" } },
+      { "id": "output-48k", "node_type": "builtin.audio_resample", "language": "rust", "factory_version": "1.0.0", "node_config": { "sample_rate_hz": 48000 } },
+      { "id": "agora-out", "node_type": "provider.agora.audio_sink", "language": "cpp", "factory_version": "1.0.0", "node_config": {} },
+      { "id": "captions", "node_type": "builtin.stdout_text_sink", "language": "rust", "factory_version": "1.0.0", "node_config": {} }
+    ],
+    "edges": [
+      { "id": "clock-to-agora", "from": { "node_id": "rtc-clock", "port": "tick_out" }, "to": { "node_id": "agora-in", "port": "tick_in" }, "frame_type": "event", "queue_policy": { "capacity": 4, "overflow": "drop_oldest" } },
+      { "id": "agora-input", "from": { "node_id": "agora-in", "port": "audio_out" }, "to": { "node_id": "input-16k", "port": "audio_in" }, "frame_type": "audio", "queue_policy": { "capacity": 32, "overflow": "block" } },
+      { "id": "audio-to-vad", "from": { "node_id": "input-16k", "port": "audio_out" }, "to": { "node_id": "vad", "port": "audio_in" }, "frame_type": "audio", "queue_policy": { "capacity": 32, "overflow": "block" } },
+      { "id": "audio-to-asr", "from": { "node_id": "input-16k", "port": "audio_out" }, "to": { "node_id": "asr", "port": "audio_in" }, "frame_type": "audio", "queue_policy": { "capacity": 32, "overflow": "block" } },
+      { "id": "vad-to-turn", "from": { "node_id": "vad", "port": "speech_out" }, "to": { "node_id": "turn-context", "port": "speech_in" }, "frame_type": "event", "queue_policy": { "capacity": 32, "overflow": "block" } },
+      { "id": "asr-to-turn", "from": { "node_id": "asr", "port": "text_out" }, "to": { "node_id": "turn-context", "port": "transcript_in" }, "frame_type": "text", "queue_policy": { "capacity": 32, "overflow": "block" } },
+      { "id": "turn-to-llm", "from": { "node_id": "turn-context", "port": "context_out" }, "to": { "node_id": "llm", "port": "text_in" }, "frame_type": "text", "queue_policy": { "capacity": 32, "overflow": "block" } },
+      { "id": "llm-to-captions", "from": { "node_id": "llm", "port": "text_out" }, "to": { "node_id": "captions", "port": "text_in" }, "frame_type": "text", "queue_policy": { "capacity": 32, "overflow": "block" } },
+      { "id": "llm-to-tts", "from": { "node_id": "llm", "port": "text_out" }, "to": { "node_id": "tts", "port": "text_in" }, "frame_type": "text", "queue_policy": { "capacity": 32, "overflow": "block" } },
+      { "id": "tts-audio", "from": { "node_id": "tts", "port": "audio_out" }, "to": { "node_id": "output-48k", "port": "audio_in" }, "frame_type": "audio", "queue_policy": { "capacity": 32, "overflow": "block" } },
+      { "id": "audio-to-room", "from": { "node_id": "output-48k", "port": "audio_out" }, "to": { "node_id": "agora-out", "port": "audio_in" }, "frame_type": "audio", "queue_policy": { "capacity": 32, "overflow": "block" } }
+    ]
+  }
+}

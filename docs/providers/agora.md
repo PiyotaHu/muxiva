@@ -8,15 +8,17 @@ license of either SDK.
 Obtain the Agora Native SDK for the target platform, then configure:
 
 ```sh
-cmake -S . -B build/agora \
+cmake -S providers/agora/cpp -B build/agora \
   -DVOXA_ENABLE_AGORA=ON \
-  -DVOXA_AGORA_SDK_ROOT=/absolute/path/to/agora-sdk
+  -DVOXA_AGORA_SDK_ROOT=/absolute/path/to/agora-sdk \
+  -DVOXA_SOURCE_ROOT="$PWD"
 cmake --build build/agora --target voxa_agora
 ```
 
 The SDK root must contain `IAgoraRtcEngine.h` under `include` or `sdk/include`,
 and `agora_rtc_sdk`/`AgoraRtcKit` under a supported library directory. Link an
-application to `Voxa::agora`, create an external ingress, then pass
+application to `VoxaAgora::agora` and the installed Voxa C++ runtime, create an
+external ingress, then pass
 `make_native_sdk()` to `RtcAdapter::create`.
 
 The implementation uses custom audio and video tracks, publishes PCM16 mono at
@@ -30,47 +32,18 @@ Connection callbacks expose epochs/reconnect counts, and bounded control frames
 cover token warnings, connection loss, network quality, and call statistics.
 The adapter never copies a token into a frame or metrics snapshot.
 
-## Python SDK
+## Language boundary
 
-The community package has a narrow binary compatibility window. Use CPython 3.9:
+Agora integration is C++-only. Its headers, implementation, build project, and
+tests live under `providers/agora/cpp`; the root Voxa CMake project and Python
+package contain no Agora target or SDK wrapper.
+The flagship application's C++ Node Pack is under
+`examples/voice-agent/.voxa/nodes/agora_*`. Studio discovers its Manifest but
+does not compile or link Agora itself.
 
-```sh
-python3.9 -m venv .venv-agora
-.venv-agora/bin/python -m pip install agora-python-sdk==3.4.2.1 voxa
-VOXA_AGORA_PYTHON=.venv-agora/bin/python ./scripts/check-agora-python.sh
-```
-
-Run the checked-in audio example with short-lived credentials:
-
-```sh
-export VOXA_AGORA_APP_ID='...'
-export VOXA_AGORA_TOKEN='...'
-export VOXA_AGORA_CHANNEL='voxa-test'
-.venv-agora/bin/python examples/python/agora_audio.py
-```
-
-Do not commit App IDs, certificates, or tokens. The example only receives
-playback audio into a bounded queue; it does not execute application code on an
-Agora callback thread.
-
-`AgoraRtcClient` provides the same operational surface through `renew_token()`,
-`try_pop_event()`, and `rtc_stats`. Its control-event queue is separately
-bounded with `event_capacity`; a slow consumer cannot block an SDK callback.
-
-For a real-room soak with optional token-file rotation:
-
-```sh
-export VOXA_AGORA_APP_ID='...'
-export VOXA_AGORA_CHANNEL='voxa-test'
-export VOXA_AGORA_TOKEN_FILE='/secure/runtime/token'
-export VOXA_AGORA_SOAK_SECONDS=3600
-export VOXA_AGORA_REQUIRE_AUDIO=1
-VOXA_AGORA_PYTHON=.venv-agora/bin/python ./scripts/check-agora-live.sh
-```
-
-No credential is printed. Without an App ID and channel, the live gate reports
-an explicit `SKIP`. See
-[`D09 Agora production readiness`](../design/d09-agora-production-readiness.md).
+Do not commit App IDs, certificates, or tokens. Studio's generic Connection
+store passes the Manifest-declared environment variables only to the owning
+Node process. See [`D09 Agora production readiness`](../design/d09-agora-production-readiness.md).
 
 ## Live acceptance checklist
 

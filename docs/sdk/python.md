@@ -56,12 +56,9 @@ constructor receives the Graph `node_config` dict. Graph JSON still cannot
 import Python code. The end-to-end contract is exercised in
 `crates/voxa-python/tests/test_voxa.py`.
 
-## Agora audio ingress
+## Provider boundary
 
-`voxa.providers.agora` lazily integrates the community Agora Python RTC SDK.
-`AgoraRtcClient` owns SDK lifecycle while `AgoraAudioIngress` copies playback
-PCM16 into a fixed-capacity queue for application or Node-domain consumption.
-It requires `agora-python-sdk==3.4.2.1` on CPython 3.9 and remains optional; the
-ordinary Voxa package import does not load Agora. See
-[`docs/providers/agora.md`](../providers/agora.md) and
-`examples/python/agora_audio.py`.
+The Python framework package is vendor-neutral. Python business integrations,
+such as the Qwen Voice Node Pack, live with the application and register through
+the common Node Pack Manifest. RTC transport is implemented by the separate C++
+Agora provider; there is no Agora wrapper in the Python wheel.

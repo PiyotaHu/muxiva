@@ -10,7 +10,6 @@ The repository contains:
 
 - an in-memory Mock RTC contract;
 - an optional Agora C++ adapter for PCM16 audio and I420 video;
-- an optional Python audio provider;
 - scripts for credentialed live-room and soak testing.
 
 Live credentials are never committed. Production certification still requires
@@ -38,18 +37,19 @@ Studio provides a **Connections** dialog for DashScope and Agora. Secret values
 are password inputs, are cleared after submission, remain only in local process
 memory for the initial implementation, and are never returned by the status
 API or saved with the Graph. The Voice Graph Gallery shows both a recommended
-six-Node end-to-end Realtime topology and an inspectable ten-Node VAD → ASR →
+seven-Node end-to-end Realtime topology and an inspectable eleven-Node VAD → ASR →
 LLM → TTS cascade. Applying either graph remains disabled until all of its exact
 Provider Factories are installed.
 
-The first implementation slice is now executable: `voxa-provider-qwen`
-authenticates the Qwen Audio Realtime WebSocket, sends 16 kHz mono PCM, decodes
-24 kHz response audio and incremental transcripts, and maps an adjacent Voxa
-interrupt Signal to `response.cancel`. Credentials reach the Node only through
-the runtime `ResourceStore`. The built-in PCM16 resampler covers both demo
-directions. Agora Node wrappers, browser room controls, and the separate
-cascade Providers remain the next integration slices; Studio keeps those
-templates disabled until those exact Factories exist.
+Provider code is now strictly application-owned. The Qwen Audio Realtime Node
+Pack is Python and lives under `examples/voice-agent`; the Agora transport is
+C++ and lives under `providers/agora/cpp` plus the application's C++ Nodes.
+Core, Graph builtins, and Studio contain no Qwen, DashScope, or Agora code.
+The root CMake project also contains no Agora target; the provider has its own
+standalone CMake project and depends one-way on Voxa's public ABI.
+Studio discovers generic connection fields and graph templates from project
+Manifests. The Python Qwen protocol tests cover PCM append, streamed audio and
+text, and `response.cancel`; the C++ gate compiles the Agora Nodes and adapter.
 
 ## FFmpeg
 

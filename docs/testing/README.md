@@ -28,11 +28,11 @@ as executed coverage.
 | Stage 9 combined | `VOXA_PYTHON=/path/to/python ./scripts/check-stage9-sanitizers.sh` | workspace Rust tests followed by both built binding packages | all Python and Node prerequisites above |
 | Stage 10 CLI/Studio | `cargo test --offline -p voxa-studio -p voxa-cli` | shared Graph v1 diagnostics, create-only init, bearer-token rejection, authenticated validation, and exact occupied-port failure | loopback sockets must be permitted by the test sandbox |
 | D07 Agora C++ | `./scripts/check-rtc.sh` and `./scripts/check-rtc-asan.sh` | fake-SDK PCM16/I420 copy, bounded ingress, signals/events, outbound media, idempotent close, deliberately late callback | C++17 compiler; vendor SDK is not required |
-| D07 Agora Python | `VOXA_AGORA_PYTHON=/path/to/python3.9 ./scripts/check-agora-python.sh` | imports the real community extension and checks its engine/audio/video observer surface | CPython 3.9 with `agora-python-sdk==3.4.2.1`; otherwise explicit `SKIP` |
 | D08 media | `./scripts/check-media.sh` | exact PCM/video shapes, rate conversion, I420/RGBA conversion, timestamp continuity/discontinuity, byte budget, concurrent admission, flush/reset | C++17 compiler; real FFmpeg test runs when development libraries are discoverable |
 | D08 media safety | `./scripts/check-media-asan.sh` | provider-independent contract and, when discoverable, the real FFmpeg backend under ASan/UBSan | clang with ASan/UBSan |
-| D09 Agora resilience | `./scripts/check-rtc.sh` and `./scripts/check-agora-python.sh` | token rotation, reconnect epochs, bounded control events, quality/call metrics, shutdown; real SDK header/engine probes when installed | deterministic fake provider; optional Agora SDK |
-| D09 Agora live soak | `VOXA_AGORA_PYTHON=/path/to/python3.9 ./scripts/check-agora-live.sh` | real join, long-run callback flow, token-file hot rotation, credential-free summary | App ID/channel, optional token, real remote audio when required; otherwise explicit `SKIP` |
+| D09 Agora resilience | `./scripts/check-rtc.sh` | C++ token rotation, reconnect epochs, bounded control events, quality/call metrics, and shutdown | deterministic fake provider; optional Agora Native SDK |
+| Provider layering | `./scripts/check-provider-boundaries.sh` | Core/Studio vendor neutrality; Qwen=Python and Agora=C++ Manifest enforcement | Python 3 and ripgrep |
+| Voice Node Packs | `./scripts/check-voice-node-packs.sh` | Python Qwen protocol tests; C++ Agora Nodes and standalone provider build | Python 3, C++17, and CMake |
 
 The Linux `check-native-tsan.sh` gate also executes the D08 concurrent-admission
 contract under ThreadSanitizer.

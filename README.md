@@ -37,7 +37,7 @@ Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but
 | Backpressure and real-time flow control | Available | Bounded queues, audio merge, managed streams |
 | Signal, EventBus, turn control | Available | Adjacent signals and isolated global events |
 | C ABI and C++ SDK | Available | Versioned ABI, RAII wrappers, installable CMake package, and hosted Graph v1 text factories |
-| RTC adapters | Experimental | Mock contract plus optional Agora C++ PCM16/I420 and Python audio providers; live credential certification remains |
+| RTC adapters | Experimental | Mock contract plus isolated Agora C++ PCM16/I420 provider; live credential certification remains |
 | Media normalization | Experimental | Optional FFmpeg streaming audio resampling plus RGBA8/I420 scale and color conversion |
 | Python/PyO3 package | Experimental | Dedicated thread/asyncio loop and hosted Graph v1 text factories; `isolated_process` is rejected |
 | Node-API package | Experimental | Dedicated Worker and hosted Graph v1 text factories; Promise-returning transforms are rejected |

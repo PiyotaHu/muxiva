@@ -4,8 +4,8 @@
 
 D07 adds an optional Agora boundary without making a proprietary SDK a Voxa
 Core dependency. The C++ provider translates Agora 4.x raw PCM16/I420 callbacks
-into the bounded `ExternalIngress`; the Python provider translates the community
-Python SDK playback callback into an owned, bounded `AudioFrame` queue.
+into bounded Voxa ingress and egress. Agora has no Rust, Python, or TypeScript
+runtime implementation in this repository.
 
 ## Contract
 
@@ -24,20 +24,19 @@ Python SDK playback callback into an owned, bounded `AudioFrame` queue.
 
 ## Packaging boundary
 
-`VOXA_ENABLE_AGORA=OFF` is the default. It builds and tests the public adapter
-contract with no Agora files. Enabling it requires an independently obtained
-Agora Native SDK root and links the vendor library into `Voxa::agora`.
+The standalone `providers/agora/cpp` CMake project defaults
+`VOXA_ENABLE_AGORA=OFF`, which builds and tests the public adapter contract with
+no vendor files. Enabling it requires an independently obtained Agora Native SDK
+root and links the vendor library into `VoxaAgora::agora`.
 
-The Python integration lazily imports `agorartc`; importing `voxa` has no Agora
-dependency. The available community wheel is pinned to `agora-python-sdk
-3.4.2.1` and CPython 3.9 for its supported macOS binary.
+All vendor code and vendor build declarations live under `providers/agora/cpp`
+or an application-owned C++ Node Pack. The framework workspace, root CMake
+project, Studio, and Python wheel do not depend on Agora.
 
 ## Verification boundary
 
 The deterministic fake-SDK contract test covers copied audio/video, signals,
 bounded admission, outbound custom media, idempotent shutdown, and a deliberately
 late callback. ASan/UBSan run the same test. The native implementation is
-syntax-checked against current Agora 4.x headers; the real Python extension is
-import-probed. Joining a live channel remains a credentialed integration gate
+syntax-checked against current Agora 4.x headers. Joining a live channel remains a credentialed integration gate
 and is intentionally not part of offline CI.
-

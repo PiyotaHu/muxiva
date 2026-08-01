@@ -21,6 +21,5 @@ else
   echo "SKIP Node binding gate: Stage 9 check script is not present"
 fi
 
-if [[ -x ./scripts/check-agora-python.sh ]]; then
-  ./scripts/check-agora-python.sh
-fi
+./scripts/check-provider-boundaries.sh
+./scripts/check-voice-node-packs.sh

@@ -154,19 +154,8 @@
     <dialog id="provider-dialog" class="provider-dialog">
       <form id="provider-form">
         <div class="dialog-title"><div><span class="eyebrow">PRIVATE LOCAL CONFIGURATION</span><h2>Provider connections</h2></div><button id="provider-close" type="button" class="icon-button">×</button></div>
-        <p class="dialog-copy">Secrets are sent only to this token-protected local Studio process. They are never written to the Graph, browser storage, logs, or API responses.</p>
-        <section class="provider-card" data-provider="dashscope">
-          <div class="provider-title"><div><b>Alibaba Cloud Model Studio</b><small>Qwen voice intelligence</small></div><span id="dashscope-badge" class="provider-badge">Not configured</span></div>
-          <label>API Key<input id="dashscope-key" type="password" autocomplete="off" placeholder="Paste to set or replace"></label>
-          <label>Workspace ID<input id="dashscope-workspace" autocomplete="off" spellcheck="false"></label>
-          <div class="form-row"><label>Region<select id="dashscope-region"><option value="cn-beijing">China · Beijing</option></select></label><label>Realtime model<input id="dashscope-model" value="qwen-audio-3.0-realtime-flash" readonly></label></div>
-        </section>
-        <section class="provider-card" data-provider="agora">
-          <div class="provider-title"><div><b>Agora RTC</b><small>Browser and Bot media transport</small></div><span id="agora-badge" class="provider-badge">Not configured</span></div>
-          <div class="form-row"><label>App ID<input id="agora-app-id" autocomplete="off" spellcheck="false"></label><label>Channel<input id="agora-channel" value="voxa-demo" autocomplete="off" spellcheck="false"></label></div>
-          <label>User token<input id="agora-user-token" type="password" autocomplete="off" placeholder="Browser UID token"></label>
-          <label>Bot token<input id="agora-bot-token" type="password" autocomplete="off" placeholder="Voxa Bot UID token"></label>
-        </section>
+        <p class="dialog-copy">Fields are declared by installed Node Pack Manifests. Studio has no provider-specific code. Secrets remain only in this local process and are passed to the owning language process as environment variables.</p>
+        <div id="provider-connections"></div>
         <p id="provider-storage" class="provider-storage"></p>
         <p id="provider-error" class="field-error"></p>
         <div class="dialog-actions"><button id="provider-cancel" type="button" class="button ghost">Cancel</button><button type="submit" class="button primary">Save connections</button></div>
@@ -175,7 +164,7 @@
 
     <dialog id="template-dialog" class="template-dialog">
       <div class="dialog-title"><div><span class="eyebrow">VOICE GRAPH GALLERY</span><h2>Choose an architecture</h2></div><button id="template-close" type="button" class="icon-button">×</button></div>
-      <p class="dialog-copy">Both templates use the same Qwen and Agora accounts. Choose the fastest end-to-end experience or a fully inspectable cascade.</p>
+      <p class="dialog-copy">Templates are loaded from this project's <code>.voxa/templates/</code> directory. Studio contains no application- or provider-specific graph definitions.</p>
       <div id="template-gallery" class="template-gallery"></div>
       <div class="dialog-actions"><button id="template-cancel" type="button" class="button ghost">Close</button></div>
     </dialog>

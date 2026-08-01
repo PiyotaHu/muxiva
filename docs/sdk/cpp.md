@@ -62,10 +62,12 @@ and validated by Rust before queue admission. See
 
 ## Agora RTC adapter
 
-`Voxa::agora` is an optional C++17 adapter target. Its contract implementation
-is always available; the real provider is enabled with `VOXA_ENABLE_AGORA=ON`
-and `VOXA_AGORA_SDK_ROOT=/path/to/sdk`. It keeps Agora callbacks outside graph
-execution and feeds owned frames through bounded external ingress. See
+`VoxaAgora::agora` is a C++17 adapter target built from the independent
+`providers/agora/cpp` project. Its contract implementation is always available;
+the real provider is enabled there with `VOXA_ENABLE_AGORA=ON` and
+`VOXA_AGORA_SDK_ROOT=/path/to/sdk`. The Voxa SDK itself contains no Agora build
+target. The adapter keeps callbacks outside graph execution and feeds owned
+frames through bounded external ingress. See
 [`docs/providers/agora.md`](../providers/agora.md) for SDK compatibility,
 build, credentials, and live acceptance steps.
 

@@ -158,113 +158,60 @@ async function openProviders() {
   $('#provider-error').textContent = ''
   try {
     const status = await api('/api/v1/providers')
-    $('#dashscope-workspace').value = status.dashscope.workspace_id || ''
-    $('#dashscope-region').value = status.dashscope.region || 'cn-beijing'
-    $('#dashscope-model').value = status.dashscope.realtime_model
-    $('#agora-app-id').value = status.agora.app_id || ''
-    $('#agora-channel').value = status.agora.channel || 'voxa-demo'
-    $('#dashscope-key').value = ''
-    $('#agora-user-token').value = ''
-    $('#agora-bot-token').value = ''
     renderProviderStatus(status)
     $('#provider-dialog').showModal()
   } catch (error) { toast(error.message, true) }
 }
 function closeProviders() {
-  $('#dashscope-key').value = ''
-  $('#agora-user-token').value = ''
-  $('#agora-bot-token').value = ''
+  $$('#provider-connections input[type="password"]').forEach((input) => { input.value = '' })
   $('#provider-dialog').close()
 }
 function renderProviderStatus(status) {
-  const setBadge = (selector, ready) => {
-    const badge = $(selector); badge.textContent = ready ? 'Ready' : 'Not configured'; badge.classList.toggle('ready', ready)
+  const cards = (status.connections || []).map((connection) => {
+    const card = document.createElement('section'); card.className = 'provider-card'; card.dataset.connection = connection.id
+    const title = document.createElement('div'); title.className = 'provider-title'
+    const copy = document.createElement('div'), name = document.createElement('b'), description = document.createElement('small')
+    name.textContent = connection.display_name; description.textContent = connection.description; copy.append(name, description)
+    const badge = document.createElement('span'); badge.className = `provider-badge${connection.configured ? ' ready' : ''}`; badge.textContent = connection.configured ? 'Ready' : 'Not configured'
+    title.append(copy, badge); card.append(title)
+    for (const field of connection.fields || []) {
+      const label = document.createElement('label'); label.textContent = field.label
+      const input = document.createElement('input'); input.dataset.connection = connection.id; input.dataset.field = field.name
+      input.type = field.secret ? 'password' : 'text'; input.autocomplete = 'off'; input.spellcheck = false
+      input.value = field.secret ? '' : field.value || ''
+      input.placeholder = field.secret && field.set ? 'Saved for this Studio session · paste to replace' : field.required ? 'Required' : 'Optional'
+      label.append(input); card.append(label)
+    }
+    return card
+  })
+  if (!cards.length) {
+    const empty = document.createElement('p'); empty.className = 'dialog-copy'; empty.textContent = 'No installed Node Pack declares a connection.'; cards.push(empty)
   }
-  setBadge('#dashscope-badge', status.dashscope.configured)
-  setBadge('#agora-badge', status.agora.configured)
-  $('#dashscope-key').placeholder = status.dashscope.api_key_set ? 'Saved for this Studio session · paste to replace' : 'Paste API Key'
-  $('#agora-user-token').placeholder = status.agora.user_token_set ? 'Saved · paste to replace' : 'Browser UID token'
-  $('#agora-bot-token').placeholder = status.agora.bot_token_set ? 'Saved · paste to replace' : 'Voxa Bot UID token'
+  $('#provider-connections').replaceChildren(...cards)
   $('#provider-storage').textContent = status.storage === 'process-memory'
     ? 'Session-only storage · secrets are erased when Studio exits.'
     : `Secret storage: ${status.storage}`
 }
 async function saveProviders(event) {
   event.preventDefault()
-  const payload = {
-    dashscope: {
-      workspace_id: $('#dashscope-workspace').value.trim(), region: $('#dashscope-region').value,
-      realtime_model: $('#dashscope-model').value,
-    },
-    agora: { app_id: $('#agora-app-id').value.trim(), channel: $('#agora-channel').value.trim() },
-  }
-  if ($('#dashscope-key').value) payload.dashscope.api_key = $('#dashscope-key').value
-  if ($('#agora-user-token').value) payload.agora.user_token = $('#agora-user-token').value
-  if ($('#agora-bot-token').value) payload.agora.bot_token = $('#agora-bot-token').value
+  const payload = { connections: {} }
+  $$('#provider-connections input[data-connection]').forEach((input) => {
+    if (input.type === 'password' && !input.value) return
+    payload.connections[input.dataset.connection] ||= {}
+    payload.connections[input.dataset.connection][input.dataset.field] = input.value
+  })
   try {
     const status = await api('/api/v1/providers', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    $('#dashscope-key').value = ''; $('#agora-user-token').value = ''; $('#agora-bot-token').value = ''
     renderProviderStatus(status)
     toast('Provider connections saved for this Studio session')
   } catch (error) { $('#provider-error').textContent = error.message }
 }
 
-const voiceTemplates = [
-  {
-    id: 'qwen-realtime', name: 'Qwen Realtime', badge: 'Recommended',
-    description: 'One full-duplex Qwen session handles turn detection, understanding and streaming voice. Lowest setup and latency.',
-    traits: ['semantic interruption', 'one model session', 'fastest first response'],
-    graph: {
-      version: 'voxa.graph/v1', graph_id: 'agora-qwen-realtime',
-      nodes: [
-        { id: 'agora-in', node_type: 'provider.agora.audio_source', language: 'cpp', factory_version: '1.0.0', node_config: {} },
-        { id: 'input-16k', node_type: 'builtin.audio_resample', language: 'rust', factory_version: '1.0.0', node_config: { sample_rate_hz: 16000 } },
-        { id: 'qwen-realtime', node_type: 'provider.qwen.audio_realtime', language: 'rust', factory_version: '1.0.0', node_config: { model: 'qwen-audio-3.0-realtime-flash' } },
-        { id: 'output-48k', node_type: 'builtin.audio_resample', language: 'rust', factory_version: '1.0.0', node_config: { sample_rate_hz: 48000 } },
-        { id: 'agora-out', node_type: 'provider.agora.audio_sink', language: 'cpp', factory_version: '1.0.0', node_config: {} },
-        { id: 'captions', node_type: 'builtin.stdout_text_sink', language: 'rust', factory_version: '1.0.0', node_config: {} },
-      ],
-      edges: [
-        edge('agora-input', 'agora-in', 'audio_out', 'input-16k', 'audio_in', 'audio'), edge('audio-to-qwen', 'input-16k', 'audio_out', 'qwen-realtime', 'audio_in', 'audio'),
-        edge('qwen-audio', 'qwen-realtime', 'audio_out', 'output-48k', 'audio_in', 'audio'), edge('audio-to-room', 'output-48k', 'audio_out', 'agora-out', 'audio_in', 'audio'),
-        edge('qwen-captions', 'qwen-realtime', 'text_out', 'captions', 'text_in', 'text'),
-      ],
-    },
-  },
-  {
-    id: 'qwen-cascade', name: 'Qwen Cascade', badge: 'Inspectable',
-    description: 'Separate VAD, ASR, LLM and TTS Nodes expose every boundary and make each component replaceable.',
-    traits: ['local VAD', 'replaceable providers', 'per-stage latency'],
-    graph: {
-      version: 'voxa.graph/v1', graph_id: 'agora-qwen-cascade',
-      nodes: [
-        { id: 'agora-in', node_type: 'provider.agora.audio_source', language: 'cpp', factory_version: '1.0.0', node_config: {} },
-        { id: 'input-16k', node_type: 'builtin.audio_resample', language: 'rust', factory_version: '1.0.0', node_config: { sample_rate_hz: 16000 } },
-        { id: 'vad', node_type: 'builtin.webrtc_vad', language: 'rust', factory_version: '1.0.0', node_config: {} },
-        { id: 'asr', node_type: 'provider.qwen.asr_realtime', language: 'rust', factory_version: '1.0.0', node_config: { model: 'qwen3-asr-flash-realtime' } },
-        { id: 'turn-context', node_type: 'builtin.voice_turn_context', language: 'rust', factory_version: '1.0.0', node_config: {} },
-        { id: 'llm', node_type: 'provider.qwen.llm_stream', language: 'rust', factory_version: '1.0.0', node_config: { model: 'qwen-flash' } },
-        { id: 'tts', node_type: 'provider.qwen.tts_realtime', language: 'rust', factory_version: '1.0.0', node_config: { model: 'qwen3-tts-flash-realtime' } },
-        { id: 'output-48k', node_type: 'builtin.audio_resample', language: 'rust', factory_version: '1.0.0', node_config: { sample_rate_hz: 48000 } },
-        { id: 'agora-out', node_type: 'provider.agora.audio_sink', language: 'cpp', factory_version: '1.0.0', node_config: {} },
-        { id: 'captions', node_type: 'builtin.stdout_text_sink', language: 'rust', factory_version: '1.0.0', node_config: {} },
-      ],
-      edges: [
-        edge('agora-input', 'agora-in', 'audio_out', 'input-16k', 'audio_in', 'audio'), edge('audio-to-vad', 'input-16k', 'audio_out', 'vad', 'audio_in', 'audio'),
-        edge('audio-to-asr', 'input-16k', 'audio_out', 'asr', 'audio_in', 'audio'), edge('vad-to-turn', 'vad', 'speech_out', 'turn-context', 'speech_in', 'event'),
-        edge('asr-to-turn', 'asr', 'text_out', 'turn-context', 'transcript_in', 'text'), edge('turn-to-llm', 'turn-context', 'context_out', 'llm', 'text_in', 'text'),
-        edge('llm-to-captions', 'llm', 'text_out', 'captions', 'text_in', 'text'), edge('llm-to-tts', 'llm', 'text_out', 'tts', 'text_in', 'text'),
-        edge('tts-audio', 'tts', 'audio_out', 'output-48k', 'audio_in', 'audio'), edge('audio-to-room', 'output-48k', 'audio_out', 'agora-out', 'audio_in', 'audio'),
-      ],
-    },
-  },
-]
-function edge(id, fromNode, fromPort, toNode, toPort, frameType) {
-  return { id, from: { node_id: fromNode, port: fromPort }, to: { node_id: toNode, port: toPort }, frame_type: frameType, queue_policy: { capacity: 32, overflow: 'block' } }
-}
-function templateAvailable(template) { return template.graph.nodes.every((node) => catalog.has(factoryKey(node))) }
-function openTemplates() {
-  const cards = voiceTemplates.map((template) => {
+function templateAvailable(template) { return template.graph.nodes.every((node) => catalog.get(factoryKey(node))?.runtime_available !== false) }
+async function openTemplates() {
+  try {
+    const templates = await api('/api/v1/templates')
+    const cards = templates.map((template) => {
     const available = templateAvailable(template), card = document.createElement('article'); card.className = 'template-card'
     const title = document.createElement('div'); title.className = 'template-title'; title.innerHTML = `<div><b>${template.name}</b><small>${template.badge}</small></div><span>${template.graph.nodes.length} Nodes</span>`
     const description = document.createElement('p'); description.textContent = template.description
@@ -272,8 +219,10 @@ function openTemplates() {
     const button = document.createElement('button'); button.className = 'button primary'; button.textContent = available ? 'Use this graph' : 'Provider Nodes installing'; button.disabled = !available
     button.addEventListener('click', () => applyTemplate(template))
     card.append(title, description, traits, button); return card
-  })
-  $('#template-gallery').replaceChildren(...cards); $('#template-dialog').showModal()
+    })
+    if (!cards.length) { const empty = document.createElement('p'); empty.className = 'dialog-copy'; empty.textContent = 'No project template is installed under .voxa/templates/.'; cards.push(empty) }
+    $('#template-gallery').replaceChildren(...cards); $('#template-dialog').showModal()
+  } catch (error) { toast(error.message, true) }
 }
 function closeTemplates() { $('#template-dialog').close() }
 function applyTemplate(template) {

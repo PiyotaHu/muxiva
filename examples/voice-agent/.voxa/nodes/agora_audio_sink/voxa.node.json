@@ -1,0 +1,25 @@
+{
+  "format": "voxa.node/v1",
+  "package_id": "agora_audio_sink",
+  "display_name": "Agora Audio Egress",
+  "node_type": "provider.agora.audio_sink",
+  "language": "cpp",
+  "factory_version": "1.0.0",
+  "kind": "sink",
+  "entrypoint": "AgoraAudioSinkNode",
+  "ports": [
+    { "name": "audio_in", "direction": "input", "frame_type": "audio" }
+  ],
+  "config_schema": { "type": "object", "properties": {}, "additionalProperties": false },
+  "connection": {
+    "id": "agora",
+    "display_name": "Agora RTC",
+    "description": "Credentials consumed only by the C++ RTC Node Pack",
+    "fields": [
+      { "name": "app_id", "label": "App ID", "environment": "VOXA_AGORA_APP_ID", "secret": false, "required": true, "default": "" },
+      { "name": "channel", "label": "Channel", "environment": "VOXA_AGORA_CHANNEL", "secret": false, "required": true, "default": "voxa-demo" },
+      { "name": "bot_uid", "label": "Bot UID", "environment": "VOXA_AGORA_BOT_UID", "secret": false, "required": true, "default": "2001" },
+      { "name": "bot_token", "label": "Bot Token", "environment": "VOXA_AGORA_BOT_TOKEN", "secret": true, "required": true, "default": "" }
+    ]
+  }
+}

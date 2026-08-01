@@ -1,10 +1,11 @@
 use std::{
+    collections::BTreeMap,
     fs::{self, OpenOptions},
     io::{self, BufRead, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::atomic::{AtomicU64, Ordering},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use serde::{Deserialize, Serialize};
@@ -14,10 +15,10 @@ use voxa_core::{
     NodeTypeName, PortDescriptor, PortDirection, PortName,
 };
 use voxa_types::{
-    ClockDomain, ClockDomainId, ClockKind, ErrorCategory, EventData, Extensions, Frame,
-    FrameDerivation, FrameHeader, FrameId, FramePayload, FrameType, Lineage, Metadata,
-    NamespacedName, NodeId, SchemaVersion, SequenceId, SignalData, StreamId, TextData, Timestamp,
-    TraceId, TransformOrigin, VoxaError,
+    AudioData, AudioLayout, ClockDomain, ClockDomainId, ClockKind, ErrorCategory, EventData,
+    Extensions, Frame, FrameBuffer, FrameDerivation, FrameHeader, FrameId, FramePayload, FrameType,
+    Lineage, Metadata, NamespacedName, NodeId, PcmSampleFormat, SchemaVersion, SequenceId,
+    SignalData, StreamId, TextData, Timestamp, TraceId, TransformOrigin, VoxaError,
 };
 
 const FORMAT: &str = "voxa.node/v1";
@@ -32,8 +33,14 @@ import importlib.util, inspect, json, sys, types
 class TextFrame:
     def __init__(self, text, sequence=0): self.text, self.sequence = text, sequence
 
+class AudioFrame:
+    def __init__(self, data, sample_rate_hz, channels=1, sequence=0):
+        self.data, self.sample_rate_hz = bytes(data), sample_rate_hz
+        self.channels, self.sequence = channels, sequence
+
 shim = types.ModuleType("voxa")
 shim.TextFrame = TextFrame
+shim.AudioFrame = AudioFrame
 
 class NodeContext:
     def __init__(self, node_id, input_port, config):
@@ -69,10 +76,12 @@ def invoke(name, *args):
 def decode_frame(value):
     if value is None: return None
     if value.get("kind") == "text": return TextFrame(value["text"], value.get("sequence", 0))
-    raise ValueError("Studio Python Host currently supports text Frames")
+    if value.get("kind") == "audio": return AudioFrame(bytes.fromhex(value["pcm_hex"]), value["sample_rate_hz"], value["channels"], value.get("sequence", 0))
+    raise ValueError("Studio Python Host received an unsupported Frame")
 
 def encode_frame(value):
     if isinstance(value, TextFrame): return {"kind":"text", "text":value.text, "sequence":value.sequence}
+    if isinstance(value, AudioFrame): return {"kind":"audio", "pcm_hex":value.data.hex(), "sample_rate_hz":value.sample_rate_hz, "channels":value.channels, "sequence":value.sequence}
     if isinstance(value, dict) and value.get("kind") == "text": return value
     raise ValueError("Python Node emitted an unsupported Frame")
 
@@ -92,9 +101,9 @@ for line in sys.stdin:
                     if not isinstance(frames, list): frames = [frames]
                     emissions.extend({"port":port, "frame":encode_frame(item)} for item in frames)
             response = {"ok": True, "emissions": emissions, "signals":ctx.signals, "events":ctx.events}
-        elif op == "prepare": invoke("on_prepare"); response = {"ok": True}
-        elif op == "finish": invoke("on_finish"); response = {"ok": True}
-        elif op == "abort": invoke("on_abort", command.get("reason", "aborted")); response = {"ok": True}
+        elif op == "prepare": invoke("on_prepare", NodeContext(command["node_id"], None, config)); response = {"ok": True}
+        elif op == "finish": invoke("on_finish", NodeContext(command["node_id"], None, config)); response = {"ok": True}
+        elif op == "abort": invoke("on_abort", command.get("reason", "aborted"), NodeContext(command["node_id"], None, config)); response = {"ok": True}
         elif op == "close": print(json.dumps({"ok": True}), flush=True); break
         else: raise ValueError("unknown Host operation")
     except Exception as error:
@@ -123,6 +132,188 @@ pub struct NodePackageManifest {
     pub entrypoint: String,
     pub ports: Vec<NodePortManifest>,
     pub config_schema: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<ConnectionManifest>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectionManifest {
+    pub id: String,
+    pub display_name: String,
+    pub description: String,
+    pub fields: Vec<ConnectionFieldManifest>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectionFieldManifest {
+    pub name: String,
+    pub label: String,
+    pub environment: String,
+    #[serde(default)]
+    pub secret: bool,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub default: String,
+}
+
+struct SecretBytes(Vec<u8>);
+
+impl SecretBytes {
+    fn replace(&mut self, value: &str) {
+        self.0.fill(0);
+        self.0.clear();
+        self.0.extend_from_slice(value.as_bytes());
+    }
+}
+
+impl Drop for SecretBytes {
+    fn drop(&mut self) {
+        self.0.fill(0);
+    }
+}
+
+#[derive(Clone)]
+pub struct ConnectionStore {
+    manifests: Arc<Vec<ConnectionManifest>>,
+    values: Arc<Mutex<BTreeMap<(String, String), SecretBytes>>>,
+}
+
+impl ConnectionStore {
+    pub fn load(graph: &Path) -> Result<Self, String> {
+        let mut manifests = BTreeMap::<String, ConnectionManifest>::new();
+        for package in list(graph).map_err(|error| error.to_string())? {
+            let Some(connection) = package.manifest.connection else {
+                continue;
+            };
+            match manifests.get(&connection.id) {
+                Some(existing) if existing != &connection => {
+                    return Err(format!(
+                        "Node packages declare conflicting connection `{}`",
+                        connection.id
+                    ))
+                }
+                Some(_) => {}
+                None => {
+                    manifests.insert(connection.id.clone(), connection);
+                }
+            }
+        }
+        let manifests = manifests.into_values().collect::<Vec<_>>();
+        let mut values = BTreeMap::new();
+        for connection in &manifests {
+            for field in &connection.fields {
+                let value = std::env::var(&field.environment)
+                    .ok()
+                    .unwrap_or_else(|| field.default.clone());
+                if !value.is_empty() {
+                    values.insert(
+                        (connection.id.clone(), field.name.clone()),
+                        SecretBytes(value.into_bytes()),
+                    );
+                }
+            }
+        }
+        Ok(Self {
+            manifests: Arc::new(manifests),
+            values: Arc::new(Mutex::new(values)),
+        })
+    }
+
+    pub fn status_json(&self) -> serde_json::Value {
+        let values = self
+            .values
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        serde_json::json!({
+            "connections": self.manifests.iter().map(|connection| {
+                let fields = connection.fields.iter().map(|field| {
+                    let value = values.get(&(connection.id.clone(), field.name.clone()));
+                    serde_json::json!({
+                        "name": field.name,
+                        "label": field.label,
+                        "secret": field.secret,
+                        "required": field.required,
+                        "set": value.is_some_and(|value| !value.0.is_empty()),
+                        "value": if field.secret { "".into() } else { value.map(|value| String::from_utf8_lossy(&value.0).into_owned()).unwrap_or_default() },
+                    })
+                }).collect::<Vec<_>>();
+                let configured = connection.fields.iter().all(|field| !field.required || values.get(&(connection.id.clone(), field.name.clone())).is_some_and(|value| !value.0.is_empty()));
+                serde_json::json!({
+                    "id": connection.id,
+                    "display_name": connection.display_name,
+                    "description": connection.description,
+                    "configured": configured,
+                    "fields": fields,
+                })
+            }).collect::<Vec<_>>(),
+            "storage": "process-memory",
+        })
+    }
+
+    pub fn update_json(&self, input: &str) -> Result<(), String> {
+        let root: serde_json::Value = serde_json::from_str(input)
+            .map_err(|_| "connection configuration must be valid JSON")?;
+        let updates = root
+            .get("connections")
+            .and_then(serde_json::Value::as_object)
+            .ok_or("connections must be an object")?;
+        let mut values = self
+            .values
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        for (connection_id, update) in updates {
+            let manifest = self
+                .manifests
+                .iter()
+                .find(|connection| connection.id == *connection_id)
+                .ok_or_else(|| format!("unknown connection `{connection_id}`"))?;
+            let update = update
+                .as_object()
+                .ok_or_else(|| format!("connection `{connection_id}` must be an object"))?;
+            for (name, value) in update {
+                let field = manifest
+                    .fields
+                    .iter()
+                    .find(|field| field.name == *name)
+                    .ok_or_else(|| format!("unknown field `{connection_id}.{name}`"))?;
+                let value = value
+                    .as_str()
+                    .ok_or_else(|| format!("field `{connection_id}.{name}` must be a string"))?;
+                if value.len() > 16 * 1024 {
+                    return Err(format!("field `{connection_id}.{name}` exceeds 16 KiB"));
+                }
+                if field.secret && value.is_empty() {
+                    continue;
+                }
+                values
+                    .entry((connection_id.clone(), name.clone()))
+                    .or_insert_with(|| SecretBytes(Vec::new()))
+                    .replace(value.trim());
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_to_command(&self, command: &mut Command, connection: Option<&ConnectionManifest>) {
+        let Some(connection) = connection else {
+            return;
+        };
+        let values = self
+            .values
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        for field in &connection.fields {
+            if let Some(value) = values.get(&(connection.id.clone(), field.name.clone())) {
+                command.env(
+                    &field.environment,
+                    String::from_utf8_lossy(&value.0).as_ref(),
+                );
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -165,12 +356,16 @@ pub fn list(graph: &Path) -> io::Result<Vec<NodePackage>> {
         .collect::<io::Result<Vec<_>>>()
 }
 
-pub fn register_project_nodes(graph: &Path, registry: &mut NodeRegistry) -> Result<(), String> {
+pub fn register_project_nodes_with_connections(
+    graph: &Path,
+    registry: &mut NodeRegistry,
+    connections: ConnectionStore,
+) -> Result<(), String> {
     for package in list(graph).map_err(|error| error.to_string())? {
         if !python_host_supported(&package) {
             continue;
         }
-        let registration = python_registration(graph, &package)?;
+        let registration = python_registration(graph, &package, connections.clone())?;
         registry
             .register(registration)
             .map_err(|error| error.to_string())?;
@@ -254,10 +449,46 @@ fn validate(package: &NodePackage) -> Result<(), SaveError> {
             "config_schema must be a JSON object".into(),
         ));
     }
+    if let Some(connection) = &manifest.connection {
+        validate_connection(connection)?;
+    }
     if package.code.is_empty() || package.code.len() > MAX_CODE_BYTES {
         return Err(SaveError::Invalid(
             "code must contain 1 byte through 512 KiB".into(),
         ));
+    }
+    Ok(())
+}
+
+fn validate_connection(connection: &ConnectionManifest) -> Result<(), SaveError> {
+    if !valid_package_id(&connection.id) {
+        return Err(SaveError::Invalid(
+            "connection id must use 1-64 lowercase letters, digits, '-' or '_'".into(),
+        ));
+    }
+    if connection.display_name.trim().is_empty() || connection.fields.is_empty() {
+        return Err(SaveError::Invalid(
+            "connection requires a display name and at least one field".into(),
+        ));
+    }
+    let mut names = std::collections::BTreeSet::new();
+    for field in &connection.fields {
+        if !valid_package_id(&field.name) || !names.insert(&field.name) {
+            return Err(SaveError::Invalid(
+                "connection field names must be unique stable identifiers".into(),
+            ));
+        }
+        if field.label.trim().is_empty()
+            || field.environment.is_empty()
+            || !field
+                .environment
+                .bytes()
+                .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
+        {
+            return Err(SaveError::Invalid(
+                "connection fields require labels and uppercase environment names".into(),
+            ));
+        }
     }
     Ok(())
 }
@@ -301,7 +532,11 @@ fn read_package(directory: PathBuf) -> io::Result<NodePackage> {
     })
 }
 
-fn python_registration(graph: &Path, package: &NodePackage) -> Result<NodeRegistration, String> {
+fn python_registration(
+    graph: &Path,
+    package: &NodePackage,
+    connections: ConnectionStore,
+) -> Result<NodeRegistration, String> {
     let manifest = &package.manifest;
     let template = NodeId::new(format!("template-{}", manifest.node_type))
         .map_err(|error| error.to_string())?;
@@ -352,6 +587,8 @@ fn python_registration(graph: &Path, package: &NodePackage) -> Result<NodeRegist
             source,
             entrypoint: manifest.entrypoint.clone(),
             default_output,
+            connection: manifest.connection.clone(),
+            connections,
         }),
     ))
 }
@@ -388,7 +625,10 @@ fn python_host_supported(package: &NodePackage) -> bool {
 
 fn python_host_supported_manifest(manifest: &NodePackageManifest) -> bool {
     manifest.language == "python"
-        && manifest.ports.iter().all(|port| port.frame_type == "text")
+        && manifest
+            .ports
+            .iter()
+            .all(|port| matches!(port.frame_type.as_str(), "text" | "audio"))
         && python_available()
 }
 
@@ -396,12 +636,14 @@ struct PythonDevFactory {
     source: PathBuf,
     entrypoint: String,
     default_output: Option<String>,
+    connection: Option<ConnectionManifest>,
+    connections: ConnectionStore,
 }
 
 impl NodeFactory for PythonDevFactory {
     fn create(
         &self,
-        _node_id: &NodeId,
+        node_id: &NodeId,
         config: &ConfigMap,
     ) -> Result<Box<dyn Node>, NodeFactoryError> {
         PythonDevNode::spawn(
@@ -409,6 +651,9 @@ impl NodeFactory for PythonDevFactory {
             &self.entrypoint,
             self.default_output.clone(),
             config,
+            &self.connections,
+            self.connection.as_ref(),
+            node_id.clone(),
         )
         .map(|node| Box::new(node) as Box<dyn Node>)
         .map_err(|message| NodeFactoryError::new("VOXA-STUDIO-PYTHON-HOST", message))
@@ -420,6 +665,7 @@ struct PythonDevNode {
     input: BufWriter<ChildStdin>,
     output: BufReader<ChildStdout>,
     default_output: Option<String>,
+    node_id: NodeId,
 }
 
 impl PythonDevNode {
@@ -428,6 +674,9 @@ impl PythonDevNode {
         entrypoint: &str,
         default_output: Option<String>,
         config: &ConfigMap,
+        connections: &ConnectionStore,
+        connection: Option<&ConnectionManifest>,
+        node_id: NodeId,
     ) -> Result<Self, String> {
         let config = serde_json::Value::Object(
             config
@@ -440,15 +689,17 @@ impl PythonDevNode {
                 })
                 .collect(),
         );
-        let mut child = Command::new(python_executable())
-            .args([
-                "-u",
-                "-c",
-                PYTHON_HOST,
-                source.to_str().ok_or("Python Node path is not UTF-8")?,
-                entrypoint,
-                &config.to_string(),
-            ])
+        let mut command = Command::new(python_executable());
+        command.args([
+            "-u",
+            "-c",
+            PYTHON_HOST,
+            source.to_str().ok_or("Python Node path is not UTF-8")?,
+            entrypoint,
+            &config.to_string(),
+        ]);
+        connections.apply_to_command(&mut command, connection);
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -475,6 +726,7 @@ impl PythonDevNode {
             input,
             output,
             default_output,
+            node_id,
         })
     }
 
@@ -499,7 +751,8 @@ impl PythonDevNode {
 
 impl Node for PythonDevNode {
     fn on_prepare(&mut self, _context: &mut NodeContext) -> voxa_types::Result<()> {
-        self.call(serde_json::json!({"op":"prepare"})).map(|_| ())
+        self.call(serde_json::json!({"op":"prepare", "node_id":self.node_id.as_str()}))
+            .map(|_| ())
     }
 
     fn on_process(
@@ -591,11 +844,12 @@ impl Node for PythonDevNode {
     }
 
     fn on_finish(&mut self, _context: &mut NodeContext) -> voxa_types::Result<()> {
-        self.call(serde_json::json!({"op":"finish"})).map(|_| ())
+        self.call(serde_json::json!({"op":"finish", "node_id":self.node_id.as_str()}))
+            .map(|_| ())
     }
 
     fn on_abort(&mut self, reason: &voxa_core::AbortReason, _context: &mut NodeContext) {
-        let _ = self.call(serde_json::json!({"op":"abort", "reason":reason.root().message()}));
+        let _ = self.call(serde_json::json!({"op":"abort", "reason":reason.root().message(), "node_id":self.node_id.as_str()}));
     }
 }
 
@@ -623,14 +877,39 @@ fn read_host_response(output: &mut BufReader<ChildStdout>) -> Result<serde_json:
 }
 
 fn frame_to_wire(frame: &Frame) -> voxa_types::Result<serde_json::Value> {
-    let text = frame
-        .as_text()
-        .ok_or_else(|| python_error("Studio Python Host currently supports text Frames"))?;
-    Ok(serde_json::json!({
-        "kind":"text",
-        "text":text.data().as_str(),
-        "sequence":frame.header().sequence_id().get(),
-    }))
+    if let Some(text) = frame.as_text() {
+        return Ok(serde_json::json!({
+            "kind":"text",
+            "text":text.data().as_str(),
+            "sequence":frame.header().sequence_id().get(),
+        }));
+    }
+    if let Some(audio) = frame.as_audio() {
+        let data = audio.data();
+        if data.sample_format() != PcmSampleFormat::I16Le
+            || data.layout() != AudioLayout::Interleaved
+        {
+            return Err(python_error(
+                "Studio Python Host supports interleaved PCM s16le audio",
+            ));
+        }
+        let pcm_hex = data
+            .buffer()
+            .as_slice()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        return Ok(serde_json::json!({
+            "kind":"audio",
+            "pcm_hex":pcm_hex,
+            "sample_rate_hz":data.sample_rate_hz(),
+            "channels":data.channels(),
+            "sequence":frame.header().sequence_id().get(),
+        }));
+    }
+    Err(python_error(
+        "Studio Python Host received an unsupported Frame",
+    ))
 }
 
 fn control_frame(
@@ -659,13 +938,60 @@ fn wire_to_frame(
     parent: Option<&Frame>,
     node_id: &NodeId,
 ) -> voxa_types::Result<Frame> {
-    if wire.get("kind").and_then(serde_json::Value::as_str) != Some("text") {
-        return Err(python_error("Python Host emitted a non-text Frame"));
-    }
-    let text = wire
-        .get("text")
+    let kind = wire
+        .get("kind")
         .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| python_error("Python text Frame is missing text"))?;
+        .ok_or_else(|| python_error("Python Frame is missing its kind"))?;
+    let payload = match kind {
+        "text" => FramePayload::Text(TextData::new(
+            wire.get("text")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| python_error("Python text Frame is missing text"))?,
+        )),
+        "audio" => {
+            let hex = wire
+                .get("pcm_hex")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| python_error("Python audio Frame is missing PCM"))?;
+            if hex.len() % 2 != 0 || hex.len() > 2 * 4 * 1024 * 1024 {
+                return Err(python_error("Python audio PCM has an invalid size"));
+            }
+            let bytes = hex
+                .as_bytes()
+                .chunks_exact(2)
+                .map(|pair| {
+                    let text = std::str::from_utf8(pair)
+                        .map_err(|_| python_error("Python audio PCM is not hexadecimal"))?;
+                    u8::from_str_radix(text, 16)
+                        .map_err(|_| python_error("Python audio PCM is not hexadecimal"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let sample_rate_hz = wire
+                .get("sample_rate_hz")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|value| u32::try_from(value).ok())
+                .ok_or_else(|| python_error("Python audio Frame has an invalid sample rate"))?;
+            let channels = wire
+                .get("channels")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|value| u16::try_from(value).ok())
+                .ok_or_else(|| python_error("Python audio Frame has invalid channels"))?;
+            let samples = bytes
+                .len()
+                .checked_div(2 * usize::from(channels))
+                .and_then(|value| u64::try_from(value).ok())
+                .ok_or_else(|| python_error("Python audio Frame has invalid PCM length"))?;
+            FramePayload::Audio(AudioData::new(
+                FrameBuffer::from_vec(bytes),
+                sample_rate_hz,
+                channels,
+                PcmSampleFormat::I16Le,
+                AudioLayout::Interleaved,
+                samples,
+            )?)
+        }
+        _ => return Err(python_error("Python Host emitted an unsupported Frame")),
+    };
     let serial = NEXT_FRAME.fetch_add(1, Ordering::Relaxed);
     if let Some(parent) = parent {
         return parent.derive(
@@ -676,7 +1002,7 @@ fn wire_to_frame(
                 TransformOrigin::new(Some(node_id.clone()), None)?,
                 "studio_python_node",
             )?
-            .with_payload(FramePayload::Text(TextData::new(text))),
+            .with_payload(payload),
         );
     }
     Frame::new(
@@ -691,12 +1017,12 @@ fn wire_to_frame(
             StreamId::new(format!("studio-python-stream-{serial}"))
                 .expect("bounded Studio stream ID"),
             TraceId::new(format!("studio-python-trace-{serial}")).expect("bounded Studio trace ID"),
-            FrameType::Text,
+            payload.frame_type(),
             Metadata::empty(),
             Extensions::empty(),
             Lineage::empty(),
         )?,
-        FramePayload::Text(TextData::new(text)),
+        payload,
     )
 }
 
@@ -724,7 +1050,7 @@ fn atomic_write(path: &Path, payload: &[u8]) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{list, register_project_nodes, save, SaveError};
+    use super::{list, register_project_nodes_with_connections, save, ConnectionStore, SaveError};
     use std::{
         fs,
         path::PathBuf,
@@ -777,7 +1103,8 @@ mod tests {
         let package = r#"{"format":"voxa.node/v1","package_id":"uppercase_python","display_name":"Uppercase Python","node_type":"example.studio.uppercase","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:MyNode","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"import voxa\nclass MyNode:\n    def on_process(self, frame, ctx):\n        ctx.emit(\"text_out\", voxa.TextFrame(frame.text.upper(), sequence=frame.sequence))\n        ctx.publish_event(\"example.text.uppercased\", {\"sequence\": frame.sequence})\n","runtime_available":false}"#;
         save(&graph_path, package).unwrap();
         let mut registry = voxa_graph_json::builtin_registry();
-        register_project_nodes(&graph_path, &mut registry).unwrap();
+        let connections = ConnectionStore::load(&graph_path).unwrap();
+        register_project_nodes_with_connections(&graph_path, &mut registry, connections).unwrap();
         let document = voxa_graph_json::parse(r#"{"version":"voxa.graph/v1","graph_id":"studio-python","nodes":[{"id":"source","node_type":"builtin.text_source","language":"rust","factory_version":"1.0.0","node_config":{"text":"hello"}},{"id":"python","node_type":"example.studio.uppercase","language":"python","factory_version":"1.0.0","node_config":{}},{"id":"sink","node_type":"builtin.text_sink","language":"rust","factory_version":"1.0.0","node_config":{}}],"edges":[{"id":"source-python","from":{"node_id":"source","port":"text_out"},"to":{"node_id":"python","port":"text_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}},{"id":"python-sink","from":{"node_id":"python","port":"text_out"},"to":{"node_id":"sink","port":"text_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}}]}"#).unwrap();
         let graph = voxa_graph_json::compile_with_registry(&document, &registry).unwrap();
         let runtime = start_registered_runtime(

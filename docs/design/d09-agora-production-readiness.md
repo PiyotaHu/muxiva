@@ -9,7 +9,7 @@ It does not claim live certification without a real Agora project and room.
 
 ## Lifecycle contract
 
-`RtcAdapter` and `AgoraRtcClient` remain one-shot lifecycle owners. Agora owns
+The C++ `RtcAdapter` remains the one-shot lifecycle owner. Agora owns
 automatic reconnection inside the same engine. Every transition back to
 `connected` after another state increments `connection_epoch`; a
 `reconnecting -> connected` transition also increments `reconnects`. This lets
@@ -28,8 +28,7 @@ Late media remains contained and counted by the existing D07 drain contract.
 ## Callback isolation and observability
 
 Vendor callbacks never execute user code. C++ converts them into bounded Voxa
-Signal/Event frames. Python copies them into a bounded queue. Overflow is
-observable and does not block an Agora callback thread.
+Signal/Event frames. Overflow is observable and does not block an Agora callback thread.
 
 The public snapshots include:
 
@@ -45,25 +44,14 @@ as percentages or invent service-level guarantees.
 
 ## Verification
 
-Deterministic C++ and Python tests inject reconnect, token, quality, and call
-statistics callbacks, exercise bounded queues, and prove tokens are absent from
-events. The C++ provider is also compiled against real Agora API headers; the
-Python wheel is probed with the real `agora-python-sdk==3.4.2.1` engine.
+Deterministic C++ tests inject reconnect, token, quality, and call statistics
+callbacks, exercise bounded queues, and prove tokens are absent from events.
+The C++ provider is also compiled against real Agora API headers.
 
 Live certification is explicit:
 
-```sh
-export VOXA_AGORA_APP_ID='...'
-export VOXA_AGORA_CHANNEL='voxa-certification'
-export VOXA_AGORA_TOKEN_FILE='/secure/runtime/token'
-export VOXA_AGORA_SOAK_SECONDS=3600
-export VOXA_AGORA_REQUIRE_AUDIO=1
-VOXA_AGORA_PYTHON=.venv-agora/bin/python ./scripts/check-agora-live.sh
-```
-
-Replacing the token file atomically or updating its contents triggers a hot
-renewal. The script prints only credential-free JSON metrics. It reports `SKIP`
-when live credentials are absent, so ordinary public CI remains deterministic.
+Credentialed live-room certification must use the C++ Native SDK build. Public
+CI remains deterministic and credential-free.
 
 ## Remaining certification debt
 

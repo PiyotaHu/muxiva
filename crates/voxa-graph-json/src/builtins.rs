@@ -26,6 +26,7 @@ pub const UPPERCASE: &str = "builtin.uppercase";
 pub const TEXT_SINK: &str = "builtin.text_sink";
 pub const STDOUT_TEXT_SINK: &str = "builtin.stdout_text_sink";
 pub const AUDIO_RESAMPLE: &str = "builtin.audio_resample";
+pub const INTERVAL_TICK: &str = "builtin.interval_tick";
 pub const DEMO_MICROPHONE: &str = "builtin.demo.microphone";
 pub const DEMO_STREAMING_ASR: &str = "builtin.demo.streaming_asr";
 pub const DEMO_VOICE_ACTIVITY: &str = "builtin.demo.voice_activity";
@@ -92,6 +93,16 @@ fn register_audio_nodes(registry: &mut NodeRegistry) {
     register(
         registry,
         typed_descriptor(
+            INTERVAL_TICK,
+            NodeKind::Source,
+            &[("tick_out", PortDirection::Output, FrameType::Event)],
+            interval_tick_schema(),
+        ),
+        Arc::new(IntervalTickFactory),
+    );
+    register(
+        registry,
+        typed_descriptor(
             AUDIO_RESAMPLE,
             NodeKind::Transform,
             &[
@@ -102,6 +113,116 @@ fn register_audio_nodes(registry: &mut NodeRegistry) {
         ),
         Arc::new(AudioResampleFactory),
     );
+}
+
+fn interval_tick_schema() -> ConfigSchema {
+    ConfigSchema::new(map([
+        ("type", Value::String("object".into())),
+        (
+            "properties",
+            map([(
+                "interval_ms",
+                map([
+                    ("type", Value::String("integer".into())),
+                    ("minimum", Value::Integer(1)),
+                    ("maximum", Value::Integer(60_000)),
+                    ("default", Value::Integer(20)),
+                ]),
+            )]),
+        ),
+        (
+            "required",
+            Value::List(vec![Value::String("interval_ms".into())].into_boxed_slice()),
+        ),
+        ("additionalProperties", Value::Bool(false)),
+    ]))
+}
+
+struct IntervalTickFactory;
+
+impl NodeFactory for IntervalTickFactory {
+    fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
+        match (config.len(), config.get("interval_ms")) {
+            (1, Some(Value::Integer(value))) if (1..=60_000).contains(value) => Ok(()),
+            _ => Err(config_error(
+                "interval tick requires interval_ms from 1 through 60000",
+            )),
+        }
+    }
+
+    fn create(
+        &self,
+        _node_id: &NodeId,
+        config: &ConfigMap,
+    ) -> Result<Box<dyn Node>, NodeFactoryError> {
+        let Some(Value::Integer(value)) = config.get("interval_ms") else {
+            return Err(config_error("validated interval_ms is unavailable"));
+        };
+        Ok(Box::new(IntervalTick {
+            interval: Duration::from_millis(*value as u64),
+            sequence: 0,
+        }))
+    }
+}
+
+struct IntervalTick {
+    interval: Duration,
+    sequence: u64,
+}
+
+impl Node for IntervalTick {
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> voxa_types::Result<()> {
+        if input.is_some() {
+            return Err(node_error(
+                "VOXA-INTERVAL-TICK-INPUT",
+                "interval tick source received input",
+            ));
+        }
+        self.sequence = self
+            .sequence
+            .checked_add(1)
+            .ok_or_else(|| node_error("VOXA-INTERVAL-TICK-SEQUENCE", "tick sequence overflowed"))?;
+        let payload = EventData::new(
+            NamespacedName::new("voxa.runtime.tick")?,
+            SchemaVersion::new(1)?,
+            context.node_id().clone(),
+            Value::Integer(i64::try_from(self.sequence).map_err(|_| {
+                node_error(
+                    "VOXA-INTERVAL-TICK-SEQUENCE",
+                    "tick sequence cannot be represented as an event value",
+                )
+            })?),
+        );
+        let serial = NEXT_FRAME.fetch_add(1, Ordering::Relaxed);
+        let frame = Frame::new(
+            FrameHeader::new(
+                FrameId::new(format!("builtin-interval-tick-{serial}"))
+                    .expect("bounded tick frame ID"),
+                Timestamp::from_nanos(0),
+                ClockDomain::new(
+                    ClockDomainId::new("voxa.runtime.interval").expect("valid tick clock"),
+                    ClockKind::Monotonic,
+                ),
+                SequenceId::new(self.sequence),
+                StreamId::new(format!("interval-{}", context.node_id()))
+                    .expect("bounded tick stream"),
+                TraceId::new(format!("interval-{}", context.node_id()))
+                    .expect("bounded tick trace"),
+                FrameType::Event,
+                Metadata::empty(),
+                Extensions::empty(),
+                Lineage::empty(),
+            )?,
+            FramePayload::Event(payload),
+        )?;
+        context.emit(PortName::new("tick_out").unwrap(), frame)?;
+        context.schedule_next_tick(self.interval);
+        Ok(())
+    }
 }
 
 fn register_demo_nodes(registry: &mut NodeRegistry) {
@@ -733,6 +854,37 @@ impl Node for AudioResample {
         context.emit(PortName::new("audio_out").unwrap(), output)?;
         Ok(())
     }
+
+    fn on_signal(
+        &mut self,
+        signal: voxa_types::SignalFrame,
+        context: &mut NodeContext,
+    ) -> voxa_types::Result<()> {
+        let payload = SignalData::new(
+            signal.data().name().clone(),
+            signal.data().schema_version(),
+            context.node_id().clone(),
+            signal.data().payload().clone(),
+        );
+        let parent = Frame::Signal(signal);
+        let serial = NEXT_FRAME.fetch_add(1, Ordering::Relaxed);
+        let forwarded = parent.derive(
+            FrameDerivation::new(
+                FrameId::new(format!("builtin-audio-resample-signal-{serial}"))
+                    .expect("bounded frame ID"),
+                parent.header().timestamp(),
+                parent.header().sequence_id(),
+                TransformOrigin::new(Some(context.node_id().clone()), None)?,
+                "builtin_audio_resample_signal",
+            )?
+            .with_payload(FramePayload::Signal(payload)),
+        )?;
+        let Frame::Signal(forwarded) = forwarded else {
+            unreachable!("signal payload creates signal frame");
+        };
+        context.emit_signal(forwarded)?;
+        Ok(())
+    }
 }
 
 fn resample_pcm16(source: &AudioData, target_rate_hz: u32) -> voxa_types::Result<AudioData> {
@@ -1116,7 +1268,7 @@ mod tests {
         assert_eq!(at_16k.samples_per_channel(), 320);
         assert_eq!(at_16k.duration_ns(), 20_000_000);
 
-        let qwen_output = AudioData::new(
+        let provider_output = AudioData::new(
             FrameBuffer::from_vec(vec![0; 960]),
             24_000,
             1,
@@ -1125,7 +1277,7 @@ mod tests {
             480,
         )
         .unwrap();
-        let at_48k = resample_pcm16(&qwen_output, 48_000).unwrap();
+        let at_48k = resample_pcm16(&provider_output, 48_000).unwrap();
         assert_eq!(at_48k.samples_per_channel(), 960);
         assert_eq!(at_48k.duration_ns(), 20_000_000);
     }
