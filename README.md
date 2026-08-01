@@ -1,152 +1,213 @@
 # Voxa
 
-Voxa is an open-source, real-time multimodal agent runtime. It uses a single
-Rust core for graph execution, scheduling, queues, backpressure, lifecycle,
-signals, events, shutdown, and observability while allowing nodes to be written
-in Rust, C++, Python, and TypeScript.
+> A Rust-native, real-time multimodal agent runtime with one graph and lifecycle contract across Rust, C++, Python, and TypeScript.
 
-Voxa is currently in its pre-release foundation phase. The first vertical
-validation target is a real-time voice agent built from mock nodes:
+[简体中文](README.zh-CN.md) · [Architecture](docs/design/01-product-and-technical-contract.md) · [Graph v1](docs/graph-v1-reference.md) · [Testing](docs/testing/README.md)
 
-```text
-MockAudioSource -> MockAsr -> MockLlm -> MockTts -> AudioSink
+![Status](https://img.shields.io/badge/status-pre--alpha-orange)
+![Rust](https://img.shields.io/badge/Rust-1.85%2B-black?logo=rust)
+![C++](https://img.shields.io/badge/C%2B%2B-17-blue?logo=cplusplus)
+![Python](https://img.shields.io/badge/Python-3.13-tested-blue?logo=python)
+![Node.js](https://img.shields.io/badge/Node.js-22-tested-green?logo=nodedotjs)
+
+Voxa is an early-stage runtime for building streaming voice, video, text, and binary agents as static processing graphs. Rust owns scheduling, bounded queues, backpressure, lifecycle, cancellation, signals, events, shutdown, and observability. Nodes and adapters can be implemented in Rust, C++, Python, or TypeScript without moving language-specific objects across runtime boundaries.
+
+The project currently provides a tested foundation and mock integrations. It is not yet a production-ready agent platform.
+
+## Why Voxa
+
+- **One runtime core:** scheduling and safety semantics live in Rust.
+- **One data model:** immutable `Frame` values carry audio, video, text, bytes, signals, and events.
+- **Bounded by design:** queues, media duration, bytes, in-flight work, and shutdown deadlines have explicit limits.
+- **Language isolation:** C ABI handles, Python execution domains, and Node.js workers prevent foreign code from running on RTC or Rust scheduling threads.
+- **Deterministic lifecycle:** prepare, process, finish, abort, cancellation, and late-result behavior are explicit and tested.
+- **One graph protocol:** programmatic builders, JSON Graph v1, the CLI, and the local Studio share the same graph definition.
+
+## Project status
+
+Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but several public APIs and integrations remain intentionally limited.
+
+| Area | Status | Current boundary |
+| --- | --- | --- |
+| Frames, graph model, sync/concurrent runtime | Available | Static DAGs; exact port and frame types |
+| Backpressure and real-time flow control | Available | Bounded queues, audio merge, managed streams |
+| Signal, EventBus, turn control | Available | Adjacent signals and isolated global events |
+| C ABI and C++ SDK | Available | Versioned ABI, copy-owned frames, RAII wrappers |
+| Mock RTC adapter | Available | Deterministic faults and callback-safe shutdown; no real RTC SDK |
+| Python/PyO3 package | Experimental | Dedicated thread and asyncio loop; `isolated_process` is rejected |
+| Node-API package | Experimental | Dedicated Worker; Promise-returning transforms are rejected |
+| JSON Graph v1 and CLI | Experimental | Parse, validate, initialize, and local Studio; runtime factories are limited |
+| Local Studio | Foundation | Token-authenticated local HTTP/schema view; full visual canvas is planned |
+| Real RTC, FFmpeg, model providers | Planned | Not included in Core or the current build |
+
+## Architecture
+
+```mermaid
+flowchart LR
+    SDK["Rust / C++ / Python / TypeScript SDKs"] --> GD["GraphDefinition / JSON Graph v1"]
+    GD --> RT["Rust Runtime"]
+    RT --> Q["Bounded Edge Queues"]
+    Q --> N["Source / Transform / Sink Nodes"]
+    RTC["RTC or external callbacks"] --> IN["Bounded ExternalIngress"]
+    IN --> RT
+    RT --> CP["Signal · EventBus · Turn Control"]
+    RT --> OBS["Metrics · Diagnostics · Test Probes"]
 ```
 
-ASR, LLM, TTS, and transport behavior belong to nodes and adapters, not to the
-core. The runtime contract remains equally applicable to audio, video, text,
-and binary streams.
+The runtime never treats ASR, LLM, TTS, transport, or codec behavior as Core responsibilities. Those capabilities belong in nodes and adapters.
 
-## Project principles
+## Quick start
 
-- Rust is the only runtime core.
-- A `Frame` is the only information unit exchanged between nodes.
-- Graphs are static directed acyclic graphs in the v0.1 MVP.
-- Node lifecycle is limited to `on_prepare`, `on_process`, `on_finish`, and
-  `on_abort`.
-- Cross-language boundaries use versioned C-compatible data, error codes, and
-  opaque handles. Language implementation objects never cross the boundary.
-- Real-time SDK callback threads only validate, wrap, and enqueue data.
-- Every buffer has an explicit owner, lifetime, release operation, and release
-  thread requirement.
-- Shutdown and abort behavior are deterministic and idempotent.
+### Prerequisites
 
-## v0.1 MVP
+- Rust stable, as pinned by [`rust-toolchain.toml`](rust-toolchain.toml)
+- A C11/C++17 compiler for the native SDK checks
+- Optional: CPython 3.13 with maturin for Python bindings
+- Optional: Node.js 22 and pnpm for Node-API bindings
 
-The v0.1 MVP will provide:
+### Build and run the Rust example
 
-- `SourceNode`, `TransformNode`, and `SinkNode` in a static DAG;
-- a programmatic `GraphBuilder` and a serializable JSON `GraphDefinition`;
-- one graph protocol shared by the runtime, CLI, and local web Studio;
-- `AudioFrame`, `VideoFrame`, `TextFrame`, and `ByteFrame` data frames;
-- adjacent-node `SignalFrame` routing and a global `EventFrame` bus;
-- multithreaded streaming, basic backpressure, error propagation, safe stop,
-  logs, and metrics;
-- C++, Python, and TypeScript node development surfaces; and
-- a mock transport reference voice-agent graph.
+```bash
+git clone https://github.com/<owner>/voxa.git
+cd voxa
+cargo build --workspace
+cargo run -p voxa-examples --bin text_graph
+```
 
-The MVP does not include real RTC, FFmpeg, dynamic plugins, Java, GPU
-execution, or distributed scheduling. Python async support is restricted to
-controlled I/O workloads; CPU-heavy work cannot be presented as async.
+Replace `<owner>` after the public GitHub repository is created.
 
-## Status and documentation
+### Validate a graph
 
-Stages 3 through 11 are implemented. Stage 11 adds the reusable deterministic
-testkit, cross-language quality gates, sanitizer/fuzz infrastructure, and
-measurement-only benchmark runner. Stage 10 adds a
-bounded Graph v1 JSON parser/compiler, local CLI, and token-authenticated local
-Studio HTTP foundation. Stage 9 adds
-bounded Python/PyO3 and TypeScript/Node-API language execution domains over a
-shared Rust-owned foreign driver. Stage 8 adds a
-Rust-owned bounded external ingress plus a versioned C++ mock RTC adapter with
-copy-only media delivery, deterministic faults, and callback-safe shutdown.
-Stage 7 adds the
-versioned copy-owned C ABI, generation-checked handles, C++ RAII/node
-trampolines, and a focused C++ transform running inside a Rust graph. Stage 6 adds
-bounded adjacent Signal routing, an isolated global EventBus, typed graph
-resources, and atomic transport/turn control with stale-frame Sink filtering.
-Stage 5's report records its intentionally incomplete runtime/UI integration,
-full-pipeline-drain and real-transport boundaries. By
-maintainer direction, the remaining Stage 2 review findings and the
-non-blocking Stage 3 and 4 review findings are explicitly deferred; they
-remain recorded in the pre-release reports.
+```bash
+cargo run -p voxa-cli -- validate examples/graphs/text-uppercase.v1.json
+cargo run -p voxa-cli -- run examples/graphs/text-uppercase.v1.json
+```
 
-- [Product and technical contract](docs/design/01-product-and-technical-contract.md)
-- [Foundation pre-release notes](docs/pre_release_notes/01-foundation.md)
-- [Stage 2 Rust foundation report](docs/pre_release_notes/02-rust-foundation.md)
-- [Stage 3 frames and ownership report](docs/pre_release_notes/03-frames-and-ownership.md)
-- [Stage 4 synchronous graph runtime report](docs/pre_release_notes/04-node-graph-sync-runner.md)
-- [Stage 5 concurrent runtime and flow-control report](docs/pre_release_notes/05-concurrent-runtime-flow-control.md)
-- [Stage 6 Signal/EventBus/turn-control design](docs/design/06-signal-eventbus-turn-control.md)
-- [Stage 6 pre-release report](docs/pre_release_notes/06-signal-eventbus-turn-control.md)
-- [Stage 7 C ABI and C++ SDK design](docs/design/07-c-abi-cpp-node-sdk.md)
-- [Stage 7 pre-release report](docs/pre_release_notes/07-c-abi-cpp-node-sdk.md)
-- [Stage 8 mock RTC adapter design](docs/design/08-mock-rtc-adapter.md)
-- [Stage 8 pre-release report](docs/pre_release_notes/08-mock-rtc-adapter.md)
-- [Stage 9 Python and Node execution-domain design](docs/design/09-python-node-execution-domains.md)
-- [Stage 9 pre-release report](docs/pre_release_notes/09-python-node.md)
-- [Stage 10 Graph v1, CLI, and Studio design](docs/design/10-graph-json-cli-studio.md)
-- [Stage 11 testing and quality gates](docs/testing/README.md)
-- [Stage 11 deterministic fault matrix](docs/testing/fault-injection.md)
-- [Stage 11 pre-release report](docs/pre_release_notes/11-test-quality.md)
+`voxa run` currently validates the graph and reports the compiled-in runtime-factory boundary. It does not yet execute arbitrary registered JSON nodes.
 
-The Stage 7 developer check needs Cargo plus a C11/C++17 compiler; CMake is
-not required:
+### Start the local Studio foundation
 
-```sh
-cargo test --workspace --offline
-CC=clang CXX=clang++ ./scripts/check-ffi.sh
+```bash
+cargo run -p voxa-cli -- studio examples/graphs/text-uppercase.v1.json --no-open
+```
+
+Studio listens on `127.0.0.1` by default and generates a local access token. Binding a non-loopback address requires an explicit `--host` and prints a security warning.
+
+### Build the language bindings
+
+```bash
+./scripts/check-python.sh
+./scripts/check-node.sh
+```
+
+These scripts build real importable packages and run their integration tests. They require the corresponding local toolchains and dependency caches.
+
+## Graph v1 example
+
+```json
+{
+  "version": "voxa.graph/v1",
+  "graph_id": "text-uppercase",
+  "nodes": [
+    {
+      "id": "source",
+      "node_type": "builtin.text_source",
+      "language": "rust",
+      "node_config": { "text": "hello" }
+    },
+    {
+      "id": "upper",
+      "node_type": "builtin.uppercase",
+      "language": "rust",
+      "node_config": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "source-upper",
+      "from": { "node_id": "source", "port": "text_out" },
+      "to": { "node_id": "upper", "port": "text_in" },
+      "frame_type": "text",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    }
+  ]
+}
+```
+
+Graph JSON is declarative configuration. It cannot contain executable code, dynamic scripts, credentials, or arbitrary remote resources. See the [Graph v1 reference](docs/graph-v1-reference.md).
+
+## Repository layout
+
+```text
+voxa/
+├── crates/
+│   ├── voxa-types/       # Immutable frames, IDs, values, errors
+│   ├── voxa-core/        # Graph, runtime, queues, flow and control plane
+│   ├── voxa-ffi/         # Versioned C ABI
+│   ├── voxa-graph-json/  # Graph v1 parser and compiler
+│   ├── voxa-cli/         # voxa command-line interface
+│   ├── voxa-studio/      # Local token-authenticated Studio server
+│   ├── voxa-python/      # PyO3/maturin package
+│   ├── voxa-node/        # Node-API native module
+│   └── voxa-testkit/     # Deterministic test harnesses
+├── bindings/node/        # @voxa/core package
+├── cpp/                  # Public C/C++ headers, examples, Mock RTC
+├── examples/graphs/      # Graph v1 examples
+├── fuzz/                 # Fuzz targets
+├── docs/                 # Design, testing and pre-release reports
+└── scripts/              # Reproducible quality gates
+```
+
+## Quality gates
+
+Run the consolidated local gate:
+
+```bash
+./scripts/check-quality.sh
+```
+
+Individual gates include:
+
+```bash
+./scripts/check-rust.sh
+./scripts/check-ffi.sh
+./scripts/check-ffi-asan.sh
 ./scripts/check-rtc.sh
 ./scripts/check-rtc-asan.sh
 ./scripts/check-python.sh
 ./scripts/check-node.sh
-cargo test --offline -p voxa-studio -p voxa-cli
+./scripts/check-bench.sh
 ```
 
-The binding scripts build real importable packages and require their local
-Python/Node tools and dependency caches. The Studio tests use loopback sockets;
-they require no browser, external network, or service credentials. See the
-[testing guide](docs/testing/README.md) for exact prerequisites and coverage.
+The test framework covers deterministic graph faults, queue pressure, managed-stream cancellation, foreign execution domains, ABI ownership, Mock RTC shutdown, CLI/Studio authorization, and port conflicts. Optional Miri, fuzz, and TSan scripts report an explicit `SKIP` when the required toolchain is unavailable.
 
-The Stage 9 Rust test gate must select a supported arm64 Python explicitly on
-this development host because its default `python3` shim is legacy x86_64:
+## Roadmap
 
-```sh
-PYO3_PYTHON=/Users/private-user/.pyenv/versions/3.13.12/bin/python3.13 \
-  cargo test --workspace --offline
-```
+Near-term priorities:
 
-## Planned repository layout
+1. Stabilize public Rust, C++, Python, and TypeScript SDK contracts.
+2. Connect registered Graph v1 node factories to general runtime execution.
+3. Complete the visual Studio graph editor and live metrics views.
+4. Add a production-reviewed RTC adapter and media/codec integration.
+5. Implement versioned Python process isolation and TypeScript Promise support.
+6. Publish packages, compatibility matrices, performance baselines, and release artifacts.
 
-```text
-voxa/
-├── Cargo.toml
-├── crates/
-│   ├── voxa-core/
-│   ├── voxa-types/
-│   ├── voxa-cli/
-│   ├── voxa-ffi/
-│   ├── voxa-python/
-│   └── voxa-node/
-├── cpp/
-│   ├── include/
-│   ├── nodes/
-│   └── adapters/
-├── studio/
-├── examples/
-├── docs/
-│   ├── design/
-│   └── pre_release_notes/
-└── tests/
-```
-
-Directories are created only when their owning stage begins. This tree defines
-responsibility boundaries; it is not evidence that later-stage functionality
-already exists.
+Real provider integrations should remain adapters or nodes and must not become mandatory Core dependencies.
 
 ## Contributing
 
-Voxa is not ready for external implementation contributions yet. During the
-foundation stages, design discussion and review should use the terminology and
-hard constraints in the technical contract. Contribution policy, code of
-conduct, security policy, and license selection will be finalized before the
-first public release.
+Design feedback, bug reports, reproducible test cases, and focused pull requests are welcome. Before changing runtime contracts, read the [product and technical contract](docs/design/01-product-and-technical-contract.md) and the [testing guide](docs/testing/README.md).
+
+Please keep changes bounded, deterministic, and free of real service credentials. New foreign-language, RTC, or network integrations must include ownership, threading, cancellation, late-callback, and shutdown tests.
+
+Dedicated `CONTRIBUTING.md`, Code of Conduct, issue templates, and pull-request templates are planned before the first public release.
+
+## Security
+
+Voxa is pre-alpha and must not be used to execute untrusted code or expose Studio directly to the public internet. Graph files must never contain secrets. Use local credential references and keep Studio on its default loopback address.
+
+GitHub private vulnerability reporting and a dedicated `SECURITY.md` should be enabled before public deployment.
+
+## License
+
+**A project license has not been selected yet.** Until a `LICENSE` file is added, the source is not licensed for copying, modification, or redistribution. The maintainer should explicitly choose a license—commonly Apache-2.0, MIT, or a deliberate dual license—before announcing Voxa as an open-source release.
