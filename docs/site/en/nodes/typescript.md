@@ -1,0 +1,28 @@
+# TypeScript Nodes
+
+Studio can create and register a `node.ts` project package today.
+
+```typescript
+import type { GraphNodeImplementation } from '@voxa/core'
+
+export const node: GraphNodeImplementation = {
+  onProcess(frame) {
+    return { text_out: { ...frame, text: frame.text.toUpperCase() } }
+  },
+}
+```
+
+The standalone `@voxa/core` SDK executes hosted TypeScript Nodes inside a
+dedicated Worker. Values crossing the boundary must be structured-clone
+compatible, and V1 callbacks are synchronous.
+
+## Current Studio boundary
+
+Studio project-package execution is not active yet. Saving makes the package
+discoverable but does not permit it in a runnable Graph. The planned Host must:
+
+1. resolve a locked `@voxa/core` dependency;
+2. type-check the package;
+3. load the exact exported entrypoint in a Worker;
+4. enforce lifecycle, cancellation, payload, and shutdown limits;
+5. return structured diagnostics to Studio.

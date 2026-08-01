@@ -70,8 +70,9 @@ cancellation, late callbacks, errors, and bounded shutdown.
 
 ## Documentation is part of the contract
 
-A change is incomplete when its documentation is stale. Update `docs/` in the
-same PR whenever a change affects:
+A change is incomplete when its documentation is stale. Update the paired
+public sources under `docs/site/en/` and `docs/site/zh/` in the same PR whenever
+a change affects:
 
 - public Rust, C, C++, Python, or TypeScript APIs;
 - Graph v1, Node Manifest, ports, Frames, configuration, or lifecycle;
@@ -83,6 +84,7 @@ Validate the public site locally:
 
 ```bash
 python -m pip install -r requirements-docs.txt
+python scripts/check-docs-i18n.py
 mkdocs build --strict
 ```
 
@@ -105,4 +107,5 @@ accepted under the repository's [Apache-2.0 License](LICENSE).
 
 提交代码前请阅读相关设计文档，并运行对应质量门禁。任何公开 API、Graph/Node
 Schema、Runtime 语义、Studio、CLI 或 Provider 行为变化，都必须在同一个 PR
-同步更新 `docs/`。漏洞请使用私密安全报告，禁止公开提交包含凭据的 Issue。
+同步更新 `docs/site/en/` 与 `docs/site/zh/`。漏洞请使用私密安全报告，禁止公开
+提交包含凭据的 Issue。

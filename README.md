@@ -2,7 +2,7 @@
 
 > A Rust-native, real-time multimodal agent runtime with one graph and lifecycle contract across Rust, C++, Python, and TypeScript.
 
-[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/Voxa/) · [Install](docs/installation.md) · [Build Nodes](docs/nodes/README.md) · [Studio](docs/studio.md) · [Graph v1](docs/graph-v1-reference.md) · [Testing](docs/testing/README.md)
+[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/Voxa/) · [Install](https://piyotahu.github.io/Voxa/getting-started/) · [Build Nodes](https://piyotahu.github.io/Voxa/nodes/) · [Studio](https://piyotahu.github.io/Voxa/studio/) · [Graph v1](https://piyotahu.github.io/Voxa/graph/) · [Testing](https://piyotahu.github.io/Voxa/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -132,7 +132,7 @@ wire compatible typed ports, inspect live runtime metrics, or open **Create
 Node** to edit and register a project Node without leaving the browser. Text
 Python project Nodes run through the trusted local development Host. Studio
 listens on `127.0.0.1` by default and generates a local access token. See the
-[Studio guide](docs/studio.md).
+[Studio guide](https://piyotahu.github.io/Voxa/studio/).
 
 ### Build and test the language SDKs
 
@@ -142,7 +142,7 @@ listens on `127.0.0.1` by default and generates a local access token. See the
 ./scripts/check-ffi.sh
 ```
 
-These scripts build real installable packages, run integration tests, and execute independent Python, TypeScript, and C++ consumer examples. See the [language SDK guide](docs/sdk/README.md) for installation and Node development examples.
+These scripts build real installable packages, run integration tests, and execute independent Python, TypeScript, and C++ consumer examples. See the [Node development guide](https://piyotahu.github.io/Voxa/nodes/) for language-specific workflows.
 
 ## Graph v1 example
 
@@ -151,7 +151,7 @@ The complete executable voice graph is
 Run it directly with `voxa run examples/graphs/mock-realtime-voice.v1.json`, or
 open it visually with `voxa studio examples/graphs/mock-realtime-voice.v1.json`.
 
-Graph JSON is declarative configuration. It cannot contain executable code, dynamic scripts, credentials, or arbitrary remote resources. See the [Graph v1 reference](docs/graph-v1-reference.md).
+Graph JSON is declarative configuration. It cannot contain executable code, dynamic scripts, credentials, or arbitrary remote resources. See the [Graph and typed ports guide](https://piyotahu.github.io/Voxa/graph/).
 
 ## Repository layout
 

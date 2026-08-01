@@ -3,7 +3,10 @@ site_description: Real-time multimodal agent runtime for Rust, C++, Python, and 
 site_url: https://piyotahu.github.io/Voxa/
 repo_url: https://github.com/PiyotaHu/Voxa
 repo_name: PiyotaHu/Voxa
-docs_dir: docs
+docs_dir: docs/site
+edit_uri: edit/main/docs/site/
+copyright: Copyright &copy; 2026 Voxa contributors
+
 theme:
   name: material
   language: en
@@ -11,15 +14,69 @@ theme:
     - navigation.tabs
     - navigation.sections
     - navigation.top
+    - navigation.footer
     - content.code.copy
     - content.tabs.link
   palette:
-    - scheme: slate
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
       primary: teal
       accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - i18n:
+      docs_structure: folder
+      fallback_to_default: false
+      reconfigure_material: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+          site_name: Voxa Documentation
+          site_description: Real-time multimodal agent runtime for Rust, C++, Python, and TypeScript
+        - locale: zh
+          name: 简体中文
+          build: true
+          site_name: Voxa 文档
+          site_description: 面向 Rust、C++、Python 与 TypeScript 的实时多模态 Agent Runtime
+          nav_translations:
+            Home: 首页
+            Get started: 快速开始
+            Installation and first run: 安装与首次运行
+            Studio: Studio 可视化开发
+            Core concepts: 核心概念
+            Runtime architecture: Runtime 架构
+            Graph and typed ports: Graph 与类型化端口
+            Build Nodes: 开发 Node
+            Node packages: Node Package
+            Python: Python
+            TypeScript: TypeScript
+            Rust: Rust
+            C++: C++
+            Integrations: 集成
+            Providers: Provider
+            Quality: 质量保障
+            Testing: 测试体系
+            Project: 项目
+            Status and roadmap: 状态与路线图
+            Contributing: 参与贡献
+
 markdown_extensions:
   - admonition
   - attr_list
+  - tables
   - pymdownx.details
   - pymdownx.highlight:
       anchor_linenums: true
@@ -28,32 +85,33 @@ markdown_extensions:
         - name: mermaid
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
 nav:
   - Home: index.md
   - Get started:
-      - Installation: installation.md
+      - Installation and first run: getting-started.md
       - Studio: studio.md
-      - Graph v1: graph-v1-reference.md
+  - Core concepts:
+      - Runtime architecture: concepts.md
+      - Graph and typed ports: graph.md
   - Build Nodes:
-      - Overview: nodes/README.md
-      - Package Manifest: nodes/package-manifest.md
+      - Node packages: nodes/index.md
       - Python: nodes/python.md
       - TypeScript: nodes/typescript.md
       - Rust: nodes/rust.md
       - C++: nodes/cpp.md
-  - SDKs:
-      - Overview: sdk/README.md
-      - Python: sdk/python.md
-      - TypeScript: sdk/typescript.md
-      - C++: sdk/cpp.md
-  - Providers:
-      - Agora: providers/agora.md
-      - FFmpeg: providers/ffmpeg.md
-  - Testing: testing/README.md
-  - Contributing: contributing.md
-  - Architecture:
-      - Product contract: design/01-product-and-technical-contract.md
-      - Frame ownership: design/03-frame-and-ownership-contract.md
-      - Graph runtime: design/04-node-graph-and-sync-runner.md
-      - Concurrent runtime: design/05-concurrent-runtime-and-flow-control.md
-      - Control plane: design/06-signal-eventbus-turn-control.md
+  - Integrations:
+      - Providers: integrations.md
+  - Quality:
+      - Testing: testing.md
+  - Project:
+      - Status and roadmap: roadmap.md
+      - Contributing: contributing.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/PiyotaHu/Voxa
+  generator: true

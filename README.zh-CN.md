@@ -2,7 +2,7 @@
 
 > 一个以 Rust 为核心的实时多模态 Agent Runtime，让 Rust、C++、Python 与 TypeScript 共享同一套图、生命周期和安全边界。
 
-[English](README.md) · [文档网站](https://piyotahu.github.io/Voxa/) · [安装](docs/installation.md) · [开发 Node](docs/nodes/README.md) · [Studio](docs/studio.md) · [Graph v1](docs/graph-v1-reference.md) · [测试体系](docs/testing/README.md)
+[English](README.md) · [中文文档](https://piyotahu.github.io/Voxa/zh/) · [安装](https://piyotahu.github.io/Voxa/zh/getting-started/) · [开发 Node](https://piyotahu.github.io/Voxa/zh/nodes/) · [Studio](https://piyotahu.github.io/Voxa/zh/studio/) · [Graph v1](https://piyotahu.github.io/Voxa/zh/graph/) · [测试体系](https://piyotahu.github.io/Voxa/zh/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -127,7 +127,7 @@ Studio 会打开内置 Graph v1 可视化编辑器。开发者可以把 Node 从
 拖进画布，在类型兼容的端口之间直接拉线，也可以点击 **Create Node**，在网页里
 编辑代码、声明端口并保存注册到项目 Node Library。当前文本 Python Node 可由
 可信本地开发 Host 直接运行。Studio 默认只监听 `127.0.0.1` 并生成本地访问
-Token。详见 [Studio 指南](docs/studio.md)。
+Token。详见 [Studio 指南](https://piyotahu.github.io/Voxa/zh/studio/)。
 
 ### 构建并测试多语言 SDK
 
@@ -137,7 +137,7 @@ Token。详见 [Studio 指南](docs/studio.md)。
 ./scripts/check-ffi.sh
 ```
 
-脚本会构建可真实安装的包、执行集成测试，并运行独立的 Python、TypeScript 与 C++ 消费者示例。安装与 Node 开发方式参见[多语言 SDK 指南](docs/sdk/README.md)。
+脚本会构建可真实安装的包、执行集成测试，并运行独立的 Python、TypeScript 与 C++ 消费者示例。安装与 Node 开发方式参见[Node 开发指南](https://piyotahu.github.io/Voxa/zh/nodes/)。
 
 ## Graph v1 示例
 
@@ -146,7 +146,7 @@ Token。详见 [Studio 指南](docs/studio.md)。
 可直接运行 `voxa run examples/graphs/mock-realtime-voice.v1.json`，或通过
 `voxa studio examples/graphs/mock-realtime-voice.v1.json` 打开可视化编辑器。
 
-Graph JSON 只用于声明式配置，不能包含可执行代码、动态脚本、凭据或任意远程资源。详见 [Graph v1 参考](docs/graph-v1-reference.md)。
+Graph JSON 只用于声明式配置，不能包含可执行代码、动态脚本、凭据或任意远程资源。详见 [Graph 与类型化端口](https://piyotahu.github.io/Voxa/zh/graph/)。
 
 ## 仓库结构
 

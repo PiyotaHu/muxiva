@@ -11,6 +11,8 @@ but must be called out explicitly with migration guidance.
 
 ### Added
 
+- Strictly separated English and Simplified Chinese documentation sources with
+  contextual language switching and translation-parity CI validation.
 - Project Node Library and `voxa.node/v1` Manifest authoring in Studio.
 - Trusted local text Python Node execution Host.
 - Palette drag-to-canvas and typed port-to-port Edge wiring.

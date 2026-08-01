@@ -34,6 +34,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements-docs.txt
+      - run: python scripts/check-docs-i18n.py
       - run: mkdocs build --strict
       - uses: actions/upload-pages-artifact@v3
         with:

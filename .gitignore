@@ -1,7 +1,7 @@
 # Voxa workspaces and language build outputs
 .worktrees/
 target/
-site/
+/site/
 node_modules/
 .pnpm-store/
 *.node

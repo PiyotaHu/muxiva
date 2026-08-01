@@ -16,8 +16,10 @@ backpressure, cancellation, security, compatibility, and migration impact. -->
 - [ ] This PR contains one focused logical change.
 - [ ] I added or updated regression tests at the lowest stable boundary.
 - [ ] I ran the relevant local quality gates and recorded them above.
-- [ ] I updated `docs/` for every affected API, Schema, Runtime, Studio, CLI,
-      provider, installation, security, or architecture contract.
+- [ ] I updated paired `docs/site/en/` and `docs/site/zh/` pages for every
+      affected API, Schema, Runtime, Studio, CLI, provider, installation,
+      security, or architecture contract.
+- [ ] I ran `python scripts/check-docs-i18n.py`.
 - [ ] I ran `mkdocs build --strict`, or this change has no documentation impact.
 - [ ] I documented breaking changes and migration steps in `CHANGELOG.md`.
 - [ ] I added no credentials, RTC tokens, personal data, or generated build output.

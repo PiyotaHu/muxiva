@@ -173,7 +173,7 @@ function applyNodeTemplate() {
   const language = $('#node-lab-language').value
   $('#node-lab-code').value = nodeTemplates[language]
   const documentName = language === 'rust' ? 'rust' : language
-  $('#node-lab-docs').href = `https://github.com/PiyotaHu/Voxa/blob/main/docs/nodes/${documentName}.md`
+  $('#node-lab-docs').href = `https://piyotahu.github.io/Voxa/nodes/${documentName}/`
   $('#node-lab-docs').textContent = `Open ${language === 'cpp' ? 'C++' : language[0].toUpperCase() + language.slice(1)} Node guide ↗`
   $('#node-lab-runtime-note').textContent = language === 'python' ? 'Text Python Nodes load only when you Run the Graph; saving never executes code.' : `${language} is registered for authoring; Studio will report its build Host requirements.`
 }
