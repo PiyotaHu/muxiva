@@ -5,6 +5,7 @@
 [English](README.md) · [架构设计](docs/design/01-product-and-technical-contract.md) · [Graph v1](docs/graph-v1-reference.md) · [测试体系](docs/testing/README.md)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
+![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Rust](https://img.shields.io/badge/Rust-1.85%2B-black?logo=rust)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-blue?logo=cplusplus)
 ![Python](https://img.shields.io/badge/Python-3.13-tested-blue?logo=python)
@@ -68,13 +69,11 @@ ASR、LLM、TTS、Transport 和 Codec 不属于 Runtime Core，它们应该作�
 ### 构建并运行 Rust 示例
 
 ```bash
-git clone https://github.com/<owner>/voxa.git
+git clone https://github.com/PiyotaHu/Voxa.git
 cd voxa
 cargo build --workspace
 cargo run -p voxa-examples --bin text_graph
 ```
-
-公开 GitHub 仓库创建后，请将 `<owner>` 替换为实际组织或用户名。
 
 ### 校验 Graph
 
@@ -210,4 +209,4 @@ Voxa 仍处于 pre-alpha 阶段，不能用于执行不可信代码，也不应�
 
 ## 许可证
 
-**项目尚未选择许可证。** 在添加 `LICENSE` 文件前，当前源码不具备复制、修改或再分发授权。维护者应在正式宣布 Voxa 开源前明确选择许可证，例如 Apache-2.0、MIT，或经过慎重决策的双许可证；本次不会擅自替维护者做法律选择。
+Voxa 使用 [Apache License 2.0](LICENSE) 开源。

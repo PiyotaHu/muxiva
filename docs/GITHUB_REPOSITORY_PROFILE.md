@@ -73,8 +73,7 @@ Voxa 是一个以 Rust 为核心的实时多模态 Agent Runtime，通过有界�
 
 ## Public-release checklist
 
-- Select and add a `LICENSE`; without it, the repository is not legally open source.
-- Replace `https://github.com/<owner>/voxa.git` in both README files.
+- Confirm the existing Apache-2.0 license and copyright attribution policy before the first release.
 - Enable Issues and Discussions according to the intended contribution workflow.
 - Enable private vulnerability reporting and add `SECURITY.md`.
 - Add `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, issue forms, and a pull-request template.

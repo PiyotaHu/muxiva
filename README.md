@@ -5,6 +5,7 @@
 [简体中文](README.zh-CN.md) · [Architecture](docs/design/01-product-and-technical-contract.md) · [Graph v1](docs/graph-v1-reference.md) · [Testing](docs/testing/README.md)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
+![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Rust](https://img.shields.io/badge/Rust-1.85%2B-black?logo=rust)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-blue?logo=cplusplus)
 ![Python](https://img.shields.io/badge/Python-3.13-tested-blue?logo=python)
@@ -68,13 +69,11 @@ The runtime never treats ASR, LLM, TTS, transport, or codec behavior as Core res
 ### Build and run the Rust example
 
 ```bash
-git clone https://github.com/<owner>/voxa.git
+git clone https://github.com/PiyotaHu/Voxa.git
 cd voxa
 cargo build --workspace
 cargo run -p voxa-examples --bin text_graph
 ```
-
-Replace `<owner>` after the public GitHub repository is created.
 
 ### Validate a graph
 
@@ -210,4 +209,4 @@ GitHub private vulnerability reporting and a dedicated `SECURITY.md` should be e
 
 ## License
 
-**A project license has not been selected yet.** Until a `LICENSE` file is added, the source is not licensed for copying, modification, or redistribution. The maintainer should explicitly choose a license—commonly Apache-2.0, MIT, or a deliberate dual license—before announcing Voxa as an open-source release.
+Voxa is licensed under the [Apache License 2.0](LICENSE).

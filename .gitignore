@@ -1,3 +1,4 @@
+# Voxa workspaces and language build outputs
 .worktrees/
 target/
 node_modules/
@@ -6,3 +7,48 @@ node_modules/
 *.whl
 __pycache__/
 tests/reports/benchmarks/*.json
+
+# Native compiler outputs
+*.d
+*.slo
+*.lo
+*.o
+*.obj
+*.gch
+*.pch
+*.ilk
+*.pdb
+*.so
+*.dylib
+*.dll
+*.so.*
+*.mod
+*.smod
+*.lai
+*.la
+*.a
+*.lib
+*.exe
+*.out
+*.app
+*.dwo
+
+# Native build directories and generated files
+build/
+Build/
+build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+install_manifest.txt
+compile_commands.json
+vcpkg_installed/
+Testing/
+.cache/
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+*.swp
