@@ -56,7 +56,10 @@ test('TypeScript factory executes inside registered Graph v1 runtime', async () 
     ],
   })
   const factory = new GraphNodeFactory('example.typescript.uppercase', {
-    onProcess(frame) { return { text: frame.text.toUpperCase() } },
+    onProcess(frame, ctx) {
+      ctx.emit('text_out', { ...frame, text: frame.text.toUpperCase() })
+      ctx.publishEvent('example.typescript.uppercased', { sequence: frame.sequence })
+    },
   })
   const incompatible = new GraphNodeFactory('example.typescript.uppercase', {
     onProcess() { throw new Error('wrong exact Factory version selected') },

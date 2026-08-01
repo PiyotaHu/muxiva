@@ -1,6 +1,10 @@
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
 };
 
 use voxa_core::{
@@ -12,7 +16,8 @@ use voxa_types::{
     AudioData, AudioLayout, ClockDomain, ClockDomainId, ClockKind, ErrorCategory, EventData,
     Extensions, Frame, FrameBuffer, FrameDerivation, FrameHeader, FrameId, FramePayload, FrameType,
     Lineage, Metadata, NamespacedName, NodeId, PcmSampleFormat, SchemaVersion, SequenceId,
-    StreamId, TextData, Timestamp, TraceId, TransformOrigin, Value, ValueMap, VoxaError,
+    SignalData, StreamId, TextData, Timestamp, TraceId, TransformOrigin, Value, ValueMap,
+    VoxaError,
 };
 
 pub const BUILTIN_FACTORY_VERSION: &str = "1.0.0";
@@ -144,7 +149,16 @@ fn register_demo_nodes(registry: &mut NodeRegistry) {
     ] {
         register(
             registry,
-            typed_descriptor(node_type, kind, &ports, empty_schema()),
+            typed_descriptor(
+                node_type,
+                kind,
+                &ports,
+                if node_type == DEMO_MICROPHONE {
+                    demo_microphone_schema()
+                } else {
+                    empty_schema()
+                },
+            ),
             factory,
         );
     }
@@ -220,16 +234,47 @@ struct DemoFactory(DemoNodeKind);
 
 impl NodeFactory for DemoFactory {
     fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
-        validate_empty_config(config, "demo node")
+        if matches!(self.0, DemoNodeKind::Microphone) {
+            let turns = match config.get("turns") {
+                Some(Value::Integer(value)) if (1..=100).contains(value) => *value as usize,
+                _ => {
+                    return Err(config_error(
+                        "demo microphone `turns` must be an integer from 1 through 100",
+                    ))
+                }
+            };
+            let interval = match config.get("interval_ms") {
+                Some(Value::Integer(value)) if (0..=10_000).contains(value) => *value as u64,
+                _ => {
+                    return Err(config_error(
+                        "demo microphone `interval_ms` must be an integer from 0 through 10000",
+                    ))
+                }
+            };
+            let _ = (turns, interval);
+            Ok(())
+        } else {
+            validate_empty_config(config, "demo node")
+        }
     }
 
     fn create(
         &self,
         _node_id: &NodeId,
-        _config: &ConfigMap,
+        config: &ConfigMap,
     ) -> Result<Box<dyn Node>, NodeFactoryError> {
         Ok(match self.0 {
-            DemoNodeKind::Microphone => Box::new(DemoMicrophone) as Box<dyn Node>,
+            DemoNodeKind::Microphone => Box::new(DemoMicrophone {
+                turn: 0,
+                turns: match config.get("turns") {
+                    Some(Value::Integer(value)) => *value as usize,
+                    _ => 1,
+                },
+                interval: Duration::from_millis(match config.get("interval_ms") {
+                    Some(Value::Integer(value)) => *value as u64,
+                    _ => 0,
+                }),
+            }) as Box<dyn Node>,
             DemoNodeKind::Asr => Box::new(DemoAsr),
             DemoNodeKind::Vad => Box::new(DemoVad),
             DemoNodeKind::Fusion => Box::new(DemoContextFusion::default()),
@@ -240,7 +285,11 @@ impl NodeFactory for DemoFactory {
     }
 }
 
-struct DemoMicrophone;
+struct DemoMicrophone {
+    turn: usize,
+    turns: usize,
+    interval: Duration,
+}
 impl Node for DemoMicrophone {
     fn on_process(
         &mut self,
@@ -253,11 +302,16 @@ impl Node for DemoMicrophone {
                 "demo microphone received input",
             ));
         }
-        println!("[VOXA][FRAME][{}] audio=pcm_s16le rate_hz=16000 channels=1 duration_ms=20 provider=mock", context.node_id());
+        self.turn += 1;
+        println!("[VOXA][TURN][started] turn={} of={}", self.turn, self.turns);
+        println!("[VOXA][FRAME][{}] turn={} audio=pcm_s16le rate_hz=16000 channels=1 duration_ms=20 provider=mock", context.node_id(), self.turn);
         context.emit(
             PortName::new("audio_out").unwrap(),
-            demo_audio_frame("microphone")?,
+            demo_audio_frame("microphone", self.turn as u64)?,
         )?;
+        if self.turn < self.turns {
+            context.schedule_next_tick(self.interval);
+        }
         Ok(())
     }
 }
@@ -270,7 +324,8 @@ impl Node for DemoAsr {
         context: &mut NodeContext,
     ) -> voxa_types::Result<()> {
         let input = required_type(input, FrameType::Audio, "streaming ASR requires audio")?;
-        let transcript = "How can Voxa power a real-time voice agent?";
+        let turn = input.header().sequence_id().get() as usize;
+        let transcript = demo_transcript(turn);
         println!(
             "[VOXA][NODE][{}] transcript=\"{transcript}\" provider=mock",
             context.node_id()
@@ -310,21 +365,53 @@ impl Node for DemoVad {
             context.node_id().clone(),
             Value::Bool(true),
         );
-        context.emit(
-            PortName::new("speech_out").unwrap(),
-            derive_payload(&input, context.node_id(), "vad", FramePayload::Event(event))?,
+        let event_frame =
+            derive_payload(&input, context.node_id(), "vad", FramePayload::Event(event))?;
+        let published =
+            context.publish_event(event_frame.as_event().expect("event payload").clone())?;
+        println!("[VOXA][EVENTBUS][publish] topic=voxa.demo.speech.detected turn={} subscribers={} enqueued={}", input.header().sequence_id().get(), published.matched, published.enqueued);
+        let signal_frame = derive_payload(
+            &input,
+            context.node_id(),
+            "vad-control",
+            FramePayload::Signal(SignalData::new(
+                NamespacedName::new("voxa.voice.speech.started")?,
+                SchemaVersion::new(1)?,
+                context.node_id().clone(),
+                Value::Integer(input.header().sequence_id().get() as i64),
+            )),
         )?;
+        context.emit_signal(signal_frame.as_signal().expect("signal payload").clone())?;
+        println!(
+            "[VOXA][SIGNAL][emit] name=voxa.voice.speech.started turn={} route=downstream",
+            input.header().sequence_id().get()
+        );
+        context.emit(PortName::new("speech_out").unwrap(), event_frame)?;
         Ok(())
     }
 }
 
 #[derive(Default)]
 struct DemoContextFusion {
-    transcript: Option<Box<str>>,
-    speech: bool,
-    emitted: bool,
+    transcripts: BTreeMap<u64, Box<str>>,
+    speech: BTreeSet<u64>,
+    emitted: BTreeSet<u64>,
 }
 impl Node for DemoContextFusion {
+    fn on_signal(
+        &mut self,
+        signal: voxa_types::SignalFrame,
+        context: &mut NodeContext,
+    ) -> voxa_types::Result<()> {
+        println!(
+            "[VOXA][SIGNAL][received] node={} name={} turn={} action=observe-barge-in",
+            context.node_id(),
+            signal.data().name(),
+            signal.header().sequence_id().get()
+        );
+        Ok(())
+    }
+
     fn on_process(
         &mut self,
         input: Option<Frame>,
@@ -333,9 +420,11 @@ impl Node for DemoContextFusion {
         let input = input.ok_or_else(|| {
             node_error("VOXA-DEMO-INPUT-MISSING", "context fusion requires input")
         })?;
+        let turn = input.header().sequence_id().get();
         match context.input_port().map(PortName::as_str) {
             Some("transcript_in") => {
-                self.transcript = Some(
+                self.transcripts.insert(
+                    turn,
                     input
                         .as_text()
                         .ok_or_else(|| {
@@ -344,11 +433,11 @@ impl Node for DemoContextFusion {
                         .data()
                         .as_str()
                         .into(),
-                )
+                );
             }
             Some("speech_in") => {
                 input.ensure_type(FrameType::Event)?;
-                self.speech = true;
+                self.speech.insert(turn);
             }
             _ => {
                 return Err(node_error(
@@ -357,14 +446,17 @@ impl Node for DemoContextFusion {
                 ))
             }
         }
-        if self.speech && self.transcript.is_some() && !self.emitted {
-            self.emitted = true;
-            let transcript = self.transcript.as_deref().unwrap();
+        if self.speech.contains(&turn)
+            && self.transcripts.contains_key(&turn)
+            && !self.emitted.contains(&turn)
+        {
+            self.emitted.insert(turn);
+            let transcript = self.transcripts.get(&turn).unwrap();
             println!(
-                "[VOXA][JOIN][{}] inputs=transcript+speech_event status=ready",
-                context.node_id()
+                "[VOXA][JOIN][{}] turn={turn} inputs=transcript+speech_event status=ready",
+                context.node_id(),
             );
-            let prompt = format!("speech=true; user={transcript}");
+            let prompt = format!("turn={turn}; speech=true; user={transcript}");
             context.emit(
                 PortName::new("context_out").unwrap(),
                 derive_payload(
@@ -387,8 +479,8 @@ impl Node for DemoLlm {
         context: &mut NodeContext,
     ) -> voxa_types::Result<()> {
         let input = required_type(input, FrameType::Text, "reasoning LLM requires context")?;
-        let response =
-            "Voxa runs audio, ASR, VAD, reasoning, and TTS as one typed, concurrent graph.";
+        let turn = input.header().sequence_id().get() as usize;
+        let response = demo_response(turn);
         println!(
             "[VOXA][NODE][{}] tokens_in=14 tokens_out=18 provider=mock",
             context.node_id()
@@ -482,6 +574,46 @@ fn empty_schema() -> ConfigSchema {
     ConfigSchema::new(map([
         ("type", Value::String("object".into())),
         ("properties", map([])),
+        ("additionalProperties", Value::Bool(false)),
+    ]))
+}
+
+fn demo_microphone_schema() -> ConfigSchema {
+    ConfigSchema::new(map([
+        ("type", Value::String("object".into())),
+        (
+            "properties",
+            map([
+                (
+                    "turns",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(1)),
+                        ("maximum", Value::Integer(100)),
+                        ("default", Value::Integer(4)),
+                    ]),
+                ),
+                (
+                    "interval_ms",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(0)),
+                        ("maximum", Value::Integer(10_000)),
+                        ("default", Value::Integer(650)),
+                    ]),
+                ),
+            ]),
+        ),
+        (
+            "required",
+            Value::List(
+                vec![
+                    Value::String("turns".into()),
+                    Value::String("interval_ms".into()),
+                ]
+                .into_boxed_slice(),
+            ),
+        ),
         ("additionalProperties", Value::Bool(false)),
     ]))
 }
@@ -719,7 +851,7 @@ fn source_frame(text: &str) -> voxa_types::Result<Frame> {
     )
 }
 
-fn demo_audio_frame(origin: &str) -> voxa_types::Result<Frame> {
+fn demo_audio_frame(origin: &str, sequence: u64) -> voxa_types::Result<Frame> {
     let audio = AudioData::new(
         FrameBuffer::from_vec(vec![0; 640]),
         16_000,
@@ -728,10 +860,10 @@ fn demo_audio_frame(origin: &str) -> voxa_types::Result<Frame> {
         AudioLayout::Interleaved,
         320,
     )?;
-    demo_frame(origin, FramePayload::Audio(audio))
+    demo_frame(origin, sequence, FramePayload::Audio(audio))
 }
 
-fn demo_frame(origin: &str, payload: FramePayload) -> voxa_types::Result<Frame> {
+fn demo_frame(origin: &str, sequence: u64, payload: FramePayload) -> voxa_types::Result<Frame> {
     let serial = NEXT_FRAME.fetch_add(1, Ordering::Relaxed);
     let frame_type = payload.frame_type();
     Frame::new(
@@ -742,7 +874,7 @@ fn demo_frame(origin: &str, payload: FramePayload) -> voxa_types::Result<Frame> 
                 ClockDomainId::new("voxa.demo.media").expect("valid demo clock"),
                 ClockKind::MediaRelative,
             ),
-            SequenceId::new(0),
+            SequenceId::new(sequence),
             StreamId::new(format!("demo-stream-{serial}")).expect("bounded demo stream ID"),
             TraceId::new(format!("demo-trace-{serial}")).expect("bounded demo trace ID"),
             frame_type,
@@ -752,6 +884,26 @@ fn demo_frame(origin: &str, payload: FramePayload) -> voxa_types::Result<Frame> 
         )?,
         payload,
     )
+}
+
+fn demo_transcript(turn: usize) -> &'static str {
+    const TRANSCRIPTS: &[&str] = &[
+        "Hello Voxa, what can this runtime do?",
+        "Can I interrupt while the assistant is speaking?",
+        "How do nodes communicate without returning a frame?",
+        "Great, summarize this live session for me.",
+    ];
+    TRANSCRIPTS[(turn.saturating_sub(1)) % TRANSCRIPTS.len()]
+}
+
+fn demo_response(turn: usize) -> &'static str {
+    const RESPONSES: &[&str] = &[
+        "I run audio, ASR, VAD, reasoning, and TTS as one typed concurrent graph.",
+        "Yes. Signals travel on the graph control plane so a new turn can interrupt downstream work.",
+        "Use ctx.emit for data, ctx.emit_signal for graph control, and ctx.publish_event for the global EventBus.",
+        "This session completed four voice turns while preserving typed routing, control, and observable events.",
+    ];
+    RESPONSES[(turn.saturating_sub(1)) % RESPONSES.len()]
 }
 
 fn required_type(

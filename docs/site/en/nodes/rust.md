@@ -4,6 +4,7 @@ Rust Nodes implement the Runtime's Node lifecycle directly.
 
 ```rust
 use voxa_core::{Node, NodeContext};
+use voxa_core::PortName;
 use voxa_types::Frame;
 
 pub struct MyNode;
@@ -14,10 +15,18 @@ impl Node for MyNode {
         input: Option<Frame>,
         context: &mut NodeContext,
     ) -> voxa_types::Result<()> {
-        Ok(())
+        if let Some(frame) = input {
+            context.emit(PortName::new("text_out").expect("valid Port"), frame)?;
+            // context.emit_signal(signal)?;       // adjacent graph control
+            // context.publish_event(event)?;      // runtime-wide EventBus
+        }
+        Ok(()) // callback status, not the message transport
     }
 }
 ```
+
+Source Nodes may call `context.schedule_next_tick(delay)` to remain active.
+Omitting it completes the source, preserving one-shot behavior.
 
 Built-in Rust Factories are compiled into the trusted Registry. Third-party
 binary packages must cross Voxa's stable C ABI rather than depend on Rust's

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use voxa_types::{Frame, NodeId, SignalFrame, VoxaError};
+use voxa_types::{EventFrame, Frame, NodeId, SignalFrame, VoxaError};
 
 use crate::{AbortReason, ConfigMap, Node, NodeContext, NodeFactory, NodeFactoryError, PortName};
 
@@ -31,6 +31,7 @@ impl ForeignNodeEmission {
 pub struct ForeignNodeCallOutput {
     emissions: Vec<ForeignNodeEmission>,
     signals: Vec<SignalFrame>,
+    events: Vec<EventFrame>,
 }
 
 impl ForeignNodeCallOutput {
@@ -41,7 +42,26 @@ impl ForeignNodeCallOutput {
         Self {
             emissions: emissions.into(),
             signals: signals.into(),
+            events: Vec::new(),
         }
+    }
+
+    pub fn with_events(mut self, events: impl Into<Vec<EventFrame>>) -> Self {
+        self.events = events.into();
+        self
+    }
+
+    pub fn with_signals(mut self, signals: impl Into<Vec<SignalFrame>>) -> Self {
+        self.signals = signals.into();
+        self
+    }
+
+    pub fn with_additional_emissions(
+        mut self,
+        emissions: impl IntoIterator<Item = ForeignNodeEmission>,
+    ) -> Self {
+        self.emissions.extend(emissions);
+        self
     }
 
     pub fn from_frame(output_port: PortName, frame: Frame) -> Self {
@@ -54,6 +74,10 @@ impl ForeignNodeCallOutput {
 
     pub fn signals(&self) -> &[SignalFrame] {
         &self.signals
+    }
+
+    pub fn events(&self) -> &[EventFrame] {
+        &self.events
     }
 }
 
@@ -135,6 +159,9 @@ impl ForeignNodeAdapter {
         }
         for signal in output.signals {
             context.emit_signal(signal)?;
+        }
+        for event in output.events {
+            context.publish_event(event)?;
         }
         Ok(())
     }

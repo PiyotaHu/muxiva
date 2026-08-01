@@ -6,11 +6,16 @@ Studio can create and register a `node.ts` project package today.
 import type { GraphNodeImplementation } from '@voxa/core'
 
 export const node: GraphNodeImplementation = {
-  onProcess(frame) {
-    return { text_out: { ...frame, text: frame.text.toUpperCase() } }
+  onProcess(frame, ctx) {
+    ctx.emit('text_out', { ...frame, text: frame.text.toUpperCase() })
+    ctx.publishEvent('example.text.uppercased', { sequence: frame.sequence })
   },
 }
 ```
+
+The Worker context exposes `emit`, `emitSignal`, and `publishEvent`. Return
+values are retained as compatibility sugar, but explicit emission supports
+multiple actions during one lifecycle callback.
 
 The standalone `@voxa/core` SDK executes hosted TypeScript Nodes inside a
 dedicated Worker. Values crossing the boundary must be structured-clone

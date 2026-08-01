@@ -4,6 +4,7 @@ use std::{
     error::Error,
     fmt,
     panic::{catch_unwind, AssertUnwindSafe},
+    time::Duration,
 };
 
 use voxa_types::{EdgeId, ErrorCategory, Frame, NodeId, TransformOrigin, Value, VoxaError};
@@ -164,6 +165,7 @@ pub struct GraphRunner<'graph> {
     aborted: BTreeSet<NodeId>,
     observed_signals: Vec<ObservedEdgeSignal>,
     abort_diagnostics: Vec<AbortHookDiagnostic>,
+    event_bus: crate::EventBus,
 }
 
 impl<'graph> GraphRunner<'graph> {
@@ -219,7 +221,14 @@ impl<'graph> GraphRunner<'graph> {
             aborted: BTreeSet::new(),
             observed_signals: Vec::new(),
             abort_diagnostics: Vec::new(),
+            event_bus: crate::EventBus::default(),
         })
+    }
+
+    /// Replaces the runtime-wide EventBus exposed through every NodeContext.
+    pub fn with_event_bus(mut self, event_bus: crate::EventBus) -> Self {
+        self.event_bus = event_bus;
+        self
     }
 
     /// Runs the complete graph lifecycle once on the calling thread.
@@ -312,7 +321,8 @@ impl<'graph> GraphRunner<'graph> {
             .expect("validated node")
             .config()
             .clone();
-        let mut context = NodeContext::new(node_id.clone(), config, None);
+        let mut context =
+            NodeContext::with_event_bus(node_id.clone(), config, None, self.event_bus.clone());
         let node = self.nodes.get_mut(node_id).expect("validated instance");
         match catch_unwind(AssertUnwindSafe(|| node.on_prepare(&mut context))) {
             Ok(Ok(())) => Ok(()),
@@ -338,7 +348,12 @@ impl<'graph> GraphRunner<'graph> {
             .expect("validated node")
             .config()
             .clone();
-        let mut context = NodeContext::new(node_id.clone(), config, input_port);
+        let mut context = NodeContext::with_event_bus(
+            node_id.clone(),
+            config,
+            input_port,
+            self.event_bus.clone(),
+        );
         let node = self.nodes.get_mut(node_id).expect("validated instance");
         match catch_unwind(AssertUnwindSafe(|| node.on_process(input, &mut context))) {
             Ok(Ok(())) => Ok(context.take_emissions()),
@@ -359,7 +374,8 @@ impl<'graph> GraphRunner<'graph> {
             .expect("validated node")
             .config()
             .clone();
-        let mut context = NodeContext::new(node_id.clone(), config, None);
+        let mut context =
+            NodeContext::with_event_bus(node_id.clone(), config, None, self.event_bus.clone());
         let node = self.nodes.get_mut(node_id).expect("validated instance");
         match catch_unwind(AssertUnwindSafe(|| node.on_finish(&mut context))) {
             Ok(Ok(())) => Ok(()),
@@ -689,7 +705,8 @@ impl<'graph> GraphRunner<'graph> {
                 .expect("validated node")
                 .config()
                 .clone();
-            let mut context = NodeContext::new(node_id.clone(), config, None);
+            let mut context =
+                NodeContext::with_event_bus(node_id.clone(), config, None, self.event_bus.clone());
             let node = self.nodes.get_mut(node_id).expect("prepared instance");
             if let Err(payload) = catch_unwind(AssertUnwindSafe(|| {
                 node.on_abort(reason, &mut context);
@@ -705,6 +722,7 @@ impl<'graph> GraphRunner<'graph> {
     fn release_runtime_resources(&mut self) {
         self.nodes.clear();
         self.policies.clear();
+        let _ = self.event_bus.stop(Duration::from_millis(100));
     }
 }
 

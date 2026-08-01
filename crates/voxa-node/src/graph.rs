@@ -1,7 +1,10 @@
 //! Registry-driven Graph v1 execution hosted by a JavaScript Worker.
 
 use std::{
-    sync::{mpsc, Arc},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc, Arc,
+    },
     time::Duration,
 };
 
@@ -18,13 +21,17 @@ use voxa_core::{
     NodeDescriptor, NodeFactoryError, NodeFactoryVersion, NodeKind, NodeLanguage, NodeRegistration,
     NodeTypeName, PortDescriptor, PortDirection, PortName, RuntimeOptions, RuntimeWaitError,
 };
-use voxa_types::{ErrorCategory, Frame, FrameType, NodeId, SignalFrame, VoxaError};
+use voxa_types::{
+    ErrorCategory, EventData, Frame, FrameDerivation, FrameId, FramePayload, FrameType,
+    NamespacedName, NodeId, SchemaVersion, SignalData, SignalFrame, TransformOrigin, VoxaError,
+};
 
 use crate::frame::{frame_from_wire, frame_to_wire};
 
 const MAX_TIMEOUT_MS: u32 = 60 * 60 * 1_000;
 const CALLBACK_QUEUE_CAPACITY: usize = 1024;
 const CALLBACK_TIMEOUT: Duration = Duration::from_secs(10);
+static NEXT_ACTION_FRAME: AtomicU64 = AtomicU64::new(1);
 
 #[napi(object)]
 pub struct GraphFactorySpec {
@@ -197,7 +204,32 @@ impl ForeignNodeInstance for TypeScriptInstance {
             payload,
             input_port.map(|port| port.as_str().to_owned()),
         )?;
-        decode_emissions(response.value, &self.output_ports)
+        let action_emissions = response.actions_emissions(&self.output_ports)?;
+        let mut signals = Vec::new();
+        let mut events = Vec::new();
+        for action in response.actions {
+            match action {
+                GraphAction::Emit { .. } => {}
+                GraphAction::Signal { name, payload } => signals.push(
+                    control_action_frame(input.as_ref(), &self.node_id, &name, payload, true)?
+                        .as_signal()
+                        .expect("signal action")
+                        .clone(),
+                ),
+                GraphAction::Event { topic, payload } => events.push(
+                    control_action_frame(input.as_ref(), &self.node_id, &topic, payload, false)?
+                        .as_event()
+                        .expect("event action")
+                        .clone(),
+                ),
+            }
+        }
+        let mut output = decode_emissions(response.value, &self.output_ports)?;
+        output = output
+            .with_additional_emissions(action_emissions)
+            .with_signals(signals)
+            .with_events(events);
+        Ok(output)
     }
 
     fn on_signal(&mut self, _signal: SignalFrame) -> Result<ForeignNodeCallOutput, VoxaError> {
@@ -225,6 +257,118 @@ struct GraphResponse {
     ok: bool,
     value: Option<serde_json::Value>,
     error: Option<GraphResponseError>,
+    #[serde(default)]
+    actions: Vec<GraphAction>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum GraphAction {
+    Emit {
+        port: String,
+        frame: serde_json::Value,
+    },
+    Signal {
+        name: String,
+        payload: serde_json::Value,
+    },
+    Event {
+        topic: String,
+        payload: serde_json::Value,
+    },
+}
+
+impl GraphResponse {
+    fn actions_emissions(
+        &self,
+        output_ports: &[PortName],
+    ) -> Result<Vec<voxa_core::ForeignNodeEmission>, VoxaError> {
+        self.actions
+            .iter()
+            .filter_map(|action| match action {
+                GraphAction::Emit { port, frame } => Some((port, frame)),
+                _ => None,
+            })
+            .map(|(name, value)| {
+                let port = output_ports
+                    .iter()
+                    .find(|port| port.as_str() == name)
+                    .ok_or_else(|| {
+                        graph_error(
+                            "VOXA-NODE-GRAPH-OUTPUT-PORT",
+                            "ctx.emit used an undeclared output port",
+                        )
+                    })?;
+                Ok(voxa_core::ForeignNodeEmission::new(
+                    port.clone(),
+                    frame_from_wire(value).map_err(|error| {
+                        graph_error("VOXA-NODE-GRAPH-OUTPUT", &error.to_string())
+                    })?,
+                ))
+            })
+            .collect()
+    }
+}
+
+fn control_action_frame(
+    parent: Option<&Frame>,
+    node_id: &str,
+    name: &str,
+    payload: serde_json::Value,
+    signal: bool,
+) -> Result<Frame, VoxaError> {
+    let parent = parent.ok_or_else(|| {
+        graph_error(
+            "VOXA-NODE-GRAPH-CONTROL-SOURCE",
+            "source control actions require an input Frame in Node V1",
+        )
+    })?;
+    let source = NodeId::new(node_id.to_owned())
+        .map_err(|error| graph_error("VOXA-NODE-GRAPH-NODE-ID", &error.to_string()))?;
+    let namespace = NamespacedName::new(name.to_owned())
+        .map_err(|error| graph_error("VOXA-NODE-GRAPH-CONTROL-NAME", &error.to_string()))?;
+    let value = voxa_graph_json::value_from_json(&payload)
+        .map_err(|error| graph_error("VOXA-NODE-GRAPH-CONTROL-PAYLOAD", &error))?;
+    let payload = if signal {
+        FramePayload::Signal(SignalData::new(
+            namespace,
+            SchemaVersion::new(1).unwrap(),
+            source.clone(),
+            value,
+        ))
+    } else {
+        FramePayload::Event(EventData::new(
+            namespace,
+            SchemaVersion::new(1).unwrap(),
+            source.clone(),
+            value,
+        ))
+    };
+    let serial = NEXT_ACTION_FRAME.fetch_add(1, Ordering::Relaxed);
+    parent
+        .derive(
+            FrameDerivation::new(
+                FrameId::new(format!(
+                    "node-action-{}-{}-{}-{}",
+                    node_id,
+                    parent.header().sequence_id().get(),
+                    if signal { "signal" } else { "event" },
+                    serial,
+                ))
+                .map_err(|error| {
+                    graph_error("VOXA-NODE-GRAPH-CONTROL-FRAME", &error.to_string())
+                })?,
+                parent.header().timestamp(),
+                parent.header().sequence_id(),
+                TransformOrigin::new(Some(source), None).map_err(|error| {
+                    graph_error("VOXA-NODE-GRAPH-CONTROL-ORIGIN", &error.to_string())
+                })?,
+                "typescript-context-action",
+            )
+            .map_err(|error| graph_error("VOXA-NODE-GRAPH-CONTROL-DERIVE", &error.to_string()))?
+            .with_payload(payload),
+        )
+        .map_err(|error| graph_error("VOXA-NODE-GRAPH-CONTROL-DERIVE", &error.to_string()))
 }
 
 #[derive(Deserialize)]

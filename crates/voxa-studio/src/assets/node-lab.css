@@ -12,3 +12,8 @@ dialog.node-lab-dialog{width:min(900px,92vw);max-height:92vh;overflow:auto}
 .port-dot:hover{r:8;fill:#1c3941}
 .port-dot.input.compatible{stroke:var(--green);fill:#173428;filter:drop-shadow(0 0 5px #63d39199)}
 .edge-route{cursor:pointer}
+.node-source-panel{border-top:1px solid var(--line);padding-top:12px;margin-top:8px}
+.node-source-heading{display:flex;align-items:center;justify-content:space-between;color:#8d99aa;font-size:9px;letter-spacing:1.2px;font-weight:750}
+.node-source-panel p{color:var(--muted);font-size:9px;line-height:1.45;margin:8px 0}
+.node-source-panel textarea{width:100%;resize:vertical;background:#090f16;color:#b9dce0;border:1px solid #263445;border-radius:7px;padding:9px;font:10px/1.5 "SFMono-Regular",Consolas,monospace}
+.node-source-panel a{display:inline-block;margin-top:8px;color:var(--cyan);font-size:10px;text-decoration:none}

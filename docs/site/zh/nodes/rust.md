@@ -4,6 +4,7 @@ Rust Node 直接实现 Runtime 的 Node 生命周期。
 
 ```rust
 use voxa_core::{Node, NodeContext};
+use voxa_core::PortName;
 use voxa_types::Frame;
 
 pub struct MyNode;
@@ -14,10 +15,18 @@ impl Node for MyNode {
         input: Option<Frame>,
         context: &mut NodeContext,
     ) -> voxa_types::Result<()> {
-        Ok(())
+        if let Some(frame) = input {
+            context.emit(PortName::new("text_out").expect("valid Port"), frame)?;
+            // context.emit_signal(signal)?;       // 相邻图控制
+            // context.publish_event(event)?;      // Runtime 全局 EventBus
+        }
+        Ok(()) // 回调状态，不承担消息传输
     }
 }
 ```
+
+Source Node 可调用 `context.schedule_next_tick(delay)` 保持活跃；不调用则完成
+Source，从而兼容既有的一次性语义。
 
 内置 Rust Factory 会编译进可信 Registry。第三方二进制 Package 必须跨越 Voxa
 稳定 C ABI，不能依赖不稳定的 Rust 动态 ABI。

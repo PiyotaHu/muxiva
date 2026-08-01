@@ -38,8 +38,10 @@ variables from the caller. The complete strict-TypeScript consumer is in
 
 ```ts
 const factory = new GraphNodeFactory('example.typescript.uppercase', {
-  onProcess(frame: { text: string }) {
-    return { text: frame.text.toUpperCase() }
+  onProcess(frame, ctx) {
+    ctx.emit('text_out', { ...frame, text: frame.text.toUpperCase() })
+    ctx.emitSignal('example.text.ready', { sequence: frame.sequence })
+    ctx.publishEvent('example.text.uppercased', { sequence: frame.sequence })
   },
 })
 const workerTotal = await runGraph(graphJson, [factory])
@@ -53,7 +55,7 @@ V1. See `examples/typescript/registered-graph.ts`.
 D05 Factory options add `kind`, `ports`, and `configSchema`. Graph callbacks
 receive `(frame, context)`, where `context` contains `nodeId`, `inputPort`, and
 the exact `node_config`. Frames use the exported `GraphFrame` wire union. A
-Source receives `undefined`; a Sink returns `undefined`; one callback may
-return an object keyed by output port and each value may be one frame or an
-array. The Worker still rejects Promise results and Graph JSON never evaluates
-or imports JavaScript by itself.
+Source receives `undefined`; a Sink simply omits `ctx.emit`. One callback may
+call `emit` repeatedly, so sending an Event or Signal does not end processing.
+Returned port mappings remain compatibility sugar. The Worker still rejects
+Promise results and Graph JSON never evaluates or imports JavaScript by itself.

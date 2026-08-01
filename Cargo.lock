@@ -673,6 +673,7 @@ dependencies = [
  "voxa-core",
  "voxa-graph-json",
  "voxa-studio",
+ "voxa-types",
 ]
 
 [[package]]

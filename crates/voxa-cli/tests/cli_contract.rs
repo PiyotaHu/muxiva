@@ -129,14 +129,22 @@ fn installed_binary_has_a_self_contained_branded_demo_and_version() {
     assert!(output.stderr.is_empty());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.starts_with("[VOXA][INFO][demo.started] name=realtime-voice-agent\n"));
-    assert!(stdout.contains("providers=mock network=disabled purpose=architecture-preview"));
+    assert!(stdout.contains(
+        "providers=mock network=disabled turns=4 interval_ms=650 purpose=runtime-session"
+    ));
     assert!(stdout.contains("graph \"realtime-voice-agent\""));
     assert!(stdout.contains("├─microphone.audio_out [audio] -> streaming-asr.audio_in"));
     assert!(stdout.contains("└─microphone.audio_out [audio] -> voice-activity.audio_in"));
+    assert!(stdout.contains("[VOXA][TURN][started] turn=1 of=4"));
+    assert!(stdout.contains("[VOXA][TURN][started] turn=4 of=4"));
+    assert!(stdout.contains("[VOXA][EVENTBUS][publish] topic=voxa.demo.speech.detected"));
+    assert!(stdout.contains("[VOXA][SIGNAL][received] node=context-fusion"));
+    assert!(stdout.contains(
+        "[VOXA][JOIN][context-fusion] turn=4 inputs=transcript+speech_event status=ready"
+    ));
     assert!(
-        stdout.contains("[VOXA][JOIN][context-fusion] inputs=transcript+speech_event status=ready")
+        stdout.contains("[VOXA][RESULT][live-transcript] This session completed four voice turns")
     );
-    assert!(stdout.contains("[VOXA][RESULT][live-transcript] Voxa runs audio, ASR, VAD, reasoning, and TTS as one typed, concurrent graph."));
     assert!(stdout.contains("[VOXA][RESULT][speaker] played_audio_ms=20 provider=mock"));
     assert!(stdout.ends_with("[VOXA][INFO][runtime.completed] status=success workers=8\n"));
 

@@ -7,7 +7,7 @@ Runtime Compiler 使用的严格 Graph v1 文档，不存在浏览器专用图�
 
 1. 将内置或项目 Node 从 Palette 拖到画布。
 2. 从输出 Port 拉线到类型兼容的输入 Port。
-3. 选择 Node，编辑标识、Factory 版本和配置。
+3. 选择 Node，查看 Factory 元数据、配置与实现源码。
 4. 校验并运行 Graph，观察实时指标，按需停止 Runtime。
 5. 将格式化 Graph JSON 原子写回文件。
 
@@ -28,6 +28,10 @@ byte、signal 与 event Port 之间不允许错误连接。
 Package 会立即进入当前项目的 Palette。文本 Python Source、Transform 与 Sink
 可以通过可信本地开发 Host 运行。TypeScript、Rust 和 C++ 项目 Package 当前可
 编辑与保存，但在对应 Build Host 完成前不会进入可运行 Graph。
+
+选中项目 Node 后，Inspector 会展示 `.voxa/nodes/` 中保存的完整源码，并提供
+**Edit in Node Lab**。选中编译内置 Node 时会展示精确 Factory 身份，并链接到
+权威 Rust 实现。
 
 ## Runtime 可观测性
 

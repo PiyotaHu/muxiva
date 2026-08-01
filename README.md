@@ -89,12 +89,13 @@ knowledge of the Rust workspace.
 voxa demo
 ```
 
-The default demo executes an eight-node voice-agent graph with two real fan-outs
-and one stateful join. A typed PCM frame flows concurrently through mock
-streaming ASR and voice-activity detection, merges into LLM context, then fans
+The default demo executes a four-turn, eight-node voice-agent session with two
+real fan-outs and a stateful join. Typed PCM frames flow concurrently through mock
+streaming ASR and voice-activity detection, merge into LLM context, then fan
 out to a live transcript and mock neural TTS. Providers are clearly labeled
 `mock`; graph compilation, immutable Frames, bounded queues, concurrent
-scheduling, fork/join routing, and lifecycle execution are real Voxa Runtime.
+scheduling, scheduled source ticks, fork/join routing, EventBus publish/subscribe,
+Signals, and lifecycle execution are real Voxa Runtime.
 
 ```text
 microphone(audio)
@@ -106,6 +107,9 @@ microphone(audio)
 
 For the intentionally small installation smoke test, run
 `voxa demo --scenario text`.
+
+Keep the mock session alive for a longer architecture review with
+`voxa demo --turns 20 --interval-ms 1000`.
 
 ### Create, validate, and run a graph
 

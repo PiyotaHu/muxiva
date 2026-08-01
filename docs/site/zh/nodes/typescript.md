@@ -6,11 +6,15 @@ Studio 当前可以创建并注册 `node.ts` 项目 Package。
 import type { GraphNodeImplementation } from '@voxa/core'
 
 export const node: GraphNodeImplementation = {
-  onProcess(frame) {
-    return { text_out: { ...frame, text: frame.text.toUpperCase() } }
+  onProcess(frame, ctx) {
+    ctx.emit('text_out', { ...frame, text: frame.text.toUpperCase() })
+    ctx.publishEvent('example.text.uppercased', { sequence: frame.sequence })
   },
 }
 ```
+
+Worker Context 提供 `emit`、`emitSignal` 与 `publishEvent`。返回值仍作为兼容
+写法保留；显式发送允许一次生命周期回调执行多个互不排斥的动作。
 
 独立 `@voxa/core` SDK 会在专用 Worker 中执行 Hosted TypeScript Node。跨边界
 数据必须兼容 Structured Clone，V1 回调保持同步。

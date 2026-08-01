@@ -275,12 +275,33 @@ struct GraphEmission {
   voxa_frame_view_v1 frame{};
 };
 
+class GraphNodeContext {
+ public:
+  explicit GraphNodeContext(std::string_view input_port) : input_port_(input_port) {}
+  std::string_view input_port() const noexcept { return input_port_; }
+  void emit(std::string output_port, voxa_frame_view_v1 frame) {
+    emissions_.push_back({std::move(output_port), frame});
+  }
+  std::vector<GraphEmission> take_emissions() { return std::move(emissions_); }
+
+ private:
+  std::string_view input_port_;
+  std::vector<GraphEmission> emissions_;
+};
+
 class MultimodalGraphNode {
  public:
   virtual ~MultimodalGraphNode() = default;
   virtual void on_prepare() {}
+  virtual void on_process(const voxa_frame_view_v1* input,
+                          GraphNodeContext& context) {
+    for (auto& emission : on_process(input, context.input_port())) {
+      context.emit(std::move(emission.output_port), emission.frame);
+    }
+  }
+  // V1 source compatibility. New Nodes should override the context form.
   virtual std::vector<GraphEmission> on_process(
-      const voxa_frame_view_v1* input, std::string_view input_port) = 0;
+      const voxa_frame_view_v1*, std::string_view) { return {}; }
   virtual void on_finish() {}
   virtual void on_abort(const voxa_abort_reason_v1&) noexcept {}
 };
@@ -305,7 +326,9 @@ inline voxa_status_v1 multimodal_process(
     auto* box = static_cast<MultimodalNodeBox*>(data);
     const std::string_view port(input_port.data == nullptr ? "" : input_port.data,
                                 input_port.data == nullptr ? 0 : input_port.len);
-    box->emissions = box->implementation->on_process(input, port);
+    GraphNodeContext context(port);
+    box->implementation->on_process(input, context);
+    box->emissions = context.take_emissions();
     box->views.clear();
     box->views.reserve(box->emissions.size());
     for (const auto& emission : box->emissions) {

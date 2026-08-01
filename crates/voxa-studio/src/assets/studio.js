@@ -118,7 +118,8 @@ function bindEvents() {
   $('#node-config').addEventListener('blur', updateSelectedNode)
   $('#delete-node').addEventListener('click', deleteSelectedNode)
   $('#add-edge').addEventListener('click', () => openEdgeDialog())
-  $('#open-node-lab').addEventListener('click', openNodeLab)
+  $('#open-node-lab').addEventListener('click', () => openNodeLab())
+  $('#edit-node-code').addEventListener('click', editSelectedNodeCode)
   $('#node-lab-close').addEventListener('click', closeNodeLab)
   $('#node-lab-cancel').addEventListener('click', closeNodeLab)
   $('#node-lab-language').addEventListener('change', applyNodeTemplate)
@@ -152,30 +153,54 @@ function bindPaletteEvents() {
 }
 
 const nodeTemplates = {
-  python: `import voxa\n\nclass MyNode:\n    def on_process(self, frame, input_port):\n        text = frame.text.upper()\n        return {"text_out": voxa.TextFrame(text, sequence=frame.sequence)}\n`,
-  typescript: `import type { GraphFrame, GraphNodeImplementation } from '@voxa/core'\n\nexport const node: GraphNodeImplementation = {\n  onProcess(frame) {\n    return { text_out: { ...frame, text: frame.text.toUpperCase() } }\n  },\n}\n`,
+  python: `import voxa\n\nclass MyNode:\n    def on_process(self, frame, ctx):\n        # Data stays on typed graph ports; no return value is required.\n        ctx.emit("text_out", voxa.TextFrame(frame.text.upper(), sequence=frame.sequence))\n        # Low-frequency observers receive this outside the data path.\n        ctx.publish_event("example.node.processed", {"sequence": frame.sequence})\n`,
+  typescript: `import type { GraphNodeImplementation } from '@voxa/core'\n\nexport const node: GraphNodeImplementation = {\n  onProcess(frame, ctx) {\n    ctx.emit('text_out', { ...frame, text: frame.text.toUpperCase() })\n    ctx.publishEvent('example.node.processed', { sequence: frame.sequence })\n  },\n}\n`,
   rust: `use voxa_core::{Node, NodeContext};\nuse voxa_types::Frame;\n\npub struct MyNode;\n\nimpl Node for MyNode {\n    fn on_process(&mut self, input: Option<Frame>, context: &mut NodeContext) -> voxa_types::Result<()> {\n        // Emit a derived Frame through text_out.\n        Ok(())\n    }\n}\n`,
-  cpp: `#include <voxa/voxa.hpp>\n\nclass MyNode final : public voxa::MultimodalGraphNode {\n public:\n  std::vector<voxa::GraphEmission> on_process(\n      const voxa_frame_view_v1* input, std::string_view input_port) override {\n    return {};\n  }\n};\n`,
+  cpp: `#include <voxa/voxa.hpp>\n\nclass MyNode final : public voxa::MultimodalGraphNode {\n public:\n  void on_process(const voxa_frame_view_v1* input,\n                  voxa::GraphNodeContext& ctx) override {\n    // ctx.emit("text_out", output_frame);\n  }\n};\n`,
 }
 const defaultPorts = JSON.stringify([
   { name: 'text_in', direction: 'input', frame_type: 'text' },
   { name: 'text_out', direction: 'output', frame_type: 'text' },
 ], null, 2)
 
-function openNodeLab() {
-  $('#node-lab-ports').value = defaultPorts
+function openNodeLab(packageValue = null) {
+  $('#node-lab-title').textContent = packageValue ? 'Edit Node Code' : 'Create a Node'
+  $('#node-lab-language').disabled = Boolean(packageValue)
+  if (packageValue) {
+    $('#node-lab-language').value = packageValue.language
+    $('#node-lab-kind').value = packageValue.kind
+    $('#node-lab-package').value = packageValue.package_id
+    $('#node-lab-display').value = packageValue.display_name
+    $('#node-lab-type').value = packageValue.node_type
+    $('#node-lab-ports').value = JSON.stringify(packageValue.ports, null, 2)
+    $('#node-lab-schema').value = JSON.stringify(packageValue.config_schema, null, 2)
+    $('#node-lab-code').value = packageValue.code
+  } else {
+    $('#node-lab-language').disabled = false
+    $('#node-lab-ports').value = defaultPorts
+    applyNodeTemplate()
+  }
   $('#node-lab-error').textContent = ''
-  applyNodeTemplate()
+  updateNodeLabHelp()
   $('#node-lab-dialog').showModal()
 }
 function closeNodeLab() { $('#node-lab-dialog').close() }
 function applyNodeTemplate() {
   const language = $('#node-lab-language').value
   $('#node-lab-code').value = nodeTemplates[language]
+  updateNodeLabHelp()
+}
+function updateNodeLabHelp() {
+  const language = $('#node-lab-language').value
   const documentName = language === 'rust' ? 'rust' : language
   $('#node-lab-docs').href = `https://piyotahu.github.io/Voxa/nodes/${documentName}/`
   $('#node-lab-docs').textContent = `Open ${language === 'cpp' ? 'C++' : language[0].toUpperCase() + language.slice(1)} Node guide ↗`
   $('#node-lab-runtime-note').textContent = language === 'python' ? 'Text Python Nodes load only when you Run the Graph; saving never executes code.' : `${language} is registered for authoring; Studio will report its build Host requirements.`
+}
+function editSelectedNodeCode() {
+  const node = selectedNode()
+  const packageValue = node && nodePackages.find((candidate) => factoryKey(candidate) === factoryKey(node))
+  if (packageValue) openNodeLab(packageValue)
 }
 async function saveNodePackage(event) {
   event.preventDefault()
@@ -563,6 +588,21 @@ function renderInspector() {
   empty.classList.toggle('hidden', Boolean(node)); form.classList.toggle('hidden', !node)
   if (!node) return
   $('#node-id').value = node.id; $('#node-type').value = factoryKey(node); $('#node-language').value = node.language; $('#node-version').value = node.factory_version || ''; $('#node-config').value = JSON.stringify(node.node_config, null, 2); $('#config-error').textContent = ''
+  const info = nodeInfo(node)
+  const projectPackage = nodePackages.find((candidate) => factoryKey(candidate) === factoryKey(node))
+  const code = $('#node-source-code'), meta = $('#node-source-meta'), edit = $('#edit-node-code'), link = $('#node-source-link')
+  edit.classList.toggle('hidden', !projectPackage)
+  link.classList.toggle('hidden', Boolean(projectPackage) || node.language !== 'rust' || !node.node_type.startsWith('builtin.'))
+  if (projectPackage) {
+    meta.textContent = `${projectPackage.language} · .voxa/nodes/${projectPackage.package_id}/ · exact project source`
+    code.value = projectPackage.code
+  } else if (node.language === 'rust' && node.node_type.startsWith('builtin.')) {
+    meta.textContent = `Rust · ${node.node_type} is compiled into Voxa; open the authoritative source below.`
+    code.value = `// ${node.node_type}\n// This built-in is compiled into the Voxa binary.\n// Use the source link below to inspect its authoritative Node implementation.`
+  } else {
+    meta.textContent = `${info.language || node.language} · no source package is installed in this project`
+    code.value = '// Source is unavailable. Register this factory as a project Node package to make it inspectable.'
+  }
 }
 
 function scheduleValidation() {

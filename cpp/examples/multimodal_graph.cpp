@@ -28,7 +28,7 @@ class Source final : public voxa::MultimodalGraphNode {
   explicit Source(const std::string& config) {
     if (config.find("demo") == std::string::npos) throw std::runtime_error("missing config");
   }
-  std::vector<voxa::GraphEmission> on_process(const voxa_frame_view_v1*, std::string_view) override {
+  void on_process(const voxa_frame_view_v1*, voxa::GraphNodeContext& context) override {
     auto audio = header(VOXA_FRAME_AUDIO, 1);
     audio.payload.audio.sample_rate_hz = 8000;
     audio.payload.audio.channels = 1;
@@ -48,7 +48,10 @@ class Source final : public voxa::MultimodalGraphNode {
 
     auto message = header(VOXA_FRAME_TEXT, 4);
     message.payload.text.text = {message_.data(), message_.size()};
-    return {{"audio_out", audio}, {"video_out", video}, {"byte_out", bytes}, {"text_out", message}};
+    context.emit("audio_out", audio);
+    context.emit("video_out", video);
+    context.emit("byte_out", bytes);
+    context.emit("text_out", message);
   }
  private:
   std::vector<uint8_t> audio_{0, 0};
@@ -59,10 +62,11 @@ class Source final : public voxa::MultimodalGraphNode {
 
 class Sink final : public voxa::MultimodalGraphNode {
  public:
-  std::vector<voxa::GraphEmission> on_process(const voxa_frame_view_v1* input,
-                                               std::string_view port) override {
-    if (input == nullptr || port != "in") throw std::runtime_error("invalid sink input");
-    return {};
+  void on_process(const voxa_frame_view_v1* input,
+                  voxa::GraphNodeContext& context) override {
+    if (input == nullptr || context.input_port() != "in") {
+      throw std::runtime_error("invalid sink input");
+    }
   }
 };
 }  // namespace

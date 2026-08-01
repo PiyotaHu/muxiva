@@ -944,6 +944,7 @@ enum Dispatch {
 struct NodeCallOutput {
     emissions: Vec<NodeEmission>,
     signals: Vec<SignalFrame>,
+    next_source_tick: Option<Duration>,
 }
 
 struct NodeWorker {
@@ -981,6 +982,7 @@ impl NodeWorker {
             &self.node_id,
             &self.shared.graph,
             self.shared.options.emission_budget(),
+            &self.shared.event_bus,
             self.shared
                 .node_metrics
                 .get(&self.node_id)
@@ -1026,20 +1028,30 @@ impl NodeWorker {
     }
 
     fn run_source(&mut self) -> Result<(), AbortReason> {
-        let output = call_process(
-            &mut *self.node,
-            &self.node_id,
-            None,
-            None,
-            &self.shared.graph,
-            self.shared.options.emission_budget(),
-            !self.outgoing.is_empty(),
-            self.shared
-                .node_metrics
-                .get(&self.node_id)
-                .expect("node metrics"),
-        )?;
-        self.route(output)
+        loop {
+            let output = call_process(
+                &mut *self.node,
+                &self.node_id,
+                None,
+                None,
+                &self.shared.graph,
+                self.shared.options.emission_budget(),
+                !self.outgoing.is_empty(),
+                &self.shared.event_bus,
+                self.shared
+                    .node_metrics
+                    .get(&self.node_id)
+                    .expect("node metrics"),
+            )?;
+            let next_tick = output.next_source_tick;
+            self.route(output)?;
+            let Some(delay) = next_tick else {
+                return Ok(());
+            };
+            if self.shared.stop.wait_timeout(delay) {
+                return Ok(());
+            }
+        }
     }
 
     fn run_consumer(&mut self) -> Result<(), AbortReason> {
@@ -1065,6 +1077,7 @@ impl NodeWorker {
                     &self.shared.graph,
                     self.shared.options.emission_budget(),
                     !self.outgoing.is_empty(),
+                    &self.shared.event_bus,
                     self.shared
                         .node_metrics
                         .get(&self.node_id)
@@ -1115,6 +1128,7 @@ impl NodeWorker {
                     &self.shared.graph,
                     self.shared.options.emission_budget(),
                     !self.outgoing.is_empty(),
+                    &self.shared.event_bus,
                     self.shared
                         .node_metrics
                         .get(&self.node_id)
@@ -1337,6 +1351,7 @@ fn coordinate(
                     node_id,
                     &shared.graph,
                     shared.options.emission_budget(),
+                    &shared.event_bus,
                     shared.node_metrics.get(node_id).expect("node metrics"),
                 ) {
                     shared.control.lifecycle_exit(node_id);
@@ -1365,11 +1380,13 @@ fn coordinate(
             continue;
         }
         let config = shared.graph.node(node_id).expect("node").config().clone();
-        let mut context = NodeContext::with_emission_limit(
+        let mut context = NodeContext::with_routing_limits(
             node_id.clone(),
             config,
             None,
             shared.options.emission_budget(),
+            false,
+            shared.event_bus.clone(),
         );
         if let Some(node) = nodes.get_mut(node_id) {
             shared.control.lifecycle_enter(node_id.clone());
@@ -1406,11 +1423,18 @@ fn call_prepare(
     node_id: &NodeId,
     graph: &GraphDefinition,
     emission_budget: usize,
+    event_bus: &EventBus,
     metrics: &NodeMetrics,
 ) -> Result<(), AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
-    let mut context =
-        NodeContext::with_emission_limit(node_id.clone(), config, None, emission_budget);
+    let mut context = NodeContext::with_routing_limits(
+        node_id.clone(),
+        config,
+        None,
+        emission_budget,
+        false,
+        event_bus.clone(),
+    );
     let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_prepare(&mut context)));
     let overflowed = context.emission_overflowed();
@@ -1444,6 +1468,7 @@ fn call_process(
     graph: &GraphDefinition,
     emission_budget: usize,
     has_signal_routes: bool,
+    event_bus: &EventBus,
     metrics: &NodeMetrics,
 ) -> Result<NodeCallOutput, AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
@@ -1453,6 +1478,7 @@ fn call_process(
         input_port,
         emission_budget,
         has_signal_routes,
+        event_bus.clone(),
     );
     let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_process(input, &mut context)));
@@ -1470,6 +1496,7 @@ fn call_process(
         Ok(Ok(())) => Ok(NodeCallOutput {
             emissions: context.take_emissions(),
             signals: context.take_signals(),
+            next_source_tick: context.take_next_source_tick(),
         }),
         Ok(Err(error)) => Err(node_error(error, node_id, AbortStage::Process)),
         Err(payload) => Err(panic_abort(
@@ -1490,6 +1517,7 @@ fn call_signal(
     graph: &GraphDefinition,
     emission_budget: usize,
     has_signal_routes: bool,
+    event_bus: &EventBus,
     metrics: &NodeMetrics,
 ) -> Result<NodeCallOutput, AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
@@ -1499,6 +1527,7 @@ fn call_signal(
         input_port,
         emission_budget,
         has_signal_routes,
+        event_bus.clone(),
     );
     let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_signal(signal, &mut context)));
@@ -1516,6 +1545,7 @@ fn call_signal(
         Ok(Ok(())) => Ok(NodeCallOutput {
             emissions: context.take_emissions(),
             signals: context.take_signals(),
+            next_source_tick: None,
         }),
         Ok(Err(error)) => Err(node_error(error, node_id, AbortStage::Process)),
         Err(payload) => Err(panic_abort(
@@ -1532,11 +1562,18 @@ fn call_finish(
     node_id: &NodeId,
     graph: &GraphDefinition,
     emission_budget: usize,
+    event_bus: &EventBus,
     metrics: &NodeMetrics,
 ) -> Result<(), AbortReason> {
     let config = graph.node(node_id).expect("node").config().clone();
-    let mut context =
-        NodeContext::with_emission_limit(node_id.clone(), config, None, emission_budget);
+    let mut context = NodeContext::with_routing_limits(
+        node_id.clone(),
+        config,
+        None,
+        emission_budget,
+        false,
+        event_bus.clone(),
+    );
     let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_finish(&mut context)));
     let overflowed = context.emission_overflowed();

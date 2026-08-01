@@ -8,13 +8,16 @@ Port 输出具名 Frame。
 
 class MyNode final : public voxa::MultimodalGraphNode {
  public:
-  std::vector<voxa::GraphEmission> on_process(
-      const voxa_frame_view_v1* input,
-      std::string_view input_port) override {
-    return {};
+  void on_process(const voxa_frame_view_v1* input,
+                  voxa::GraphNodeContext& ctx) override {
+    // ctx.emit("text_out", output_frame);
   }
 };
 ```
+
+旧的 `std::vector<GraphEmission>` 返回 Hook 继续保持源码兼容，新 Node 应通过
+Context 显式发送。Signal 与 EventBus 动作需要后续控制动作 ABI 扩展，V1 C ABI
+目前尚未暴露这两项能力。
 
 仓库已经提供可安装 Header、CMake Package 配置与独立 Consumer Example。
 

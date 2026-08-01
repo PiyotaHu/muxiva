@@ -30,6 +30,9 @@ workspace through `cargo run` for normal workflows.
 voxa demo
 ```
 
+The default session runs four turns. Use
+`voxa demo --turns 20 --interval-ms 1000` for a longer observable run.
+
 The default scenario runs an eight-Node voice graph with two fan-outs and one
 stateful join. To run the small installation smoke test instead:
 

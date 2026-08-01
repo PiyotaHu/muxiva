@@ -47,13 +47,16 @@ for a fresh Node vtable during materialization, and transfers lifecycle
 ownership to the Rust concurrent Runtime. C++ exceptions remain contained by
 the existing `noexcept` trampolines.
 
-For multimodal nodes, derive from `voxa::MultimodalGraphNode`, return
-`std::vector<voxa::GraphEmission>`, and register a
+For multimodal nodes, derive from `voxa::MultimodalGraphNode`, implement
+`void on_process(input, voxa::GraphNodeContext&)`, call `context.emit` zero or
+more times, and register a
 `voxa::MultimodalGraphNodeFactory` with a kind, ports JSON, and config schema.
 `Runtime::run_multimodal_graph` uses the additive multimodal ABI, so the D04
 text ABI remains layout-compatible. A null input identifies a Source call, an
-empty emission vector implements a Sink, and named emissions implement
-multi-port output. Audio PCM, packed RGBA8 or I420 video, text, and bytes are copied
+no `context.emit` call implements a Sink, and named emissions implement
+multi-port output. The previous vector-returning override remains available for
+source compatibility. Signal and EventBus control actions require a planned
+additive extension to the v1 C ABI. Audio PCM, packed RGBA8 or I420 video, text, and bytes are copied
 and validated by Rust before queue admission. See
 `cpp/examples/multimodal_graph.cpp`.
 

@@ -8,13 +8,17 @@ implementations emit named Frames through declared ports.
 
 class MyNode final : public voxa::MultimodalGraphNode {
  public:
-  std::vector<voxa::GraphEmission> on_process(
-      const voxa_frame_view_v1* input,
-      std::string_view input_port) override {
-    return {};
+  void on_process(const voxa_frame_view_v1* input,
+                  voxa::GraphNodeContext& ctx) override {
+    // ctx.emit("text_out", output_frame);
   }
 };
 ```
+
+The older `std::vector<GraphEmission>` return hook remains source-compatible,
+but new Nodes should emit explicitly through the context. Signal and EventBus
+actions require the planned control-action ABI extension and are not exposed by
+the V1 C ABI yet.
 
 The repository includes installable headers, CMake package configuration, and
 independent consumer examples.

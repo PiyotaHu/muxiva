@@ -7,7 +7,7 @@ the same strict Graph v1 document used by validation and runtime compilation.
 
 1. Drag a built-in or project Node from the Palette onto the canvas.
 2. Drag an output port to a compatible input port.
-3. Select Nodes to edit identity, Factory version, and configuration.
+3. Select a Node to inspect its Factory metadata, configuration, and implementation source.
 4. Validate, run, inspect live metrics, and stop the Runtime.
 5. Save formatted Graph JSON atomically.
 
@@ -29,6 +29,10 @@ The package appears in the project Palette immediately. Text Python Source,
 Transform, and Sink Nodes can run through the trusted local development Host.
 TypeScript, Rust, and C++ project packages are authorable but remain disabled in
 runnable Graphs until their corresponding Studio build Hosts are implemented.
+
+Selecting a project Node shows the exact source stored under `.voxa/nodes/`
+and offers **Edit in Node Lab**. Selecting a compiled built-in shows its exact
+Factory identity and a link to the authoritative Rust implementation.
 
 ## Runtime observability
 

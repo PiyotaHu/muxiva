@@ -60,7 +60,14 @@ export interface GraphNodeFactoryOptions {
 }
 export type GraphFrameType = 'audio'|'video'|'text'|'byte'
 export interface GraphPortDescriptor { name:string; direction:'input'|'output'; frameType:GraphFrameType }
-export interface GraphNodeContext { nodeId:string; inputPort?:string; config:Record<string,unknown> }
+export interface GraphNodeContext {
+  nodeId:string
+  inputPort?:string
+  config:Record<string,unknown>
+  emit(port:string,frame:GraphFrame):void
+  emitSignal(name:string,payload?:unknown):void
+  publishEvent(topic:string,payload?:unknown):void
+}
 export type GraphTextFrame = { kind:'text'; sequence:number; text:string }
 export type GraphByteFrame = { kind:'byte'; sequence:number; bytes:number[]; mediaType?:string }
 export type GraphAudioFrame = { kind:'audio'; sequence:number; bytes:number[]; sampleRateHz:number; channels:number; format:'u8'|'i16le'|'i24le'|'i32le'|'f32le'|'f64le'; planar:boolean; samplesPerChannel:number }

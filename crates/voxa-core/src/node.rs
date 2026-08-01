@@ -1,6 +1,8 @@
-use std::{collections::BTreeMap, error::Error, fmt};
+use std::{collections::BTreeMap, error::Error, fmt, time::Duration};
 
-use voxa_types::{Frame, FrameType, NodeId, Result, SignalFrame, Value};
+use voxa_types::{EventFrame, Frame, FrameType, NodeId, Result, SignalFrame, Value};
+
+use crate::{EventBus, PublishReport};
 
 /// The role a node has in a graph.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -429,6 +431,8 @@ pub struct NodeContext {
     emission_limit: usize,
     emission_overflowed: bool,
     has_signal_routes: bool,
+    event_bus: EventBus,
+    next_source_tick: Option<Duration>,
 }
 
 /// Returned when one lifecycle call exceeds its bounded emission budget.
@@ -535,7 +539,14 @@ impl NodeContext {
         input_port: Option<PortName>,
         emission_limit: usize,
     ) -> Self {
-        Self::with_routing_limits(node_id, config, input_port, emission_limit, false)
+        Self::with_routing_limits(
+            node_id,
+            config,
+            input_port,
+            emission_limit,
+            false,
+            EventBus::default(),
+        )
     }
 
     pub(crate) fn with_routing_limits(
@@ -544,6 +555,7 @@ impl NodeContext {
         input_port: Option<PortName>,
         emission_limit: usize,
         has_signal_routes: bool,
+        event_bus: EventBus,
     ) -> Self {
         Self {
             node_id,
@@ -554,7 +566,18 @@ impl NodeContext {
             emission_limit,
             emission_overflowed: false,
             has_signal_routes,
+            event_bus,
+            next_source_tick: None,
         }
+    }
+
+    pub(crate) fn with_event_bus(
+        node_id: NodeId,
+        config: ConfigMap,
+        input_port: Option<PortName>,
+        event_bus: EventBus,
+    ) -> Self {
+        Self::with_routing_limits(node_id, config, input_port, 16_384, false, event_bus)
     }
 
     /// Returns the node currently being called.
@@ -632,6 +655,37 @@ impl NodeContext {
 
     pub fn take_signals(&mut self) -> Vec<SignalFrame> {
         std::mem::take(&mut self.signals)
+    }
+
+    /// Returns the runtime-wide low-frequency EventBus.
+    pub const fn event_bus(&self) -> &EventBus {
+        &self.event_bus
+    }
+
+    /// Publishes a low-frequency global event without using a graph output port.
+    pub fn publish_event(
+        &self,
+        event: EventFrame,
+    ) -> std::result::Result<PublishReport, voxa_types::VoxaError> {
+        self.event_bus.publish(event).map_err(|error| {
+            voxa_types::VoxaError::new(
+                voxa_types::ErrorCategory::Internal,
+                "VOXA-EVENTBUS-PUBLISH",
+                error.to_string(),
+            )
+        })
+    }
+
+    /// Requests another source callback after `delay`.
+    ///
+    /// Only source workers honor this request. Omitting it completes the source,
+    /// which preserves the one-shot source behavior used by existing nodes.
+    pub fn schedule_next_tick(&mut self, delay: Duration) {
+        self.next_source_tick = Some(delay);
+    }
+
+    pub(crate) fn take_next_source_tick(&mut self) -> Option<Duration> {
+        self.next_source_tick.take()
     }
 
     pub(crate) const fn emission_overflowed(&self) -> bool {

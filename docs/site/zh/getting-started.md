@@ -29,6 +29,9 @@ Workspace。
 voxa demo
 ```
 
+默认会话运行 4 个 Turn。需要更长的可观察运行时，可使用
+`voxa demo --turns 20 --interval-ms 1000`。
+
 默认场景真实执行一张包含八个 Node、两处分叉和一次有状态汇合的语音图。只想
 验证安装时可以运行：
 

@@ -7,13 +7,18 @@ Package 可以通过可信本地 Python 开发 Host 运行。
 import voxa
 
 class Uppercase:
-    def on_process(self, frame, input_port):
-        return {
-            "text_out": voxa.TextFrame(
-                frame.text.upper(), sequence=frame.sequence
-            )
-        }
+    def on_process(self, frame, ctx):
+        ctx.emit(
+            "text_out",
+            voxa.TextFrame(frame.text.upper(), sequence=frame.sequence),
+        )
+        ctx.publish_event("example.text.uppercased", {"sequence": frame.sequence})
 ```
+
+`ctx.emit(port, frame)` 可以在不结束回调的情况下发送数据；
+`ctx.emit_signal(name, payload)` 用于相邻图控制；
+`ctx.publish_event(topic, payload)` 用于向 Runtime EventBus 发布低频全局通知。
+返回 Frame 或 Port 映射仍作为兼容写法保留，新 Node 应优先使用显式 Context 动作。
 
 声明匹配的 Port：
 

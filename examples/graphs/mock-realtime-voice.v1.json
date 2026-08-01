@@ -2,7 +2,7 @@
   "version": "voxa.graph/v1",
   "graph_id": "realtime-voice-agent",
   "nodes": [
-    {"id":"microphone","node_type":"builtin.demo.microphone","language":"rust","factory_version":"1.0.0","node_config":{}},
+    {"id":"microphone","node_type":"builtin.demo.microphone","language":"rust","factory_version":"1.0.0","node_config":{"turns":4,"interval_ms":650}},
     {"id":"streaming-asr","node_type":"builtin.demo.streaming_asr","language":"rust","factory_version":"1.0.0","node_config":{}},
     {"id":"voice-activity","node_type":"builtin.demo.voice_activity","language":"rust","factory_version":"1.0.0","node_config":{}},
     {"id":"context-fusion","node_type":"builtin.demo.context_fusion","language":"rust","factory_version":"1.0.0","node_config":{}},

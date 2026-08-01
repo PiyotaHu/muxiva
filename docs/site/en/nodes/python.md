@@ -7,13 +7,19 @@ and Sink packages run through the trusted local Python development Host.
 import voxa
 
 class Uppercase:
-    def on_process(self, frame, input_port):
-        return {
-            "text_out": voxa.TextFrame(
-                frame.text.upper(), sequence=frame.sequence
-            )
-        }
+    def on_process(self, frame, ctx):
+        ctx.emit(
+            "text_out",
+            voxa.TextFrame(frame.text.upper(), sequence=frame.sequence),
+        )
+        ctx.publish_event("example.text.uppercased", {"sequence": frame.sequence})
 ```
+
+`ctx.emit(port, frame)` sends data without ending the callback.
+`ctx.emit_signal(name, payload)` sends adjacent graph control, while
+`ctx.publish_event(topic, payload)` publishes a low-frequency notification to
+the runtime EventBus. Returning a Frame or port mapping remains compatibility
+sugar; new Nodes should prefer explicit context actions.
 
 Declare matching ports:
 

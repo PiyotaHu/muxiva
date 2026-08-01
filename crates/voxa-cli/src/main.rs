@@ -7,8 +7,10 @@ use std::{
     time::Duration,
 };
 use voxa_core::{
-    start_registered_runtime, EdgePolicies, NodeRegistry, RuntimeOptions, RuntimeWaitError,
+    materialize_registered_nodes, start_registered_runtime, ConcurrentRuntime, EdgePolicies,
+    EventBus, NodeRegistry, RuntimeOptions, RuntimeWaitError,
 };
+use voxa_types::NamespacedName;
 
 const DEFAULT_RUN_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS: u64 = 5_000;
@@ -47,6 +49,12 @@ enum Command {
         /// Demo journey: voice shows fork/join multimodal execution; text is a basic smoke test.
         #[arg(long, value_enum, default_value_t = DemoScenario::Voice)]
         scenario: DemoScenario,
+        /// Number of scripted voice turns (1-100).
+        #[arg(long, default_value_t = 4)]
+        turns: u16,
+        /// Delay between source ticks in the mock voice session.
+        #[arg(long, default_value_t = 650)]
+        interval_ms: u64,
     },
     Init {
         #[arg(default_value = "voxa.graph.json")]
@@ -145,28 +153,73 @@ fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(
     let shutdown_timeout = cli_timeout("shutdown-timeout-ms", shutdown_timeout_ms)?;
     let registry = voxa_graph_json::builtin_registry();
     let graph = load(graph_path, &registry)?;
-    run_graph(graph, &registry, timeout, shutdown_timeout, timeout_ms)
-}
-
-fn demo(scenario: DemoScenario) -> Result<(), String> {
-    let registry = voxa_graph_json::builtin_registry();
-    let (name, source) = match scenario {
-        DemoScenario::Voice => ("realtime-voice-agent", VOICE_DEMO),
-        DemoScenario::Text => ("text-uppercase", STARTER),
-    };
-    let graph = load_source(source, &registry)?;
-    println!("[VOXA][INFO][demo.started] name={name}");
-    if matches!(scenario, DemoScenario::Voice) {
-        println!(
-            "[VOXA][INFO][demo.mode] providers=mock network=disabled purpose=architecture-preview"
-        );
-    }
     run_graph(
         graph,
         &registry,
-        Duration::from_millis(DEFAULT_RUN_TIMEOUT_MS),
+        timeout,
+        shutdown_timeout,
+        timeout_ms,
+        None,
+    )
+}
+
+fn demo(scenario: DemoScenario, turns: u16, interval_ms: u64) -> Result<(), String> {
+    if !(1..=100).contains(&turns) {
+        return Err("--turns must be between 1 and 100".into());
+    }
+    if interval_ms > 10_000 {
+        return Err("--interval-ms must be between 0 and 10000".into());
+    }
+    let registry = voxa_graph_json::builtin_registry();
+    let (name, source) = match scenario {
+        DemoScenario::Voice => {
+            let mut document: serde_json::Value =
+                serde_json::from_str(VOICE_DEMO).map_err(|error| error.to_string())?;
+            let microphone = document["nodes"]
+                .as_array_mut()
+                .and_then(|nodes| nodes.iter_mut().find(|node| node["id"] == "microphone"))
+                .ok_or("voice demo microphone is missing")?;
+            microphone["node_config"] =
+                serde_json::json!({"turns": turns, "interval_ms": interval_ms});
+            (
+                "realtime-voice-agent",
+                serde_json::to_string(&document).map_err(|error| error.to_string())?,
+            )
+        }
+        DemoScenario::Text => ("text-uppercase", STARTER.to_owned()),
+    };
+    let graph = load_source(&source, &registry)?;
+    println!("[VOXA][INFO][demo.started] name={name}");
+    if matches!(scenario, DemoScenario::Voice) {
+        println!("[VOXA][INFO][demo.mode] providers=mock network=disabled turns={turns} interval_ms={interval_ms} purpose=runtime-session");
+    }
+    let event_bus = if matches!(scenario, DemoScenario::Voice) {
+        let bus = EventBus::default();
+        bus.subscribe(
+            NamespacedName::new("voxa.demo.speech.detected").map_err(|error| error.to_string())?,
+            |event| {
+                println!(
+                    "[VOXA][EVENTBUS][subscriber] topic={} turn={} handler=session-observer",
+                    event.data().topic(),
+                    event.header().sequence_id().get()
+                );
+                Ok(())
+            },
+        )
+        .map_err(|error| error.to_string())?;
+        Some(bus)
+    } else {
+        None
+    };
+    run_graph(
+        graph,
+        &registry,
+        Duration::from_millis(
+            DEFAULT_RUN_TIMEOUT_MS.max(interval_ms.saturating_mul(u64::from(turns)) + 10_000),
+        ),
         Duration::from_millis(DEFAULT_SHUTDOWN_TIMEOUT_MS),
-        DEFAULT_RUN_TIMEOUT_MS,
+        DEFAULT_RUN_TIMEOUT_MS.max(interval_ms.saturating_mul(u64::from(turns)) + 10_000),
+        event_bus,
     )
 }
 
@@ -176,6 +229,7 @@ fn run_graph(
     timeout: Duration,
     shutdown_timeout: Duration,
     timeout_ms: u64,
+    event_bus: Option<EventBus>,
 ) -> Result<(), String> {
     let graph_id = graph.graph_id().as_str().to_owned();
     let node_total = graph.nodes().len();
@@ -184,13 +238,23 @@ fn run_graph(
     println!("[VOXA][GRAPH] human-readable DSL");
     print!("{}", graph.render_human_dsl());
     println!("[VOXA][INFO][runtime.started] mode=concurrent");
-    let runtime = start_registered_runtime(
-        graph,
-        registry,
-        EdgePolicies::new(),
-        RuntimeOptions::default(),
-    )
-    .map_err(|error| format!("cannot start graph `{graph_id}`: {error}"))?;
+    let runtime = if let Some(event_bus) = event_bus {
+        let nodes = materialize_registered_nodes(&graph, registry)
+            .map_err(|error| format!("cannot materialize graph `{graph_id}`: {error}"))?;
+        ConcurrentRuntime::new(graph, nodes, EdgePolicies::new(), RuntimeOptions::default())
+            .map_err(|error| format!("cannot attach graph `{graph_id}`: {error}"))?
+            .with_event_bus(event_bus)
+            .start()
+            .map_err(|error| format!("cannot start graph `{graph_id}`: {error}"))?
+    } else {
+        start_registered_runtime(
+            graph,
+            registry,
+            EdgePolicies::new(),
+            RuntimeOptions::default(),
+        )
+        .map_err(|error| format!("cannot start graph `{graph_id}`: {error}"))?
+    };
 
     match runtime.wait(timeout) {
         Ok(summary) => {
@@ -278,7 +342,11 @@ fn open_browser(url: &str) -> Result<(), String> {
 
 fn main() {
     let result = match Cli::parse().command {
-        Command::Demo { scenario } => demo(scenario),
+        Command::Demo {
+            scenario,
+            turns,
+            interval_ms,
+        } => demo(scenario, turns, interval_ms),
         Command::Init { path } => init(&path),
         Command::Validate { graph } => {
             validate(&graph).map(|_| println!("[VOXA][INFO][graph.valid] path={}", graph.display()))

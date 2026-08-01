@@ -14,9 +14,10 @@ use voxa_core::{
     NodeTypeName, PortDescriptor, PortDirection, PortName,
 };
 use voxa_types::{
-    ClockDomain, ClockDomainId, ClockKind, ErrorCategory, Extensions, Frame, FrameDerivation,
-    FrameHeader, FrameId, FramePayload, FrameType, Lineage, Metadata, NodeId, SequenceId, StreamId,
-    TextData, Timestamp, TraceId, TransformOrigin, VoxaError,
+    ClockDomain, ClockDomainId, ClockKind, ErrorCategory, EventData, Extensions, Frame,
+    FrameDerivation, FrameHeader, FrameId, FramePayload, FrameType, Lineage, Metadata,
+    NamespacedName, NodeId, SchemaVersion, SequenceId, SignalData, StreamId, TextData, Timestamp,
+    TraceId, TransformOrigin, VoxaError,
 };
 
 const FORMAT: &str = "voxa.node/v1";
@@ -33,6 +34,18 @@ class TextFrame:
 
 shim = types.ModuleType("voxa")
 shim.TextFrame = TextFrame
+
+class NodeContext:
+    def __init__(self, node_id, input_port, config):
+        self.node_id, self.input_port, self.config = node_id, input_port, config
+        self.emissions, self.signals, self.events = [], [], []
+    def emit(self, port, frame): self.emissions.append({"port":port, "frame":encode_frame(frame)})
+    def emit_signal(self, name, payload=None): self.signals.append({"name":name, "payload":payload})
+    def publish_event(self, topic, payload=None): self.events.append({"topic":topic, "payload":payload})
+    def __str__(self): return self.input_port or ""
+    def __eq__(self, other): return self.input_port == other
+
+shim.NodeContext = NodeContext
 sys.modules["voxa"] = shim
 
 source, entrypoint, config_json = sys.argv[1:4]
@@ -70,14 +83,15 @@ for line in sys.stdin:
         op = command["op"]
         if op == "process":
             frame = decode_frame(command.get("frame"))
-            result = invoke("on_process", frame, command.get("input_port"))
-            emissions = []
+            ctx = NodeContext(command["node_id"], command.get("input_port"), config)
+            result = invoke("on_process", frame, ctx)
+            emissions = list(ctx.emissions)
             if result is not None:
                 values = result if isinstance(result, dict) else {command["default_output"]: result}
                 for port, frames in values.items():
                     if not isinstance(frames, list): frames = [frames]
                     emissions.extend({"port":port, "frame":encode_frame(item)} for item in frames)
-            response = {"ok": True, "emissions": emissions}
+            response = {"ok": True, "emissions": emissions, "signals":ctx.signals, "events":ctx.events}
         elif op == "prepare": invoke("on_prepare"); response = {"ok": True}
         elif op == "finish": invoke("on_finish"); response = {"ok": True}
         elif op == "abort": invoke("on_abort", command.get("reason", "aborted")); response = {"ok": True}
@@ -499,6 +513,7 @@ impl Node for PythonDevNode {
             "frame":wire,
             "input_port":context.input_port().map(PortName::as_str),
             "default_output":self.default_output,
+            "node_id":context.node_id().as_str(),
         }))?;
         for emission in response
             .get("emissions")
@@ -521,6 +536,56 @@ impl Node for PythonDevNode {
                 PortName::new(port).map_err(|error| python_error(error.to_string()))?,
                 frame,
             )?;
+        }
+        for event in response
+            .get("events")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let topic = event
+                .get("topic")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| python_error("Python EventBus publication is missing its topic"))?;
+            let derived = control_frame(
+                input.as_ref(),
+                context.node_id(),
+                FramePayload::Event(EventData::new(
+                    NamespacedName::new(topic).map_err(|error| python_error(error.to_string()))?,
+                    SchemaVersion::new(1).map_err(|error| python_error(error.to_string()))?,
+                    context.node_id().clone(),
+                    voxa_graph_json::value_from_json(
+                        event.get("payload").unwrap_or(&serde_json::Value::Null),
+                    )
+                    .map_err(python_error)?,
+                )),
+            )?;
+            context.publish_event(derived.as_event().expect("event payload").clone())?;
+        }
+        for signal in response
+            .get("signals")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let name = signal
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| python_error("Python Signal emission is missing its name"))?;
+            let derived = control_frame(
+                input.as_ref(),
+                context.node_id(),
+                FramePayload::Signal(SignalData::new(
+                    NamespacedName::new(name).map_err(|error| python_error(error.to_string()))?,
+                    SchemaVersion::new(1).map_err(|error| python_error(error.to_string()))?,
+                    context.node_id().clone(),
+                    voxa_graph_json::value_from_json(
+                        signal.get("payload").unwrap_or(&serde_json::Value::Null),
+                    )
+                    .map_err(python_error)?,
+                )),
+            )?;
+            context.emit_signal(derived.as_signal().expect("signal payload").clone())?;
         }
         Ok(())
     }
@@ -566,6 +631,27 @@ fn frame_to_wire(frame: &Frame) -> voxa_types::Result<serde_json::Value> {
         "text":text.data().as_str(),
         "sequence":frame.header().sequence_id().get(),
     }))
+}
+
+fn control_frame(
+    parent: Option<&Frame>,
+    node_id: &NodeId,
+    payload: FramePayload,
+) -> voxa_types::Result<Frame> {
+    let parent = parent.ok_or_else(|| {
+        python_error("source control actions require an input Frame in the Studio development Host")
+    })?;
+    let serial = NEXT_FRAME.fetch_add(1, Ordering::Relaxed);
+    parent.derive(
+        FrameDerivation::new(
+            FrameId::new(format!("studio-python-control-{serial}")).expect("bounded frame ID"),
+            parent.header().timestamp(),
+            parent.header().sequence_id(),
+            TransformOrigin::new(Some(node_id.clone()), None)?,
+            "studio-python-control",
+        )?
+        .with_payload(payload),
+    )
 }
 
 fn wire_to_frame(
@@ -688,7 +774,7 @@ mod tests {
     #[test]
     fn saved_python_node_registers_and_executes_in_the_real_runtime() {
         let graph_path = graph();
-        let package = r#"{"format":"voxa.node/v1","package_id":"uppercase_python","display_name":"Uppercase Python","node_type":"example.studio.uppercase","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:MyNode","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"import voxa\nclass MyNode:\n    def on_process(self, frame, input_port):\n        return {\"text_out\": voxa.TextFrame(frame.text.upper(), sequence=frame.sequence)}\n","runtime_available":false}"#;
+        let package = r#"{"format":"voxa.node/v1","package_id":"uppercase_python","display_name":"Uppercase Python","node_type":"example.studio.uppercase","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:MyNode","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"import voxa\nclass MyNode:\n    def on_process(self, frame, ctx):\n        ctx.emit(\"text_out\", voxa.TextFrame(frame.text.upper(), sequence=frame.sequence))\n        ctx.publish_event(\"example.text.uppercased\", {\"sequence\": frame.sequence})\n","runtime_available":false}"#;
         save(&graph_path, package).unwrap();
         let mut registry = voxa_graph_json::builtin_registry();
         register_project_nodes(&graph_path, &mut registry).unwrap();

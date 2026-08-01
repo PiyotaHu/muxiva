@@ -15,3 +15,4 @@ serde_json.workspace = true
 voxa-core = { path = "../voxa-core" }
 voxa-graph-json = { path = "../voxa-graph-json" }
 voxa-studio = { path = "../voxa-studio" }
+voxa-types = { path = "../voxa-types" }

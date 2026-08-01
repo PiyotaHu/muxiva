@@ -94,6 +94,12 @@
           <label>Factory version<input id="node-version" value="1.0.0" readonly></label>
           <label>Configuration<textarea id="node-config" rows="10" spellcheck="false"></textarea></label>
           <p id="config-error" class="field-error"></p>
+          <section class="node-source-panel">
+            <div class="node-source-heading"><span>IMPLEMENTATION</span><button id="edit-node-code" type="button" class="mini-button hidden">Edit in Node Lab</button></div>
+            <p id="node-source-meta"></p>
+            <textarea id="node-source-code" rows="12" readonly spellcheck="false"></textarea>
+            <a id="node-source-link" class="hidden" href="https://github.com/PiyotaHu/Voxa/blob/main/crates/voxa-graph-json/src/builtins.rs" target="_blank" rel="noreferrer">Open compiled Rust source ↗</a>
+          </section>
         </form>
 
         <div class="diagnostics-panel">
@@ -123,7 +129,7 @@
 
     <dialog id="node-lab-dialog" class="node-lab-dialog">
       <form id="node-lab-form">
-        <div class="dialog-title"><div><span class="eyebrow">PROJECT NODE LIBRARY</span><h2>Create a Node</h2></div><button id="node-lab-close" type="button" class="icon-button">×</button></div>
+        <div class="dialog-title"><div><span class="eyebrow">PROJECT NODE LIBRARY</span><h2 id="node-lab-title">Create a Node</h2></div><button id="node-lab-close" type="button" class="icon-button">×</button></div>
         <p class="dialog-copy">Edit a starter directly in Studio. Save &amp; Register writes code and a <code>voxa.node/v1</code> Manifest under <code>.voxa/nodes/</code>, then adds it to this project's Palette.</p>
         <div class="form-row">
           <label>Language<select id="node-lab-language"><option>python</option><option>typescript</option><option>rust</option><option>cpp</option></select></label>

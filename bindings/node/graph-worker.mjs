@@ -27,6 +27,10 @@ function dispatch(command) {
       nodeId: command.nodeId,
       inputPort: command.inputPort,
       config: JSON.parse(command.configJson),
+      actions: [],
+      emit(port, frame) { this.actions.push({ kind: 'emit', port, frame }) },
+      emitSignal(name, payload = null) { this.actions.push({ kind: 'signal', name, payload }) },
+      publishEvent(topic, payload = null) { this.actions.push({ kind: 'event', topic, payload }) },
     }
     let value = implementation[method](payload, context)
     if (value && (typeof value === 'object' || typeof value === 'function') && typeof value.then === 'function') {
@@ -36,7 +40,7 @@ function dispatch(command) {
         typeof value.text === 'string' && value.kind === undefined) {
       value = { kind: 'text', sequence: payload?.sequence ?? 0, text: value.text }
     }
-    return JSON.stringify({ ok: true, value })
+    return JSON.stringify({ ok: true, value, actions: context.actions })
   } catch (error) {
     return JSON.stringify({ ok: false, error: { code: error.code ?? 'VOXA_NODE_EXCEPTION', message: String(error.message ?? error) } })
   }

@@ -88,11 +88,11 @@ voxa --version
 voxa demo
 ```
 
-默认 Demo 会真实执行一张包含 8 个节点、两处分叉和一个有状态汇合的语音
-Agent 图。类型化 PCM Frame 会并发进入 Mock 流式 ASR 与语音活动检测，汇合为
+默认 Demo 会真实执行一个包含 4 轮对话、8 个节点、两处分叉和一个有状态汇合的
+语音 Agent 会话。类型化 PCM Frame 会并发进入 Mock 流式 ASR 与语音活动检测，汇合为
 LLM 上下文后，再并行输出实时字幕并进入 Mock 神经 TTS。Provider 会明确标记为
-`mock`；图编译、不可变 Frame、有界队列、并发调度、分叉/汇合路由和生命周期
-执行均为真实 Voxa Runtime。
+`mock`；图编译、不可变 Frame、有界队列、并发调度、分叉/汇合路由、Source
+定时 Tick、EventBus 发布/订阅、Signal 与生命周期执行均为真实 Voxa Runtime。
 
 ```text
 microphone(audio)
@@ -103,6 +103,7 @@ microphone(audio)
 ```
 
 仅用于确认安装成功的极简 Smoke Test 可使用 `voxa demo --scenario text`。
+如需长时间观察完整链路，可运行 `voxa demo --turns 20 --interval-ms 1000`。
 
 ### 创建、校验并运行 Graph
 
