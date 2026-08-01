@@ -72,8 +72,9 @@ pub use realtime::{
     RealtimeInputProfile, RealtimeProfileError, RuntimeInputTuning,
 };
 pub use registry::{
-    EdgePolicyRegistration, EdgePolicyRegistry, NodeLanguage, NodeRegistration, NodeRegistry,
-    RegistryError,
+    EdgePolicyRegistration, EdgePolicyRegistry, NodeCreateError, NodeCreationStage, NodeFactory,
+    NodeFactoryError, NodeFactoryVersion, NodeFactoryVersionError, NodeLanguage, NodeRegistration,
+    NodeRegistry, RegistryError,
 };
 pub use resource::{ResourceKey, ResourceStore, ResourceStoreError};
 pub use runner::{

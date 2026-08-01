@@ -290,6 +290,33 @@ impl NodeDescriptor {
     pub const fn lifecycle(&self) -> LifecycleCapabilities {
         self.lifecycle
     }
+
+    /// Creates the graph-local descriptor for one instance of this registered type.
+    ///
+    /// Registry metadata is type-level, while node and port ownership is graph-local.
+    /// Rebinding keeps the registered port shape and replaces every embedded owner ID.
+    pub fn for_node_id(&self, node_id: NodeId) -> Self {
+        let ports = self
+            .ports
+            .iter()
+            .map(|port| {
+                PortDescriptor::new(
+                    node_id.clone(),
+                    port.name.clone(),
+                    port.direction,
+                    port.frame_type,
+                )
+            })
+            .collect::<Vec<_>>();
+        Self::new(
+            node_id,
+            self.node_type.clone(),
+            self.kind,
+            ports,
+            self.config_schema.clone(),
+            self.lifecycle,
+        )
+    }
 }
 
 /// Deterministically ordered node configuration.

@@ -37,7 +37,7 @@ Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but
 | Mock RTC adapter | Available | Deterministic faults and callback-safe shutdown; no real RTC SDK |
 | Python/PyO3 package | Experimental | Dedicated thread and asyncio loop; `isolated_process` is rejected |
 | Node-API package | Experimental | Dedicated Worker; Promise-returning transforms are rejected |
-| JSON Graph v1 and CLI | Experimental | Parse, validate, initialize, and local Studio; runtime factories are limited |
+| JSON Graph v1 and CLI | Experimental | Core has an executable, exact-version Factory Registry; Graph v1 compiler integration remains pending |
 | Local Studio | Available | Bundled visual canvas, Node/Edge editing, validation and atomic save |
 | Real RTC, FFmpeg, model providers | Planned | Not included in Core or the current build |
 
@@ -187,7 +187,7 @@ The test framework covers deterministic graph faults, queue pressure, managed-st
 Near-term priorities:
 
 1. Stabilize public Rust, C++, Python, and TypeScript SDK contracts.
-2. Connect registered Graph v1 node factories to general runtime execution.
+2. Connect the executable, exact-version Node Factory Registry to Graph v1 and general runtime execution.
 3. Add live runtime metrics and execution controls to the visual Studio.
 4. Add a production-reviewed RTC adapter and media/codec integration.
 5. Implement versioned Python process isolation and TypeScript Promise support.

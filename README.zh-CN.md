@@ -37,7 +37,7 @@ Voxa 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部
 | Mock RTC Adapter | 可用 | 确定性故障和回调安全关闭；不含真实 RTC SDK |
 | Python/PyO3 包 | 实验性 | 独立线程和 asyncio loop；明确拒绝 `isolated_process` |
 | Node-API 包 | 实验性 | 独立 Worker；明确拒绝返回 Promise 的 Transform |
-| JSON Graph v1 与 CLI | 实验性 | 解析、校验、初始化和本地 Studio；Runtime Factory 仍受限 |
+| JSON Graph v1 与 CLI | 实验性 | Core 已有精确版本的可执行 Factory Registry；Graph v1 编译器接入仍待完成 |
 | 本地 Studio | 可用 | 内置可视化画布、Node/Edge 编辑、校验与原子保存 |
 | 真实 RTC、FFmpeg、模型 Provider | 规划中 | 当前不属于 Core，也不是构建依赖 |
 
@@ -187,7 +187,7 @@ voxa/
 近期优先级：
 
 1. 稳定 Rust、C++、Python 和 TypeScript 公开 SDK 契约。
-2. 将 Graph v1 注册的 Node Factory 接入通用 Runtime 执行。
+2. 将精确版本的可执行 Node Factory Registry 接入 Graph v1 和通用 Runtime 执行。
 3. 为可视化 Studio 增加实时 Runtime 指标和执行控制。
 4. 接入经过生产评审的 RTC Adapter 与媒体/Codec 能力。
 5. 实现版本化 Python 进程隔离与 TypeScript Promise 支持。
