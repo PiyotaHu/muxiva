@@ -12,7 +12,7 @@ jobs:
     env:
       VOXA_MIRI_TOOLCHAIN: nightly-2026-07-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly-2026-07-15
         with:
           components: miri
