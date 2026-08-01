@@ -72,10 +72,19 @@ export class NodeRunner {
 }
 
 export class GraphNodeFactory {
-  constructor(nodeType, implementation, { version = '1.0.0', inputPort = 'text_in', outputPort = 'text_out' } = {}) {
+  constructor(nodeType, implementation, {
+    version = '1.0.0', inputPort = 'text_in', outputPort = 'text_out',
+    kind = 'transform', ports, configSchema = {},
+  } = {}) {
     if (typeof nodeType !== 'string' || nodeType.length === 0) throw new TypeError('nodeType must be a non-empty string')
     defineTransformNode(implementation)
-    this.spec = { nodeType, version, inputPort, outputPort }
+    if (!['source', 'transform', 'sink'].includes(kind)) throw new TypeError('kind must be source, transform, or sink')
+    if (ports !== undefined && !Array.isArray(ports)) throw new TypeError('ports must be an array')
+    this.spec = {
+      nodeType, version, inputPort, outputPort, kind,
+      portsJson: ports === undefined ? undefined : JSON.stringify(ports),
+      configSchemaJson: JSON.stringify(configSchema),
+    }
     this.methods = Object.fromEntries(methodNames.map((name) => [name, typeof implementation[name] === 'function' ? String(implementation[name]) : null]))
   }
 }

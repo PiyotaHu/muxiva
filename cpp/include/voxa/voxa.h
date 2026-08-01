@@ -67,6 +67,8 @@ enum { VOXA_CLOCK_MONOTONIC = 1, VOXA_CLOCK_MEDIA_RELATIVE = 2, VOXA_CLOCK_WALL 
 enum { VOXA_PCM_U8 = 1, VOXA_PCM_I16LE = 2, VOXA_PCM_I24LE = 3, VOXA_PCM_I32LE = 4,
        VOXA_PCM_F32LE = 5, VOXA_PCM_F64LE = 6 };
 enum { VOXA_AUDIO_INTERLEAVED = 1, VOXA_AUDIO_PLANAR = 2 };
+enum { VOXA_PIXEL_RGBA8 = 1 };
+enum { VOXA_NODE_SOURCE = 1, VOXA_NODE_TRANSFORM = 2, VOXA_NODE_SINK = 3 };
 
 typedef struct voxa_frame_header_v1 {
   uint32_t abi_version;
@@ -141,6 +143,35 @@ typedef struct voxa_node_factory_v1 {
   void *user_data; voxa_node_factory_create_fn_v1 create;
   uint64_t reserved[4];
 } voxa_node_factory_v1;
+
+typedef struct voxa_named_frame_v1 {
+  voxa_str_v1 output_port;
+  voxa_frame_view_v1 frame;
+} voxa_named_frame_v1;
+typedef voxa_status_v1 (*voxa_graph_node_process_fn_v1)(
+    void *, const voxa_frame_view_v1 *, voxa_str_v1,
+    const voxa_named_frame_v1 **, size_t *, voxa_error_v1 *);
+typedef struct voxa_graph_node_vtable_v1 {
+  uint32_t abi_version; uint32_t struct_size; void *user_data;
+  voxa_node_simple_fn_v1 on_prepare;
+  voxa_graph_node_process_fn_v1 on_process;
+  voxa_node_signal_fn_v1 on_signal;
+  voxa_node_simple_fn_v1 on_finish;
+  voxa_node_abort_fn_v1 on_abort;
+  voxa_node_destroy_fn_v1 destroy;
+  uint64_t capabilities;
+  uint64_t reserved[3];
+} voxa_graph_node_vtable_v1;
+typedef voxa_status_v1 (*voxa_multimodal_node_factory_create_fn_v1)(
+    void *, voxa_str_v1, voxa_str_v1, voxa_graph_node_vtable_v1 *, voxa_error_v1 *);
+typedef struct voxa_multimodal_node_factory_v1 {
+  uint32_t abi_version; uint32_t struct_size;
+  voxa_str_v1 node_type; voxa_str_v1 version;
+  uint32_t kind; uint32_t reserved0;
+  voxa_str_v1 ports_json; voxa_str_v1 config_schema_json;
+  void *user_data; voxa_multimodal_node_factory_create_fn_v1 create;
+  uint64_t reserved[4];
+} voxa_multimodal_node_factory_v1;
 typedef struct voxa_graph_run_summary_v1 {
   uint32_t abi_version; uint32_t struct_size; uint32_t worker_total;
   uint64_t reserved[4];
@@ -175,6 +206,10 @@ voxa_status_v1 voxa_runtime_run_text_v1(voxa_runtime_v1, voxa_node_v1,
 voxa_status_v1 voxa_runtime_run_graph_v1(
     voxa_runtime_v1, voxa_str_v1,
     const voxa_node_factory_v1 *, size_t, uint64_t,
+    voxa_graph_run_summary_v1 *, voxa_error_v1 *);
+voxa_status_v1 voxa_runtime_run_multimodal_graph_v1(
+    voxa_runtime_v1, voxa_str_v1,
+    const voxa_multimodal_node_factory_v1 *, size_t, uint64_t,
     voxa_graph_run_summary_v1 *, voxa_error_v1 *);
 
 #ifdef __cplusplus

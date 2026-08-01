@@ -15,9 +15,13 @@ use std::{
     ptr,
 };
 
-use abi::{ErrorOutput, FrameView, GraphRunSummary, NodeFactoryView, NodeVtable, Status, Token};
+use abi::{
+    ErrorOutput, FrameView, GraphRunSummary, MultimodalNodeFactoryView, NodeFactoryView,
+    NodeVtable, Status, Token,
+};
 use error::{boundary, FfiError};
 use handles::{Entry, Kind};
+use serde::Deserialize;
 
 pub use abi::{ABI_VERSION as VOXA_ABI_VERSION_V1, MAX_COPY_BYTES};
 
@@ -412,6 +416,169 @@ pub extern "C" fn voxa_runtime_run_graph_v1(
         };
         let _ = abi::write_value(summary, value);
         Ok(())
+    })
+}
+
+#[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn voxa_runtime_run_multimodal_graph_v1(
+    runtime: Token,
+    graph_json: abi::StrView,
+    factories: *const MultimodalNodeFactoryView,
+    factory_count: usize,
+    timeout_ms: u64,
+    summary: *mut GraphRunSummary,
+    error: *mut ErrorOutput,
+) -> Status {
+    boundary(error, || {
+        handles::contains(runtime, Kind::Runtime)?;
+        require_output(summary)?;
+        if timeout_ms == 0 || timeout_ms > 60 * 60 * 1_000 {
+            return Err(FfiError::validation(
+                "VOXA-FFI-GRAPH-TIMEOUT",
+                "Graph timeout must be between 1 and 3600000 milliseconds",
+            ));
+        }
+        if factory_count > 4_096 || (factory_count != 0 && !abi::aligned(factories)) {
+            return Err(FfiError::validation(
+                "VOXA-FFI-GRAPH-FACTORIES",
+                "Graph factory array is null or exceeds the hard limit",
+            ));
+        }
+        let graph_json = abi::copy_utf8(graph_json).map_err(|_| {
+            FfiError::validation("VOXA-FFI-GRAPH-JSON", "Graph JSON is not valid UTF-8")
+        })?;
+        let views = if factory_count == 0 {
+            &[]
+        } else {
+            // SAFETY: caller declares factory_count readable descriptors for this call.
+            unsafe { std::slice::from_raw_parts(factories, factory_count) }
+        };
+        let specs = views
+            .iter()
+            .map(cpp_multimodal_factory_spec)
+            .collect::<Result<Vec<_>, _>>()?;
+        let worker_total = bridge::run_registered_multimodal_graph(
+            &graph_json,
+            &specs,
+            std::time::Duration::from_millis(timeout_ms),
+        )?;
+        let value = GraphRunSummary {
+            abi_version: abi::ABI_VERSION,
+            struct_size: u32::try_from(mem::size_of::<GraphRunSummary>()).unwrap_or(u32::MAX),
+            worker_total: u32::try_from(worker_total).map_err(|_| {
+                FfiError::internal("VOXA-FFI-GRAPH-SUMMARY", "worker count exceeds u32")
+            })?,
+            reserved: [0; 4],
+        };
+        let _ = abi::write_value(summary, value);
+        Ok(())
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CppPortDocument {
+    name: String,
+    direction: String,
+    frame_type: String,
+}
+
+fn cpp_multimodal_factory_spec(
+    view: &MultimodalNodeFactoryView,
+) -> Result<bridge::CppMultimodalFactorySpec, FfiError> {
+    let expected = u32::try_from(mem::size_of::<MultimodalNodeFactoryView>()).unwrap_or(u32::MAX);
+    if view.abi_version != abi::ABI_VERSION || view.struct_size != expected {
+        return Err(FfiError::abi(
+            "multimodal Graph Node factory version or size does not match v1",
+        ));
+    }
+    if view.reserved0 != 0 || view.reserved != [0; 4] {
+        return Err(FfiError::validation(
+            "VOXA-FFI-GRAPH-FACTORY",
+            "reserved fields must be zero",
+        ));
+    }
+    let required = |value| {
+        abi::copy_str(value, true).map_err(|_| {
+            FfiError::validation(
+                "VOXA-FFI-GRAPH-FACTORY",
+                "factory contains an invalid string",
+            )
+        })
+    };
+    let node_type = voxa_core::NodeTypeName::new(required(view.node_type)?)
+        .map_err(|_| FfiError::validation("VOXA-FFI-GRAPH-FACTORY", "invalid node type"))?;
+    let version = voxa_core::NodeFactoryVersion::new(required(view.version)?)
+        .map_err(|_| FfiError::validation("VOXA-FFI-GRAPH-FACTORY", "invalid version"))?;
+    let kind = match view.kind {
+        1 => voxa_core::NodeKind::Source,
+        2 => voxa_core::NodeKind::Transform,
+        3 => voxa_core::NodeKind::Sink,
+        _ => {
+            return Err(FfiError::validation(
+                "VOXA-FFI-GRAPH-FACTORY",
+                "invalid node kind",
+            ))
+        }
+    };
+    let ports_encoded = abi::copy_utf8(view.ports_json).map_err(|_| {
+        FfiError::validation("VOXA-FFI-GRAPH-FACTORY", "ports JSON is invalid UTF-8")
+    })?;
+    let ports = serde_json::from_str::<Vec<CppPortDocument>>(&ports_encoded)
+        .map_err(|_| FfiError::validation("VOXA-FFI-GRAPH-FACTORY", "ports JSON is invalid"))?
+        .into_iter()
+        .map(|port| {
+            let name = voxa_core::PortName::new(port.name)
+                .map_err(|_| FfiError::validation("VOXA-FFI-GRAPH-FACTORY", "invalid port name"))?;
+            let direction = match port.direction.as_str() {
+                "input" => voxa_core::PortDirection::Input,
+                "output" => voxa_core::PortDirection::Output,
+                _ => {
+                    return Err(FfiError::validation(
+                        "VOXA-FFI-GRAPH-FACTORY",
+                        "invalid port direction",
+                    ))
+                }
+            };
+            let frame_type = match port.frame_type.as_str() {
+                "audio" => voxa_types::FrameType::Audio,
+                "video" => voxa_types::FrameType::Video,
+                "text" => voxa_types::FrameType::Text,
+                "byte" => voxa_types::FrameType::Byte,
+                _ => {
+                    return Err(FfiError::validation(
+                        "VOXA-FFI-GRAPH-FACTORY",
+                        "invalid port frame type",
+                    ))
+                }
+            };
+            Ok((name, direction, frame_type))
+        })
+        .collect::<Result<Vec<_>, FfiError>>()?;
+    let schema_encoded = abi::copy_utf8(view.config_schema_json).map_err(|_| {
+        FfiError::validation("VOXA-FFI-GRAPH-FACTORY", "schema JSON is invalid UTF-8")
+    })?;
+    let schema_json: serde_json::Value = serde_json::from_str(&schema_encoded)
+        .map_err(|_| FfiError::validation("VOXA-FFI-GRAPH-FACTORY", "schema JSON is invalid"))?;
+    let config_schema =
+        voxa_core::ConfigSchema::new(voxa_graph_json::value_from_json(&schema_json).map_err(
+            |_| FfiError::validation("VOXA-FFI-GRAPH-FACTORY", "schema value is invalid"),
+        )?);
+    let create = view.create.ok_or_else(|| {
+        FfiError::validation(
+            "VOXA-FFI-GRAPH-FACTORY",
+            "factory requires a create callback",
+        )
+    })?;
+    Ok(bridge::CppMultimodalFactorySpec {
+        node_type,
+        version,
+        kind,
+        ports,
+        config_schema,
+        user_data: view.user_data as usize,
+        create,
     })
 }
 

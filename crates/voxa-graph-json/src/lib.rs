@@ -250,7 +250,7 @@ fn compile_node(
                 &format!("{pointer}/factory_version"),
             )
         })?;
-    let config = config_map(&node.node_config).map_err(|message| {
+    let config = config_map_from_json_object(&node.node_config).map_err(|message| {
         diag(
             "VOXA-GRAPH-CONFIG-VALUE",
             &message,
@@ -291,16 +291,18 @@ fn compile_node(
     Ok(())
 }
 
-fn config_map(values: &serde_json::Map<String, serde_json::Value>) -> Result<ConfigMap, String> {
+pub fn config_map_from_json_object(
+    values: &serde_json::Map<String, serde_json::Value>,
+) -> Result<ConfigMap, String> {
     let mut converted = Vec::with_capacity(values.len());
     for (key, value) in values {
         let key = ConfigKey::new(key.clone()).map_err(|error| error.to_string())?;
-        converted.push((key, json_to_value(value)?));
+        converted.push((key, value_from_json(value)?));
     }
     ConfigMap::try_from_iter(converted).map_err(|error| error.to_string())
 }
 
-fn json_to_value(value: &serde_json::Value) -> Result<Value, String> {
+pub fn value_from_json(value: &serde_json::Value) -> Result<Value, String> {
     match value {
         serde_json::Value::Null => Ok(Value::Null),
         serde_json::Value::Bool(value) => Ok(Value::Bool(*value)),
@@ -321,13 +323,13 @@ fn json_to_value(value: &serde_json::Value) -> Result<Value, String> {
         serde_json::Value::String(value) => Ok(Value::String(value.clone().into_boxed_str())),
         serde_json::Value::Array(values) => values
             .iter()
-            .map(json_to_value)
+            .map(value_from_json)
             .collect::<Result<Vec<_>, _>>()
             .map(|values| Value::List(values.into_boxed_slice())),
         serde_json::Value::Object(values) => {
             let mut converted = Vec::with_capacity(values.len());
             for (key, value) in values {
-                converted.push((key.as_str(), json_to_value(value)?));
+                converted.push((key.as_str(), value_from_json(value)?));
             }
             ValueMap::try_from_iter(converted)
                 .map(Value::Map)
@@ -336,7 +338,7 @@ fn json_to_value(value: &serde_json::Value) -> Result<Value, String> {
     }
 }
 
-fn value_to_json(value: &Value) -> serde_json::Value {
+pub fn value_to_json(value: &Value) -> serde_json::Value {
     match value {
         Value::Null => serde_json::Value::Null,
         Value::Bool(value) => serde_json::Value::Bool(*value),
@@ -360,6 +362,16 @@ fn value_to_json(value: &Value) -> serde_json::Value {
                 .collect(),
         ),
     }
+}
+
+/// Converts a deterministic Voxa configuration map into a JSON object.
+pub fn config_map_to_json(config: &ConfigMap) -> serde_json::Value {
+    serde_json::Value::Object(
+        config
+            .iter()
+            .map(|(key, value)| (key.as_str().to_owned(), value_to_json(value)))
+            .collect(),
+    )
 }
 
 fn diag(code: &str, message: &str, pointer: &str) -> GraphDiagnostic {

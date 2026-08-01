@@ -153,3 +153,54 @@ def test_python_factory_executes_inside_registered_graph_v1_runtime():
     factory = voxa.GraphNodeFactory("example.python.uppercase", Uppercase)
     assert voxa.run_graph(graph, [factory]) == 3
     assert calls == ["prepare", ("process", "hello"), "finish"]
+
+
+def test_schema_driven_multimodal_source_and_sinks():
+    import json
+
+    received = {}
+
+    class Source:
+        def __init__(self, config):
+            assert config == {"label": "demo"}
+
+        def on_process(self):
+            return {
+                "audio_out": voxa.AudioFrame(b"\x00\x00", 8000, 1, 1, sequence=7),
+                "video_out": voxa.VideoFrame(b"\x01\x02\x03\x04", 1, 1, sequence=7),
+                "byte_out": voxa.ByteFrame(b"raw", media_type="application/octet-stream", sequence=7),
+                "text_out": [voxa.TextFrame("one", sequence=7), voxa.TextFrame("two", sequence=8)],
+            }
+
+    def sink(name):
+        class Sink:
+            def on_process(self, frame, input_port):
+                assert input_port == "in"
+                received.setdefault(name, []).append(frame.frame_type)
+        return Sink
+
+    source_ports = [
+        {"name": "audio_out", "direction": "output", "frame_type": "audio"},
+        {"name": "video_out", "direction": "output", "frame_type": "video"},
+        {"name": "byte_out", "direction": "output", "frame_type": "byte"},
+        {"name": "text_out", "direction": "output", "frame_type": "text"},
+    ]
+    factories = [voxa.GraphNodeFactory(
+        "example.python.multimodal_source", Source, kind="source",
+        ports_json=json.dumps(source_ports),
+        config_schema_json=json.dumps({"type": "object", "properties": {"label": {"type": "string"}}}),
+        pass_config=True,
+    )]
+    for frame_type in ("audio", "video", "byte", "text"):
+        factories.append(voxa.GraphNodeFactory(
+            f"example.python.{frame_type}_sink", sink(frame_type), kind="sink",
+            ports_json=json.dumps([{"name": "in", "direction": "input", "frame_type": frame_type}]),
+        ))
+    nodes = [{"id": "source", "node_type": "example.python.multimodal_source", "language": "python", "factory_version": "1.0.0", "node_config": {"label": "demo"}}]
+    edges = []
+    for frame_type in ("audio", "video", "byte", "text"):
+        nodes.append({"id": f"{frame_type}-sink", "node_type": f"example.python.{frame_type}_sink", "language": "python", "factory_version": "1.0.0", "node_config": {}})
+        edges.append({"id": frame_type, "from": {"node_id": "source", "port": f"{frame_type}_out"}, "to": {"node_id": f"{frame_type}-sink", "port": "in"}, "frame_type": frame_type, "queue_policy": {"capacity": 8, "overflow": "block"}})
+    graph = json.dumps({"version": "voxa.graph/v1", "graph_id": "python-multimodal", "nodes": nodes, "edges": edges})
+    assert voxa.run_graph(graph, factories) == 5
+    assert received == {"audio": ["audio"], "video": ["video"], "byte": ["byte"], "text": ["text", "text"]}

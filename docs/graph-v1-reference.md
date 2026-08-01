@@ -87,9 +87,11 @@ bounded Edge policies, and starts the graph through `ConcurrentRuntime`.
 
 The CLI currently installs the built-in Rust Registry. Embedders can call
 `start_registered_runtime` with their own trusted registrations. Foreign-language
-SDK hosts can register exact-version text Transform factories with
+SDK hosts can register exact-version schema-driven Source, Transform, and Sink factories with
 `voxa.GraphNodeFactory`/`voxa.run_graph`, `GraphNodeFactory`/`runGraph`, or
-`voxa::GraphNodeFactory`/`Runtime::run_graph`. Graph files never load code or
+`voxa::MultimodalGraphNodeFactory`/`Runtime::run_multimodal_graph` (the C++ text
+compatibility API remains available). Ports are exactly typed as audio, video,
+text, or byte and lifecycle results preserve every output port name. Graph files never load code or
 fetch implementations by themselves.
 
 Execution and shutdown waits are bounded with `--timeout-ms` (default 30000)

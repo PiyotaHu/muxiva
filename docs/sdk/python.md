@@ -46,5 +46,12 @@ Each materialized Node receives a fresh value from the constructor and runs on
 its own Python execution thread and asyncio loop. The complete installable
 example is `examples/python/registered_graph.py`.
 
-D04 v1 supports text Transform factories with empty `node_config`. It does not
-import Python modules named by untrusted Graph JSON.
+D05 adds `kind`, `ports_json`, `config_schema_json`, and `pass_config`. Ports
+accept `audio`, `video`, `text`, and `byte`. A Source implements
+`on_process()` with no input; a Transform or Sink may implement
+`on_process(frame, input_port)`. Return one frame for a single output or a dict
+such as `{"audio_out": frame, "text_out": [frame1, frame2]}` for named,
+multi-port emission. A Sink returns `None`. When `pass_config=True`, the
+constructor receives the Graph `node_config` dict. Graph JSON still cannot
+import Python code. The end-to-end contract is exercised in
+`crates/voxa-python/tests/test_voxa.py`.

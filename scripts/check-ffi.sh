@@ -16,6 +16,10 @@ cargo build --offline -p voxa-ffi --manifest-path "$repo/Cargo.toml"
 "$cxx_bin" -std=c++17 -Wall -Wextra -Werror $cxx_system -I"$repo/cpp/include" \
   "$repo/cpp/examples/uppercase_transform.cpp" -L"$repo/target/debug" -lvoxa_ffi \
   -Wl,-rpath,"$repo/target/debug" -o "$repo/target/uppercase_transform"
+"$cxx_bin" -std=c++17 -Wall -Wextra -Werror $cxx_system -I"$repo/cpp/include" \
+  "$repo/cpp/examples/multimodal_graph.cpp" -L"$repo/target/debug" -lvoxa_ffi \
+  -Wl,-rpath,"$repo/target/debug" -o "$repo/target/multimodal_graph"
 "$repo/target/header_smoke"
 "$repo/target/uppercase_transform"
+"$repo/target/multimodal_graph"
 "$repo/scripts/check-cpp-consumer.sh"

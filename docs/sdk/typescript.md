@@ -50,5 +50,10 @@ Graph on a background task while lifecycle calls are scheduled back onto that
 Worker's JavaScript event loop. Promise/thenable callbacks remain rejected in
 V1. See `examples/typescript/registered-graph.ts`.
 
-D04 v1 supports text Transform factories with empty `node_config`. Graph JSON
-never evaluates or imports JavaScript by itself.
+D05 Factory options add `kind`, `ports`, and `configSchema`. Graph callbacks
+receive `(frame, context)`, where `context` contains `nodeId`, `inputPort`, and
+the exact `node_config`. Frames use the exported `GraphFrame` wire union. A
+Source receives `undefined`; a Sink returns `undefined`; one callback may
+return an object keyed by output port and each value may be one frame or an
+array. The Worker still rejects Promise results and Graph JSON never evaluates
+or imports JavaScript by itself.

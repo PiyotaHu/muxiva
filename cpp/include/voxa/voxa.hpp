@@ -9,6 +9,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -269,6 +270,131 @@ class GraphNodeFactory final {
   std::shared_ptr<Creator> creator_;
 };
 
+struct GraphEmission {
+  std::string output_port;
+  voxa_frame_view_v1 frame{};
+};
+
+class MultimodalGraphNode {
+ public:
+  virtual ~MultimodalGraphNode() = default;
+  virtual void on_prepare() {}
+  virtual std::vector<GraphEmission> on_process(
+      const voxa_frame_view_v1* input, std::string_view input_port) = 0;
+  virtual void on_finish() {}
+  virtual void on_abort(const voxa_abort_reason_v1&) noexcept {}
+};
+
+namespace detail {
+struct MultimodalNodeBox {
+  explicit MultimodalNodeBox(MultimodalGraphNode* value) : implementation(value) {}
+  std::unique_ptr<MultimodalGraphNode> implementation;
+  std::vector<GraphEmission> emissions;
+  std::vector<voxa_named_frame_v1> views;
+};
+inline voxa_status_v1 multimodal_prepare(void* data, voxa_error_v1* error) noexcept {
+  try { static_cast<MultimodalNodeBox*>(data)->implementation->on_prepare(); return VOXA_STATUS_OK; }
+  catch (...) { write_exception(error); return VOXA_STATUS_FOREIGN_EXCEPTION; }
+}
+inline voxa_status_v1 multimodal_process(
+    void* data, const voxa_frame_view_v1* input, voxa_str_v1 input_port,
+    const voxa_named_frame_v1** output, size_t* output_count,
+    voxa_error_v1* error) noexcept {
+  try {
+    if (data == nullptr || output == nullptr || output_count == nullptr) return VOXA_STATUS_INVALID_ARGUMENT;
+    auto* box = static_cast<MultimodalNodeBox*>(data);
+    const std::string_view port(input_port.data == nullptr ? "" : input_port.data,
+                                input_port.data == nullptr ? 0 : input_port.len);
+    box->emissions = box->implementation->on_process(input, port);
+    box->views.clear();
+    box->views.reserve(box->emissions.size());
+    for (const auto& emission : box->emissions) {
+      box->views.push_back({{emission.output_port.data(), emission.output_port.size()}, emission.frame});
+    }
+    *output = box->views.empty() ? nullptr : box->views.data();
+    *output_count = box->views.size();
+    return VOXA_STATUS_OK;
+  } catch (...) { write_exception(error); return VOXA_STATUS_FOREIGN_EXCEPTION; }
+}
+inline voxa_status_v1 multimodal_finish(void* data, voxa_error_v1* error) noexcept {
+  try { static_cast<MultimodalNodeBox*>(data)->implementation->on_finish(); return VOXA_STATUS_OK; }
+  catch (...) { write_exception(error); return VOXA_STATUS_FOREIGN_EXCEPTION; }
+}
+inline void multimodal_abort(void* data, const voxa_abort_reason_v1* reason) noexcept {
+  try { if (reason != nullptr) static_cast<MultimodalNodeBox*>(data)->implementation->on_abort(*reason); } catch (...) {}
+}
+inline void multimodal_destroy(void* data) noexcept {
+  try { delete static_cast<MultimodalNodeBox*>(data); } catch (...) {}
+}
+inline voxa_graph_node_vtable_v1 multimodal_vtable(MultimodalGraphNode* implementation) {
+  voxa_graph_node_vtable_v1 table{};
+  table.abi_version = VOXA_ABI_VERSION_V1;
+  table.struct_size = sizeof(table);
+  table.user_data = new MultimodalNodeBox(implementation);
+  table.on_prepare = multimodal_prepare;
+  table.on_process = multimodal_process;
+  table.on_finish = multimodal_finish;
+  table.on_abort = multimodal_abort;
+  table.destroy = multimodal_destroy;
+  return table;
+}
+}  // namespace detail
+
+class MultimodalGraphNodeFactory final {
+ public:
+  using Creator = std::function<MultimodalGraphNode*(const std::string&)>;
+  MultimodalGraphNodeFactory(std::string node_type, uint32_t kind,
+                             std::string ports_json, Creator creator,
+                             std::string config_schema_json = "{}",
+                             std::string version = "1.0.0")
+      : node_type_(std::move(node_type)), version_(std::move(version)), kind_(kind),
+        ports_json_(std::move(ports_json)), config_schema_json_(std::move(config_schema_json)),
+        creator_(std::make_shared<Creator>(std::move(creator))) {}
+
+  template <typename T>
+  static MultimodalGraphNodeFactory make(std::string node_type, uint32_t kind,
+                                          std::string ports_json,
+                                          std::string config_schema_json = "{}") {
+    static_assert(std::is_base_of<MultimodalGraphNode, T>::value,
+                  "T must derive from voxa::MultimodalGraphNode");
+    return MultimodalGraphNodeFactory(
+        std::move(node_type), kind, std::move(ports_json),
+        [](const std::string& config) -> MultimodalGraphNode* {
+          if constexpr (std::is_constructible<T, const std::string&>::value) return new T(config);
+          else return new T();
+        }, std::move(config_schema_json));
+  }
+
+  voxa_multimodal_node_factory_v1 view() const noexcept {
+    voxa_multimodal_node_factory_v1 result{};
+    result.abi_version = VOXA_ABI_VERSION_V1; result.struct_size = sizeof(result);
+    result.node_type = borrow(node_type_); result.version = borrow(version_); result.kind = kind_;
+    result.ports_json = borrow(ports_json_); result.config_schema_json = borrow(config_schema_json_);
+    result.user_data = creator_.get(); result.create = create;
+    return result;
+  }
+
+ private:
+  static voxa_str_v1 borrow(const std::string& value) noexcept { return {value.data(), value.size()}; }
+  static voxa_status_v1 create(void* data, voxa_str_v1, voxa_str_v1 config,
+                               voxa_graph_node_vtable_v1* output,
+                               voxa_error_v1* error) noexcept {
+    try {
+      if (data == nullptr || output == nullptr) return VOXA_STATUS_INVALID_ARGUMENT;
+      const std::string config_value(config.data == nullptr ? "" : config.data,
+                                     config.data == nullptr ? 0 : config.len);
+      auto* implementation = (*static_cast<Creator*>(data))(config_value);
+      if (implementation == nullptr) return VOXA_STATUS_INVALID_ARGUMENT;
+      *output = detail::multimodal_vtable(implementation);
+      return VOXA_STATUS_OK;
+    } catch (...) { detail::write_exception(error); return VOXA_STATUS_FOREIGN_EXCEPTION; }
+  }
+  std::string node_type_, version_;
+  uint32_t kind_;
+  std::string ports_json_, config_schema_json_;
+  std::shared_ptr<Creator> creator_;
+};
+
 class Runtime final {
  public:
   explicit Runtime(Error& error) {
@@ -316,6 +442,22 @@ class Runtime final {
     const auto status = voxa_runtime_run_graph_v1(
         handle_, json, views.data(), views.size(), timeout_ms, &summary,
         error.out());
+    if (status == VOXA_STATUS_OK) worker_total = summary.worker_total;
+    return status;
+  }
+  voxa_status_v1 run_multimodal_graph(
+      const std::string& graph_json,
+      const std::vector<MultimodalGraphNodeFactory>& factories,
+      uint32_t& worker_total, Error& error,
+      uint64_t timeout_ms = 30000) const {
+    std::vector<voxa_multimodal_node_factory_v1> views;
+    views.reserve(factories.size());
+    for (const auto& factory : factories) views.push_back(factory.view());
+    voxa_graph_run_summary_v1 summary{};
+    summary.abi_version = VOXA_ABI_VERSION_V1; summary.struct_size = sizeof(summary);
+    const voxa_str_v1 json{graph_json.data(), graph_json.size()};
+    const auto status = voxa_runtime_run_multimodal_graph_v1(
+        handle_, json, views.data(), views.size(), timeout_ms, &summary, error.out());
     if (status == VOXA_STATUS_OK) worker_total = summary.worker_total;
     return status;
   }

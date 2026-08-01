@@ -23,9 +23,18 @@ function dispatch(command) {
   const method = { prepare: 'onPrepare', process: 'onProcess', signal: 'onSignal', finish: 'onFinish', abort: 'onAbort' }[command.kind]
   try {
     const payload = command.payloadJson === undefined ? undefined : JSON.parse(command.payloadJson)
-    const value = implementation[method](payload)
+    const context = {
+      nodeId: command.nodeId,
+      inputPort: command.inputPort,
+      config: JSON.parse(command.configJson),
+    }
+    let value = implementation[method](payload, context)
     if (value && (typeof value === 'object' || typeof value === 'function') && typeof value.then === 'function') {
       throw Object.assign(new TypeError('Promise/thenable results are unsupported in Node V1'), { code: 'VOXA_NODE_PROMISE_UNSUPPORTED' })
+    }
+    if (command.kind === 'process' && value && typeof value === 'object' &&
+        typeof value.text === 'string' && value.kind === undefined) {
+      value = { kind: 'text', sequence: payload?.sequence ?? 0, text: value.text }
     }
     return JSON.stringify({ ok: true, value })
   } catch (error) {

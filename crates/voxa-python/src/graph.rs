@@ -3,6 +3,7 @@
 use std::{sync::Arc, time::Duration};
 
 use pyo3::prelude::*;
+use serde::Deserialize;
 use voxa_core::{
     start_registered_runtime, AbortReason, ConfigMap, ConfigSchema, EdgePolicies,
     ForeignCommandKind, ForeignCompletionKind, ForeignNodeCallOutput, ForeignNodeEmission,
@@ -20,32 +21,64 @@ const MAX_TIMEOUT_MS: u64 = 60 * 60 * 1_000;
 pub struct PyGraphNodeFactory {
     node_type: NodeTypeName,
     version: NodeFactoryVersion,
-    input_port: PortName,
-    output_port: PortName,
+    kind: NodeKind,
+    ports: Vec<FactoryPort>,
+    config_schema: ConfigSchema,
+    pass_config: bool,
     constructor: Py<PyAny>,
+}
+
+#[derive(Clone)]
+struct FactoryPort {
+    name: PortName,
+    direction: PortDirection,
+    frame_type: FrameType,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FactoryPortDocument {
+    name: String,
+    direction: String,
+    frame_type: String,
 }
 
 #[pymethods]
 impl PyGraphNodeFactory {
     #[new]
-    #[pyo3(signature = (node_type, constructor, *, version="1.0.0", input_port="text_in", output_port="text_out"))]
+    #[pyo3(signature = (node_type, constructor, *, version="1.0.0", input_port="text_in", output_port="text_out", kind="transform", ports_json=None, config_schema_json="{}", pass_config=false))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         node_type: String,
         constructor: Py<PyAny>,
         version: &str,
         input_port: &str,
         output_port: &str,
+        kind: &str,
+        ports_json: Option<&str>,
+        config_schema_json: &str,
+        pass_config: bool,
     ) -> PyResult<Self> {
+        let kind = parse_kind(kind)?;
+        let ports = match ports_json {
+            Some(value) => parse_ports(value)?,
+            None => default_text_ports(input_port, output_port)?,
+        };
+        let schema_json: serde_json::Value = serde_json::from_str(config_schema_json)
+            .map_err(|error| binding_error("VOXA-PY-GRAPH-SCHEMA", error.to_string()))?;
         Ok(Self {
             node_type: NodeTypeName::new(node_type)
                 .map_err(|error| binding_error("VOXA-PY-GRAPH-NODE-TYPE", error.to_string()))?,
             version: NodeFactoryVersion::new(version).map_err(|error| {
                 binding_error("VOXA-PY-GRAPH-FACTORY-VERSION", error.to_string())
             })?,
-            input_port: PortName::new(input_port)
-                .map_err(|error| binding_error("VOXA-PY-GRAPH-PORT", error.to_string()))?,
-            output_port: PortName::new(output_port)
-                .map_err(|error| binding_error("VOXA-PY-GRAPH-PORT", error.to_string()))?,
+            kind,
+            ports,
+            config_schema: ConfigSchema::new(
+                voxa_graph_json::value_from_json(&schema_json)
+                    .map_err(|error| binding_error("VOXA-PY-GRAPH-SCHEMA", error))?,
+            ),
+            pass_config,
             constructor,
         })
     }
@@ -68,27 +101,30 @@ impl PyGraphNodeFactory {
         let descriptor = NodeDescriptor::new(
             template.clone(),
             self.node_type.clone(),
-            NodeKind::Transform,
-            [
-                PortDescriptor::new(
-                    template.clone(),
-                    self.input_port.clone(),
-                    PortDirection::Input,
-                    FrameType::Text,
-                ),
-                PortDescriptor::new(
-                    template,
-                    self.output_port.clone(),
-                    PortDirection::Output,
-                    FrameType::Text,
-                ),
-            ],
-            ConfigSchema::empty(),
+            self.kind,
+            self.ports
+                .iter()
+                .map(|port| {
+                    PortDescriptor::new(
+                        template.clone(),
+                        port.name.clone(),
+                        port.direction,
+                        port.frame_type,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            self.config_schema.clone(),
             LifecycleCapabilities::new(true, true, true, true),
         );
         let provider = PythonProvider {
             constructor: self.constructor.clone_ref(py),
-            output_port: self.output_port.clone(),
+            output_ports: self
+                .ports
+                .iter()
+                .filter(|port| port.direction == PortDirection::Output)
+                .map(|port| port.name.clone())
+                .collect(),
+            pass_config: self.pass_config,
         };
         NodeRegistration::new(
             NodeLanguage::Python,
@@ -101,44 +137,35 @@ impl PyGraphNodeFactory {
 
 struct PythonProvider {
     constructor: Py<PyAny>,
-    output_port: PortName,
+    output_ports: Vec<PortName>,
+    pass_config: bool,
 }
 
 impl ForeignNodeProvider for PythonProvider {
-    fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
-        if config.is_empty() {
-            Ok(())
-        } else {
-            Err(NodeFactoryError::new(
-                "VOXA-PY-GRAPH-CONFIG",
-                "Python Graph factory v1 accepts an empty node_config",
-            ))
-        }
-    }
-
     fn create(
         &self,
         _node_id: &NodeId,
-        _config: &ConfigMap,
+        config: &ConfigMap,
     ) -> Result<Box<dyn ForeignNodeInstance>, NodeFactoryError> {
-        let node = Python::with_gil(|py| self.constructor.call0(py)).map_err(|error| {
-            NodeFactoryError::new("VOXA-PY-GRAPH-CONSTRUCTOR", error.to_string())
-        })?;
-        let domain =
-            PythonNodeExecutionDomain::new(node, 16, 16, 1, 10_000, 5_000, "strict", "in_process")
-                .map_err(|error| {
-                    NodeFactoryError::new("VOXA-PY-GRAPH-DOMAIN", error.to_string())
-                })?;
-        Ok(Box::new(PythonInstance {
-            domain,
-            output_port: self.output_port.clone(),
-        }))
+        let node = Python::with_gil(|py| {
+            if self.pass_config {
+                let json = py.import("json")?;
+                let encoded = voxa_graph_json::config_map_to_json(config).to_string();
+                let value = json.call_method1("loads", (encoded,))?;
+                self.constructor.call1(py, (value,))
+            } else {
+                self.constructor.call0(py)
+            }
+        })
+        .map_err(|error| NodeFactoryError::new("VOXA-PY-GRAPH-CONSTRUCTOR", error.to_string()))?;
+        let domain = PythonNodeExecutionDomain::new_graph(node, self.output_ports.clone())
+            .map_err(|error| NodeFactoryError::new("VOXA-PY-GRAPH-DOMAIN", error.to_string()))?;
+        Ok(Box::new(PythonInstance { domain }))
     }
 }
 
 struct PythonInstance {
     domain: PythonNodeExecutionDomain,
-    output_port: PortName,
 }
 
 impl ForeignNodeInstance for PythonInstance {
@@ -151,25 +178,30 @@ impl ForeignNodeInstance for PythonInstance {
     fn on_process(
         &mut self,
         input: Option<Frame>,
-        _input_port: Option<&PortName>,
+        input_port: Option<&PortName>,
     ) -> Result<ForeignNodeCallOutput, VoxaError> {
-        let input = input.ok_or_else(|| {
-            graph_error(
-                "VOXA-PY-GRAPH-INPUT",
-                "Python transform requires one input frame",
-            )
-        })?;
-        let completion = self
-            .domain
-            .submit_blocking(ForeignCommandKind::Process(input))?;
-        let ForeignCompletionKind::Success { frames, .. } = completion.kind() else {
+        let command = match input {
+            Some(frame) => ForeignCommandKind::ProcessOnPort {
+                frame,
+                input_port: input_port.cloned().ok_or_else(|| {
+                    graph_error("VOXA-PY-GRAPH-INPUT-PORT", "input port identity is missing")
+                })?,
+            },
+            None => ForeignCommandKind::ProcessSource,
+        };
+        let completion = self.domain.submit_blocking(command)?;
+        let ForeignCompletionKind::Success { emissions, .. } = completion.kind() else {
             unreachable!("domain failures are returned as errors")
         };
         Ok(ForeignNodeCallOutput::new(
-            frames
+            emissions
                 .iter()
-                .cloned()
-                .map(|frame| ForeignNodeEmission::new(self.output_port.clone(), frame))
+                .map(|emission| {
+                    ForeignNodeEmission::new(
+                        emission.output_port().clone(),
+                        emission.frame().clone(),
+                    )
+                })
                 .collect::<Vec<_>>(),
             [],
         ))
@@ -264,4 +296,71 @@ fn graph_diagnostics(diagnostics: Vec<voxa_graph_json::GraphDiagnostic>) -> PyEr
 
 fn graph_error(code: &str, message: &str) -> VoxaError {
     VoxaError::new(ErrorCategory::External, code, message)
+}
+
+fn parse_kind(value: &str) -> PyResult<NodeKind> {
+    match value {
+        "source" => Ok(NodeKind::Source),
+        "transform" => Ok(NodeKind::Transform),
+        "sink" => Ok(NodeKind::Sink),
+        _ => Err(binding_error(
+            "VOXA-PY-GRAPH-KIND",
+            "kind must be source, transform, or sink",
+        )),
+    }
+}
+
+fn default_text_ports(input: &str, output: &str) -> PyResult<Vec<FactoryPort>> {
+    Ok(vec![
+        FactoryPort {
+            name: PortName::new(input)
+                .map_err(|error| binding_error("VOXA-PY-GRAPH-PORT", error.to_string()))?,
+            direction: PortDirection::Input,
+            frame_type: FrameType::Text,
+        },
+        FactoryPort {
+            name: PortName::new(output)
+                .map_err(|error| binding_error("VOXA-PY-GRAPH-PORT", error.to_string()))?,
+            direction: PortDirection::Output,
+            frame_type: FrameType::Text,
+        },
+    ])
+}
+
+fn parse_ports(encoded: &str) -> PyResult<Vec<FactoryPort>> {
+    let documents: Vec<FactoryPortDocument> = serde_json::from_str(encoded)
+        .map_err(|error| binding_error("VOXA-PY-GRAPH-PORTS", error.to_string()))?;
+    documents
+        .into_iter()
+        .map(|document| {
+            let direction = match document.direction.as_str() {
+                "input" => PortDirection::Input,
+                "output" => PortDirection::Output,
+                _ => {
+                    return Err(binding_error(
+                        "VOXA-PY-GRAPH-PORT-DIRECTION",
+                        "port direction must be input or output",
+                    ))
+                }
+            };
+            let frame_type = match document.frame_type.as_str() {
+                "audio" => FrameType::Audio,
+                "video" => FrameType::Video,
+                "text" => FrameType::Text,
+                "byte" => FrameType::Byte,
+                _ => {
+                    return Err(binding_error(
+                        "VOXA-PY-GRAPH-FRAME-TYPE",
+                        "port frame_type must be audio, video, text, or byte",
+                    ))
+                }
+            };
+            Ok(FactoryPort {
+                name: PortName::new(document.name)
+                    .map_err(|error| binding_error("VOXA-PY-GRAPH-PORT", error.to_string()))?,
+                direction,
+                frame_type,
+            })
+        })
+        .collect()
 }

@@ -3,8 +3,8 @@ use napi_derive::napi;
 use voxa_types::{
     AudioData, AudioLayout, ByteData, ClockDomain, ClockDomainId, ClockKind, EventData, Extensions,
     Frame as RustFrame, FrameBuffer, FrameHeader, FrameId, FramePayload, FrameType, Lineage,
-    MediaType, Metadata, NamespacedName, NodeId, PcmSampleFormat, SchemaVersion, SequenceId,
-    SignalData, StreamId, TextData, Timestamp, TraceId, Value, VideoData,
+    MediaType, Metadata, NamespacedName, NodeId, PcmSampleFormat, PixelFormat, SchemaVersion,
+    SequenceId, SignalData, StreamId, TextData, Timestamp, TraceId, Value, VideoData, VideoLayout,
 };
 
 fn invalid(error: impl std::fmt::Display) -> Error {
@@ -37,6 +37,174 @@ fn checked_frame(payload: FramePayload, sequence: i64) -> Result<RustFrame> {
 
 pub(crate) fn owned_text_frame(text: String, sequence: i64) -> Result<RustFrame> {
     checked_frame(FramePayload::Text(TextData::new(text)), sequence)
+}
+
+pub(crate) fn frame_to_wire(frame: &RustFrame) -> Result<serde_json::Value> {
+    let sequence = frame.header().sequence_id().get();
+    let value = match frame {
+        RustFrame::Text(frame) => serde_json::json!({
+            "kind": "text", "sequence": sequence, "text": frame.data().as_str()
+        }),
+        RustFrame::Byte(frame) => serde_json::json!({
+            "kind": "byte", "sequence": sequence,
+            "bytes": frame.data().buffer().as_slice(),
+            "mediaType": frame.data().media_type().map(|value| value.as_str())
+        }),
+        RustFrame::Audio(frame) => {
+            let data = frame.data();
+            let format = match data.sample_format() {
+                PcmSampleFormat::U8 => "u8",
+                PcmSampleFormat::I16Le => "i16le",
+                PcmSampleFormat::I24Le => "i24le",
+                PcmSampleFormat::I32Le => "i32le",
+                PcmSampleFormat::F32Le => "f32le",
+                PcmSampleFormat::F64Le => "f64le",
+            };
+            serde_json::json!({
+                "kind": "audio", "sequence": sequence,
+                "bytes": data.buffer().as_slice(), "sampleRateHz": data.sample_rate_hz(),
+                "channels": data.channels(), "format": format,
+                "planar": data.layout() == AudioLayout::Planar,
+                "samplesPerChannel": data.samples_per_channel()
+            })
+        }
+        RustFrame::Video(frame) => {
+            let data = frame.data();
+            if data.pixel_format() != PixelFormat::Rgba8 {
+                return Err(invalid(
+                    "the TypeScript graph wire protocol currently requires RGBA8 video",
+                ));
+            }
+            let VideoLayout::Rgba8 { plane } = data.layout() else {
+                unreachable!()
+            };
+            serde_json::json!({
+                "kind": "video", "sequence": sequence, "pixelFormat": "rgba8",
+                "bytes": data.buffer().as_slice(), "width": data.width(),
+                "height": data.height(), "stride": plane.stride()
+            })
+        }
+        RustFrame::Signal(_) | RustFrame::Event(_) => {
+            return Err(invalid(
+                "signal and event frames are control-plane values, not graph port payloads",
+            ));
+        }
+    };
+    Ok(value)
+}
+
+pub(crate) fn frame_from_wire(value: &serde_json::Value) -> Result<RustFrame> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| invalid("frame must be an object"))?;
+    let field = |name: &str| {
+        object
+            .get(name)
+            .ok_or_else(|| invalid(format!("frame.{name} is required")))
+    };
+    let sequence = field("sequence")?
+        .as_i64()
+        .ok_or_else(|| invalid("frame.sequence must be an integer"))?;
+    let payload = match field("kind")?.as_str() {
+        Some("text") => FramePayload::Text(TextData::new(
+            field("text")?
+                .as_str()
+                .ok_or_else(|| invalid("frame.text must be a string"))?,
+        )),
+        Some("byte") => {
+            let bytes: Vec<u8> =
+                serde_json::from_value(field("bytes")?.clone()).map_err(invalid)?;
+            let media_type = object
+                .get("mediaType")
+                .and_then(serde_json::Value::as_str)
+                .map(MediaType::new)
+                .transpose()
+                .map_err(invalid)?;
+            FramePayload::Byte(ByteData::new(FrameBuffer::from_vec(bytes), media_type))
+        }
+        Some("audio") => {
+            let bytes: Vec<u8> =
+                serde_json::from_value(field("bytes")?.clone()).map_err(invalid)?;
+            let rate = u32::try_from(
+                field("sampleRateHz")?
+                    .as_u64()
+                    .ok_or_else(|| invalid("frame.sampleRateHz must be an integer"))?,
+            )
+            .map_err(invalid)?;
+            let channels = u16::try_from(
+                field("channels")?
+                    .as_u64()
+                    .ok_or_else(|| invalid("frame.channels must be an integer"))?,
+            )
+            .map_err(invalid)?;
+            let samples = field("samplesPerChannel")?
+                .as_u64()
+                .ok_or_else(|| invalid("frame.samplesPerChannel must be an integer"))?;
+            let format = sample_format(
+                field("format")?
+                    .as_str()
+                    .ok_or_else(|| invalid("frame.format must be a string"))?,
+            )?;
+            let layout = if object
+                .get("planar")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
+                AudioLayout::Planar
+            } else {
+                AudioLayout::Interleaved
+            };
+            FramePayload::Audio(
+                AudioData::new(
+                    FrameBuffer::from_vec(bytes),
+                    rate,
+                    channels,
+                    format,
+                    layout,
+                    samples,
+                )
+                .map_err(invalid)?,
+            )
+        }
+        Some("video") => {
+            if object
+                .get("pixelFormat")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("rgba8")
+                != "rgba8"
+            {
+                return Err(invalid(
+                    "only rgba8 video is supported by the TypeScript graph wire protocol",
+                ));
+            }
+            let bytes: Vec<u8> =
+                serde_json::from_value(field("bytes")?.clone()).map_err(invalid)?;
+            let width = u32::try_from(
+                field("width")?
+                    .as_u64()
+                    .ok_or_else(|| invalid("frame.width must be an integer"))?,
+            )
+            .map_err(invalid)?;
+            let height = u32::try_from(
+                field("height")?
+                    .as_u64()
+                    .ok_or_else(|| invalid("frame.height must be an integer"))?,
+            )
+            .map_err(invalid)?;
+            let stride = usize::try_from(
+                field("stride")?
+                    .as_u64()
+                    .ok_or_else(|| invalid("frame.stride must be an integer"))?,
+            )
+            .map_err(invalid)?;
+            FramePayload::Video(
+                VideoData::rgba8(FrameBuffer::from_vec(bytes), width, height, stride)
+                    .map_err(invalid)?,
+            )
+        }
+        _ => return Err(invalid("frame.kind must be text, byte, audio, or video")),
+    };
+    checked_frame(payload, sequence)
 }
 
 pub(crate) fn owned_signal_frame(

@@ -181,6 +181,60 @@ pub type FactoryCreateCallback =
 
 #[repr(C)]
 #[derive(Clone, Copy)]
+pub struct NamedFrameView {
+    pub output_port: StrView,
+    pub frame: FrameView,
+}
+
+pub type GraphProcessCallback = extern "C" fn(
+    *mut c_void,
+    *const FrameView,
+    StrView,
+    *mut *const NamedFrameView,
+    *mut usize,
+    *mut ErrorOutput,
+) -> Status;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GraphNodeVtable {
+    pub abi_version: u32,
+    pub struct_size: u32,
+    pub user_data: *mut c_void,
+    pub on_prepare: Option<SimpleCallback>,
+    pub on_process: Option<GraphProcessCallback>,
+    pub on_signal: Option<SignalCallback>,
+    pub on_finish: Option<SimpleCallback>,
+    pub on_abort: Option<AbortCallback>,
+    pub destroy: Option<DestroyCallback>,
+    pub capabilities: u64,
+    pub reserved: [u64; 3],
+}
+
+unsafe impl Send for GraphNodeVtable {}
+unsafe impl Sync for GraphNodeVtable {}
+
+pub type GraphFactoryCreateCallback =
+    extern "C" fn(*mut c_void, StrView, StrView, *mut GraphNodeVtable, *mut ErrorOutput) -> Status;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct MultimodalNodeFactoryView {
+    pub abi_version: u32,
+    pub struct_size: u32,
+    pub node_type: StrView,
+    pub version: StrView,
+    pub kind: u32,
+    pub reserved0: u32,
+    pub ports_json: StrView,
+    pub config_schema_json: StrView,
+    pub user_data: *mut c_void,
+    pub create: Option<GraphFactoryCreateCallback>,
+    pub reserved: [u64; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
 pub struct NodeVtable {
     pub abi_version: u32,
     pub struct_size: u32,

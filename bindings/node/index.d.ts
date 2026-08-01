@@ -54,9 +54,28 @@ export interface GraphNodeFactoryOptions {
   version?:string
   inputPort?:string
   outputPort?:string
+  kind?:'source'|'transform'|'sink'
+  ports?:GraphPortDescriptor[]
+  configSchema?:unknown
 }
-export class GraphNodeFactory<Input = NodeValue, Output = Input> {
-  constructor(nodeType:string,implementation:TransformImplementation<Input,Output>,options?:GraphNodeFactoryOptions)
+export type GraphFrameType = 'audio'|'video'|'text'|'byte'
+export interface GraphPortDescriptor { name:string; direction:'input'|'output'; frameType:GraphFrameType }
+export interface GraphNodeContext { nodeId:string; inputPort?:string; config:Record<string,unknown> }
+export type GraphTextFrame = { kind:'text'; sequence:number; text:string }
+export type GraphByteFrame = { kind:'byte'; sequence:number; bytes:number[]; mediaType?:string }
+export type GraphAudioFrame = { kind:'audio'; sequence:number; bytes:number[]; sampleRateHz:number; channels:number; format:'u8'|'i16le'|'i24le'|'i32le'|'f32le'|'f64le'; planar:boolean; samplesPerChannel:number }
+export type GraphVideoFrame = { kind:'video'; sequence:number; pixelFormat:'rgba8'; bytes:number[]; width:number; height:number; stride:number }
+export type GraphFrame = GraphTextFrame|GraphByteFrame|GraphAudioFrame|GraphVideoFrame
+export type GraphEmissions = GraphFrame|Record<string,GraphFrame|GraphFrame[]>|null|undefined
+export interface GraphNodeImplementation<Input = GraphFrame, Output = GraphEmissions> {
+  onPrepare?(frame:undefined, context:GraphNodeContext):unknown
+  onProcess(frame:Input, context:GraphNodeContext):Output
+  onSignal?(frame:unknown, context:GraphNodeContext):unknown
+  onFinish?(frame:undefined, context:GraphNodeContext):unknown
+  onAbort?(reason:unknown, context:GraphNodeContext):unknown
+}
+export class GraphNodeFactory<Input = GraphFrame, Output = GraphEmissions> {
+  constructor(nodeType:string,implementation:GraphNodeImplementation<Input,Output>,options?:GraphNodeFactoryOptions)
   readonly spec:{ nodeType:string; version:string; inputPort:string; outputPort:string }
 }
 export function runGraph(graphJson:string,factories:GraphNodeFactory[],options?:{ timeoutMs?:number }):Promise<number>

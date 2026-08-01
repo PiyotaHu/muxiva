@@ -7,12 +7,13 @@ use std::{
 
 use pyo3::{
     prelude::*,
-    types::{PyList, PyTuple},
+    types::{PyDict, PyList, PyTuple},
 };
 use voxa_core::{
     AbortCategory, AbortReason, AbortRootContext, AbortStage, ConfigMap, ForeignCommand,
-    ForeignCommandKind, ForeignCompletion, ForeignCompletionKind, ForeignCompletionOutcome,
-    ForeignDriverConfig, ForeignNodeDriver, ForeignOrdering, ForeignSubmitOutcome,
+    ForeignCommandKind, ForeignCompletion, ForeignCompletionEmission, ForeignCompletionKind,
+    ForeignCompletionOutcome, ForeignDriverConfig, ForeignNodeDriver, ForeignOrdering,
+    ForeignSubmitOutcome, PortName,
 };
 use voxa_types::Frame;
 
@@ -37,6 +38,7 @@ pub struct PythonNodeExecutionDomain {
     state: Mutex<DomainState>,
     pub(crate) call_timeout: Duration,
     shutdown_timeout: Duration,
+    graph_output_ports: Arc<Mutex<Option<Vec<PortName>>>>,
 }
 
 #[pymethods]
@@ -93,11 +95,13 @@ impl PythonNodeExecutionDomain {
         let driver = ForeignNodeDriver::new(config)
             .map_err(|e| binding_error("VOXA-PY-CONFIG", e.to_string()))?;
         let worker_driver = driver.clone();
+        let graph_output_ports = Arc::new(Mutex::new(None));
+        let worker_output_ports = Arc::clone(&graph_output_ports);
         let (done_tx, done) = mpsc::channel();
         let handle = thread::Builder::new()
             .name("voxa-python-node".into())
             .spawn(move || {
-                run_domain(worker_driver, node, call_timeout);
+                run_domain(worker_driver, node, call_timeout, worker_output_ports);
                 let _ = done_tx.send(());
             })
             .map_err(|e| binding_error("VOXA-PY-THREAD", e.to_string()))?;
@@ -112,6 +116,7 @@ impl PythonNodeExecutionDomain {
             }),
             call_timeout,
             shutdown_timeout,
+            graph_output_ports,
         })
     }
 
@@ -222,6 +227,15 @@ impl PythonNodeExecutionDomain {
 }
 
 impl PythonNodeExecutionDomain {
+    pub(crate) fn new_graph(node: Py<PyAny>, output_ports: Vec<PortName>) -> PyResult<Self> {
+        let domain = Self::new(node, 16, 16, 1, 10_000, 5_000, "strict", "in_process")?;
+        *domain
+            .graph_output_ports
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(output_ports);
+        Ok(domain)
+    }
+
     pub(crate) fn submit_blocking(
         &self,
         kind: ForeignCommandKind,
@@ -407,7 +421,12 @@ impl Drop for PythonNodeExecutionDomain {
     }
 }
 
-fn run_domain(driver: ForeignNodeDriver, node: Py<PyAny>, call_timeout: Duration) {
+fn run_domain(
+    driver: ForeignNodeDriver,
+    node: Py<PyAny>,
+    call_timeout: Duration,
+    graph_output_ports: Arc<Mutex<Option<Vec<PortName>>>>,
+) {
     let loop_object = match Python::with_gil(|py| -> PyResult<Py<PyAny>> {
         let asyncio = py.import("asyncio")?;
         let event_loop = asyncio.call_method0("new_event_loop")?;
@@ -431,10 +450,26 @@ fn run_domain(driver: ForeignNodeDriver, node: Py<PyAny>, call_timeout: Duration
             }
             kind => {
                 let result = Python::with_gil(|py| {
-                    invoke(py, node.bind(py), loop_object.bind(py), kind, call_timeout)
+                    let ports = graph_output_ports
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .clone();
+                    invoke(
+                        py,
+                        node.bind(py),
+                        loop_object.bind(py),
+                        kind,
+                        call_timeout,
+                        ports.as_deref(),
+                    )
                 });
                 let completion = match result {
-                    Ok(frames) => ForeignCompletion::success(sequence, frames, [], []),
+                    Ok(InvocationOutput::Frames(frames)) => {
+                        ForeignCompletion::success(sequence, frames, [], [])
+                    }
+                    Ok(InvocationOutput::Emissions(emissions)) => {
+                        ForeignCompletion::success_with_emissions(sequence, emissions, [], [])
+                    }
                     Err(error) => ForeignCompletion::failure(sequence, python_error(error)),
                 };
                 let outcome = driver.try_complete(completion);
@@ -459,39 +494,65 @@ fn invoke(
     event_loop: &Bound<'_, PyAny>,
     kind: ForeignCommandKind,
     timeout: Duration,
-) -> PyResult<Vec<Frame>> {
-    let (method, argument): (&str, Option<Py<PyAny>>) = match kind {
-        ForeignCommandKind::Prepare => ("on_prepare", None),
-        ForeignCommandKind::Process(frame) => ("on_process", Some(frame_to_python(py, frame)?)),
+    graph_output_ports: Option<&[PortName]>,
+) -> PyResult<InvocationOutput> {
+    let (method, arguments): (&str, Vec<Py<PyAny>>) = match kind {
+        ForeignCommandKind::Prepare => ("on_prepare", Vec::new()),
+        ForeignCommandKind::ProcessSource => ("on_process", Vec::new()),
+        ForeignCommandKind::Process(frame) => ("on_process", vec![frame_to_python(py, frame)?]),
+        ForeignCommandKind::ProcessOnPort { frame, input_port } => {
+            let port = input_port.as_str().into_pyobject(py)?.unbind().into_any();
+            ("on_process", vec![frame_to_python(py, frame)?, port])
+        }
         ForeignCommandKind::Signal(signal) => (
             "on_signal",
-            Some(frame_to_python(py, Frame::Signal(signal))?),
+            vec![frame_to_python(py, Frame::Signal(signal))?],
         ),
         ForeignCommandKind::Event(event) => {
-            ("on_event", Some(frame_to_python(py, Frame::Event(event))?))
+            ("on_event", vec![frame_to_python(py, Frame::Event(event))?])
         }
-        ForeignCommandKind::Finish => ("on_finish", None),
+        ForeignCommandKind::Finish => ("on_finish", Vec::new()),
         ForeignCommandKind::Abort(reason) => (
             "on_abort",
-            Some(
-                reason
-                    .root()
-                    .message()
-                    .into_pyobject(py)?
-                    .unbind()
-                    .into_any(),
-            ),
+            vec![reason
+                .root()
+                .message()
+                .into_pyobject(py)?
+                .unbind()
+                .into_any()],
         ),
-        ForeignCommandKind::Cancel | ForeignCommandKind::Stop => return Ok(Vec::new()),
+        ForeignCommandKind::Cancel | ForeignCommandKind::Stop => {
+            return Ok(match graph_output_ports {
+                Some(_) => InvocationOutput::Emissions(Vec::new()),
+                None => InvocationOutput::Frames(Vec::new()),
+            })
+        }
     };
     if !node.hasattr(method)? {
-        return Ok(Vec::new());
+        return Ok(match graph_output_ports {
+            Some(_) => InvocationOutput::Emissions(Vec::new()),
+            None => InvocationOutput::Frames(Vec::new()),
+        });
     }
-    let result = match argument {
-        Some(value) => node.call_method1(method, (value,))?,
-        None => node.call_method0(method)?,
-    };
     let inspect = py.import("inspect")?;
+    let arguments = if arguments.len() == 2 {
+        let callback = node.getattr(method)?;
+        let parameters = inspect
+            .call_method1("signature", (callback,))?
+            .getattr("parameters")?;
+        if parameters.len()? < 2 {
+            arguments.into_iter().take(1).collect()
+        } else {
+            arguments
+        }
+    } else {
+        arguments
+    };
+    let result = if arguments.is_empty() {
+        node.call_method0(method)?
+    } else {
+        node.call_method(method, PyTuple::new(py, arguments)?, None)?
+    };
     let result = if inspect
         .call_method1("isawaitable", (&result,))?
         .is_truthy()?
@@ -502,7 +563,57 @@ fn invoke(
     } else {
         result
     };
-    normalize_output(&result)
+    match graph_output_ports {
+        Some(output_ports) => {
+            normalize_graph_output(&result, output_ports).map(InvocationOutput::Emissions)
+        }
+        None => normalize_output(&result).map(InvocationOutput::Frames),
+    }
+}
+
+enum InvocationOutput {
+    Frames(Vec<Frame>),
+    Emissions(Vec<ForeignCompletionEmission>),
+}
+
+fn normalize_graph_output(
+    value: &Bound<'_, PyAny>,
+    output_ports: &[PortName],
+) -> PyResult<Vec<ForeignCompletionEmission>> {
+    if value.is_none() {
+        return Ok(Vec::new());
+    }
+    if let Ok(mapping) = value.downcast::<PyDict>() {
+        let mut emissions = Vec::new();
+        for (key, value) in mapping.iter() {
+            let name = key.extract::<String>()?;
+            let port = output_ports
+                .iter()
+                .find(|port| port.as_str() == name)
+                .ok_or_else(|| {
+                    binding_error(
+                        "VOXA-PY-GRAPH-OUTPUT-PORT",
+                        format!("callback emitted undeclared output port {name}"),
+                    )
+                })?;
+            emissions.extend(
+                normalize_output(&value)?
+                    .into_iter()
+                    .map(|frame| ForeignCompletionEmission::new(port.clone(), frame)),
+            );
+        }
+        return Ok(emissions);
+    }
+    if output_ports.len() != 1 {
+        return Err(binding_error(
+            "VOXA-PY-GRAPH-OUTPUT",
+            "a callback with zero or multiple output ports must return a dict of port names to frames",
+        ));
+    }
+    Ok(normalize_output(value)?
+        .into_iter()
+        .map(|frame| ForeignCompletionEmission::new(output_ports[0].clone(), frame))
+        .collect())
 }
 
 fn normalize_output(value: &Bound<'_, PyAny>) -> PyResult<Vec<Frame>> {

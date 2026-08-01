@@ -63,3 +63,35 @@ test('TypeScript factory executes inside registered Graph v1 runtime', async () 
   }, { version: '2.0.0' })
   assert.equal(await runGraph(graph, [factory, incompatible]), 3)
 })
+
+test('schema-driven TypeScript source emits audio, video, bytes and multiple named outputs', async () => {
+  const types = ['audio', 'video', 'byte', 'text']
+  const source = new GraphNodeFactory('example.typescript.multimodal-source', {
+    onProcess(_frame, context) {
+      if (context.config.label !== 'demo') throw new Error('node_config was not delivered')
+      return {
+        audio_out: { kind: 'audio', sequence: 7, bytes: [0, 0], sampleRateHz: 8000, channels: 1, format: 'i16le', planar: false, samplesPerChannel: 1 },
+        video_out: { kind: 'video', sequence: 7, pixelFormat: 'rgba8', bytes: [1, 2, 3, 4], width: 1, height: 1, stride: 4 },
+        byte_out: { kind: 'byte', sequence: 7, bytes: [1, 2, 3], mediaType: 'application/octet-stream' },
+        text_out: [{ kind: 'text', sequence: 7, text: 'one' }, { kind: 'text', sequence: 8, text: 'two' }],
+      }
+    },
+  }, {
+    kind: 'source',
+    ports: types.map((frameType) => ({ name: `${frameType}_out`, direction: 'output', frameType })),
+    configSchema: { type: 'object', properties: { label: { type: 'string' } } },
+  })
+  const sinks = types.map((frameType) => new GraphNodeFactory(`example.typescript.${frameType}-sink`, {
+    onProcess(frame, context) {
+      if (context.inputPort !== 'in' || frame.kind === undefined) throw new Error('typed sink input missing')
+    },
+  }, { kind: 'sink', ports: [{ name: 'in', direction: 'input', frameType }] }))
+  const nodes = [{ id: 'source', node_type: 'example.typescript.multimodal-source', language: 'typescript', factory_version: '1.0.0', node_config: { label: 'demo' } }]
+  const edges = []
+  for (const frameType of types) {
+    nodes.push({ id: `${frameType}-sink`, node_type: `example.typescript.${frameType}-sink`, language: 'typescript', factory_version: '1.0.0', node_config: {} })
+    edges.push({ id: frameType, from: { node_id: 'source', port: `${frameType}_out` }, to: { node_id: `${frameType}-sink`, port: 'in' }, frame_type: frameType, queue_policy: { capacity: 8, overflow: 'block' } })
+  }
+  const graph = JSON.stringify({ version: 'voxa.graph/v1', graph_id: 'typescript-multimodal', nodes, edges })
+  assert.equal(await runGraph(graph, [source, ...sinks]), 5)
+})

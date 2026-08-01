@@ -46,10 +46,10 @@ pub use flow::{
     InputPortKey, OverflowDecision, TrustedVadDecision,
 };
 pub use foreign::{
-    ForeignCommand, ForeignCommandKind, ForeignCompletion, ForeignCompletionKind,
-    ForeignCompletionOutcome, ForeignDriverConfig, ForeignDriverError, ForeignDriverSnapshot,
-    ForeignFullPolicy, ForeignNodeDriver, ForeignOrdering, ForeignShutdownDiagnostics,
-    ForeignSubmitOutcome,
+    ForeignCommand, ForeignCommandKind, ForeignCompletion, ForeignCompletionEmission,
+    ForeignCompletionKind, ForeignCompletionOutcome, ForeignDriverConfig, ForeignDriverError,
+    ForeignDriverSnapshot, ForeignFullPolicy, ForeignNodeDriver, ForeignOrdering,
+    ForeignShutdownDiagnostics, ForeignSubmitOutcome,
 };
 pub use foreign_registry::{
     ForeignNodeCallOutput, ForeignNodeEmission, ForeignNodeFactoryAdapter, ForeignNodeInstance,

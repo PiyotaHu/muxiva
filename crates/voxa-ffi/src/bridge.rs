@@ -20,9 +20,12 @@ use voxa_core::{
 use voxa_types::{EdgeId, ErrorCategory, Frame, FrameType, NodeId, SignalFrame, VoxaError};
 
 use crate::{
-    abi::{self, AbortReasonView, ErrorOutput, FactoryCreateCallback, NodeVtable, StrView},
+    abi::{
+        self, AbortReasonView, ErrorOutput, FactoryCreateCallback, GraphFactoryCreateCallback,
+        GraphNodeVtable, NodeVtable, StrView,
+    },
     error::FfiError,
-    frame::{borrowed_text_view, copy_frame},
+    frame::{borrowed_frame_view, borrowed_text_view, copy_frame},
 };
 
 #[derive(Clone)]
@@ -33,6 +36,17 @@ pub struct CppFactorySpec {
     pub output_port: PortName,
     pub user_data: usize,
     pub create: FactoryCreateCallback,
+}
+
+#[derive(Clone)]
+pub struct CppMultimodalFactorySpec {
+    pub node_type: NodeTypeName,
+    pub version: NodeFactoryVersion,
+    pub kind: NodeKind,
+    pub ports: Vec<(PortName, PortDirection, FrameType)>,
+    pub config_schema: ConfigSchema,
+    pub user_data: usize,
+    pub create: GraphFactoryCreateCallback,
 }
 
 struct CppProvider {
@@ -206,6 +220,245 @@ fn cpp_registration(spec: CppFactorySpec) -> NodeRegistration {
             spec,
         }))),
     )
+}
+
+struct CppMultimodalProvider {
+    spec: CppMultimodalFactorySpec,
+}
+
+impl ForeignNodeProvider for CppMultimodalProvider {
+    fn create(
+        &self,
+        node_id: &NodeId,
+        config: &ConfigMap,
+    ) -> Result<Box<dyn ForeignNodeInstance>, NodeFactoryError> {
+        let mut table = GraphNodeVtable {
+            abi_version: abi::ABI_VERSION,
+            struct_size: u32::try_from(mem::size_of::<GraphNodeVtable>()).unwrap_or(u32::MAX),
+            user_data: std::ptr::null_mut(),
+            on_prepare: None,
+            on_process: None,
+            on_signal: None,
+            on_finish: None,
+            on_abort: None,
+            destroy: None,
+            capabilities: 0,
+            reserved: [0; 3],
+        };
+        let mut output = empty_error();
+        let config_json = voxa_graph_json::config_map_to_json(config).to_string();
+        let status = (self.spec.create)(
+            self.spec.user_data as *mut c_void,
+            str_view(node_id.as_str()),
+            str_view(&config_json),
+            &mut table,
+            &mut output,
+        );
+        if status != abi::OK {
+            return Err(factory_callback_error(&output));
+        }
+        let expected = u32::try_from(mem::size_of::<GraphNodeVtable>()).unwrap_or(u32::MAX);
+        if table.abi_version != abi::ABI_VERSION
+            || table.struct_size != expected
+            || table.reserved != [0; 3]
+            || table.on_process.is_none()
+        {
+            if let Some(destroy) = table.destroy {
+                destroy(table.user_data);
+            }
+            return Err(NodeFactoryError::new(
+                "VOXA-FFI-GRAPH-VTABLE",
+                "C++ multimodal factory returned an invalid Graph Node vtable",
+            ));
+        }
+        Ok(Box::new(CppMultimodalInstance { table }))
+    }
+}
+
+struct CppMultimodalInstance {
+    table: GraphNodeVtable,
+}
+
+impl ForeignNodeInstance for CppMultimodalInstance {
+    fn on_prepare(&mut self) -> voxa_types::Result<ForeignNodeCallOutput> {
+        if let Some(callback) = self.table.on_prepare {
+            call_simple(callback, self.table.user_data)?;
+        }
+        Ok(ForeignNodeCallOutput::default())
+    }
+
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        input_port: Option<&PortName>,
+    ) -> voxa_types::Result<ForeignNodeCallOutput> {
+        let callback = self.table.on_process.expect("validated graph callback");
+        let input_view = input
+            .as_ref()
+            .map(borrowed_frame_view)
+            .transpose()
+            .map_err(to_voxa_error)?;
+        let input_pointer = input_view
+            .as_ref()
+            .map_or(std::ptr::null(), std::ptr::from_ref);
+        let port_view = input_port.map_or(
+            StrView {
+                data: std::ptr::null(),
+                len: 0,
+            },
+            |port| str_view(port.as_str()),
+        );
+        let mut outputs = std::ptr::null();
+        let mut output_count = 0_usize;
+        let mut error = empty_error();
+        let status = callback(
+            self.table.user_data,
+            input_pointer,
+            port_view,
+            &mut outputs,
+            &mut output_count,
+            &mut error,
+        );
+        if status != abi::OK {
+            return Err(callback_error(status, &error));
+        }
+        if output_count > 4_096 || (output_count != 0 && !abi::aligned(outputs)) {
+            return Err(foreign_error(
+                abi::INVALID_ARGUMENT,
+                "VOXA-FFI-GRAPH-OUTPUT",
+                "C++ callback returned an invalid emission array",
+            ));
+        }
+        let views = if output_count == 0 {
+            &[]
+        } else {
+            // SAFETY: callback contract keeps output_count entries borrowed until callback return;
+            // the entries are copied synchronously before the next foreign call.
+            unsafe { std::slice::from_raw_parts(outputs, output_count) }
+        };
+        let mut emissions = Vec::with_capacity(views.len());
+        for view in views {
+            let name = abi::copy_str(view.output_port, true).map_err(|_| {
+                to_voxa_error(FfiError::validation(
+                    "VOXA-FFI-GRAPH-OUTPUT",
+                    "invalid output port",
+                ))
+            })?;
+            let port = PortName::new(name).map_err(|_| {
+                foreign_error(
+                    abi::INVALID_ARGUMENT,
+                    "VOXA-FFI-GRAPH-OUTPUT",
+                    "invalid output port",
+                )
+            })?;
+            let frame = copy_frame(&view.frame)
+                .and_then(|frame| frame.to_rust())
+                .map_err(to_voxa_error)?;
+            emissions.push(voxa_core::ForeignNodeEmission::new(port, frame));
+        }
+        Ok(ForeignNodeCallOutput::new(emissions, []))
+    }
+
+    fn on_finish(&mut self) -> voxa_types::Result<ForeignNodeCallOutput> {
+        if let Some(callback) = self.table.on_finish {
+            call_simple(callback, self.table.user_data)?;
+        }
+        Ok(ForeignNodeCallOutput::default())
+    }
+
+    fn on_abort(&mut self, reason: &AbortReason) {
+        let Some(callback) = self.table.on_abort else {
+            return;
+        };
+        let view = AbortReasonView {
+            abi_version: abi::ABI_VERSION,
+            struct_size: u32::try_from(mem::size_of::<AbortReasonView>()).unwrap_or(u32::MAX),
+            category: reason.category() as i32,
+            stage: reason.stage() as i32,
+            code: str_view(reason.root().code()),
+            message: str_view(reason.root().message()),
+        };
+        callback(self.table.user_data, &view);
+    }
+}
+
+impl Drop for CppMultimodalInstance {
+    fn drop(&mut self) {
+        if let Some(destroy) = self.table.destroy {
+            destroy(self.table.user_data);
+        }
+    }
+}
+
+pub fn run_registered_multimodal_graph(
+    graph_json: &str,
+    specs: &[CppMultimodalFactorySpec],
+    timeout: Duration,
+) -> Result<usize, FfiError> {
+    let mut registry = voxa_graph_json::builtin_registry();
+    for spec in specs {
+        let template = NodeId::new(format!("template-{}", spec.node_type.as_str()))
+            .expect("valid template ID");
+        let descriptor = NodeDescriptor::new(
+            template.clone(),
+            spec.node_type.clone(),
+            spec.kind,
+            spec.ports
+                .iter()
+                .map(|(name, direction, frame_type)| {
+                    PortDescriptor::new(template.clone(), name.clone(), *direction, *frame_type)
+                })
+                .collect::<Vec<_>>(),
+            spec.config_schema.clone(),
+            LifecycleCapabilities::new(true, true, true, true),
+        );
+        registry
+            .register(NodeRegistration::new(
+                NodeLanguage::Cpp,
+                descriptor,
+                spec.version.clone(),
+                Arc::new(ForeignNodeFactoryAdapter::new(Arc::new(
+                    CppMultimodalProvider { spec: spec.clone() },
+                ))),
+            ))
+            .map_err(|_| {
+                FfiError::validation(
+                    "VOXA-FFI-GRAPH-REGISTRY",
+                    "invalid or duplicate C++ multimodal factory",
+                )
+            })?;
+    }
+    let document = voxa_graph_json::parse(graph_json)
+        .map_err(|_| FfiError::validation("VOXA-FFI-GRAPH-JSON", "Graph v1 parsing failed"))?;
+    let graph = voxa_graph_json::compile_with_registry(&document, &registry).map_err(|_| {
+        FfiError::validation("VOXA-FFI-GRAPH-COMPILE", "Graph v1 compilation failed")
+    })?;
+    let runtime = start_registered_runtime(
+        graph,
+        &registry,
+        EdgePolicies::new(),
+        RuntimeOptions::default(),
+    )
+    .map_err(|_| FfiError::internal("VOXA-FFI-GRAPH-START", "Graph runtime startup failed"))?;
+    match runtime.wait(timeout) {
+        Ok(summary) => Ok(summary.worker_total()),
+        Err(RuntimeWaitError::Aborted(_)) => Err(FfiError {
+            status: abi::EXTERNAL,
+            category: 4,
+            code: "VOXA-FFI-GRAPH-ABORT",
+            message: "Graph runtime aborted",
+        }),
+        Err(RuntimeWaitError::Timeout(_)) => {
+            runtime.stop();
+            let _ = runtime.wait(Duration::from_secs(5));
+            Err(FfiError {
+                status: abi::TIMEOUT,
+                category: 3,
+                code: "VOXA-FFI-GRAPH-TIMEOUT",
+                message: "Graph runtime exceeded its deadline",
+            })
+        }
+    }
 }
 
 fn validate_node_vtable(table: &NodeVtable) -> Result<(), NodeFactoryError> {

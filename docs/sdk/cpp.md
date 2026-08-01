@@ -47,5 +47,12 @@ for a fresh Node vtable during materialization, and transfers lifecycle
 ownership to the Rust concurrent Runtime. C++ exceptions remain contained by
 the existing `noexcept` trampolines.
 
-D04 v1 supports text Transform factories with empty `node_config`. The Factory
-objects must remain alive for the synchronous `run_graph` call.
+For multimodal nodes, derive from `voxa::MultimodalGraphNode`, return
+`std::vector<voxa::GraphEmission>`, and register a
+`voxa::MultimodalGraphNodeFactory` with a kind, ports JSON, and config schema.
+`Runtime::run_multimodal_graph` uses the additive multimodal ABI, so the D04
+text ABI remains layout-compatible. A null input identifies a Source call, an
+empty emission vector implements a Sink, and named emissions implement
+multi-port output. Audio PCM, packed RGBA8 video, text, and bytes are copied
+and validated by Rust before queue admission. See
+`cpp/examples/multimodal_graph.cpp`.

@@ -1,9 +1,10 @@
 use std::mem;
 
 use voxa_types::{
-    ClockDomain, ClockDomainId, ClockKind, Extensions, Frame, FrameHeader as RustHeader, FrameId,
-    FramePayload as RustPayload, FrameType, Lineage, Metadata, SequenceId, StreamId, TextData,
-    Timestamp, TraceId,
+    AudioData, AudioLayout, ByteData, ClockDomain, ClockDomainId, ClockKind, Extensions, Frame,
+    FrameBuffer, FrameHeader as RustHeader, FrameId, FramePayload as RustPayload, FrameType,
+    Lineage, MediaType, Metadata, PcmSampleFormat, PixelFormat, SequenceId, StreamId, TextData,
+    Timestamp, TraceId, VideoData, VideoLayout,
 };
 
 use crate::{
@@ -31,10 +32,26 @@ pub struct OwnedHeader {
 
 #[derive(Clone)]
 pub enum OwnedPayload {
-    Audio(Vec<u8>),
-    Video(Vec<u8>),
+    Audio {
+        bytes: Vec<u8>,
+        sample_rate_hz: u32,
+        channels: u16,
+        sample_format: u16,
+        layout: u32,
+        samples_per_channel: u64,
+    },
+    Video {
+        bytes: Vec<u8>,
+        width: u32,
+        height: u32,
+        pixel_format: u32,
+        plane_count: u32,
+    },
     Text(String),
-    Byte(Vec<u8>),
+    Byte {
+        bytes: Vec<u8>,
+        media_type: Option<String>,
+    },
     Signal(Vec<u8>),
     Event(Vec<u8>),
 }
@@ -94,7 +111,14 @@ pub fn copy_frame(pointer: *const FrameView) -> Result<OwnedFrame, FfiError> {
             if expected != value.bytes.len {
                 return Err(invalid("audio byte length does not match its shape"));
             }
-            OwnedPayload::Audio(abi::copy_bytes(value.bytes).map_err(invalid)?)
+            OwnedPayload::Audio {
+                bytes: abi::copy_bytes(value.bytes).map_err(invalid)?,
+                sample_rate_hz: value.sample_rate_hz,
+                channels: value.channels,
+                sample_format: value.sample_format,
+                layout: value.layout,
+                samples_per_channel: value.samples_per_channel,
+            }
         }
         2 => {
             // SAFETY: the discriminating frame_type selects the initialized C union member.
@@ -111,7 +135,13 @@ pub fn copy_frame(pointer: *const FrameView) -> Result<OwnedFrame, FfiError> {
                 .width
                 .checked_mul(value.height)
                 .ok_or_else(|| invalid("video dimension arithmetic overflow"))?;
-            OwnedPayload::Video(abi::copy_bytes(value.bytes).map_err(invalid)?)
+            OwnedPayload::Video {
+                bytes: abi::copy_bytes(value.bytes).map_err(invalid)?,
+                width: value.width,
+                height: value.height,
+                pixel_format: value.pixel_format,
+                plane_count: value.plane_count,
+            }
         }
         3 => {
             // SAFETY: the discriminating frame_type selects the initialized C union member.
@@ -128,8 +158,11 @@ pub fn copy_frame(pointer: *const FrameView) -> Result<OwnedFrame, FfiError> {
             if value.reserved != [0; 2] {
                 return Err(invalid("byte reserved fields must be zero"));
             }
-            let _media_type = abi::copy_utf8(value.media_type).map_err(invalid)?;
-            OwnedPayload::Byte(abi::copy_bytes(value.bytes).map_err(invalid)?)
+            let media_type = abi::copy_utf8(value.media_type).map_err(invalid)?;
+            OwnedPayload::Byte {
+                bytes: abi::copy_bytes(value.bytes).map_err(invalid)?,
+                media_type: (!media_type.is_empty()).then_some(media_type),
+            }
         }
         5 => {
             // SAFETY: the discriminating frame_type selects the initialized C union member.
@@ -159,9 +192,9 @@ impl OwnedFrame {
     pub fn copied_payload_len(&self) -> usize {
         debug_assert_eq!(self.header.frame_type, self.payload.frame_type());
         match &self.payload {
-            OwnedPayload::Audio(bytes)
-            | OwnedPayload::Video(bytes)
-            | OwnedPayload::Byte(bytes)
+            OwnedPayload::Audio { bytes, .. }
+            | OwnedPayload::Video { bytes, .. }
+            | OwnedPayload::Byte { bytes, .. }
             | OwnedPayload::Signal(bytes)
             | OwnedPayload::Event(bytes) => bytes.len(),
             OwnedPayload::Text(text) => text.len(),
@@ -199,15 +232,128 @@ impl OwnedFrame {
         Frame::new(header, RustPayload::Text(TextData::new(text.clone())))
             .map_err(|_| invalid("invalid text frame"))
     }
+
+    pub fn to_rust(&self) -> Result<Frame, FfiError> {
+        let clock = match self.header.clock_kind {
+            1 => ClockKind::Monotonic,
+            2 => ClockKind::MediaRelative,
+            3 => ClockKind::WallClock,
+            _ => return Err(invalid("unknown clock kind")),
+        };
+        let frame_type = match self.header.frame_type {
+            1 => FrameType::Audio,
+            2 => FrameType::Video,
+            3 => FrameType::Text,
+            4 => FrameType::Byte,
+            _ => {
+                return Err(invalid(
+                    "graph port payload must be audio, video, text, or byte",
+                ))
+            }
+        };
+        let header = RustHeader::new(
+            FrameId::new(self.header.frame_id.clone()).map_err(|_| invalid("invalid frame ID"))?,
+            Timestamp::from_nanos(self.header.timestamp_ns),
+            ClockDomain::new(
+                ClockDomainId::new(self.header.clock_domain_id.clone())
+                    .map_err(|_| invalid("invalid clock domain ID"))?,
+                clock,
+            ),
+            SequenceId::new(self.header.sequence_id),
+            StreamId::new(self.header.stream_id.clone())
+                .map_err(|_| invalid("invalid stream ID"))?,
+            TraceId::new(self.header.trace_id.clone()).map_err(|_| invalid("invalid trace ID"))?,
+            frame_type,
+            Metadata::empty(),
+            Extensions::empty(),
+            Lineage::empty(),
+        )
+        .map_err(|_| invalid("invalid frame header"))?;
+        let payload = match &self.payload {
+            OwnedPayload::Text(text) => RustPayload::Text(TextData::new(text.clone())),
+            OwnedPayload::Byte { bytes, media_type } => RustPayload::Byte(ByteData::new(
+                FrameBuffer::from_vec(bytes.clone()),
+                media_type
+                    .as_deref()
+                    .map(MediaType::new)
+                    .transpose()
+                    .map_err(|_| invalid("invalid media type"))?,
+            )),
+            OwnedPayload::Audio {
+                bytes,
+                sample_rate_hz,
+                channels,
+                sample_format,
+                layout,
+                samples_per_channel,
+            } => {
+                let format = match sample_format {
+                    1 => PcmSampleFormat::U8,
+                    2 => PcmSampleFormat::I16Le,
+                    3 => PcmSampleFormat::I24Le,
+                    4 => PcmSampleFormat::I32Le,
+                    5 => PcmSampleFormat::F32Le,
+                    6 => PcmSampleFormat::F64Le,
+                    _ => return Err(invalid("invalid PCM format")),
+                };
+                let layout = match layout {
+                    1 => AudioLayout::Interleaved,
+                    2 => AudioLayout::Planar,
+                    _ => return Err(invalid("invalid audio layout")),
+                };
+                RustPayload::Audio(
+                    AudioData::new(
+                        FrameBuffer::from_vec(bytes.clone()),
+                        *sample_rate_hz,
+                        *channels,
+                        format,
+                        layout,
+                        *samples_per_channel,
+                    )
+                    .map_err(|_| invalid("invalid audio frame"))?,
+                )
+            }
+            OwnedPayload::Video {
+                bytes,
+                width,
+                height,
+                pixel_format,
+                plane_count,
+            } => {
+                if *pixel_format != 1 || *plane_count != 1 {
+                    return Err(invalid("C++ graph video currently requires packed RGBA8"));
+                }
+                let stride = bytes
+                    .len()
+                    .checked_div(
+                        usize::try_from(*height).map_err(|_| invalid("invalid video height"))?,
+                    )
+                    .ok_or_else(|| invalid("invalid video stride"))?;
+                RustPayload::Video(
+                    VideoData::rgba8(
+                        FrameBuffer::from_vec(bytes.clone()),
+                        *width,
+                        *height,
+                        stride,
+                    )
+                    .map_err(|_| invalid("invalid RGBA8 video"))?,
+                )
+            }
+            OwnedPayload::Signal(_) | OwnedPayload::Event(_) => {
+                return Err(invalid("control frames cannot use graph data ports"))
+            }
+        };
+        Frame::new(header, payload).map_err(|_| invalid("invalid frame"))
+    }
 }
 
 impl OwnedPayload {
     fn frame_type(&self) -> u32 {
         match self {
-            Self::Audio(_) => 1,
-            Self::Video(_) => 2,
+            Self::Audio { .. } => 1,
+            Self::Video { .. } => 2,
             Self::Text(_) => 3,
-            Self::Byte(_) => 4,
+            Self::Byte { .. } => 4,
             Self::Signal(_) => 5,
             Self::Event(_) => 6,
         }
@@ -241,6 +387,109 @@ pub fn borrowed_text_view(frame: &Frame) -> Result<FrameView, FfiError> {
             },
             reserved: [0; 2],
         },
+    };
+    Ok(view)
+}
+
+pub fn borrowed_frame_view(frame: &Frame) -> Result<FrameView, FfiError> {
+    if frame.as_text().is_some() {
+        return borrowed_text_view(frame);
+    }
+    let header = frame.header();
+    let mut view = abi::empty_frame_view();
+    view.header.frame_type = match frame.frame_type() {
+        FrameType::Audio => 1,
+        FrameType::Video => 2,
+        FrameType::Text => 3,
+        FrameType::Byte => 4,
+        FrameType::Signal | FrameType::Event => {
+            return Err(invalid("control frames cannot use graph data ports"))
+        }
+    };
+    view.header.clock_kind = match header.clock_domain().kind() {
+        ClockKind::Monotonic => 1,
+        ClockKind::MediaRelative => 2,
+        ClockKind::WallClock => 3,
+    };
+    view.header.timestamp_ns = header.timestamp().as_nanos();
+    view.header.sequence_id = header.sequence_id().get();
+    view.header.frame_id = str_view(header.frame_id().as_str());
+    view.header.clock_domain_id = str_view(header.clock_domain().id().as_str());
+    view.header.stream_id = str_view(header.stream_id().as_str());
+    view.header.trace_id = str_view(header.trace_id().as_str());
+    view.payload = match frame {
+        Frame::Audio(frame) => {
+            let data = frame.data();
+            abi::FramePayload {
+                audio: abi::AudioPayload {
+                    sample_rate_hz: data.sample_rate_hz(),
+                    channels: data.channels(),
+                    sample_format: match data.sample_format() {
+                        PcmSampleFormat::U8 => 1,
+                        PcmSampleFormat::I16Le => 2,
+                        PcmSampleFormat::I24Le => 3,
+                        PcmSampleFormat::I32Le => 4,
+                        PcmSampleFormat::F32Le => 5,
+                        PcmSampleFormat::F64Le => 6,
+                    },
+                    layout: if data.layout() == AudioLayout::Planar {
+                        2
+                    } else {
+                        1
+                    },
+                    reserved0: 0,
+                    samples_per_channel: data.samples_per_channel(),
+                    bytes: abi::BytesView {
+                        data: data.buffer().as_slice().as_ptr(),
+                        len: data.buffer().len(),
+                    },
+                    reserved: [0; 2],
+                },
+            }
+        }
+        Frame::Video(frame) => {
+            let data = frame.data();
+            if data.pixel_format() != PixelFormat::Rgba8 {
+                return Err(invalid("C++ graph video currently requires packed RGBA8"));
+            }
+            let VideoLayout::Rgba8 { .. } = data.layout() else {
+                unreachable!()
+            };
+            abi::FramePayload {
+                video: abi::VideoPayload {
+                    width: data.width(),
+                    height: data.height(),
+                    pixel_format: 1,
+                    plane_count: 1,
+                    bytes: abi::BytesView {
+                        data: data.buffer().as_slice().as_ptr(),
+                        len: data.buffer().len(),
+                    },
+                    reserved: [0; 4],
+                },
+            }
+        }
+        Frame::Byte(frame) => {
+            let data = frame.data();
+            abi::FramePayload {
+                bytes: abi::BytePayload {
+                    bytes: abi::BytesView {
+                        data: data.buffer().as_slice().as_ptr(),
+                        len: data.buffer().len(),
+                    },
+                    media_type: data.media_type().map_or(
+                        StrView {
+                            data: std::ptr::null(),
+                            len: 0,
+                        },
+                        |value| str_view(value.as_str()),
+                    ),
+                    reserved: [0; 2],
+                },
+            }
+        }
+        Frame::Text(_) => unreachable!(),
+        Frame::Signal(_) | Frame::Event(_) => unreachable!(),
     };
     Ok(view)
 }

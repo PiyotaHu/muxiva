@@ -16,7 +16,7 @@ use std::{
 
 use voxa_types::{EventFrame, Frame, SignalFrame, Value};
 
-use crate::{AbortReason, StopToken};
+use crate::{AbortReason, PortName, StopToken};
 
 const MAX_MAILBOX_ITEMS: usize = 65_536;
 const MAX_MAILBOX_BYTES: usize = 64 * 1024 * 1024;
@@ -109,7 +109,14 @@ pub struct ForeignCommand {
 #[derive(Clone, Eq, PartialEq)]
 pub enum ForeignCommandKind {
     Prepare,
+    /// Runs one source production call without an input frame.
+    ProcessSource,
     Process(Frame),
+    /// Processes a frame while preserving the graph input port identity.
+    ProcessOnPort {
+        frame: Frame,
+        input_port: PortName,
+    },
     Signal(SignalFrame),
     Event(EventFrame),
     Finish,
@@ -140,11 +147,33 @@ pub struct ForeignCompletion {
     kind: ForeignCompletionKind,
 }
 
+/// One named frame emission returned by a foreign execution domain.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ForeignCompletionEmission {
+    output_port: PortName,
+    frame: Frame,
+}
+
+impl ForeignCompletionEmission {
+    pub fn new(output_port: PortName, frame: Frame) -> Self {
+        Self { output_port, frame }
+    }
+
+    pub fn output_port(&self) -> &PortName {
+        &self.output_port
+    }
+
+    pub const fn frame(&self) -> &Frame {
+        &self.frame
+    }
+}
+
 /// A successful, cancelled, or structured-failure foreign completion.
 #[derive(Clone, Eq, PartialEq)]
 pub enum ForeignCompletionKind {
     Success {
         frames: Box<[Frame]>,
+        emissions: Box<[ForeignCompletionEmission]>,
         signals: Box<[SignalFrame]>,
         events: Box<[EventFrame]>,
     },
@@ -162,6 +191,24 @@ impl ForeignCompletion {
             sequence,
             kind: ForeignCompletionKind::Success {
                 frames: frames.into(),
+                emissions: Box::new([]),
+                signals: signals.into(),
+                events: events.into(),
+            },
+        }
+    }
+
+    pub fn success_with_emissions(
+        sequence: u64,
+        emissions: impl Into<Box<[ForeignCompletionEmission]>>,
+        signals: impl Into<Box<[SignalFrame]>>,
+        events: impl Into<Box<[EventFrame]>>,
+    ) -> Self {
+        Self {
+            sequence,
+            kind: ForeignCompletionKind::Success {
+                frames: Box::new([]),
+                emissions: emissions.into(),
                 signals: signals.into(),
                 events: events.into(),
             },
@@ -712,11 +759,14 @@ fn fits(current: usize, addition: usize, capacity: usize) -> bool {
 
 fn command_bytes(command: &ForeignCommand) -> usize {
     match command.kind() {
-        ForeignCommandKind::Process(frame) => frame_bytes(frame),
+        ForeignCommandKind::Process(frame) | ForeignCommandKind::ProcessOnPort { frame, .. } => {
+            frame_bytes(frame)
+        }
         ForeignCommandKind::Signal(frame) => signal_bytes(frame),
         ForeignCommandKind::Event(frame) => event_bytes(frame),
         ForeignCommandKind::Abort(reason) => reason_bytes(reason),
         ForeignCommandKind::Prepare
+        | ForeignCommandKind::ProcessSource
         | ForeignCommandKind::Finish
         | ForeignCommandKind::Cancel
         | ForeignCommandKind::Stop => 1,
@@ -727,11 +777,17 @@ fn completion_bytes(completion: &ForeignCompletion) -> usize {
     match completion.kind() {
         ForeignCompletionKind::Success {
             frames,
+            emissions,
             signals,
             events,
         } => frames
             .iter()
             .map(frame_bytes)
+            .chain(
+                emissions
+                    .iter()
+                    .map(|emission| frame_bytes(emission.frame())),
+            )
             .chain(signals.iter().map(signal_bytes))
             .chain(events.iter().map(event_bytes))
             .fold(1_usize, usize::saturating_add),
