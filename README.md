@@ -86,8 +86,23 @@ knowledge of the Rust workspace.
 voxa demo
 ```
 
-The demo prints the Graph DSL, typed topology, runtime lifecycle, and the real
-uppercase result with `[VOXA]`-branded output.
+The default demo executes an eight-node voice-agent graph with two real fan-outs
+and one stateful join. A typed PCM frame flows concurrently through mock
+streaming ASR and voice-activity detection, merges into LLM context, then fans
+out to a live transcript and mock neural TTS. Providers are clearly labeled
+`mock`; graph compilation, immutable Frames, bounded queues, concurrent
+scheduling, fork/join routing, and lifecycle execution are real Voxa Runtime.
+
+```text
+microphone(audio)
+  ├─> streaming-asr(text) ─────┐
+  └─> voice-activity(event) ───┴─> context-fusion -> reasoning-llm
+                                                       ├─> live-transcript
+                                                       └─> neural-tts(audio) -> speaker
+```
+
+For the intentionally small installation smoke test, run
+`voxa demo --scenario text`.
 
 ### Create, validate, and run a graph
 
@@ -123,37 +138,10 @@ These scripts build real installable packages, run integration tests, and execut
 
 ## Graph v1 example
 
-```json
-{
-  "version": "voxa.graph/v1",
-  "graph_id": "text-uppercase",
-  "nodes": [
-    {
-      "id": "source",
-      "node_type": "builtin.text_source",
-      "language": "rust",
-      "factory_version": "1.0.0",
-      "node_config": { "text": "hello" }
-    },
-    {
-      "id": "upper",
-      "node_type": "builtin.uppercase",
-      "language": "rust",
-      "factory_version": "1.0.0",
-      "node_config": {}
-    }
-  ],
-  "edges": [
-    {
-      "id": "source-upper",
-      "from": { "node_id": "source", "port": "text_out" },
-      "to": { "node_id": "upper", "port": "text_in" },
-      "frame_type": "text",
-      "queue_policy": { "capacity": 32, "overflow": "block" }
-    }
-  ]
-}
-```
+The complete executable voice graph is
+[`examples/graphs/mock-realtime-voice.v1.json`](examples/graphs/mock-realtime-voice.v1.json).
+Run it directly with `voxa run examples/graphs/mock-realtime-voice.v1.json`, or
+open it visually with `voxa studio examples/graphs/mock-realtime-voice.v1.json`.
 
 Graph JSON is declarative configuration. It cannot contain executable code, dynamic scripts, credentials, or arbitrary remote resources. See the [Graph v1 reference](docs/graph-v1-reference.md).
 

@@ -11,7 +11,11 @@ use voxa_core::{
 };
 use voxa_types::{EdgeId, FiniteF64, FrameType, GraphId, NodeId, Value, ValueMap};
 
-pub use builtins::{BUILTIN_FACTORY_VERSION, TEXT_SINK, TEXT_SOURCE, UPPERCASE};
+pub use builtins::{
+    BUILTIN_FACTORY_VERSION, DEMO_CONTEXT_FUSION, DEMO_MICROPHONE, DEMO_NEURAL_TTS,
+    DEMO_REASONING_LLM, DEMO_SPEAKER, DEMO_STREAMING_ASR, DEMO_VOICE_ACTIVITY, STDOUT_TEXT_SINK,
+    TEXT_SINK, TEXT_SOURCE, UPPERCASE,
+};
 
 pub const GRAPH_V1_SCHEMA: &str = include_str!("../schema/graph-v1.schema.json");
 pub const MAX_DOCUMENT_BYTES: usize = 1 << 20;

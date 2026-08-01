@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::{
     fs,
     net::{IpAddr, TcpListener},
@@ -27,6 +27,7 @@ const STARTER: &str = r#"{
     {"id":"upper-sink","from":{"node_id":"upper","port":"text_out"},"to":{"node_id":"sink","port":"text_in"},"frame_type":"text","queue_policy":{"capacity":32,"overflow":"block"}}
   ]
 }"#;
+const VOICE_DEMO: &str = include_str!("../../../examples/graphs/mock-realtime-voice.v1.json");
 
 #[derive(Parser)]
 #[command(
@@ -41,8 +42,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run the built-in text graph without requiring a project checkout.
-    Demo,
+    /// Run a self-contained product demo without requiring a project checkout.
+    Demo {
+        /// Demo journey: voice shows fork/join multimodal execution; text is a basic smoke test.
+        #[arg(long, value_enum, default_value_t = DemoScenario::Voice)]
+        scenario: DemoScenario,
+    },
     Init {
         #[arg(default_value = "voxa.graph.json")]
         path: PathBuf,
@@ -70,6 +75,12 @@ enum Command {
         #[arg(long)]
         no_open: bool,
     },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum DemoScenario {
+    Voice,
+    Text,
 }
 
 fn load(path: &Path, registry: &NodeRegistry) -> Result<voxa_core::GraphDefinition, String> {
@@ -137,10 +148,19 @@ fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(
     run_graph(graph, &registry, timeout, shutdown_timeout, timeout_ms)
 }
 
-fn demo() -> Result<(), String> {
+fn demo(scenario: DemoScenario) -> Result<(), String> {
     let registry = voxa_graph_json::builtin_registry();
-    let graph = load_source(STARTER, &registry)?;
-    println!("[VOXA][INFO][demo.started] name=text-uppercase");
+    let (name, source) = match scenario {
+        DemoScenario::Voice => ("realtime-voice-agent", VOICE_DEMO),
+        DemoScenario::Text => ("text-uppercase", STARTER),
+    };
+    let graph = load_source(source, &registry)?;
+    println!("[VOXA][INFO][demo.started] name={name}");
+    if matches!(scenario, DemoScenario::Voice) {
+        println!(
+            "[VOXA][INFO][demo.mode] providers=mock network=disabled purpose=architecture-preview"
+        );
+    }
     run_graph(
         graph,
         &registry,
@@ -258,7 +278,7 @@ fn open_browser(url: &str) -> Result<(), String> {
 
 fn main() {
     let result = match Cli::parse().command {
-        Command::Demo => demo(),
+        Command::Demo { scenario } => demo(scenario),
         Command::Init { path } => init(&path),
         Command::Validate { graph } => {
             validate(&graph).map(|_| println!("[VOXA][INFO][graph.valid] path={}", graph.display()))

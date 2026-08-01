@@ -85,8 +85,21 @@ voxa --version
 voxa demo
 ```
 
-Demo 会打印 Graph DSL、类型化拓扑、Runtime 生命周期和真实的大写转换结果，
-所有产品输出都带有 `[VOXA]` 标识。
+默认 Demo 会真实执行一张包含 8 个节点、两处分叉和一个有状态汇合的语音
+Agent 图。类型化 PCM Frame 会并发进入 Mock 流式 ASR 与语音活动检测，汇合为
+LLM 上下文后，再并行输出实时字幕并进入 Mock 神经 TTS。Provider 会明确标记为
+`mock`；图编译、不可变 Frame、有界队列、并发调度、分叉/汇合路由和生命周期
+执行均为真实 Voxa Runtime。
+
+```text
+microphone(audio)
+  ├─> streaming-asr(text) ─────┐
+  └─> voice-activity(event) ───┴─> context-fusion -> reasoning-llm
+                                                       ├─> live-transcript
+                                                       └─> neural-tts(audio) -> speaker
+```
+
+仅用于确认安装成功的极简 Smoke Test 可使用 `voxa demo --scenario text`。
 
 ### 创建、校验并运行 Graph
 
@@ -121,37 +134,10 @@ Studio 会打开内置的 Graph v1 可视化编辑器，提供 Node Palette、SV
 
 ## Graph v1 示例
 
-```json
-{
-  "version": "voxa.graph/v1",
-  "graph_id": "text-uppercase",
-  "nodes": [
-    {
-      "id": "source",
-      "node_type": "builtin.text_source",
-      "language": "rust",
-      "factory_version": "1.0.0",
-      "node_config": { "text": "hello" }
-    },
-    {
-      "id": "upper",
-      "node_type": "builtin.uppercase",
-      "language": "rust",
-      "factory_version": "1.0.0",
-      "node_config": {}
-    }
-  ],
-  "edges": [
-    {
-      "id": "source-upper",
-      "from": { "node_id": "source", "port": "text_out" },
-      "to": { "node_id": "upper", "port": "text_in" },
-      "frame_type": "text",
-      "queue_policy": { "capacity": 32, "overflow": "block" }
-    }
-  ]
-}
-```
+完整且可执行的语音图位于
+[`examples/graphs/mock-realtime-voice.v1.json`](examples/graphs/mock-realtime-voice.v1.json)。
+可直接运行 `voxa run examples/graphs/mock-realtime-voice.v1.json`，或通过
+`voxa studio examples/graphs/mock-realtime-voice.v1.json` 打开可视化编辑器。
 
 Graph JSON 只用于声明式配置，不能包含可执行代码、动态脚本、凭据或任意远程资源。详见 [Graph v1 参考](docs/graph-v1-reference.md)。
 

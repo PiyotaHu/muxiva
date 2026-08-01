@@ -1,1 +1,24 @@
-{"version":"voxa.graph/v1","graph_id":"mock-realtime-voice","nodes":[{"id":"source","node_type":"builtin.text_source","language":"rust","factory_version":"1.0.0","node_config":{"text":"mock voice transcript"}},{"id":"asr","node_type":"builtin.uppercase","language":"rust","factory_version":"1.0.0","node_config":{}},{"id":"sink","node_type":"builtin.text_sink","language":"rust","factory_version":"1.0.0","node_config":{}}],"edges":[{"id":"source-asr","from":{"node_id":"source","port":"text_out"},"to":{"node_id":"asr","port":"text_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}},{"id":"asr-sink","from":{"node_id":"asr","port":"text_out"},"to":{"node_id":"sink","port":"text_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}}]}
+{
+  "version": "voxa.graph/v1",
+  "graph_id": "realtime-voice-agent",
+  "nodes": [
+    {"id":"microphone","node_type":"builtin.demo.microphone","language":"rust","factory_version":"1.0.0","node_config":{}},
+    {"id":"streaming-asr","node_type":"builtin.demo.streaming_asr","language":"rust","factory_version":"1.0.0","node_config":{}},
+    {"id":"voice-activity","node_type":"builtin.demo.voice_activity","language":"rust","factory_version":"1.0.0","node_config":{}},
+    {"id":"context-fusion","node_type":"builtin.demo.context_fusion","language":"rust","factory_version":"1.0.0","node_config":{}},
+    {"id":"reasoning-llm","node_type":"builtin.demo.reasoning_llm","language":"rust","factory_version":"1.0.0","node_config":{}},
+    {"id":"live-transcript","node_type":"builtin.stdout_text_sink","language":"rust","factory_version":"1.0.0","node_config":{}},
+    {"id":"neural-tts","node_type":"builtin.demo.neural_tts","language":"rust","factory_version":"1.0.0","node_config":{}},
+    {"id":"speaker","node_type":"builtin.demo.speaker","language":"rust","factory_version":"1.0.0","node_config":{}}
+  ],
+  "edges": [
+    {"id":"audio-to-asr","from":{"node_id":"microphone","port":"audio_out"},"to":{"node_id":"streaming-asr","port":"audio_in"},"frame_type":"audio","queue_policy":{"capacity":8,"overflow":"block"}},
+    {"id":"audio-to-vad","from":{"node_id":"microphone","port":"audio_out"},"to":{"node_id":"voice-activity","port":"audio_in"},"frame_type":"audio","queue_policy":{"capacity":8,"overflow":"block"}},
+    {"id":"transcript-to-fusion","from":{"node_id":"streaming-asr","port":"transcript_out"},"to":{"node_id":"context-fusion","port":"transcript_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}},
+    {"id":"speech-to-fusion","from":{"node_id":"voice-activity","port":"speech_out"},"to":{"node_id":"context-fusion","port":"speech_in"},"frame_type":"event","queue_policy":{"capacity":8,"overflow":"block"}},
+    {"id":"fusion-to-llm","from":{"node_id":"context-fusion","port":"context_out"},"to":{"node_id":"reasoning-llm","port":"context_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}},
+    {"id":"response-to-transcript","from":{"node_id":"reasoning-llm","port":"response_out"},"to":{"node_id":"live-transcript","port":"text_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}},
+    {"id":"response-to-tts","from":{"node_id":"reasoning-llm","port":"response_out"},"to":{"node_id":"neural-tts","port":"text_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}},
+    {"id":"tts-to-speaker","from":{"node_id":"neural-tts","port":"audio_out"},"to":{"node_id":"speaker","port":"audio_in"},"frame_type":"audio","queue_policy":{"capacity":8,"overflow":"block"}}
+  ]
+}

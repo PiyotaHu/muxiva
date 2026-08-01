@@ -305,7 +305,8 @@ impl GraphDefinition {
     ///
     /// This presentation is intentionally not a machine-readable replacement
     /// for JSON Graph v1. It exposes node roles, typed ports, Edges, queue
-    /// policies, and topological order without including payloads or secrets.
+    /// policies, and the actual branch/join structure without including
+    /// payloads or secrets.
     pub fn render_human_dsl(&self) -> String {
         let mut output = String::new();
         writeln!(output, "graph \"{}\" {{", self.graph_id)
@@ -348,13 +349,35 @@ impl GraphDefinition {
             .expect("writing to a String cannot fail");
         }
         output.push_str("}\n");
-        let topology = self
-            .topological_order
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(" -> ");
-        writeln!(output, "topology: {topology}").expect("writing to a String cannot fail");
+        output.push_str("flow:\n");
+        for node_id in &self.topological_order {
+            let outgoing = self
+                .edges
+                .iter()
+                .filter(|edge| edge.from_node_id() == node_id)
+                .collect::<Vec<_>>();
+            if outgoing.is_empty() {
+                continue;
+            }
+            writeln!(output, "  {node_id}").expect("writing to a String cannot fail");
+            for (index, edge) in outgoing.iter().enumerate() {
+                let connector = if index + 1 == outgoing.len() {
+                    "└─"
+                } else {
+                    "├─"
+                };
+                writeln!(
+                    output,
+                    "    {connector}{}.{} [{}] -> {}.{}",
+                    edge.from_node_id(),
+                    edge.from_output_port(),
+                    frame_type_name(edge.frame_type()),
+                    edge.to_node_id(),
+                    edge.to_input_port()
+                )
+                .expect("writing to a String cannot fail");
+            }
+        }
         output
     }
 }
