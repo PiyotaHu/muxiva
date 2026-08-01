@@ -76,13 +76,16 @@ int main() {
   assert((voxa_capabilities_v1() & VOXA_CAP_RETAIN_RELEASE) == 0);
   voxa::Error error;
   voxa::Runtime runtime(error);
-  voxa::Node node(new Uppercase(), error);
+  auto node = voxa::Node::make<Uppercase>(error);
   std::string input = "Hello, Voxa";
   auto frame = text_frame(input);
   std::string output;
   assert(runtime.run_text(node, frame, output, error) == VOXA_STATUS_OK);
   input.assign(input.size(), 'x');
   assert(output == "HELLO, VOXA");
+  voxa::TextFrame owned_input("Owned C++ frame", 2);
+  assert(runtime.run_text(node, owned_input, output, error) == VOXA_STATUS_OK);
+  assert(output == "OWNED C++ FRAME");
   assert(node.close() == VOXA_STATUS_OK);
   assert(node.close() == VOXA_STATUS_CLOSED);
   voxa::Node throwing(new Throwing(), error);

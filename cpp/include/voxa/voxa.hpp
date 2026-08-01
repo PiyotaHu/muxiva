@@ -7,6 +7,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 namespace voxa {
@@ -26,6 +27,47 @@ class Error final {
 
  private:
   voxa_error_v1 value_{};
+};
+
+/// An owned text frame whose borrowed ABI view remains valid until mutation or
+/// destruction of this object.
+class TextFrame final {
+ public:
+  explicit TextFrame(std::string text, uint64_t sequence = 0,
+                     int64_t timestamp_ns = 0)
+      : text_(std::move(text)), sequence_(sequence), timestamp_ns_(timestamp_ns) {}
+
+  const std::string& text() const noexcept { return text_; }
+  uint64_t sequence() const noexcept { return sequence_; }
+
+  voxa_frame_view_v1 view() const noexcept {
+    voxa_frame_view_v1 frame{};
+    frame.header.abi_version = VOXA_ABI_VERSION_V1;
+    frame.header.struct_size = sizeof(frame.header);
+    frame.header.frame_type = VOXA_FRAME_TEXT;
+    frame.header.clock_kind = VOXA_CLOCK_MONOTONIC;
+    frame.header.timestamp_ns = timestamp_ns_;
+    frame.header.sequence_id = sequence_;
+    frame.header.frame_id = borrow(frame_id_);
+    frame.header.clock_domain_id = borrow(clock_domain_);
+    frame.header.stream_id = borrow(stream_id_);
+    frame.header.trace_id = borrow(trace_id_);
+    frame.payload.text.text = borrow(text_);
+    return frame;
+  }
+
+ private:
+  static voxa_str_v1 borrow(const std::string& value) noexcept {
+    return {value.data(), value.size()};
+  }
+
+  std::string text_;
+  uint64_t sequence_;
+  int64_t timestamp_ns_;
+  std::string frame_id_ = "cpp-input";
+  std::string clock_domain_ = "cpp.monotonic";
+  std::string stream_id_ = "cpp";
+  std::string trace_id_ = "cpp-trace";
 };
 
 class TransformNode {
@@ -139,6 +181,12 @@ class Node final {
     return *this;
   }
   ~Node() noexcept { close(); }
+  template <typename T, typename... Args>
+  static Node make(Error& error, Args&&... args) {
+    static_assert(std::is_base_of<TransformNode, T>::value,
+                  "T must derive from voxa::TransformNode");
+    return Node(new T(std::forward<Args>(args)...), error);
+  }
   voxa_status_v1 close() noexcept {
     if (!open_) return VOXA_STATUS_CLOSED;
     const auto status = voxa_node_release_v1(handle_);
@@ -179,6 +227,11 @@ class Runtime final {
         handle_, node.get(), &input, bytes, sizeof(bytes), &length, error.out());
     if (status == VOXA_STATUS_OK) output.assign(bytes, length);
     return status;
+  }
+  voxa_status_v1 run_text(const Node& node, const TextFrame& input,
+                          std::string& output, Error& error) const {
+    const auto borrowed = input.view();
+    return run_text(node, borrowed, output, error);
   }
 
  private:

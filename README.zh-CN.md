@@ -2,7 +2,7 @@
 
 > 一个以 Rust 为核心的实时多模态 Agent Runtime，让 Rust、C++、Python 与 TypeScript 共享同一套图、生命周期和安全边界。
 
-[English](README.md) · [架构设计](docs/design/01-product-and-technical-contract.md) · [Graph v1](docs/graph-v1-reference.md) · [测试体系](docs/testing/README.md)
+[English](README.md) · [架构设计](docs/design/01-product-and-technical-contract.md) · [多语言 SDK](docs/sdk/README.md) · [Graph v1](docs/graph-v1-reference.md) · [测试体系](docs/testing/README.md)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -33,7 +33,7 @@ Voxa 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部
 | Frame、图模型、同步/并发 Runtime | 可用 | 静态 DAG，端口与 Frame 类型精确匹配 |
 | 背压与实时流控 | 可用 | 有界队列、音频合帧、Managed Stream |
 | Signal、EventBus、turn 控制 | 可用 | 相邻 Signal 与隔离的全局 Event |
-| C ABI 与 C++ SDK | 可用 | 版本化 ABI、Copy 所有权、RAII Wrapper |
+| C ABI 与 C++ SDK | 可用 | 版本化 ABI、RAII Wrapper、可安装 CMake 包；当前为单 Node 文本 Runner |
 | Mock RTC Adapter | 可用 | 确定性故障和回调安全关闭；不含真实 RTC SDK |
 | Python/PyO3 包 | 实验性 | 独立线程和 asyncio loop；明确拒绝 `isolated_process` |
 | Node-API 包 | 实验性 | 独立 Worker；明确拒绝返回 Promise 的 Transform |
@@ -62,7 +62,7 @@ ASR、LLM、TTS、Transport 和 Codec 不属于 Runtime Core，它们应该作�
 ### 环境要求
 
 - [`rust-toolchain.toml`](rust-toolchain.toml) 固定的 Rust stable 工具链
-- 执行 Native SDK 检查所需的 C11/C++17 编译器
+- 执行 Native SDK 检查所需的 C11/C++17 编译器与 CMake 3.20+
 - 可选：CPython 3.13 与 maturin，用于 Python Binding
 - 可选：Node.js 22 与 pnpm，用于 Node-API Binding
 
@@ -92,14 +92,15 @@ cargo run -p voxa-cli -- studio examples/graphs/text-uppercase.v1.json --no-open
 
 Studio 默认只监听 `127.0.0.1`，并生成本地访问 Token。监听非 loopback 地址时必须显式设置 `--host`，终端会输出安全警告。
 
-### 构建语言 Binding
+### 构建并测试多语言 SDK
 
 ```bash
 ./scripts/check-python.sh
 ./scripts/check-node.sh
+./scripts/check-ffi.sh
 ```
 
-脚本会构建可真实导入的包并执行集成测试，需要对应的本地工具链和依赖缓存。
+脚本会构建可真实安装的包、执行集成测试，并运行独立的 Python、TypeScript 与 C++ 消费者示例。安装与 Node 开发方式参见[多语言 SDK 指南](docs/sdk/README.md)。
 
 ## Graph v1 示例
 
@@ -151,7 +152,7 @@ voxa/
 │   └── voxa-testkit/     # 确定性测试 Harness
 ├── bindings/node/        # @voxa/core 包
 ├── cpp/                  # C/C++ Header、示例、Mock RTC
-├── examples/graphs/      # Graph v1 示例
+├── examples/             # Rust、Graph、Python、TypeScript 与 C++ 示例
 ├── fuzz/                 # Fuzz Target
 ├── docs/                 # 设计、测试与预发布报告
 └── scripts/              # 可复现质量门禁
@@ -175,6 +176,7 @@ voxa/
 ./scripts/check-rtc-asan.sh
 ./scripts/check-python.sh
 ./scripts/check-node.sh
+./scripts/check-cpp-consumer.sh
 ./scripts/check-bench.sh
 ```
 

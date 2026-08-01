@@ -1,0 +1,25 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+find_library(VOXA_FFI_LIBRARY
+  NAMES voxa_ffi
+  PATHS "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_LIBDIR@"
+  NO_DEFAULT_PATH
+  REQUIRED)
+
+if(NOT TARGET Voxa::ffi)
+  add_library(Voxa::ffi SHARED IMPORTED)
+  set_target_properties(Voxa::ffi PROPERTIES
+    IMPORTED_LOCATION "${VOXA_FFI_LIBRARY}")
+endif()
+
+if(NOT TARGET Voxa::cpp)
+  add_library(Voxa::cpp INTERFACE IMPORTED)
+  set_target_properties(Voxa::cpp PROPERTIES
+    INTERFACE_COMPILE_FEATURES cxx_std_17
+    INTERFACE_INCLUDE_DIRECTORIES "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_INCLUDEDIR@"
+    INTERFACE_LINK_LIBRARIES Voxa::ffi)
+endif()
+
+check_required_components(Voxa)

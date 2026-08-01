@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { TypeScriptTransformNode } from '../index.js'
+import { NodeRunner, TypeScriptTransformNode, defineTransformNode } from '../index.js'
 
 test('callbacks execute on a dedicated Worker and return synchronous output', async () => {
   const node = new TypeScriptTransformNode({ onProcess(frame) { return { text: frame.text.toUpperCase() } } })
@@ -28,3 +28,16 @@ test('admission is bounded and close discards late output', async () => {
   await assert.rejects(node.process({}), (error) => error.code === 'VOXA_NODE_CLOSED')
 })
 
+test('NodeRunner manages lifecycle and event callbacks', async () => {
+  const implementation = defineTransformNode({
+    onPrepare() { this.prefix = 'VOXA: ' },
+    onProcess(frame) { return { text: this.prefix + frame.text.toUpperCase() } },
+    onEvent(event) { if (!event.topic) throw new Error('missing topic') },
+  })
+  const runner = new NodeRunner(implementation)
+  assert.deepEqual(await runner.process({ text: 'ready' }), { text: 'VOXA: READY' })
+  await runner.event({ topic: 'agent.ready' })
+  assert.equal(await runner.finish(), true)
+  assert.equal(await runner.finish(), false)
+  assert.equal(await runner.close(), true)
+})

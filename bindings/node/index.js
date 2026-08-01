@@ -16,7 +16,14 @@ if (!binary) throw new Error(`@voxa/core has no native binary for ${platform}; r
 const native = require(fileURLToPath(binary))
 export const { Runtime, Session, EventBus, Frame, AudioFrame, VideoFrame, TextFrame, ByteFrame, SignalFrame, EventFrame, NodeExecutionDomain } = native
 
-const methodNames = ['onPrepare', 'onProcess', 'onSignal', 'onFinish', 'onAbort']
+const methodNames = ['onPrepare', 'onProcess', 'onSignal', 'onEvent', 'onFinish', 'onAbort']
+
+export function defineTransformNode(implementation) {
+  if (!implementation || typeof implementation !== 'object') throw new TypeError('implementation must be an object')
+  if (typeof implementation.onProcess !== 'function') throw new TypeError('implementation.onProcess must be a function')
+  return implementation
+}
+
 export class TypeScriptTransformNode {
   #worker; #capacity; #pending = new Map(); #closed = false; #next = 1
   constructor(implementation, { capacity = 16 } = {}) {
@@ -42,9 +49,24 @@ export class TypeScriptTransformNode {
   prepare() { return this.invoke('prepare') }
   process(frame) { return this.invoke('process', frame) }
   signal(frame) { return this.invoke('signal', frame) }
+  event(frame) { return this.invoke('event', frame) }
   finish() { return this.invoke('finish') }
   abort(reason) { return this.invoke('abort', reason) }
   async close() { if (this.#closed) return false; this.#closed = true; this.#failAll(Object.assign(new Error('node domain stopped'), { code: 'VOXA_NODE_STOPPED' })); this.#worker.postMessage({ type: 'close' }); await this.#worker.terminate(); return true }
   get outstanding() { return this.#pending.size }
   #failAll(error) { for (const pending of this.#pending.values()) pending.reject(error); this.#pending.clear() }
+}
+
+export class NodeRunner {
+  #domain; #started = false; #finished = false
+  constructor(implementation, options) { this.#domain = new TypeScriptTransformNode(defineTransformNode(implementation), options) }
+  get domain() { return this.#domain }
+  get outstanding() { return this.#domain.outstanding }
+  async start() { if (!this.#started) { await this.#domain.prepare(); this.#started = true } return this }
+  async process(frame) { await this.start(); if (this.#finished) throw new Error('NodeRunner is finished'); return this.#domain.process(frame) }
+  async signal(frame) { await this.start(); return this.#domain.signal(frame) }
+  async event(frame) { await this.start(); return this.#domain.event(frame) }
+  async finish() { if (this.#finished) return false; await this.start(); await this.#domain.finish(); this.#finished = true; return true }
+  abort(reason) { return this.#domain.abort(reason) }
+  close() { return this.#domain.close() }
 }

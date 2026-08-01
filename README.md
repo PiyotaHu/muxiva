@@ -2,7 +2,7 @@
 
 > A Rust-native, real-time multimodal agent runtime with one graph and lifecycle contract across Rust, C++, Python, and TypeScript.
 
-[简体中文](README.zh-CN.md) · [Architecture](docs/design/01-product-and-technical-contract.md) · [Graph v1](docs/graph-v1-reference.md) · [Testing](docs/testing/README.md)
+[简体中文](README.zh-CN.md) · [Architecture](docs/design/01-product-and-technical-contract.md) · [Language SDKs](docs/sdk/README.md) · [Graph v1](docs/graph-v1-reference.md) · [Testing](docs/testing/README.md)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -33,7 +33,7 @@ Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but
 | Frames, graph model, sync/concurrent runtime | Available | Static DAGs; exact port and frame types |
 | Backpressure and real-time flow control | Available | Bounded queues, audio merge, managed streams |
 | Signal, EventBus, turn control | Available | Adjacent signals and isolated global events |
-| C ABI and C++ SDK | Available | Versioned ABI, copy-owned frames, RAII wrappers |
+| C ABI and C++ SDK | Available | Versioned ABI, RAII wrappers, installable CMake package; focused text runner |
 | Mock RTC adapter | Available | Deterministic faults and callback-safe shutdown; no real RTC SDK |
 | Python/PyO3 package | Experimental | Dedicated thread and asyncio loop; `isolated_process` is rejected |
 | Node-API package | Experimental | Dedicated Worker; Promise-returning transforms are rejected |
@@ -62,7 +62,7 @@ The runtime never treats ASR, LLM, TTS, transport, or codec behavior as Core res
 ### Prerequisites
 
 - Rust stable, as pinned by [`rust-toolchain.toml`](rust-toolchain.toml)
-- A C11/C++17 compiler for the native SDK checks
+- A C11/C++17 compiler and CMake 3.20+ for the native SDK checks
 - Optional: CPython 3.13 with maturin for Python bindings
 - Optional: Node.js 22 and pnpm for Node-API bindings
 
@@ -92,14 +92,15 @@ cargo run -p voxa-cli -- studio examples/graphs/text-uppercase.v1.json --no-open
 
 Studio listens on `127.0.0.1` by default and generates a local access token. Binding a non-loopback address requires an explicit `--host` and prints a security warning.
 
-### Build the language bindings
+### Build and test the language SDKs
 
 ```bash
 ./scripts/check-python.sh
 ./scripts/check-node.sh
+./scripts/check-ffi.sh
 ```
 
-These scripts build real importable packages and run their integration tests. They require the corresponding local toolchains and dependency caches.
+These scripts build real installable packages, run integration tests, and execute independent Python, TypeScript, and C++ consumer examples. See the [language SDK guide](docs/sdk/README.md) for installation and Node development examples.
 
 ## Graph v1 example
 
@@ -151,7 +152,7 @@ voxa/
 │   └── voxa-testkit/     # Deterministic test harnesses
 ├── bindings/node/        # @voxa/core package
 ├── cpp/                  # Public C/C++ headers, examples, Mock RTC
-├── examples/graphs/      # Graph v1 examples
+├── examples/             # Rust, graph, Python, TypeScript and C++ examples
 ├── fuzz/                 # Fuzz targets
 ├── docs/                 # Design, testing and pre-release reports
 └── scripts/              # Reproducible quality gates
@@ -175,6 +176,7 @@ Individual gates include:
 ./scripts/check-rtc-asan.sh
 ./scripts/check-python.sh
 ./scripts/check-node.sh
+./scripts/check-cpp-consumer.sh
 ./scripts/check-bench.sh
 ```
 

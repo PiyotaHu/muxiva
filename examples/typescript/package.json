@@ -1,0 +1,15 @@
+{
+  "name": "voxa-typescript-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/uppercase-node.js"
+  },
+  "dependencies": {
+    "@voxa/core": "file:../../bindings/node"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2"
+  }
+}

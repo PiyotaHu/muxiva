@@ -15,6 +15,8 @@ fi
 echo "Python binding interpreter: $python_bin"
 wheel_dir="$repo/target/stage9-wheels"
 unpack_dir="$repo/target/stage9-python-unpacked"
+consumer_dir="$repo/target/python-sdk-consumer"
+rm -rf "$wheel_dir" "$unpack_dir" "$consumer_dir"
 mkdir -p "$wheel_dir" "$unpack_dir"
 PYO3_PYTHON="$python_bin" "$python_bin" -m maturin build \
   --manifest-path "$repo/crates/voxa-python/Cargo.toml" \
@@ -25,3 +27,7 @@ rm -rf "$unpack_dir"
 mkdir -p "$unpack_dir"
 "$python_bin" -m zipfile -e "$wheel" "$unpack_dir"
 PYTHONPATH="$unpack_dir" "$python_bin" -m pytest -q "$repo/crates/voxa-python/tests"
+"$python_bin" -m venv "$consumer_dir"
+"$consumer_dir/bin/python" -m pip install --no-deps "$wheel"
+"$consumer_dir/bin/python" "$repo/examples/python/uppercase_node.py"
+"$consumer_dir/bin/python" "$repo/examples/python/async_node.py"

@@ -532,6 +532,23 @@ impl ForeignNodeDriver {
         true
     }
 
+    /// Seals an idle domain after its terminal lifecycle callback completed.
+    /// Returns false when work is still live or shutdown already started.
+    pub fn begin_graceful_stop(&self) -> bool {
+        let mut state = lock(&self.shared.state);
+        if state.stopping || !state.live.is_empty() {
+            return false;
+        }
+        state.accepting = false;
+        state.stopping = true;
+        self.shared.stop.cancel();
+        state
+            .controls
+            .push_back(ForeignCommand::new(u64::MAX, ForeignCommandKind::Stop));
+        self.shared.changed.notify_all();
+        true
+    }
+
     /// Returns the terminal reason exactly once for the runtime abort owner.
     pub fn take_abort_reason(&self) -> Option<AbortReason> {
         let mut state = lock(&self.shared.state);

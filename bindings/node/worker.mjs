@@ -14,7 +14,7 @@ function revive(name, source) {
 
 const implementation = Object.fromEntries(Object.entries(workerData.methods).map(([name, source]) => [name, revive(name, source)]))
 const dispatch = (command) => {
-  const method = { prepare: 'onPrepare', process: 'onProcess', signal: 'onSignal', finish: 'onFinish', abort: 'onAbort' }[command.kind]
+  const method = { prepare: 'onPrepare', process: 'onProcess', signal: 'onSignal', event: 'onEvent', finish: 'onFinish', abort: 'onAbort' }[command.kind]
   try {
     const payload = command.payloadJson === undefined ? undefined : JSON.parse(command.payloadJson)
     const value = implementation[method](payload)

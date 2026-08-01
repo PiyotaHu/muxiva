@@ -1,13 +1,35 @@
 # @voxa/core
 
-Voxa's Node-API package owns all frame bytes in Rust and executes each TypeScript
-transform in a dedicated `worker_threads` event loop. Native producers notify
-the worker through a bounded, non-blocking napi-rs `ThreadsafeFunction`.
+Build Voxa Nodes in TypeScript or JavaScript. Each Node runs in a dedicated
+`worker_threads` execution domain with bounded admission and structured errors.
 
-V1 lifecycle callbacks are synchronous. Returning any Promise or thenable is a
-structured `VOXA_NODE_PROMISE_UNSUPPORTED` failure. Queue-full and closed states
-are returned locally; shutdown seals admission before terminating the worker,
-and late output is ignored.
+Published releases will use:
 
-Use Node 22 LTS and run `pnpm install && pnpm check` in this directory.
+```bash
+pnpm add @voxa/core
+```
 
+```ts
+import { NodeRunner, defineTransformNode } from '@voxa/core'
+
+type Text = { kind: 'text'; text: string; sequence: number }
+
+const node = defineTransformNode<Text, Text>({
+  onProcess(frame) {
+    return { ...frame, text: frame.text.toUpperCase() }
+  },
+})
+
+const runner = new NodeRunner(node)
+console.log(await runner.process({ kind: 'text', text: 'hello', sequence: 1 }))
+await runner.finish()
+await runner.close()
+```
+
+V1 lifecycle callbacks are synchronous. Returning a Promise or thenable raises
+`VOXA_NODE_PROMISE_UNSUPPORTED`. Values crossing the Worker boundary must be
+structured-clone-compatible and JSON-serializable. Callback methods must be
+self-contained because their source is installed into the dedicated Worker.
+
+See the [TypeScript SDK guide](../../docs/sdk/typescript.md) and the independent
+[`examples/typescript`](../../examples/typescript) project.

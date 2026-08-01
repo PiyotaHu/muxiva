@@ -24,6 +24,7 @@ use crate::{
 
 struct DomainState {
     closed: bool,
+    terminal_callback_completed: bool,
     thread: Option<thread::JoinHandle<()>>,
     done: Option<mpsc::Receiver<()>>,
 }
@@ -105,6 +106,7 @@ impl PythonNodeExecutionDomain {
             sequence: Arc::new(Mutex::new(0)),
             state: Mutex::new(DomainState {
                 closed: false,
+                terminal_callback_completed: false,
                 thread: Some(handle),
                 done: Some(done),
             }),
@@ -147,7 +149,28 @@ impl PythonNodeExecutionDomain {
     }
 
     fn finish(&self, py: Python<'_>) -> PyResult<()> {
-        self.submit(py, ForeignCommandKind::Finish).map(|_| ())
+        self.submit(py, ForeignCommandKind::Finish)?;
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .terminal_callback_completed = true;
+        Ok(())
+    }
+
+    fn abort(&self, py: Python<'_>, reason: String) -> PyResult<()> {
+        self.submit(
+            py,
+            ForeignCommandKind::Abort(abort_reason(
+                "VOXA-PY-USER-ABORT",
+                reason,
+                AbortCategory::Cancelled,
+            )),
+        )?;
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .terminal_callback_completed = true;
+        Ok(())
     }
 
     fn close(&self, py: Python<'_>) -> PyResult<bool> {
@@ -156,11 +179,13 @@ impl PythonNodeExecutionDomain {
             return Ok(false);
         }
         state.closed = true;
-        self.driver.begin_stop(abort_reason(
-            "VOXA-PY-CANCELLED",
-            "Python domain closed",
-            AbortCategory::Cancelled,
-        ));
+        if !state.terminal_callback_completed || !self.driver.begin_graceful_stop() {
+            self.driver.begin_stop(abort_reason(
+                "VOXA-PY-CANCELLED",
+                "Python domain closed",
+                AbortCategory::Cancelled,
+            ));
+        }
         let done = state
             .done
             .take()

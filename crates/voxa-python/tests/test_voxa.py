@@ -78,3 +78,46 @@ def test_event_bus_only_enqueues_into_the_domain():
     assert node.thread != threading.get_ident()
     bus.close()
     domain.close()
+
+
+def test_high_level_node_runner_manages_lifecycle():
+    class Uppercase(voxa.TransformNode):
+        def __init__(self):
+            self.lifecycle = []
+
+        def on_prepare(self):
+            self.lifecycle.append("prepare")
+
+        def on_process(self, frame):
+            return voxa.TextFrame(frame.text.upper(), sequence=frame.sequence)
+
+        def on_finish(self):
+            self.lifecycle.append("finish")
+
+        def on_abort(self, reason):
+            self.lifecycle.append(("abort", reason))
+
+    node = Uppercase()
+    with voxa.NodeRunner(node) as runner:
+        [output] = runner.process(voxa.TextFrame("hello", sequence=7))
+        assert output.text == "HELLO"
+        assert output.sequence == 7
+
+    assert node.lifecycle == ["prepare", "finish"]
+    assert runner.is_closed
+
+
+def test_node_runner_aborts_on_exceptional_context_exit():
+    class Observed(voxa.TransformNode):
+        def __init__(self):
+            self.reason = None
+
+        def on_abort(self, reason):
+            self.reason = reason
+
+    node = Observed()
+    with pytest.raises(RuntimeError, match="stop now"):
+        with voxa.NodeRunner(node):
+            raise RuntimeError("stop now")
+
+    assert node.reason == "stop now"

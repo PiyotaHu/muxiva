@@ -106,6 +106,27 @@ fn default_driver_is_strict_and_single_admission() {
 }
 
 #[test]
+fn graceful_stop_seals_an_idle_domain_without_publishing_abort() {
+    let driver = ForeignNodeDriver::new(config(ForeignOrdering::Strict)).unwrap();
+    assert!(driver.begin_graceful_stop());
+    assert!(!driver.begin_graceful_stop());
+    assert!(driver.take_abort_reason().is_none());
+    assert!(matches!(
+        driver.try_receive().unwrap().kind(),
+        ForeignCommandKind::Stop
+    ));
+    assert_eq!(
+        driver
+            .try_submit(
+                ForeignCommand::new(1, ForeignCommandKind::Prepare),
+                Instant::now()
+            )
+            .unwrap(),
+        ForeignSubmitOutcome::Closed
+    );
+}
+
+#[test]
 fn strict_driver_releases_only_the_next_contiguous_completion() {
     let driver = ForeignNodeDriver::new(config(ForeignOrdering::Strict)).unwrap();
     let now = Instant::now();
