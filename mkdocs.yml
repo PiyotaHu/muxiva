@@ -58,8 +58,15 @@ plugins:
             Flagship voice demo: 旗舰语音 Demo
             Studio: Studio 可视化开发
             Core concepts: 核心概念
-            Runtime architecture: Runtime 架构
+            System overview: 系统全景
+            Rust Core model: Rust Core 模型
             Graph and typed ports: Graph 与类型化端口
+            Real-time flow and control: 实时流控与控制
+            Node extensibility: Node 扩展机制
+            Multi-language execution: 多语言执行
+            Provider architecture: Provider 架构
+            CLI, Studio, and web: CLI、Studio 与 Web
+            End-to-end voice path: 端到端语音链路
             Build Nodes: 开发 Node
             Node packages: Node Package
             Python: Python
@@ -107,8 +114,15 @@ nav:
       - Flagship voice demo: voice-demo.md
       - Studio: studio.md
   - Core concepts:
-      - Runtime architecture: concepts.md
+      - System overview: concepts.md
+      - Rust Core model: core-runtime.md
       - Graph and typed ports: graph.md
+      - Real-time flow and control: realtime-control.md
+      - Node extensibility: extensibility.md
+      - Multi-language execution: languages.md
+      - Provider architecture: provider-architecture.md
+      - CLI, Studio, and web: developer-surfaces.md
+      - End-to-end voice path: voice-architecture.md
   - Build Nodes:
       - Node packages: nodes/index.md
       - Python: nodes/python.md

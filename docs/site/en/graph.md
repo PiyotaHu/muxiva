@@ -1,57 +1,125 @@
-# Graph and typed ports
+# Graphs and typed Ports
 
-Graph v1 is declarative configuration. It selects trusted Node Factories by an
-exact identity and connects named ports with one exact Frame type.
+Graph v1 is a reviewable, version-controlled runtime declaration. It selects Node Factories,
+configures instances, connects Ports, and defines congestion behavior. A Graph contains no
+running threads, remote clients, secrets, or arbitrary scripts.
+
+## Graphs branch and join
+
+```mermaid
+flowchart LR
+    MIC["audio-ingress"] -->|"audio_out → audio_in"| ASR["streaming-asr"]
+    MIC -->|"audio_out → audio_in"| VAD["voice-activity"]
+    ASR -->|"text_out → transcript_in"| JOIN["context-fusion"]
+    VAD -->|"event_out → speech_in"| JOIN
+    JOIN --> LLM["reasoning-llm"]
+    LLM --> LIVE["live-transcript"]
+    LLM --> TTS["streaming-tts"]
+    TTS --> OUT["audio-egress"]
+```
+
+One output Port may feed several Edges, each with its own bounded queue. A join Node receives
+different Frame types through separate input Ports. The Runtime retains lineage and independent
+backpressure metrics for every branch.
+
+## Document structure
+
+This shortened example omits Nodes and Edges that a production document would include:
 
 ```json
 {
   "version": "voxa.graph/v1",
-  "graph_id": "text-agent",
+  "graph_id": "voice-agent",
   "nodes": [
     {
-      "id": "source",
-      "node_type": "builtin.text_source",
-      "language": "rust",
+      "id": "asr",
+      "node_type": "provider.qwen.asr_realtime",
+      "language": "python",
       "factory_version": "1.0.0",
-      "node_config": {"text": "hello"}
+      "node_config": {"model": "qwen3-asr-flash-realtime"}
+    },
+    {
+      "id": "llm",
+      "node_type": "provider.qwen.llm_stream",
+      "language": "python",
+      "factory_version": "1.0.0",
+      "node_config": {}
     }
   ],
-  "edges": []
+  "edges": [
+    {
+      "id": "asr-to-llm",
+      "source": {"node": "asr", "port": "text_out"},
+      "target": {"node": "llm", "port": "text_in"},
+      "frame_type": "text",
+      "capacity": 8,
+      "overflow": "block"
+    }
+  ]
 }
 ```
 
-## Factory identity
+## Factory identity finds exact code
 
-A Graph resolves each Node by:
+A Graph resolves a Factory with this tuple:
 
 ```text
 node_type + language + factory_version
 ```
 
-Validation never guesses a version or silently selects a different language.
+The validator does not guess a version or silently switch languages. `id` is the local instance
+name in this Graph, while `node_type` is the stable capability identity supplied by a Package.
+The same Factory can create several independently configured instances.
 
-## Frame types
+## Port type and Port schema
 
-Ports accept exactly one of:
+A Port accepts exactly one Frame type: `audio`, `video`, `text`, `byte`, `signal`, or `event`.
+There is no untyped `any` Port. An Edge is valid only when both endpoint types match exactly.
 
-- `audio`
-- `video`
-- `text`
-- `byte`
-- `signal`
-- `event`
+A Frame type answers "is this audio?" A detailed Port schema answers "which audio?", for example:
 
-There is no untyped `any` port. An Edge is valid only when source and target
-port types match.
+```text
+audio / pcm_s16le / 16000 Hz / mono / 20 ms
+```
 
-## Queue policy
+If an upstream Node emits 48 kHz but downstream requires 16 kHz, insert an explicit Resample
+Node. The Runtime does not convert it invisibly. Cost, latency, and quality changes therefore
+remain visible in the Graph.
 
-Each Edge has a bounded capacity and overflow policy such as `block`,
-`drop_oldest`, `drop_newest`, or `abort`. The appropriate policy depends on
-whether freshness, completeness, or fail-fast behavior matters most.
+## Edges and queue policy
 
-## Security
+An Edge is both a route and a bounded buffer:
 
-Graph JSON cannot contain executable source, dynamic scripts, credentials, or
-arbitrary remote resources. It references trusted Factories and configuration
-only.
+| Business requirement | Suggested policy | Reason |
+| --- | --- | --- |
+| Text must remain complete | `block` | Exchange producer speed for completeness |
+| Live video needs only the newest image | `drop_oldest` | Avoid displaying stale content |
+| New data must not disturb the current batch | `drop_newest` | Preserve already accepted work |
+| Congestion invalidates the protocol | `abort` | Fail fast with an explicit error |
+
+More capacity is not automatically better. Capacity is the accepted burst size and directly
+affects worst-case latency and memory use.
+
+## From JSON to execution
+
+```mermaid
+flowchart LR
+    JSON["Graph v1 JSON"] --> PARSE["Syntax and safe parsing"]
+    PARSE --> RESOLVE["Exact Factory resolution"]
+    RESOLVE --> CHECK["Port · schema · topology · queue checks"]
+    CHECK --> BUILD["Factory creates Node instances"]
+    BUILD --> RUN["Concurrent Runtime"]
+```
+
+`voxa validate <project>` performs the first stages without running a Node. `voxa run <project>`
+creates instances and external resources only after compilation succeeds. Studio uses the same
+Compiler, so canvas validation does not create a second set of rules.
+
+## Security constraints
+
+Graph JSON cannot contain executable source, dynamic scripts, real credentials, or arbitrary
+remote resources. It references trusted Factories and declarative configuration. Executable
+code belongs to a [Node Package](extensibility.md), and vendor connections belong to a
+[Provider](provider-architecture.md).
+
+Next: [real-time flow and control](realtime-control.md).
