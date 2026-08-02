@@ -27,7 +27,7 @@
       "instructions": { "type": "string", "default": "You are a concise, helpful realtime voice assistant." },
       "turn_detection": { "type": "string", "enum": ["server_vad", "smart_turn"], "default": "server_vad" },
       "vad_threshold": { "type": "number", "minimum": -1, "maximum": 1, "default": 0.35 },
-      "silence_duration_ms": { "type": "integer", "minimum": 200, "maximum": 6000, "default": 600 }
+      "silence_duration_ms": { "type": "integer", "minimum": 200, "maximum": 6000, "default": 1000 }
     },
     "required": ["model", "voice", "instructions", "turn_detection"],
     "additionalProperties": false

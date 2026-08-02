@@ -89,7 +89,7 @@ class QwenNodeTests(unittest.TestCase):
         self.assertNotIn("secret", rendered)
         self.assertIn("server_vad", rendered)
         self.assertEqual(update["session"]["turn_detection"]["threshold"], 0.35)
-        self.assertEqual(update["session"]["turn_detection"]["silence_duration_ms"], 600)
+        self.assertEqual(update["session"]["turn_detection"]["silence_duration_ms"], 1000)
         self.assertEqual(update["session"]["input_audio_format"], "pcm")
         self.assertEqual(update["session"]["output_audio_format"], "pcm")
         self.assertEqual(update["session"]["voice"], "longanqian")
@@ -110,10 +110,27 @@ class QwenNodeTests(unittest.TestCase):
         node.on_process(AudioFrame(b"\0" * 640, 16000), ctx)
         self.assertEqual([item["type"] for item in transport.sent], ["input_audio_buffer.append"])
         self.assertEqual(ctx.signals[0][0], "voxa.runtime.interrupt")
-        self.assertIn(
-            ("voxa.voice.barge_in", {"provider": "qwen", "response_cancelled": False}),
-            ctx.events,
-        )
+        self.assertFalse(any(topic == "voxa.voice.barge_in" for topic, _ in ctx.events))
+
+    def test_late_cancel_error_does_not_abort_the_next_turn(self):
+        transport = FakeTransport([
+            {"type": "response.created"},
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "response.done"},
+            {
+                "type": "error",
+                "error": {
+                    "code": "invalid_request_error",
+                    "message": "Cannot cancel: no active response",
+                },
+            },
+        ])
+        node = module.QwenAudioRealtimeNode({}, lambda *_: transport)
+        with mock.patch.dict(os.environ, {
+            "DASHSCOPE_API_KEY": "secret", "DASHSCOPE_WORKSPACE_ID": "workspace"
+        }):
+            node.on_prepare()
+        node.on_process(AudioFrame(b"\0" * 640, 16000), Context())
 
 
 if __name__ == "__main__":

@@ -21,8 +21,8 @@ realtime session. Use it for the lowest-latency speech-to-speech graph.
 
 `model` defaults to `qwen-audio-3.0-realtime-flash`; `voice` selects the synthesized voice;
 `instructions` defines assistant behavior; `turn_detection` accepts `server_vad` or `smart_turn`.
-The flagship demo recommends `server_vad` with a default threshold of `0.35` and a `600ms`
-silence boundary because it is deterministic and easier to diagnose.
+The flagship demo recommends `server_vad` with a default threshold of `0.35` and a `1000ms`
+silence boundary so natural pauses do not split one utterance into two turns.
 
 On interruption, Voxa cancels Provider generation, propagates a `voxa.runtime.interrupt` Signal,
 and clears queued PCM in the Agora Sink. Voice Room renders `YOU ARE SPEAKING` and

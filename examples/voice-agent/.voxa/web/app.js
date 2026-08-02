@@ -272,9 +272,8 @@ async function renderVoiceEvents() {
       showBargeState('listening', 'YOU ARE SPEAKING')
       message('Listening — speak naturally', 'Speech-start signal entered the Voxa control plane')
     } else if (event.topic === 'voxa.voice.barge_in') {
-      const interrupted = event.payload?.response_cancelled === true
-      showBargeState(interrupted ? 'interrupting' : 'listening', interrupted ? 'BARGE-IN · INTERRUPTING AGENT' : 'BARGE-IN SIGNAL ACTIVE')
-      diagnostic(interrupted ? 'Barge-in · Qwen generation cancelled; Agora output queue clearing' : 'Speech start · interrupt signal propagated through Graph')
+      showBargeState('interrupting', 'BARGE-IN · INTERRUPTING AGENT')
+      diagnostic('Barge-in · Qwen generation cancelled; Agora output queue clearing')
     } else if (event.topic === 'voxa.voice.speech.stopped') {
       showBargeState('', 'UTTERANCE CAPTURED')
     } else if (event.topic === 'voxa.voice.transcript.preview') {

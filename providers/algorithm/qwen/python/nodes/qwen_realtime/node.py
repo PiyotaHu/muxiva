@@ -72,6 +72,7 @@ class QwenAudioRealtimeNode:
         self._transport_factory = transport_factory
         self._transport: Any | None = None
         self._response_active = False
+        self._cancel_pending = False
         self._audio_frames_sent = 0
         self._response_text = ""
         self._response_audio_bytes = 0
@@ -131,6 +132,7 @@ class QwenAudioRealtimeNode:
                 self._log("event", type=kind)
             if kind == "response.created":
                 self._response_active = True
+                self._cancel_pending = False
                 self._response_text = ""
                 self._response_audio_bytes = 0
             elif kind == "response.done":
@@ -144,12 +146,14 @@ class QwenAudioRealtimeNode:
                 if self._response_active:
                     self._transport.send(response_cancel())
                     self._response_active = False
+                    self._cancel_pending = True
                 ctx.emit_signal("voxa.runtime.interrupt", {"provider": "qwen"})
                 ctx.publish_event("voxa.voice.speech.started", {"provider": "qwen"})
-                ctx.publish_event(
-                    "voxa.voice.barge_in",
-                    {"provider": "qwen", "response_cancelled": response_cancelled},
-                )
+                if response_cancelled:
+                    ctx.publish_event(
+                        "voxa.voice.barge_in",
+                        {"provider": "qwen", "response_cancelled": True},
+                    )
             elif kind == "input_audio_buffer.speech_stopped":
                 ctx.publish_event("voxa.voice.speech.stopped", {"provider": "qwen"})
             elif kind == "response.audio.delta":
@@ -183,9 +187,15 @@ class QwenAudioRealtimeNode:
                 )
             elif kind == "error":
                 error = event.get("error", {})
+                code = str(error.get("code", "unknown"))[:128]
+                message = str(error.get("message", "request failed"))[:512]
+                self._log("provider.error", code=code, message=json.dumps(message))
+                if self._cancel_pending and _is_cancel_race(code, message):
+                    self._cancel_pending = False
+                    self._log("cancel.race", action="ignored", reason="response_already_done")
+                    continue
                 raise QwenProtocolError(
-                    f"Qwen provider error {str(error.get('code', 'unknown'))[:128]}: "
-                    f"{str(error.get('message', 'request failed'))[:512]}"
+                    f"Qwen provider error {code}: {message}"
                 )
 
     def on_finish(self, _ctx: Any = None) -> None:
@@ -203,7 +213,7 @@ def session_update(config: dict[str, Any]) -> dict[str, Any]:
     if detection == "server_vad":
         turn_detection.update(
             threshold=float(config.get("vad_threshold", 0.35)),
-            silence_duration_ms=int(config.get("silence_duration_ms", 600)),
+            silence_duration_ms=int(config.get("silence_duration_ms", 1000)),
         )
     instructions = str(
         config.get("instructions", "You are a concise, helpful realtime voice assistant.")
@@ -239,6 +249,21 @@ def audio_append(pcm: bytes) -> dict[str, Any]:
 
 def response_cancel() -> dict[str, str]:
     return {"event_id": _event_id(), "type": "response.cancel"}
+
+
+def _is_cancel_race(code: str, message: str) -> bool:
+    detail = f"{code} {message}".lower()
+    return "cancel" in detail and any(
+        marker in detail
+        for marker in (
+            "no active",
+            "not active",
+            "not found",
+            "already done",
+            "already completed",
+            "cannot cancel",
+        )
+    )
 
 
 def _event_id() -> str:

@@ -44,6 +44,24 @@ if [[ "$(uname -s)" == "Linux" && -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}"
 fi
 
 mkdir -p "$application_root/.voxa"
+run_lock="$application_root/.voxa/studio.lock"
+if ! mkdir "$run_lock" 2>/dev/null; then
+  existing_pid="$(sed -n '1p' "$run_lock/pid" 2>/dev/null || true)"
+  if [[ "$existing_pid" =~ ^[0-9]+$ ]] && kill -0 "$existing_pid" 2>/dev/null; then
+    echo "[VOXA][ERROR] This voice project is already running (pid=$existing_pid)." >&2
+    echo "[VOXA][NEXT]  Use the existing Studio window, or stop that process before starting another." >&2
+    exit 2
+  fi
+  rm -f "$run_lock/pid"
+  rmdir "$run_lock" 2>/dev/null || true
+  mkdir "$run_lock"
+fi
+printf '%s\n' "$$" > "$run_lock/pid"
+release_run_lock() {
+  rm -f "$run_lock/pid"
+  rmdir "$run_lock" 2>/dev/null || true
+}
+trap release_run_lock EXIT INT TERM
 set +e
 "$voxa_binary" studio "${studio_args[@]}" 2>&1 \
   | tee "$application_root/.voxa/runtime.log"
