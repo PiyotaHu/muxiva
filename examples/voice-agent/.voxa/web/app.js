@@ -9,6 +9,8 @@ const headers = () => ({ Authorization: `Bearer ${token}` })
 const $ = (selector) => document.querySelector(selector)
 let client = null
 let microphone = null
+let remoteAudioTrack = null
+let remoteAudioObserved = false
 let meterTimer = null
 let runtimeTimer = null
 let lastEventSignature = ''
@@ -157,7 +159,11 @@ async function join() {
       diagnostic(`Agora remote media published · uid=${user.uid} type=${mediaType}`)
       await client.subscribe(user, mediaType)
       if (mediaType === 'audio') {
-        user.audioTrack.play()
+        remoteAudioTrack = user.audioTrack
+        remoteAudioObserved = false
+        remoteAudioTrack.setVolume?.(100)
+        remoteAudioTrack.play()
+        diagnostic(`Assistant audio subscribed and playing · uid=${user.uid}`)
         $('#orb').classList.add('speaking')
         message('Voxa is speaking', 'Interrupt naturally — the VAD control plane will cancel stale output')
         setTimeout(() => $('#orb').classList.remove('speaking'), 900)
@@ -165,7 +171,7 @@ async function join() {
     })
     client.on('user-joined', user => diagnostic(`Agora participant joined · uid=${user.uid}`))
     client.on('user-left', user => diagnostic(`Agora participant left · uid=${user.uid}`))
-    client.on('user-unpublished', user => { $('#orb').classList.remove('speaking'); diagnostic(`Agora remote media unpublished · uid=${user.uid}`) })
+    client.on('user-unpublished', user => { remoteAudioTrack = null; $('#orb').classList.remove('speaking'); diagnostic(`Agora remote media unpublished · uid=${user.uid}`) })
     await client.join(connection.app_id, connection.channel, connection.web_token, Number(connection.web_uid))
     diagnostic(`Browser joined Agora · channel=${connection.channel} uid=${connection.web_uid}`)
     microphone = await window.AgoraRTC.createMicrophoneAudioTrack({
@@ -229,6 +235,14 @@ async function pollRuntime() {
     if (live && microphone && Date.now() - sessionStartedAt > 5000 && edge('agora-input') === 0) {
       message('Microphone published, but no native audio frames', 'Open .voxa/runtime.log and look for [VOXA][AGORA][audio.received]')
     }
+    if (edge('audio-to-room') > 0) {
+      if (!remoteAudioTrack) {
+        message('Assistant audio published, but browser has no remote track', 'Look for Agora remote media published in Live Diagnostics')
+      } else if (!remoteAudioObserved && (remoteAudioTrack.getVolumeLevel?.() || 0) > .001) {
+        remoteAudioObserved = true
+        diagnostic('Assistant audio is audible in the browser remote track')
+      }
+    }
     if (runtime.terminal?.kind && !['success', 'cancelled'].includes(runtime.terminal.kind)) {
       showError(new Error(`${runtime.terminal.code || 'VOXA-RUNTIME'} · ${runtime.terminal.message || runtime.terminal.kind}`))
     }
@@ -273,6 +287,8 @@ async function leave() {
   clearTimeout(runtimeTimer)
   if (microphone) { microphone.stop(); microphone.close(); microphone = null }
   if (client) { await client.leave(); client = null }
+  remoteAudioTrack = null
+  remoteAudioObserved = false
   try { await api('/api/v1/runtime/stop', { method: 'POST' }) } catch (_) {}
   $('#orb').className = 'orb'
   $('#orb span').textContent = 'READY'
