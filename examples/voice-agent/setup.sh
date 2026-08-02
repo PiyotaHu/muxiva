@@ -3,8 +3,8 @@ set -euo pipefail
 
 application_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$application_root/../.." && pwd)"
-qwen_provider_root="$repository_root/providers/qwen/python"
-agora_provider_root="$repository_root/providers/agora/cpp"
+qwen_provider_root="$repository_root/providers/algorithm/qwen/python"
+agora_provider_root="$repository_root/providers/transport/agora/cpp"
 sdk_root="${1:-${VOXA_AGORA_SDK_ROOT:-}}"
 
 if [[ "$sdk_root" == "--help" || "$sdk_root" == "-h" ]]; then
@@ -44,11 +44,12 @@ python3 -m venv "$application_root/.voxa/venv"
 
 echo "[VOXA][SETUP] Building trusted C++ Agora Node Packs"
 cmake -S "$agora_provider_root" \
-  -B "$repository_root/build/voice-agent" \
+  -B "$repository_root/build/voice-agent-provider-v1" \
   -DVOXA_ENABLE_AGORA=ON \
   -DVOXA_AGORA_SDK_ROOT="$sdk_root" \
+  -DVOXA_SOURCE_ROOT="$repository_root" \
   -DVOXA_NODE_PACK_OUTPUT_ROOT="$application_root/.voxa/native"
-cmake --build "$repository_root/build/voice-agent" --config Release
+cmake --build "$repository_root/build/voice-agent-provider-v1" --config Release
 
 echo "[VOXA][READY] Native and Python Node Packs are installed."
 echo "[VOXA][AGORA] sdk=$sdk_root"

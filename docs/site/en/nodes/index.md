@@ -19,8 +19,11 @@ A project Node package keeps executable code outside Graph JSON. Its
 | `language` | `rust`, `cpp`, `python`, or `typescript` |
 | `factory_version` | Exact Factory version |
 | `kind` | `source`, `transform`, or `sink` |
+| `category` | `transport`, `algorithm`, `media`, `control`, or `utility` |
+| `capability` | Stable searchable capability such as `speech.asr.streaming` |
 | `entrypoint` | Language-specific implementation entrypoint |
 | `ports` | Named direction and exact Frame type |
+| Port `schema` | Media format or semantic contract beyond the Frame type |
 | `config_schema` | JSON Schema for Node configuration |
 
 ## Studio-first workflow

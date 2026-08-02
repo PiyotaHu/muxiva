@@ -3,8 +3,13 @@
 Provider integrations live outside the vendor-neutral Rust runtime and are
 grouped by vendor and implementation language:
 
-- `qwen/python`: Realtime, ASR, streaming LLM, and TTS Python Node Packs.
-- `agora/cpp`: RTC transport, C++ Node Packs, native adapter, and tests.
+- `algorithm/qwen/python`: Realtime, ASR, streaming LLM, and TTS Python Node Packs.
+- `transport/agora/cpp`: RTC transport, C++ Node Packs, native adapter, and tests.
+
+Each provider owns one `voxa.provider.json`. It declares vendor metadata, SDK
+compatibility, documentation, licensing, and shared Connections once. Each
+Node then declares an orthogonal architecture `category`, graph `kind`, stable
+`capability`, and typed Port schemas in its `voxa.node.json`.
 
 Setup guides:
 

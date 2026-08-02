@@ -19,8 +19,11 @@ Manifest 只声明发现与校验元数据。
 | `language` | `rust`、`cpp`、`python` 或 `typescript` |
 | `factory_version` | 精确 Factory 版本 |
 | `kind` | `source`、`transform` 或 `sink` |
+| `category` | `transport`、`algorithm`、`media`、`control` 或 `utility` |
+| `capability` | 稳定、可搜索的能力标识，例如 `speech.asr.streaming` |
 | `entrypoint` | 语言实现入口 |
 | `ports` | 名称、方向与精确 Frame 类型 |
+| Port `schema` | 在基础 Frame Type 之上的媒体格式或语义契约 |
 | `config_schema` | Node 配置的 JSON Schema |
 
 ## Studio-first 流程

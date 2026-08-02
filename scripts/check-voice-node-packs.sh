@@ -2,12 +2,12 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-build_directory="${TMPDIR:-/tmp}/voxa-voice-node-pack-check"
+build_directory="$(mktemp -d "${TMPDIR:-/tmp}/voxa-voice-node-pack-check.XXXXXX")"
+trap 'rm -rf "$build_directory"' EXIT
 cxx="${CXX:-c++}"
-mkdir -p "$build_directory"
 
 bash -n \
-  "$repository_root/providers/agora/cpp/download-macos-sdk.sh" \
+  "$repository_root/providers/transport/agora/cpp/download-macos-sdk.sh" \
   "$repository_root/examples/voice-agent/setup.sh" \
   "$repository_root/examples/voice-agent/run.sh"
 
@@ -18,24 +18,24 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
 fi
 
 python3 -m unittest discover \
-  -s "$repository_root/providers/qwen/python/tests" -v
+  -s "$repository_root/providers/algorithm/qwen/python/tests" -v
 
 for package in agora_audio_source agora_audio_sink; do
   "$cxx" -std=c++17 -Wall -Wextra -Wpedantic -Werror \
     "${cxx_system[@]}" \
     -I"$repository_root/cpp/include" \
-    -I"$repository_root/providers/agora/cpp/include" \
-    -c "$repository_root/providers/agora/cpp/nodes/$package/node.cpp" \
+    -I"$repository_root/providers/transport/agora/cpp/include" \
+    -c "$repository_root/providers/transport/agora/cpp/nodes/$package/node.cpp" \
     -o "$build_directory/$package.o"
 done
 
-cmake -S "$repository_root/providers/agora/cpp" \
+cmake -S "$repository_root/providers/transport/agora/cpp" \
   -B "$build_directory/agora-provider" \
   -DVOXA_ENABLE_AGORA=OFF \
   -DVOXA_SOURCE_ROOT="$repository_root"
 cmake --build "$build_directory/agora-provider" --target voxa_agora
 
-cmake -S "$repository_root/providers/agora/cpp" \
+cmake -S "$repository_root/providers/transport/agora/cpp" \
   -B "$build_directory/agora-node-packs" \
   -DVOXA_ENABLE_AGORA=OFF \
   -DVOXA_SOURCE_ROOT="$repository_root" \

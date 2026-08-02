@@ -1,0 +1,32 @@
+{
+  "format": "voxa.node/v1",
+  "package_id": "qwen_asr_realtime",
+  "display_name": "Qwen Streaming ASR",
+  "node_type": "provider.qwen.asr_realtime",
+  "language": "python",
+  "factory_version": "1.0.0",
+  "kind": "transform",
+  "entrypoint": "node:QwenAsrRealtimeNode",
+  "category": "algorithm",
+  "capability": "speech.asr.streaming",
+  "summary": "Turns streaming PCM speech into partial and final text transcripts.",
+  "provider_id": "qwen",
+  "connection_id": "dashscope",
+  "documentation": "https://piyotahu.github.io/Voxa/en/providers/qwen/asr-realtime/",
+  "tags": ["asr", "speech-to-text", "streaming"],
+  "ports": [
+    { "name": "audio_in", "direction": "input", "frame_type": "audio", "schema": { "encoding": "pcm_s16le", "sample_rate_hz": 16000, "channels": 1, "streaming": true } },
+    { "name": "text_out", "direction": "output", "frame_type": "text", "schema": { "semantics": ["partial_transcript", "final_transcript"], "streaming": true } }
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "model": { "type": "string", "default": "qwen3-asr-flash-realtime" },
+      "language": { "type": "string", "default": "zh" },
+      "vad_threshold": { "type": "number", "default": 0.2 },
+      "silence_duration_ms": { "type": "integer", "default": 500 }
+    },
+    "required": ["model", "language"],
+    "additionalProperties": false
+  }
+}

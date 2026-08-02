@@ -1,0 +1,26 @@
+{
+  "format": "voxa.provider/v1",
+  "provider_id": "qwen",
+  "display_name": "Alibaba Cloud Qwen",
+  "category": "algorithm",
+  "summary": "Streaming speech recognition, language generation, speech synthesis, and speech-to-speech intelligence.",
+  "vendor": "Alibaba Cloud",
+  "homepage": "https://bailian.console.aliyun.com/",
+  "documentation": "https://piyotahu.github.io/Voxa/en/providers/qwen/",
+  "license": "Alibaba Cloud Model Studio service terms",
+  "sdk": {
+    "name": "DashScope WebSocket and HTTP APIs",
+    "version": "v1"
+  },
+  "connections": [
+    {
+      "id": "dashscope",
+      "display_name": "Alibaba Cloud Model Studio",
+      "description": "Credentials for Python Qwen Node Packs",
+      "fields": [
+        { "name": "api_key", "label": "API Key", "environment": "DASHSCOPE_API_KEY", "secret": true, "required": true, "default": "" },
+        { "name": "workspace_id", "label": "Workspace ID", "environment": "DASHSCOPE_WORKSPACE_ID", "secret": false, "required": true, "default": "" }
+      ]
+    }
+  ]
+}

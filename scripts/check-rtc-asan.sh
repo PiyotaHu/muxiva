@@ -18,9 +18,9 @@ cargo build --offline -p voxa-ffi --manifest-path "$repo/Cargo.toml"
   -Wl,-rpath,"$repo/target/debug" -o "$build/mock_rtc_adapter_asan"
 "$cxx_bin" -std=c++17 -Wall -Wextra -Wpedantic -Werror -pthread \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  $cxx_system -I"$repo/cpp/include" -I"$repo/providers/agora/cpp/include" \
-  "$repo/providers/agora/cpp/src/agora_rtc_adapter.cc" \
-  "$repo/providers/agora/cpp/tests/agora_rtc_adapter_test.cc" -L"$repo/target/debug" -lvoxa_ffi \
+  $cxx_system -I"$repo/cpp/include" -I"$repo/providers/transport/agora/cpp/include" \
+  "$repo/providers/transport/agora/cpp/src/agora_rtc_adapter.cc" \
+  "$repo/providers/transport/agora/cpp/tests/agora_rtc_adapter_test.cc" -L"$repo/target/debug" -lvoxa_ffi \
   -Wl,-rpath,"$repo/target/debug" -o "$build/agora_rtc_adapter_asan"
 "$build/mock_rtc_adapter_asan"
 "$build/agora_rtc_adapter_asan"

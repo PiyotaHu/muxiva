@@ -22,6 +22,10 @@ Studio 允许打开尚未通过校验的 Graph，以便在画布和诊断面板�
 
 ## 可视化开发流程
 
+Palette 将架构层级与图中角色分开：可以按 Transport、Algorithm、Media、Control 或
+Utility 过滤，也可以按 Provider、Capability、Tag 或 Node Type 搜索。选择 Node 后，
+Inspector 会展示功能摘要、稳定 Capability、详细 Port Schema、实现源码和独立指南。
+
 1. 将内置或项目 Node 从 Palette 拖到画布。
 2. 从输出 Port 拉线到类型兼容的输入 Port。
 3. 选择 Node，查看 Factory 元数据、配置与实现源码。

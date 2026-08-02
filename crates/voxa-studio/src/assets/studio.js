@@ -76,7 +76,7 @@ function factoryKey(value) { return JSON.stringify([value.node_type, value.langu
 function packageCatalogEntry(value) { return { ...value, runtime_available: value.runtime_available } }
 function nodeInfo(node) {
   return catalog.get(factoryKey(node)) || {
-    kind: 'transform', label: node.node_type, language: node.language || 'unknown',
+    kind: 'transform', category: 'utility', capability: 'unknown', label: node.node_type, language: node.language || 'unknown',
     inputs: [], outputs: [], inputPorts: [], outputPorts: [], frameTypes: [], config_schema: {},
   }
 }
@@ -94,14 +94,33 @@ function installCatalog(registrations) {
   }
 }
 function renderPalette() {
-  const buttons = [...catalog.entries()].map(([key, entry]) => {
+  const query = ($('#palette-search')?.value || '').trim().toLowerCase()
+  const selectedCategory = $('#palette-category')?.value || 'all'
+  const entries = [...catalog.entries()]
+    .filter(([, entry]) => selectedCategory === 'all' || (entry.category || 'utility') === selectedCategory)
+    .filter(([, entry]) => !query || [entry.display_name, entry.node_type, entry.capability, entry.provider_id, ...(entry.tags || [])].join(' ').toLowerCase().includes(query))
+    .sort((left, right) => `${left[1].category}:${left[1].display_name || left[1].node_type}`.localeCompare(`${right[1].category}:${right[1].display_name || right[1].node_type}`))
+  const layers = new Map()
+  for (const item of entries) {
+    const category = item[1].category || 'utility'
+    if (!layers.has(category)) layers.set(category, [])
+    layers.get(category).push(item)
+  }
+  const groups = [...layers.entries()].map(([category, items]) => {
+    const group = document.createElement('section'); group.className = 'palette-group'
+    const heading = document.createElement('div'); heading.className = `palette-group-heading ${category}`; heading.textContent = category
+    const buttons = items.map(([key, entry]) => {
     const button = document.createElement('button'); button.className = `palette-item ${entry.kind}`; button.dataset.addNode = key; button.draggable = true
-    const icon = document.createElement('span'); icon.className = 'node-icon'; icon.textContent = entry.kind[0].toUpperCase()
+    const icon = document.createElement('span'); icon.className = `node-icon category-${entry.category || 'utility'}`; icon.textContent = (entry.category || 'utility')[0].toUpperCase()
     const copy = document.createElement('span'), label = document.createElement('b'), detail = document.createElement('small')
-    label.textContent = entry.display_name || entry.label; detail.textContent = `${entry.language} · v${entry.factory_version}${entry.package_id ? ` · ${entry.origin || 'project'}` : ''}`; copy.append(label, detail)
+    label.textContent = entry.display_name || entry.label; detail.textContent = `${entry.capability || entry.node_type} · ${entry.language}${entry.provider_id ? ` · ${entry.provider_id}` : ''}`; copy.append(label, detail)
     const add = document.createElement('span'); add.textContent = '＋'; button.append(icon, copy, add); return button
+    })
+    group.append(heading, ...buttons); return group
   })
-  $('#node-palette').replaceChildren(...buttons)
+  if (!groups.length) { const empty = document.createElement('p'); empty.className = 'palette-empty'; empty.textContent = 'No Nodes match this filter.'; groups.push(empty) }
+  $('#node-palette').replaceChildren(...groups)
+  bindPaletteEvents()
   $('#node-type').replaceChildren(...[...catalog.entries()].map(([key, entry]) => {
     const option = document.createElement('option'); option.value = key; option.textContent = `${entry.node_type} · ${entry.language} · v${entry.factory_version}`; return option
   }))
@@ -117,7 +136,8 @@ function defaultConfig(entry) {
 }
 
 function bindEvents() {
-  bindPaletteEvents()
+  $('#palette-search').addEventListener('input', renderPalette)
+  $('#palette-category').addEventListener('change', renderPalette)
   $('#graph-id').addEventListener('change', (event) => mutate(() => { state.graph.graph_id = event.target.value.trim() }))
   $('#node-id').addEventListener('change', updateSelectedNode)
   $('#node-type').addEventListener('change', updateSelectedNode)
@@ -259,6 +279,9 @@ function openNodeLab(packageValue = null) {
   if (packageValue) {
     $('#node-lab-language').value = packageValue.language
     $('#node-lab-kind').value = packageValue.kind
+    $('#node-lab-category').value = packageValue.category || 'utility'
+    $('#node-lab-capability').value = packageValue.capability || 'custom'
+    $('#node-lab-summary').value = packageValue.summary || ''
     $('#node-lab-package').value = packageValue.package_id
     $('#node-lab-display').value = packageValue.display_name
     $('#node-lab-type').value = packageValue.node_type
@@ -301,6 +324,7 @@ async function saveNodePackage(event) {
   const payload = {
     format: 'voxa.node/v1', package_id: $('#node-lab-package').value.trim(), display_name: $('#node-lab-display').value.trim(),
     node_type: $('#node-lab-type').value.trim(), language, factory_version: '1.0.0', kind: $('#node-lab-kind').value,
+    category: $('#node-lab-category').value, capability: $('#node-lab-capability').value.trim(), summary: $('#node-lab-summary').value.trim(),
     entrypoint: language === 'python' ? 'node:MyNode' : language === 'typescript' ? 'node:node' : language === 'rust' ? 'node::MyNode' : 'MyNode',
     ports, config_schema: configSchema, code: $('#node-lab-code').value, runtime_available: false,
   }
@@ -308,7 +332,7 @@ async function saveNodePackage(event) {
     await api('/api/v1/node-library', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     nodePackages = await api('/api/v1/node-library')
     const registrations = await api('/api/v1/registry/nodes')
-    catalog.clear(); installCatalog([...registrations, ...nodePackages.map(packageCatalogEntry)]); renderPalette(); bindPaletteEvents()
+    catalog.clear(); installCatalog([...registrations, ...nodePackages.map(packageCatalogEntry)]); renderPalette()
     closeNodeLab(); toast(`${payload.display_name} registered in this project`)
   } catch (error) { $('#node-lab-error').textContent = error.message }
 }
@@ -679,6 +703,16 @@ function renderInspector() {
   if (!node) return
   $('#node-id').value = node.id; $('#node-type').value = factoryKey(node); $('#node-language').value = node.language; $('#node-version').value = node.factory_version || ''; $('#node-config').value = JSON.stringify(node.node_config, null, 2); $('#config-error').textContent = ''
   const info = nodeInfo(node)
+  $('#node-category').textContent = info.category || 'utility'
+  $('#node-capability').textContent = info.capability || 'unknown'
+  $('#node-summary').textContent = info.summary || 'No summary is declared for this Node.'
+  $('#node-port-contracts').textContent = (info.ports || []).map((port) => {
+    const contract = port.schema && Object.keys(port.schema).length ? ` ${JSON.stringify(port.schema)}` : ''
+    return `${port.direction === 'input' ? '←' : '→'} ${port.name}: ${port.frame_type}${contract}`
+  }).join('\n') || 'No data ports · control-only Node'
+  const documentation = $('#node-documentation')
+  documentation.classList.toggle('hidden', !info.documentation)
+  if (info.documentation) documentation.href = info.documentation
   const projectPackage = nodePackages.find((candidate) => factoryKey(candidate) === factoryKey(node))
   const code = $('#node-source-code'), meta = $('#node-source-meta'), edit = $('#edit-node-code'), link = $('#node-source-link')
   edit.classList.toggle('hidden', !projectPackage?.editable)

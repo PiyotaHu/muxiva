@@ -68,6 +68,17 @@ plugins:
             C++: C++
             Integrations: 集成
             Providers: Provider
+            Provider catalog: Provider 目录
+            Overview: 概览
+            Built-in Nodes: 内置 Node
+            Agora RTC: Agora RTC
+            Audio ingress: 音频输入
+            Audio egress: 音频输出
+            Qwen algorithms: Qwen 算法
+            Audio Realtime: 实时语音
+            Streaming ASR: 流式 ASR
+            Streaming LLM: 流式 LLM
+            Streaming TTS: 流式 TTS
             Quality: 质量保障
             Testing: 测试体系
             Project: 项目
@@ -106,6 +117,19 @@ nav:
       - C++: nodes/cpp.md
   - Integrations:
       - Providers: integrations.md
+      - Provider catalog:
+          - Overview: providers/index.md
+          - Built-in Nodes: providers/builtin.md
+          - Agora RTC:
+              - Overview: providers/agora/index.md
+              - Audio ingress: providers/agora/audio-ingress.md
+              - Audio egress: providers/agora/audio-egress.md
+          - Qwen algorithms:
+              - Overview: providers/qwen/index.md
+              - Audio Realtime: providers/qwen/audio-realtime.md
+              - Streaming ASR: providers/qwen/asr-realtime.md
+              - Streaming LLM: providers/qwen/llm-stream.md
+              - Streaming TTS: providers/qwen/tts-realtime.md
   - Quality:
       - Testing: testing.md
   - Project:

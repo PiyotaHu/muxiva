@@ -1,0 +1,38 @@
+{
+  "format": "voxa.node/v1",
+  "package_id": "agora_audio_source",
+  "display_name": "Agora Audio Ingress",
+  "node_type": "provider.agora.audio_source",
+  "language": "cpp",
+  "factory_version": "1.0.0",
+  "kind": "transform",
+  "entrypoint": "AgoraAudioSourceNode",
+  "category": "transport",
+  "capability": "rtc.audio.ingress",
+  "summary": "Receives remote PCM audio from an Agora channel and emits typed Audio Frames.",
+  "provider_id": "agora",
+  "connection_id": "agora",
+  "documentation": "https://piyotahu.github.io/Voxa/en/providers/agora/audio-ingress/",
+  "tags": ["rtc", "audio", "ingress", "realtime"],
+  "ports": [
+    {
+      "name": "tick_in",
+      "direction": "input",
+      "frame_type": "event",
+      "schema": { "semantics": "poll_tick" }
+    },
+    {
+      "name": "audio_out",
+      "direction": "output",
+      "frame_type": "audio",
+      "schema": {
+        "encoding": "pcm_s16le",
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "frame_duration_ms": 20,
+        "streaming": true
+      }
+    }
+  ],
+  "config_schema": { "type": "object", "properties": {}, "additionalProperties": false }
+}

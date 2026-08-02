@@ -22,4 +22,5 @@ else
 fi
 
 ./scripts/check-provider-boundaries.sh
+python3 ./scripts/check-provider-catalog.py
 ./scripts/check-voice-node-packs.sh

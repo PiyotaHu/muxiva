@@ -338,6 +338,18 @@ fn route(
             "application/json",
             runtime.connections.status_json().to_string(),
         ),
+        ("GET", "/api/v1/provider-catalog") => match node_library::provider_catalog(graph) {
+            Ok(providers) => (
+                "200 OK",
+                "application/json",
+                serde_json::to_string(&providers).unwrap_or_else(|_| "[]".into()),
+            ),
+            Err(error) => (
+                "500 Internal Server Error",
+                "application/json",
+                json_message(&format!("failed to load Provider catalog: {error}")),
+            ),
+        },
         ("GET", "/api/v1/connections/client") => (
             "200 OK",
             "application/json",
@@ -995,6 +1007,9 @@ mod tests {
         assert!(response.contains("builtin.text_source"));
         assert!(response.contains("factory_version"));
         assert!(response.contains("config_schema"));
+        assert!(response.contains("category"));
+        assert!(response.contains("capability"));
+        assert!(response.contains("text.source"));
     }
 
     #[test]

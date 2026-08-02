@@ -8,7 +8,7 @@ uses the documented WebSocket and HTTP protocols directly. Run:
 ```
 
 This creates `examples/voice-agent/.voxa/venv` and installs the declared Python
-requirements from `providers/qwen/python/requirements.txt`. Studio and the CLI
+requirements from `providers/algorithm/qwen/python/requirements.txt`. Studio and the CLI
 automatically select that project Python environment.
 
 The Provider currently targets Alibaba Cloud Model Studio China (Beijing).

@@ -10,7 +10,7 @@ RTC Basic XCFrameworks from Agora's official CDN and verifies the SHA-256 values
 published by the official Swift package:
 
 ```sh
-./providers/agora/cpp/download-macos-sdk.sh
+./providers/transport/agora/cpp/download-macos-sdk.sh
 ./examples/voice-agent/setup.sh
 ```
 
@@ -28,7 +28,7 @@ The complete beginner credential walkthrough is on the
 Obtain the Agora Native SDK for the target platform, then configure:
 
 ```sh
-cmake -S providers/agora/cpp -B build/agora \
+cmake -S providers/transport/agora/cpp -B build/agora \
   -DVOXA_ENABLE_AGORA=ON \
   -DVOXA_AGORA_SDK_ROOT=/absolute/path/to/agora-sdk \
   -DVOXA_SOURCE_ROOT="$PWD"
@@ -56,10 +56,10 @@ The adapter never copies a token into a frame or metrics snapshot.
 ## Language boundary
 
 Agora integration is C++-only. Its headers, implementation, build project, and
-tests live under `providers/agora/cpp`; the root Voxa CMake project and Python
+tests live under `providers/transport/agora/cpp`; the root Voxa CMake project and Python
 package contain no Agora target or SDK wrapper.
 The flagship C++ source/sink Node Packs and their Manifests are under
-`providers/agora/cpp/nodes`. The application references that catalog through
+`providers/transport/agora/cpp/nodes`. The application references that catalog through
 `.voxa/providers.json`; Studio discovers it but does not compile or link Agora
 itself. Build the complete flagship packs with:
 

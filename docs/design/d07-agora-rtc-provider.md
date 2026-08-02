@@ -24,12 +24,12 @@ runtime implementation in this repository.
 
 ## Packaging boundary
 
-The standalone `providers/agora/cpp` CMake project defaults
+The standalone `providers/transport/agora/cpp` CMake project defaults
 `VOXA_ENABLE_AGORA=OFF`, which builds and tests the public adapter contract with
 no vendor files. Enabling it requires an independently obtained Agora Native SDK
 root and links the vendor library into `VoxaAgora::agora`.
 
-All vendor code and vendor build declarations live under `providers/agora/cpp`
+All vendor code and vendor build declarations live under `providers/transport/agora/cpp`
 or an application-owned C++ Node Pack. The framework workspace, root CMake
 project, Studio, and Python wheel do not depend on Agora.
 

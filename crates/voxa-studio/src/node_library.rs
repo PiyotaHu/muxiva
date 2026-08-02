@@ -22,6 +22,7 @@ use voxa_types::{
 };
 
 const FORMAT: &str = "voxa.node/v1";
+const PROVIDER_FORMAT: &str = "voxa.provider/v1";
 const PROVIDER_CONFIG_FORMAT: &str = "voxa.providers/v1";
 const MAX_CODE_BYTES: usize = 512 * 1024;
 const MAX_PROVIDER_CONFIG_BYTES: u64 = 64 * 1024;
@@ -130,6 +131,20 @@ pub struct NodePortManifest {
     pub name: String,
     pub direction: String,
     pub frame_type: String,
+    #[serde(default = "empty_json_object")]
+    pub schema: serde_json::Value,
+}
+
+fn empty_json_object() -> serde_json::Value {
+    serde_json::json!({})
+}
+
+fn default_category() -> String {
+    "utility".to_owned()
+}
+
+fn default_capability() -> String {
+    "custom".to_owned()
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -143,10 +158,48 @@ pub struct NodePackageManifest {
     pub factory_version: String,
     pub kind: String,
     pub entrypoint: String,
+    #[serde(default = "default_category")]
+    pub category: String,
+    #[serde(default = "default_capability")]
+    pub capability: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
     pub ports: Vec<NodePortManifest>,
     pub config_schema: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connection: Option<ConnectionManifest>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderSdkManifest {
+    pub name: String,
+    pub version: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderManifest {
+    pub format: String,
+    pub provider_id: String,
+    pub display_name: String,
+    pub category: String,
+    pub summary: String,
+    pub vendor: String,
+    pub homepage: String,
+    pub documentation: String,
+    pub license: String,
+    pub sdk: ProviderSdkManifest,
+    #[serde(default)]
+    pub connections: Vec<ConnectionManifest>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -201,20 +254,13 @@ impl ConnectionStore {
     pub fn load(graph: &Path) -> Result<Self, String> {
         let mut manifests = BTreeMap::<String, ConnectionManifest>::new();
         for package in list(graph).map_err(|error| error.to_string())? {
-            let Some(connection) = package.manifest.connection else {
-                continue;
-            };
-            match manifests.get(&connection.id) {
-                Some(existing) if existing != &connection => {
-                    return Err(format!(
-                        "Node packages declare conflicting connection `{}`",
-                        connection.id
-                    ))
+            if let Some(provider) = package.provider_manifest {
+                for connection in provider.connections {
+                    insert_connection(&mut manifests, connection)?;
                 }
-                Some(_) => {}
-                None => {
-                    manifests.insert(connection.id.clone(), connection);
-                }
+            }
+            if let Some(connection) = package.resolved_connection {
+                insert_connection(&mut manifests, connection)?;
             }
         }
         let manifests = manifests.into_values().collect::<Vec<_>>();
@@ -386,6 +432,23 @@ impl ConnectionStore {
     }
 }
 
+fn insert_connection(
+    manifests: &mut BTreeMap<String, ConnectionManifest>,
+    connection: ConnectionManifest,
+) -> Result<(), String> {
+    match manifests.get(&connection.id) {
+        Some(existing) if existing != &connection => Err(format!(
+            "Provider packages declare conflicting connection `{}`",
+            connection.id
+        )),
+        Some(_) => Ok(()),
+        None => {
+            manifests.insert(connection.id.clone(), connection);
+            Ok(())
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NodePackage {
@@ -397,8 +460,12 @@ pub struct NodePackage {
     pub origin: String,
     #[serde(default = "default_editable")]
     pub editable: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_manifest: Option<ProviderManifest>,
     #[serde(skip)]
     source_directory: PathBuf,
+    #[serde(skip)]
+    resolved_connection: Option<ConnectionManifest>,
 }
 
 fn project_origin() -> String {
@@ -433,20 +500,21 @@ pub fn list(graph: &Path) -> io::Result<Vec<NodePackage>> {
     let mut identities = BTreeSet::new();
     let mut package_ids = BTreeSet::new();
     for (root, origin, editable) in package_roots(graph)? {
-        let entries = match fs::read_dir(&root) {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == io::ErrorKind::NotFound && editable => continue,
-            Err(error) => return Err(error),
-        };
-        let mut directories = entries
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-            .map(|entry| entry.path())
-            .filter(|directory| directory.join("voxa.node.json").is_file())
-            .collect::<Vec<_>>();
+        let mut directories = Vec::new();
+        if let Err(error) = collect_node_directories(&root, &mut directories, 0) {
+            if error.kind() == io::ErrorKind::NotFound && editable {
+                continue;
+            }
+            return Err(error);
+        }
+        if directories.len() > 1024 {
+            return Err(invalid_data(
+                "a Provider Root may contain at most 1024 Node packages",
+            ));
+        }
         directories.sort();
         for directory in directories {
-            let package = read_package(directory, graph, origin.clone(), editable)?;
+            let package = read_package(directory, &root, graph, origin.clone(), editable)?;
             let identity = (
                 package.manifest.node_type.clone(),
                 package.manifest.language.clone(),
@@ -468,6 +536,49 @@ pub fn list(graph: &Path) -> io::Result<Vec<NodePackage>> {
         }
     }
     Ok(packages)
+}
+
+pub fn provider_catalog(graph: &Path) -> io::Result<Vec<ProviderManifest>> {
+    let mut providers = BTreeMap::<String, ProviderManifest>::new();
+    for package in list(graph)? {
+        let Some(provider) = package.provider_manifest else {
+            continue;
+        };
+        match providers.get(&provider.provider_id) {
+            Some(existing) if existing != &provider => {
+                return Err(invalid_data(format!(
+                    "conflicting Provider Manifests for `{}`",
+                    provider.provider_id
+                )))
+            }
+            Some(_) => {}
+            None => {
+                providers.insert(provider.provider_id.clone(), provider);
+            }
+        }
+    }
+    Ok(providers.into_values().collect())
+}
+
+fn collect_node_directories(
+    directory: &Path,
+    output: &mut Vec<PathBuf>,
+    depth: usize,
+) -> io::Result<()> {
+    if depth > 12 {
+        return Err(invalid_data("Provider Root nesting exceeds 12 directories"));
+    }
+    if directory.join("voxa.node.json").is_file() {
+        output.push(directory.to_path_buf());
+        return Ok(());
+    }
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            collect_node_directories(&entry.path(), output, depth + 1)?;
+        }
+    }
+    Ok(())
 }
 
 pub fn register_project_nodes_with_connections(
@@ -543,6 +654,40 @@ fn validate(package: &NodePackage) -> Result<(), SaveError> {
             "kind must be source, transform, or sink".into(),
         ));
     }
+    if !valid_category(&manifest.category) {
+        return Err(SaveError::Invalid(
+            "category must be transport, algorithm, media, control, or utility".into(),
+        ));
+    }
+    if !valid_capability(&manifest.capability) {
+        return Err(SaveError::Invalid(
+            "capability must use lowercase dot-separated identifiers".into(),
+        ));
+    }
+    if manifest.summary.len() > 280 {
+        return Err(SaveError::Invalid(
+            "summary may contain at most 280 characters".into(),
+        ));
+    }
+    if let Some(provider_id) = &manifest.provider_id {
+        if !valid_package_id(provider_id) {
+            return Err(SaveError::Invalid(
+                "provider_id must be a filesystem-safe identifier".into(),
+            ));
+        }
+    }
+    if let Some(connection_id) = &manifest.connection_id {
+        if !valid_package_id(connection_id) {
+            return Err(SaveError::Invalid(
+                "connection_id must be a filesystem-safe identifier".into(),
+            ));
+        }
+    }
+    if manifest.connection_id.is_some() && manifest.connection.is_some() {
+        return Err(SaveError::Invalid(
+            "connection_id and inline connection are mutually exclusive".into(),
+        ));
+    }
     if manifest.ports.len() > 64 {
         return Err(SaveError::Invalid(
             "a Node may declare at most 64 Ports".into(),
@@ -563,6 +708,12 @@ fn validate(package: &NodePackage) -> Result<(), SaveError> {
             return Err(SaveError::Invalid(format!(
                 "unsupported Port frame_type `{}`",
                 port.frame_type
+            )));
+        }
+        if !port.schema.is_object() {
+            return Err(SaveError::Invalid(format!(
+                "Port `{}` schema must be a JSON object",
+                port.name
             )));
         }
     }
@@ -621,6 +772,21 @@ fn valid_package_id(value: &str) -> bool {
         && value.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
         })
+}
+
+fn valid_category(value: &str) -> bool {
+    matches!(
+        value,
+        "transport" | "algorithm" | "media" | "control" | "utility"
+    )
+}
+
+fn valid_capability(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 100
+        && value
+            .split('.')
+            .all(|part| !part.is_empty() && valid_package_id(part))
 }
 
 fn library_root(graph: &Path) -> PathBuf {
@@ -704,6 +870,7 @@ fn source_filename(language: &str) -> &'static str {
 
 fn read_package(
     directory: PathBuf,
+    provider_root: &Path,
     graph: &Path,
     origin: String,
     editable: bool,
@@ -711,6 +878,45 @@ fn read_package(
     let manifest: NodePackageManifest =
         serde_json::from_str(&fs::read_to_string(directory.join("voxa.node.json"))?)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    let provider_manifest = read_nearest_provider_manifest(&directory, provider_root)?;
+    if let (Some(expected), Some(provider)) = (&manifest.provider_id, &provider_manifest) {
+        if expected != &provider.provider_id {
+            return Err(invalid_data(format!(
+                "Node `{}` declares provider `{expected}` but is owned by `{}`",
+                manifest.package_id, provider.provider_id
+            )));
+        }
+    }
+    let resolved_connection = match (&manifest.connection_id, &manifest.connection) {
+        (Some(_), Some(_)) => {
+            return Err(invalid_data(format!(
+                "Node `{}` cannot declare both connection_id and an inline connection",
+                manifest.package_id
+            )))
+        }
+        (Some(connection_id), None) => {
+            let provider = provider_manifest.as_ref().ok_or_else(|| {
+                invalid_data(format!(
+                    "Node `{}` references connection `{connection_id}` without a Provider Manifest",
+                    manifest.package_id
+                ))
+            })?;
+            Some(
+                provider
+                    .connections
+                    .iter()
+                    .find(|connection| connection.id == *connection_id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        invalid_data(format!(
+                            "Provider `{}` does not declare connection `{connection_id}`",
+                            provider.provider_id
+                        ))
+                    })?,
+            )
+        }
+        (None, connection) => connection.clone(),
+    };
     let code = fs::read_to_string(directory.join(source_filename(&manifest.language)))?;
     let runtime_available = python_host_supported_manifest(graph, &manifest)
         || (manifest.language == "cpp" && cpp_artifact_path(graph, &manifest.package_id).is_file());
@@ -720,8 +926,73 @@ fn read_package(
         runtime_available,
         origin,
         editable,
+        provider_manifest,
         source_directory: directory,
+        resolved_connection,
     })
+}
+
+fn read_nearest_provider_manifest(
+    directory: &Path,
+    provider_root: &Path,
+) -> io::Result<Option<ProviderManifest>> {
+    let mut current = Some(directory);
+    while let Some(candidate) = current {
+        let path = candidate.join("voxa.provider.json");
+        if path.is_file() {
+            let provider: ProviderManifest = serde_json::from_str(&fs::read_to_string(path)?)
+                .map_err(|error| invalid_data(format!("invalid Provider Manifest: {error}")))?;
+            validate_provider_manifest(&provider)?;
+            return Ok(Some(provider));
+        }
+        if candidate == provider_root {
+            break;
+        }
+        current = candidate.parent();
+    }
+    Ok(None)
+}
+
+fn validate_provider_manifest(provider: &ProviderManifest) -> io::Result<()> {
+    if provider.format != PROVIDER_FORMAT {
+        return Err(invalid_data(format!(
+            "unsupported Provider Manifest format `{}`",
+            provider.format
+        )));
+    }
+    if !valid_package_id(&provider.provider_id) {
+        return Err(invalid_data(
+            "Provider ID must be a filesystem-safe identifier",
+        ));
+    }
+    if !valid_category(&provider.category) {
+        return Err(invalid_data(format!(
+            "unsupported Provider category `{}`",
+            provider.category
+        )));
+    }
+    if provider.display_name.trim().is_empty()
+        || provider.summary.trim().is_empty()
+        || provider.vendor.trim().is_empty()
+    {
+        return Err(invalid_data(
+            "Provider display_name, summary and vendor must not be empty",
+        ));
+    }
+    let mut connection_ids = BTreeSet::new();
+    for connection in &provider.connections {
+        validate_connection(connection).map_err(|error| match error {
+            SaveError::Invalid(message) => invalid_data(message),
+            SaveError::Io(error) => error,
+        })?;
+        if !connection_ids.insert(&connection.id) {
+            return Err(invalid_data(format!(
+                "duplicate Provider connection `{}`",
+                connection.id
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn cpp_registration(
@@ -860,7 +1131,7 @@ fn python_registration(
             source,
             entrypoint: manifest.entrypoint.clone(),
             default_output,
-            connection: manifest.connection.clone(),
+            connection: package.resolved_connection.clone(),
             connections,
         }),
     ))
@@ -1439,18 +1710,24 @@ mod tests {
     fn configured_provider_roots_are_discovered_as_read_only_packages() {
         let graph = graph();
         let project = graph.parent().unwrap();
-        let package = project.join("providers/python/hello_provider");
+        let provider = project.join("providers/algorithm/example");
+        let package = provider.join("python/nodes/hello_provider");
         fs::create_dir_all(&package).unwrap();
         fs::write(
+            provider.join("voxa.provider.json"),
+            r#"{"format":"voxa.provider/v1","provider_id":"example","display_name":"Example AI","category":"algorithm","summary":"Test algorithm provider","vendor":"Example","homepage":"https://example.test","documentation":"https://example.test/docs","license":"test-only","sdk":{"name":"Example API","version":"1"},"connections":[{"id":"example","display_name":"Example","description":"Test credentials","fields":[{"name":"api_key","label":"API Key","environment":"EXAMPLE_API_KEY","secret":true,"required":true,"default":""}]}]}"#,
+        )
+        .unwrap();
+        fs::write(
             package.join("voxa.node.json"),
-            r#"{"format":"voxa.node/v1","package_id":"hello_provider","display_name":"Hello Provider","node_type":"provider.example.hello","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:HelloNode","ports":[],"config_schema":{"type":"object"}}"#,
+            r#"{"format":"voxa.node/v1","package_id":"hello_provider","display_name":"Hello Provider","node_type":"provider.example.hello","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:HelloNode","category":"algorithm","capability":"language.test","summary":"Test Node","provider_id":"example","connection_id":"example","ports":[],"config_schema":{"type":"object"}}"#,
         )
         .unwrap();
         fs::write(package.join("node.py"), "class HelloNode:\n    pass\n").unwrap();
         fs::create_dir_all(project.join(".voxa")).unwrap();
         fs::write(
             project.join(".voxa/providers.json"),
-            r#"{"format":"voxa.providers/v1","roots":["../providers/python"]}"#,
+            r#"{"format":"voxa.providers/v1","roots":["../providers"]}"#,
         )
         .unwrap();
 
@@ -1458,6 +1735,16 @@ mod tests {
         assert_eq!(packages.len(), 1);
         assert_eq!(packages[0].origin, "provider");
         assert!(!packages[0].editable);
+        assert_eq!(packages[0].manifest.category, "algorithm");
+        assert_eq!(packages[0].manifest.capability, "language.test");
+        assert_eq!(
+            packages[0].provider_manifest.as_ref().unwrap().provider_id,
+            "example"
+        );
+        assert_eq!(
+            packages[0].resolved_connection.as_ref().unwrap().id,
+            "example"
+        );
         assert_eq!(
             packages[0].source_directory,
             package.canonicalize().unwrap()

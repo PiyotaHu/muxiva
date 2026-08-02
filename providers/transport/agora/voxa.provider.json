@@ -1,0 +1,32 @@
+{
+  "format": "voxa.provider/v1",
+  "provider_id": "agora",
+  "display_name": "Agora RTC",
+  "category": "transport",
+  "summary": "Bidirectional real-time audio transport between an Agora channel and a Voxa graph.",
+  "vendor": "Agora",
+  "homepage": "https://www.agora.io/",
+  "documentation": "https://piyotahu.github.io/Voxa/en/providers/agora/",
+  "license": "Agora SDK license",
+  "sdk": {
+    "name": "Agora RTC Native SDK",
+    "version": "4.6.2"
+  },
+  "connections": [
+    {
+      "id": "agora",
+      "display_name": "Agora RTC",
+      "description": "Credentials consumed only by the C++ RTC Node Pack",
+      "fields": [
+        { "name": "app_id", "label": "App ID", "environment": "VOXA_AGORA_APP_ID", "secret": false, "required": true, "client_exposed": true, "default": "" },
+        { "name": "channel", "label": "Channel", "environment": "VOXA_AGORA_CHANNEL", "secret": false, "required": true, "client_exposed": true, "default": "voxa-demo" },
+        { "name": "source_uid", "label": "Ingress Bot UID", "environment": "VOXA_AGORA_SOURCE_UID", "secret": false, "required": true, "default": "2001" },
+        { "name": "source_token", "label": "Ingress Bot Token", "environment": "VOXA_AGORA_SOURCE_TOKEN", "secret": true, "required": true, "default": "" },
+        { "name": "sink_uid", "label": "Egress Bot UID", "environment": "VOXA_AGORA_SINK_UID", "secret": false, "required": true, "default": "2002" },
+        { "name": "sink_token", "label": "Egress Bot Token", "environment": "VOXA_AGORA_SINK_TOKEN", "secret": true, "required": true, "default": "" },
+        { "name": "web_uid", "label": "Browser UID", "environment": "VOXA_AGORA_WEB_UID", "secret": false, "required": true, "client_exposed": true, "default": "1001" },
+        { "name": "web_token", "label": "Browser Token", "environment": "VOXA_AGORA_WEB_TOKEN", "secret": true, "required": true, "client_exposed": true, "default": "" }
+      ]
+    }
+  ]
+}

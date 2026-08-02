@@ -1,7 +1,7 @@
 {
   "format": "voxa.providers/v1",
   "roots": [
-    "../../../providers/qwen/python/nodes",
-    "../../../providers/agora/cpp/nodes"
+    "../../../providers/algorithm/qwen",
+    "../../../providers/transport/agora"
   ]
 }

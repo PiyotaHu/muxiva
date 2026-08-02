@@ -35,6 +35,17 @@
     <main class="workspace">
       <aside class="sidebar palette-panel">
         <div class="panel-heading"><span>NODE PALETTE</span><button id="open-node-lab" class="mini-button">＋ Create Node</button></div>
+        <div class="palette-filters">
+          <input id="palette-search" type="search" placeholder="Search capability or provider" aria-label="Search Node Palette">
+          <select id="palette-category" aria-label="Filter Node category">
+            <option value="all">All layers</option>
+            <option value="transport">Transport</option>
+            <option value="algorithm">Algorithm</option>
+            <option value="media">Media</option>
+            <option value="control">Control</option>
+            <option value="utility">Utility</option>
+          </select>
+        </div>
         <div id="node-palette"></div>
 
         <div class="panel-heading edges-heading"><span>EDGES</span><button id="add-edge" class="mini-button">＋ Add</button></div>
@@ -95,6 +106,12 @@
           <label>Node Factory<select id="node-type"></select></label>
           <label>Language<input id="node-language" value="rust" readonly></label>
           <label>Factory version<input id="node-version" value="1.0.0" readonly></label>
+          <section class="node-contract-panel">
+            <div><span id="node-category" class="contract-badge"></span><code id="node-capability"></code></div>
+            <p id="node-summary"></p>
+            <pre id="node-port-contracts"></pre>
+            <a id="node-documentation" class="hidden" target="_blank" rel="noreferrer">Open Node guide ↗</a>
+          </section>
           <label>Configuration<textarea id="node-config" rows="10" spellcheck="false"></textarea></label>
           <p id="config-error" class="field-error"></p>
           <section class="node-source-panel">
@@ -139,10 +156,15 @@
           <label>Kind<select id="node-lab-kind"><option>transform</option><option>source</option><option>sink</option></select></label>
         </div>
         <div class="form-row">
+          <label>Architecture layer<select id="node-lab-category"><option>algorithm</option><option>transport</option><option>media</option><option>control</option><option>utility</option></select></label>
+          <label>Capability<input id="node-lab-capability" value="custom.transform" spellcheck="false"></label>
+        </div>
+        <div class="form-row">
           <label>Package ID<input id="node-lab-package" value="my_python_node" spellcheck="false"></label>
           <label>Display name<input id="node-lab-display" value="My Python Node"></label>
         </div>
         <label>Node type<input id="node-lab-type" value="example.my_python_node" spellcheck="false"></label>
+        <label>Summary<input id="node-lab-summary" value="Project-owned custom Node"></label>
         <label>Typed Ports (JSON)<textarea id="node-lab-ports" rows="5" spellcheck="false"></textarea></label>
         <label>Configuration Schema (JSON)<textarea id="node-lab-schema" rows="4" spellcheck="false">{"type":"object","properties":{},"additionalProperties":false}</textarea></label>
         <label>Node code<textarea id="node-lab-code" class="code-editor" rows="16" spellcheck="false"></textarea></label>

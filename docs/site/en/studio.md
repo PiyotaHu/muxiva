@@ -24,6 +24,11 @@ the canvas with exact diagnostics.
 
 ## Visual workflow
 
+The Palette separates architecture layer from graph role. Filter by Transport,
+Algorithm, Media, Control, or Utility, or search by provider, capability, tag,
+or Node type. Selecting a Node shows its summary, stable capability, detailed
+Port schemas, implementation source, and Node-specific guide.
+
 1. Drag a built-in or project Node from the Palette onto the canvas.
 2. Drag an output port to a compatible input port.
 3. Select a Node to inspect its Factory metadata, configuration, and implementation source.

@@ -87,6 +87,11 @@ pub struct NodeCatalogEntry {
     pub language: String,
     pub factory_version: String,
     pub kind: String,
+    pub category: String,
+    pub capability: String,
+    pub summary: String,
+    pub documentation: String,
+    pub tags: Vec<String>,
     pub ports: Vec<NodeCatalogPort>,
     pub config_schema: serde_json::Value,
 }
@@ -96,6 +101,7 @@ pub struct NodeCatalogPort {
     pub name: String,
     pub direction: String,
     pub frame_type: String,
+    pub schema: serde_json::Value,
 }
 
 /// Returns the trusted built-ins shipped with this binary.
@@ -114,6 +120,7 @@ pub fn node_catalog(registry: &NodeRegistry) -> Vec<NodeCatalogEntry> {
         .entries()
         .map(|registration| {
             let descriptor = registration.descriptor();
+            let metadata = builtin_metadata(descriptor.node_type().as_str());
             NodeCatalogEntry {
                 node_type: descriptor.node_type().as_str().to_owned(),
                 language: registration.language().as_str().to_owned(),
@@ -124,6 +131,11 @@ pub fn node_catalog(registry: &NodeRegistry) -> Vec<NodeCatalogEntry> {
                     NodeKind::Sink => "sink",
                 }
                 .to_owned(),
+                category: metadata.0.to_owned(),
+                capability: metadata.1.to_owned(),
+                summary: metadata.2.to_owned(),
+                documentation: "https://piyotahu.github.io/Voxa/en/providers/builtin/".to_owned(),
+                tags: metadata.3.iter().map(|tag| (*tag).to_owned()).collect(),
                 ports: descriptor
                     .ports()
                     .iter()
@@ -135,12 +147,110 @@ pub fn node_catalog(registry: &NodeRegistry) -> Vec<NodeCatalogEntry> {
                         }
                         .to_owned(),
                         frame_type: frame_type_name(port.frame_type()).to_owned(),
+                        schema: builtin_port_schema(
+                            descriptor.node_type().as_str(),
+                            port.name().as_str(),
+                            port.frame_type(),
+                        ),
                     })
                     .collect(),
                 config_schema: value_to_json(descriptor.config_schema().value()),
             }
         })
         .collect()
+}
+
+fn builtin_metadata(
+    node_type: &str,
+) -> (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static [&'static str],
+) {
+    match node_type {
+        "builtin.audio_resample" => (
+            "media",
+            "audio.resample",
+            "Converts PCM audio between sample rates.",
+            &["audio", "resample"],
+        ),
+        "builtin.audio_vad" => (
+            "algorithm",
+            "speech.vad",
+            "Detects speech activity in PCM audio.",
+            &["audio", "vad", "speech"],
+        ),
+        "builtin.voice_turn_context" => (
+            "control",
+            "conversation.turn_context",
+            "Joins transcript and speech events into a turn-aware prompt.",
+            &["turn", "context", "voice"],
+        ),
+        "builtin.interval_tick" => (
+            "control",
+            "clock.interval",
+            "Emits deterministic interval events that drive polling Sources.",
+            &["clock", "event"],
+        ),
+        "builtin.text_source" => (
+            "utility",
+            "text.source",
+            "Emits configured text into a graph.",
+            &["text", "source"],
+        ),
+        "builtin.uppercase" => (
+            "utility",
+            "text.uppercase",
+            "Converts text frames to uppercase.",
+            &["text", "transform"],
+        ),
+        "builtin.text_sink" => (
+            "utility",
+            "text.collect",
+            "Collects text frames in memory.",
+            &["text", "sink"],
+        ),
+        "builtin.stdout_text_sink" => (
+            "utility",
+            "observability.stdout",
+            "Prints text frames to standard output.",
+            &["text", "stdout"],
+        ),
+        value if value.starts_with("builtin.demo.") => (
+            "utility",
+            "demo.voice",
+            "Deterministic architecture-preview Node; not a production Provider.",
+            &["demo", "mock"],
+        ),
+        _ => (
+            "utility",
+            "runtime.builtin",
+            "Voxa runtime built-in Node.",
+            &["builtin"],
+        ),
+    }
+}
+
+fn builtin_port_schema(node_type: &str, port: &str, frame_type: FrameType) -> serde_json::Value {
+    if frame_type == FrameType::Audio {
+        let sample_rate_hz = if node_type == "builtin.audio_resample" && port == "audio_out" {
+            serde_json::Value::String("configured".to_owned())
+        } else {
+            serde_json::Value::Number(16_000.into())
+        };
+        return serde_json::json!({
+            "encoding": "pcm_s16le",
+            "sample_rate_hz": sample_rate_hz,
+            "channels": 1,
+            "streaming": true
+        });
+    }
+    match frame_type {
+        FrameType::Text => serde_json::json!({"encoding": "utf-8"}),
+        FrameType::Event => serde_json::json!({"semantics": port}),
+        _ => serde_json::json!({}),
+    }
 }
 
 pub fn parse(input: &str) -> Result<GraphDocument, Vec<GraphDiagnostic>> {
