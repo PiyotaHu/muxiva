@@ -11,6 +11,17 @@ Voxa 将确定性的失败行为视为公开契约的一部分。
 独立检查覆盖 Rust、Python、Node.js、C ABI、C++ Consumer、RTC、Media、
 Sanitizer、Benchmark、Fuzz、Miri 与 Studio 浏览器测试。
 
+## 离线 Runtime 模拟器
+
+`voxa demo` 和 `examples/graphs/mock-realtime-voice.v1.json` 是无网络、无凭据的
+Runtime 测试夹具。它们使用合成 PCM 和预制文本验证分叉/汇合、背压、Signal、
+EventBus、Turn 与生命周期，不提供真实 ASR、LLM 或 TTS，也不作为产品 Demo。
+
+```bash
+voxa demo --turns 4
+voxa studio examples/graphs/mock-realtime-voice.v1.json
+```
+
 ## 持续集成
 
 受保护的 Pull Request 当前要求：

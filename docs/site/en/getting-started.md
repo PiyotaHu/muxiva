@@ -24,20 +24,16 @@ voxa --version
 After installation, application developers use `voxa`; they do not run the
 workspace through `cargo run` for normal workflows.
 
-## Run the branching voice demo
+## First run: a real voice assistant
+
+Voxa's primary developer experience is the credentialed Qwen + Agora Voice
+Room, not synthetic ASR, LLM, or TTS output. After preparing an Agora Native
+C++ SDK, three short-lived RTC tokens, and DashScope credentials, continue with
+the [flagship voice demo](voice-demo.md).
 
 ```bash
-voxa demo
-```
-
-The default session runs four turns. Use
-`voxa demo --turns 20 --interval-ms 1000` for a longer observable run.
-
-The default scenario runs an eight-Node voice graph with two fan-outs and one
-stateful join. To run the small installation smoke test instead:
-
-```bash
-voxa demo --scenario text
+./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/run.sh
 ```
 
 ## Create and run a graph
@@ -60,17 +56,3 @@ voxa studio my-agent.voxa.json
 
 Studio opens locally with a random access token. Continue with the
 [Studio guide](studio.md).
-
-## Credentialed flagship voice demo
-
-After obtaining an Agora Native C++ SDK, three short-lived RTC tokens, and
-DashScope credentials, run:
-
-```bash
-./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
-./examples/voice-agent/run.sh
-```
-
-Choose Qwen Realtime or Cascade in Studio, fill **Connections**, and open
-**Voice Room**. See `examples/voice-agent/README.md` in the repository for the
-credential boundary and complete acceptance flow.

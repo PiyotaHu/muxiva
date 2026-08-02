@@ -12,33 +12,36 @@ reasoning, media, transport, and business logic.
     integrations are still evolving. Do not execute untrusted Node code or
     expose Studio directly to the internet.
 
-## Experience the architecture
+## Experience a real voice agent
 
 ```bash
-voxa demo
-voxa studio examples/graphs/mock-realtime-voice.v1.json
+./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/run.sh
 ```
 
 ```mermaid
 flowchart LR
-    MIC["Microphone · audio"] --> ASR["Streaming ASR · text"]
-    MIC --> VAD["Voice activity · event"]
-    ASR --> FUSION["Context fusion"]
-    VAD --> FUSION
-    FUSION --> LLM["Reasoning LLM"]
-    LLM --> TEXT["Live transcript"]
-    LLM --> TTS["Neural TTS · audio"]
-    TTS --> SPEAKER["Speaker"]
+    WEB["Browser microphone"] --> AGORA_IN["Agora C++ ingress"]
+    AGORA_IN --> QWEN["Qwen Realtime or cascade intelligence"]
+    QWEN --> AGORA_OUT["Agora C++ egress"]
+    AGORA_OUT --> WEB
+    QWEN --> LIVE["Live transcript · EventBus · barge-in"]
 ```
 
-The demo providers are explicitly marked as mocks. Graph compilation,
-immutable Frames, fork/join routing, bounded queues, concurrent scheduling, and
-lifecycle execution are real Voxa Runtime behavior.
+This credentialed flagship application captures a real microphone in the
+browser, transports real audio through Agora, and uses Qwen for speech
+understanding and generation. Studio offers a low-latency Realtime graph and an
+inspectable VAD → ASR → LLM → TTS graph with live Node, Frame, and conversation
+state.
+
+[Run the flagship voice demo](voice-demo.md){ .md-button .md-button--primary }
+[Open the Studio guide](studio.md){ .md-button }
 
 ## Choose your path
 
 | Goal | Start here |
 | --- | --- |
+| Run a real voice assistant | [Flagship voice demo](voice-demo.md) |
 | Install and run a graph | [Installation and first run](getting-started.md) |
 | Build visually | [Voxa Studio](studio.md) |
 | Understand the runtime | [Runtime architecture](concepts.md) |
@@ -46,5 +49,4 @@ lifecycle execution are real Voxa Runtime behavior.
 | Integrate RTC or media | [Providers](integrations.md) |
 | Contribute safely | [Contributing](contributing.md) |
 
-[Open the quick start](getting-started.md){ .md-button .md-button--primary }
 [Build a Node](nodes/index.md){ .md-button }

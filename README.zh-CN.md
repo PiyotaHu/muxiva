@@ -2,7 +2,7 @@
 
 > 一个以 Rust 为核心的实时多模态 Agent Runtime，让 Rust、C++、Python 与 TypeScript 共享同一套图、生命周期和安全边界。
 
-[English](README.md) · [中文文档](https://piyotahu.github.io/Voxa/zh/) · [安装](https://piyotahu.github.io/Voxa/zh/getting-started/) · [开发 Node](https://piyotahu.github.io/Voxa/zh/nodes/) · [Studio](https://piyotahu.github.io/Voxa/zh/studio/) · [Graph v1](https://piyotahu.github.io/Voxa/zh/graph/) · [测试体系](https://piyotahu.github.io/Voxa/zh/testing/)
+[English](README.md) · [中文文档](https://piyotahu.github.io/Voxa/zh/) · [旗舰语音 Demo](https://piyotahu.github.io/Voxa/zh/voice-demo/) · [开发 Node](https://piyotahu.github.io/Voxa/zh/nodes/) · [Studio](https://piyotahu.github.io/Voxa/zh/studio/) · [Graph v1](https://piyotahu.github.io/Voxa/zh/graph/) · [测试体系](https://piyotahu.github.io/Voxa/zh/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -16,7 +16,8 @@
 
 Voxa 是一个早期阶段的实时多模态 Agent Runtime，用静态处理图构建语音、视频、文本和二进制流应用。Rust 统一负责调度、有界队列、背压、生命周期、取消、Signal、Event、关闭和可观测性；节点和 Adapter 可以使用 Rust、C++、Python 或 TypeScript 编写，语言对象不会跨越 Runtime 边界。
 
-项目目前提供经过测试的基础 Runtime 与 Mock 集成，但尚未达到生产级 Agent 平台标准。
+项目目前提供经过测试的基础 Runtime，以及应用层 Qwen + Agora 真实语音门面应用，
+但尚未达到生产级 Agent 平台标准。
 
 ## 为什么选择 Voxa
 
@@ -82,30 +83,7 @@ voxa --version
 首次二进制 Release 发布前，安装过程会从源码构建 CLI。完成这一次安装后，
 日常使用不再需要 `cargo run -p ...`，也不需要理解 Rust workspace。
 
-### 运行无需项目文件的内置 Demo
-
-```bash
-voxa demo
-```
-
-默认 Demo 会真实执行一个包含 4 轮对话、8 个节点、两处分叉和一个有状态汇合的
-语音 Agent 会话。类型化 PCM Frame 会并发进入 Mock 流式 ASR 与语音活动检测，汇合为
-LLM 上下文后，再并行输出实时字幕并进入 Mock 神经 TTS。Provider 会明确标记为
-`mock`；图编译、不可变 Frame、有界队列、并发调度、分叉/汇合路由、Source
-定时 Tick、EventBus 发布/订阅、Signal 与生命周期执行均为真实 Voxa Runtime。
-
-```text
-microphone(audio)
-  ├─> streaming-asr(text) ─────┐
-  └─> voice-activity(event) ───┴─> context-fusion -> reasoning-llm
-                                                       ├─> live-transcript
-                                                       └─> neural-tts(audio) -> speaker
-```
-
-仅用于确认安装成功的极简 Smoke Test 可使用 `voxa demo --scenario text`。
-如需长时间观察完整链路，可运行 `voxa demo --turns 20 --interval-ms 1000`。
-
-### 运行真实凭据门面语音房间
+### 运行真实语音助手
 
 门面应用同时提供 Qwen Audio Realtime 与可检查的 VAD → ASR → LLM → TTS 图，
 使用 Agora C++ Transport 和浏览器麦克风：
@@ -117,7 +95,7 @@ microphone(audio)
 
 在 Studio 选择图、填写 **Connections**，然后打开 **Voice Room**。完整安装流程、
 三身份 RTC Token 模型、安全边界和离线门禁见
-[门面应用指南](examples/voice-agent/README.md)。
+[旗舰语音 Demo 指南](https://piyotahu.github.io/Voxa/zh/voice-demo/)。
 
 ### 创建、校验并运行 Graph
 
@@ -154,12 +132,11 @@ Token。详见 [Studio 指南](https://piyotahu.github.io/Voxa/zh/studio/)。
 
 脚本会构建可真实安装的包、执行集成测试，并运行独立的 Python、TypeScript 与 C++ 消费者示例。安装与 Node 开发方式参见[Node 开发指南](https://piyotahu.github.io/Voxa/zh/nodes/)。
 
-## Graph v1 示例
+## 旗舰 Graph
 
-完整且可执行的语音图位于
-[`examples/graphs/mock-realtime-voice.v1.json`](examples/graphs/mock-realtime-voice.v1.json)。
-可直接运行 `voxa run examples/graphs/mock-realtime-voice.v1.json`，或通过
-`voxa studio examples/graphs/mock-realtime-voice.v1.json` 打开可视化编辑器。
+真实语音应用的 Realtime 与 Cascade 模板位于
+[`examples/voice-agent/.voxa/templates/`](examples/voice-agent/.voxa/templates/)。
+通过 `./examples/voice-agent/run.sh` 启动 Studio 后，可以直接选择、查看和编辑两张图。
 
 Graph JSON 只用于声明式配置，不能包含可执行代码、动态脚本、凭据或任意远程资源。详见 [Graph 与类型化端口](https://piyotahu.github.io/Voxa/zh/graph/)。
 

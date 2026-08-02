@@ -11,6 +11,18 @@ Voxa treats deterministic failure behavior as part of the public contract.
 Focused checks include Rust, Python, Node.js, C ABI, C++ consumers, RTC, media,
 sanitizers, benchmarks, fuzzing, Miri, and Studio browser tests.
 
+## Offline Runtime simulator
+
+`voxa demo` and `examples/graphs/mock-realtime-voice.v1.json` are network-free,
+credential-free Runtime fixtures. They use synthetic PCM and scripted text to
+test fork/join routing, backpressure, Signals, EventBus, turns, and lifecycle.
+They provide no real ASR, LLM, or TTS and are not a product demo.
+
+```bash
+voxa demo --turns 4
+voxa studio examples/graphs/mock-realtime-voice.v1.json
+```
+
 ## Continuous integration
 
 Protected pull requests require:

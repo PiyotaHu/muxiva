@@ -2,7 +2,7 @@
 
 > A Rust-native, real-time multimodal agent runtime with one graph and lifecycle contract across Rust, C++, Python, and TypeScript.
 
-[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/Voxa/) · [Install](https://piyotahu.github.io/Voxa/getting-started/) · [Build Nodes](https://piyotahu.github.io/Voxa/nodes/) · [Studio](https://piyotahu.github.io/Voxa/studio/) · [Graph v1](https://piyotahu.github.io/Voxa/graph/) · [Testing](https://piyotahu.github.io/Voxa/testing/)
+[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/Voxa/) · [Flagship voice demo](https://piyotahu.github.io/Voxa/voice-demo/) · [Build Nodes](https://piyotahu.github.io/Voxa/nodes/) · [Studio](https://piyotahu.github.io/Voxa/studio/) · [Graph v1](https://piyotahu.github.io/Voxa/graph/) · [Testing](https://piyotahu.github.io/Voxa/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -16,7 +16,9 @@
 
 Voxa is an early-stage runtime for building streaming voice, video, text, and binary agents as static processing graphs. Rust owns scheduling, bounded queues, backpressure, lifecycle, cancellation, signals, events, shutdown, and observability. Nodes and adapters can be implemented in Rust, C++, Python, or TypeScript without moving language-specific objects across runtime boundaries.
 
-The project currently provides a tested foundation and mock integrations. It is not yet a production-ready agent platform.
+The project currently provides a tested Runtime foundation and an
+application-layer Qwen + Agora real-voice flagship. It is not yet a
+production-ready agent platform.
 
 ## Why Voxa
 
@@ -83,35 +85,7 @@ Until the first binary release, installation builds the CLI from the checkout.
 After that one-time step, normal usage never needs `cargo run -p ...` or
 knowledge of the Rust workspace.
 
-### Run a self-contained demo
-
-```bash
-voxa demo
-```
-
-The default demo executes a four-turn, eight-node voice-agent session with two
-real fan-outs and a stateful join. Typed PCM frames flow concurrently through mock
-streaming ASR and voice-activity detection, merge into LLM context, then fan
-out to a live transcript and mock neural TTS. Providers are clearly labeled
-`mock`; graph compilation, immutable Frames, bounded queues, concurrent
-scheduling, scheduled source ticks, fork/join routing, EventBus publish/subscribe,
-Signals, and lifecycle execution are real Voxa Runtime.
-
-```text
-microphone(audio)
-  ├─> streaming-asr(text) ─────┐
-  └─> voice-activity(event) ───┴─> context-fusion -> reasoning-llm
-                                                       ├─> live-transcript
-                                                       └─> neural-tts(audio) -> speaker
-```
-
-For the intentionally small installation smoke test, run
-`voxa demo --scenario text`.
-
-Keep the mock session alive for a longer architecture review with
-`voxa demo --turns 20 --interval-ms 1000`.
-
-### Run the credentialed flagship voice room
+### Run the real voice assistant
 
 The flagship application offers both Qwen Audio Realtime and an inspectable
 VAD → ASR → LLM → TTS graph, with Agora C++ transport and a browser microphone:
@@ -123,7 +97,7 @@ VAD → ASR → LLM → TTS graph, with Agora C++ transport and a browser microp
 
 Choose a graph in Studio, fill **Connections**, then open **Voice Room**. The
 full setup, three-identity RTC token model, security boundary, and offline gates
-are documented in [the flagship application guide](examples/voice-agent/README.md).
+are documented in the [flagship voice demo guide](https://piyotahu.github.io/Voxa/voice-demo/).
 
 ### Create, validate, and run a graph
 
@@ -162,12 +136,12 @@ listens on `127.0.0.1` by default and generates a local access token. See the
 
 These scripts build real installable packages, run integration tests, and execute independent Python, TypeScript, and C++ consumer examples. See the [Node development guide](https://piyotahu.github.io/Voxa/nodes/) for language-specific workflows.
 
-## Graph v1 example
+## Flagship graphs
 
-The complete executable voice graph is
-[`examples/graphs/mock-realtime-voice.v1.json`](examples/graphs/mock-realtime-voice.v1.json).
-Run it directly with `voxa run examples/graphs/mock-realtime-voice.v1.json`, or
-open it visually with `voxa studio examples/graphs/mock-realtime-voice.v1.json`.
+The real-voice Realtime and Cascade templates live under
+[`examples/voice-agent/.voxa/templates/`](examples/voice-agent/.voxa/templates/).
+Start Studio with `./examples/voice-agent/run.sh` to select, inspect, and edit
+either graph.
 
 Graph JSON is declarative configuration. It cannot contain executable code, dynamic scripts, credentials, or arbitrary remote resources. See the [Graph and typed ports guide](https://piyotahu.github.io/Voxa/graph/).
 
