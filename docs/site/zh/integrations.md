@@ -33,15 +33,15 @@ DashScope API Key 或 Agora App Certificate。
 定义了媒体格式、配置与打断契约。
 
 Studio 提供 DashScope 与 Agora 的 **Connections** 配置界面。Secret 使用密码
-输入框，提交后立即清空；初版只保留在本地 Studio 进程内存中，状态接口不回显，
+输入框，提交后立即清空；值保存在项目的 Git 忽略 `.env`（权限 `0600`），状态接口不回显，
 Graph 也不会保存。Voice Graph Gallery 同时展示推荐的 7-Node 端到端 Realtime
 拓扑，以及可检查、可替换的 11-Node VAD → ASR → LLM → TTS 级联拓扑。Python
 ASR、流式 LLM、TTS、通用 VAD/Turn Context 与 C++ 动态 Node Pack Loader 均已
 实现；只有精确 Provider Factory 全部安装后模板才可运行。
 
 项目自带的 **Voice Room** 通过 Agora Web SDK 采集麦克风、订阅 Bot 音频，并实时
-展示 Graph、Node 调用和 Frame 活动。Ingress、Egress 与浏览器使用三个独立 UID/短期
-Token，避免两个 Native Client 相互顶替。浏览器只会收到 Manifest 明确允许的 App
+展示 Graph、Node 调用和 Frame 活动。浏览器与 Voxa Bot 使用两个独立 UID/短期
+Token；Ingress 与 Egress Node 共享同一个 Agora Engine 和 Bot 身份。浏览器只会收到 Manifest 明确允许的 App
 ID、Channel、Web UID 与短期 Web Token；DashScope Key、Bot Token 和 App
 Certificate 永不进入浏览器。
 

@@ -4,11 +4,11 @@
 麦克风通过 Agora 进入 Voxa Graph，由 Qwen 生成实时回复，再通过 Agora 播放出来。
 
 !!! danger "只有 App ID 还不能运行"
-    必须先准备 3 个 Agora RTC Token、百炼 API Key 和 Workspace ID。没有全部配置时，
+    必须先准备 2 个 Agora RTC Token、百炼 API Key 和 Workspace ID。没有全部配置时，
     不要点击 Run 或 Voice Room。请先逐项完成[语音凭据配置清单](voice-credentials.md)。
 
 !!! info "你真正需要准备的东西"
-    Agora 需要一个账号、App ID 和三个临时 RTC Token。Qwen **不需要下载 SDK**，
+    Agora 需要一个账号、App ID 和两个临时 RTC Token。Qwen **不需要下载 SDK**，
     只需要阿里云百炼 API Key 与 Workspace ID。Voxa 会自动下载并校验 Agora macOS
     SDK，也会在隔离的 Python 环境中安装 Qwen WebSocket 依赖。
 
@@ -62,13 +62,12 @@ cargo install --locked --path crates/voxa-cli
 4. 选一个 Channel 名称，例如 `voxa-demo`。后面所有 Token 必须使用完全相同的名称。
 5. 按 Agora 官方的[账号与临时 Token 指南](https://docs.agora.io/en/realtime-media/voice/manage-agora-account)
    打开项目安全配置或 [Agora Token Builder](https://agora-token-generator-demo.vercel.app/)，
-   为同一个 Channel 生成三个短期 RTC Token：
+   为同一个 Channel 生成两个短期 RTC Token：
 
 | Studio 字段 | UID | 第一次运行建议角色 | 用途 |
 | --- | ---: | --- | --- |
 | Browser UID / Token | `1001` | Publisher | 浏览器采集麦克风并播放音频 |
-| Ingress Bot UID / Token | `2001` | Publisher | C++ Node 接收浏览器音频 |
-| Egress Bot UID / Token | `2002` | Publisher | C++ Node 发布助手语音 |
+| Voxa Bot UID / Token | `2001` | Publisher | 同一个 C++ RTC Engine 接收麦克风并发布助手音频 |
 
 !!! warning "不要暴露 App Certificate"
     App Certificate 只用于服务端生成 Token。不要把它填进 Studio、网页或提交到 Git。
@@ -100,11 +99,14 @@ voxa doctor --voice
 
 1. 打开 **Connections**。
 2. 在 **Alibaba Cloud Model Studio** 填写 API Key、Workspace ID。
-3. 在 **Agora RTC** 填写 App ID、Channel，以及 `1001`、`2001`、`2002` 对应的 UID/Token。
+3. 在 **Agora RTC** 填写 App ID、Channel，以及 `1001`、`2001` 对应的 UID/Token。
 4. 点击 **Save connections**，确认两张卡片都显示 **Ready**；否则 Runtime 不会启动。
 5. 保存后进入 **Templates**，第一次选择 **Qwen Realtime**。
 6. 打开 **Voice Room**，点击 **Start live conversation**，允许麦克风权限。
 7. 自然说话；助手播放时再次开口，验证全双工打断。
+
+点击 Save connections 后，值会保存到 `examples/voice-agent/.env`（权限 `0600`、Git
+忽略）。以后再次运行无需重复填写。也可以参考 `.env.example` 手动创建该文件。
 
 Realtime 跑通后，再切换 **Qwen Cascade**，观察 VAD → ASR → LLM → TTS 的各阶段。
 会话会持续运行，直到点击 **End session**。

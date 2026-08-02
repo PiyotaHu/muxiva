@@ -1,6 +1,6 @@
 # Agora RTC transport
 
-Agora is a C++ transport Provider. It joins a channel with separate ingress and egress clients,
+Agora is a C++ transport Provider. Ingress and egress Nodes share one process-level RTC Engine,
 keeps credentials outside Graph JSON, and exchanges typed PCM Audio Frames with Voxa.
 
 - Category: `transport`
@@ -15,7 +15,7 @@ Run on macOS:
 voxa doctor --voice
 ```
 
-Configure App ID, channel, ingress UID/token, egress UID/token, and browser UID/token in Studio
+Configure App ID, channel, Voxa Bot UID/token, and browser UID/token in Studio
 **Connections**. Use short-lived tokens in development and a token server in production.
 
 Nodes:

@@ -55,3 +55,7 @@ Testing/
 *.log
 *.bak
 *.swp
+
+# Local provider credentials
+**/.env
+**/.env.local

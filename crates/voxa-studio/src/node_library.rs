@@ -254,6 +254,7 @@ impl Drop for SecretBytes {
 pub struct ConnectionStore {
     manifests: Arc<Vec<ConnectionManifest>>,
     values: Arc<Mutex<BTreeMap<(String, String), SecretBytes>>>,
+    env_path: Arc<PathBuf>,
 }
 
 impl ConnectionStore {
@@ -270,11 +271,17 @@ impl ConnectionStore {
             }
         }
         let manifests = manifests.into_values().collect::<Vec<_>>();
+        let env_path = graph
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(".env");
+        let file_values = read_dotenv(&env_path)?;
         let mut values = BTreeMap::new();
         for connection in &manifests {
             for field in &connection.fields {
                 let value = std::env::var(&field.environment)
                     .ok()
+                    .or_else(|| file_values.get(&field.environment).cloned())
                     .unwrap_or_else(|| field.default.clone());
                 if !value.is_empty() {
                     values.insert(
@@ -287,6 +294,7 @@ impl ConnectionStore {
         let store = Self {
             manifests: Arc::new(manifests),
             values: Arc::new(Mutex::new(values)),
+            env_path: Arc::new(env_path),
         };
         store.apply_to_process_environment();
         Ok(store)
@@ -322,7 +330,7 @@ impl ConnectionStore {
                     "fields": fields,
                 })
             }).collect::<Vec<_>>(),
-            "storage": "process-memory",
+            "storage": "project-.env",
         })
     }
 
@@ -418,6 +426,11 @@ impl ConnectionStore {
                 if value.len() > 16 * 1024 {
                     return Err(format!("field `{connection_id}.{name}` exceeds 16 KiB"));
                 }
+                if value.contains(['\0', '\n', '\r']) {
+                    return Err(format!(
+                        "field `{connection_id}.{name}` cannot contain NUL or a line break"
+                    ));
+                }
                 if field.secret && value.is_empty() {
                     continue;
                 }
@@ -428,8 +441,28 @@ impl ConnectionStore {
             }
         }
         drop(values);
+        self.persist_dotenv()?;
         self.apply_to_process_environment();
         Ok(())
+    }
+
+    fn persist_dotenv(&self) -> Result<(), String> {
+        let mut output = read_dotenv(&self.env_path)?;
+        let values = self
+            .values
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        for connection in self.manifests.iter() {
+            for field in &connection.fields {
+                if let Some(value) = values.get(&(connection.id.clone(), field.name.clone())) {
+                    output.insert(
+                        field.environment.clone(),
+                        String::from_utf8_lossy(&value.0).into_owned(),
+                    );
+                }
+            }
+        }
+        write_dotenv(&self.env_path, &output)
     }
 
     fn apply_to_process_environment(&self) {
@@ -466,6 +499,90 @@ impl ConnectionStore {
             }
         }
     }
+}
+
+fn read_dotenv(path: &Path) -> Result<BTreeMap<String, String>, String> {
+    let content = match fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(error) => return Err(format!("failed to read {}: {error}", path.display())),
+    };
+    let mut values = BTreeMap::new();
+    for (index, line) in content.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let (key, raw) = line
+            .split_once('=')
+            .ok_or_else(|| format!("{}:{} must use KEY=value", path.display(), index + 1))?;
+        let key = key.trim();
+        if key.is_empty()
+            || !key
+                .bytes()
+                .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
+        {
+            return Err(format!(
+                "{}:{} has an invalid key",
+                path.display(),
+                index + 1
+            ));
+        }
+        let raw = raw.trim();
+        let value = if raw.starts_with('"') {
+            serde_json::from_str::<String>(raw).map_err(|_| {
+                format!(
+                    "{}:{} has an invalid quoted value",
+                    path.display(),
+                    index + 1
+                )
+            })?
+        } else {
+            raw.to_owned()
+        };
+        values.insert(key.to_owned(), value);
+    }
+    Ok(values)
+}
+
+fn write_dotenv(path: &Path, values: &BTreeMap<String, String>) -> Result<(), String> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    let temporary = parent.join(format!(
+        ".env.{}.{}.tmp",
+        std::process::id(),
+        NEXT_FILE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let result = (|| -> Result<(), String> {
+        let mut file = options
+            .open(&temporary)
+            .map_err(|error| format!("failed to create {}: {error}", temporary.display()))?;
+        writeln!(
+            file,
+            "# Local Voxa provider credentials. Never commit this file."
+        )
+        .map_err(|error| error.to_string())?;
+        for (key, value) in values {
+            let quoted = serde_json::to_string(value).map_err(|error| error.to_string())?;
+            writeln!(file, "{key}={quoted}").map_err(|error| error.to_string())?;
+        }
+        file.sync_all().map_err(|error| error.to_string())?;
+        fs::rename(&temporary, path)
+            .map_err(|error| format!("failed to replace {}: {error}", path.display()))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
 
 fn insert_connection(

@@ -67,12 +67,12 @@ itself. Build the complete flagship packs with:
 ./examples/voice-agent/setup.sh
 ```
 
-Ingress, egress, and browser clients use separate UIDs and short-lived RTC
-tokens. The browser receives only explicitly exposed room fields; App
+Ingress and egress Nodes share one process-level Agora Engine and Voxa Bot UID/token; the
+browser uses a second UID/token. The browser receives only explicitly exposed room fields; App
 Certificates and server/provider credentials must never enter the browser.
 
-Do not commit App IDs, certificates, or tokens. Studio's generic Connection
-store passes the Manifest-declared environment variables only to the owning
+Do not commit certificates or tokens. Studio's generic Connection store writes
+Manifest-declared values to the Git-ignored project `.env` with mode `0600` and passes them only to the owning
 Node process. See [`D09 Agora production readiness`](../design/d09-agora-production-readiness.md).
 
 ## Live acceptance checklist

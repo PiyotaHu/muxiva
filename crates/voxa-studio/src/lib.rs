@@ -1142,7 +1142,7 @@ mod tests {
     }
 
     #[test]
-    fn provider_configuration_never_echoes_or_persists_secrets() {
+    fn provider_configuration_persists_secrets_only_in_gitignored_dotenv() {
         let graph = graph_path();
         let original = fs::read_to_string(&graph).unwrap();
         let package_dir = graph.parent().unwrap().join(".voxa/nodes/connection_test");
@@ -1174,6 +1174,18 @@ mod tests {
         assert!(payload.contains(r#""configured":true"#));
         assert!(!payload.contains(api_key));
         assert!(!fs::read_to_string(&graph).unwrap().contains(api_key));
+        let dotenv = graph.parent().unwrap().join(".env");
+        let dotenv_text = fs::read_to_string(&dotenv).unwrap();
+        assert!(dotenv_text.contains("TEST_PROVIDER_API_KEY="));
+        assert!(dotenv_text.contains(api_key));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&dotenv).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
 
         let status_request = HttpRequest {
             method: "GET".into(),
@@ -1196,7 +1208,7 @@ mod tests {
         assert!(!client_payload.contains(api_key));
         assert!(!client_payload.contains("api_key"));
         assert_eq!(fs::read_to_string(&graph).unwrap(), original);
-        fs::remove_file(graph).unwrap();
+        fs::remove_dir_all(graph.parent().unwrap()).unwrap();
     }
 
     #[test]

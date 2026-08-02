@@ -362,11 +362,250 @@ class NativeSdk final : public Sdk,
   bool shutdown_ = false;
 };
 
+// Agora RTC SDK v4 supports only one IRtcEngine per process. Source and Sink
+// Node Packs therefore share this owner through the common provider library.
+class SharedEngine final : private SdkObserver {
+ public:
+  int attach(const std::string& app_id, SdkObserver* observer) noexcept {
+    try {
+      if (observer == nullptr) return -2;
+      std::lock_guard<std::mutex> operation(operation_mutex_);
+      {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (std::find(observers_.begin(), observers_.end(), observer) != observers_.end()) return 0;
+        if (sdk_) {
+          if (app_id_ != app_id) return -2;
+          observers_.push_back(observer);
+          return 0;
+        }
+      }
+      auto sdk = std::make_shared<NativeSdk>();
+      const int result = sdk->initialize(app_id, this);
+      if (result != 0) {
+        sdk->shutdown();
+        return result;
+      }
+      {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (sdk_) {
+          sdk->shutdown();
+          return -2;
+        }
+        sdk_ = std::move(sdk);
+        app_id_ = app_id;
+        observers_.push_back(observer);
+      }
+      return 0;
+    } catch (...) {
+      return -1;
+    }
+  }
+
+  int join(const std::string& token, const std::string& channel,
+           std::uint32_t uid) noexcept {
+    try {
+      std::lock_guard<std::mutex> operation(operation_mutex_);
+      std::shared_ptr<NativeSdk> sdk;
+      {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (!sdk_) return -7;
+        if (joined_) {
+          return token_ == token && channel_ == channel && uid_ == uid ? 0 : -2;
+        }
+        sdk = sdk_;
+      }
+      const int result = sdk->join(token, channel, uid);
+      if (result == 0) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        token_ = token;
+        channel_ = channel;
+        uid_ = uid;
+        joined_ = true;
+      }
+      return result;
+    } catch (...) {
+      return -1;
+    }
+  }
+
+  int renew_token(const std::string& token) noexcept {
+    try {
+      std::shared_ptr<NativeSdk> sdk;
+      {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        sdk = sdk_;
+      }
+      if (!sdk) return -7;
+      const int result = sdk->renew_token(token);
+      if (result == 0) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        token_ = token;
+      }
+      return result;
+    } catch (...) { return -1; }
+  }
+
+  int push_audio(const Pcm16FrameView& frame) noexcept {
+    try {
+      std::shared_ptr<NativeSdk> sdk;
+      {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        sdk = sdk_;
+      }
+      return sdk ? sdk->push_audio(frame) : -7;
+    } catch (...) { return -1; }
+  }
+
+  int push_video(const I420FrameView& frame) noexcept {
+    try {
+      std::shared_ptr<NativeSdk> sdk;
+      {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        sdk = sdk_;
+      }
+      return sdk ? sdk->push_video(frame) : -7;
+    } catch (...) { return -1; }
+  }
+
+  void detach(SdkObserver* observer) noexcept {
+    try {
+      std::lock_guard<std::mutex> operation(operation_mutex_);
+      std::shared_ptr<NativeSdk> sdk;
+      bool leave = false;
+      {
+        // Holding this lock while erasing also waits for any callback currently
+        // invoking this observer, so detach cannot return into freed Node state.
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        observers_.erase(std::remove(observers_.begin(), observers_.end(), observer),
+                         observers_.end());
+        if (!observers_.empty() || !sdk_) return;
+        sdk = std::move(sdk_);
+        leave = joined_;
+        app_id_.clear();
+        token_.clear();
+        channel_.clear();
+        uid_ = 0;
+        joined_ = false;
+      }
+      // Agora may wait for its callback thread. Never hold the callback-state
+      // mutex across vendor calls.
+      if (leave) (void)sdk->leave();
+      sdk->shutdown();
+    } catch (...) {
+    }
+  }
+
+ private:
+  template <typename Action>
+  void broadcast(Action action) noexcept {
+    try {
+      std::lock_guard<std::recursive_mutex> lock(mutex_);
+      for (auto* observer : observers_) {
+        if (observer != nullptr) action(*observer);
+      }
+    } catch (...) {
+    }
+  }
+
+  void on_connection_state(ConnectionState state, int reason) noexcept override {
+    broadcast([&](SdkObserver& value) { value.on_connection_state(state, reason); });
+  }
+  void on_rejoined(std::uint32_t uid, int elapsed) noexcept override {
+    broadcast([&](SdkObserver& value) { value.on_rejoined(uid, elapsed); });
+  }
+  void on_connection_lost() noexcept override {
+    broadcast([](SdkObserver& value) { value.on_connection_lost(); });
+  }
+  void on_token_expiring() noexcept override {
+    broadcast([](SdkObserver& value) { value.on_token_expiring(); });
+  }
+  void on_token_required() noexcept override {
+    broadcast([](SdkObserver& value) { value.on_token_required(); });
+  }
+  void on_network_quality(std::uint32_t uid, int tx, int rx) noexcept override {
+    broadcast([&](SdkObserver& value) { value.on_network_quality(uid, tx, rx); });
+  }
+  void on_rtc_stats(const RtcStatsSnapshot& stats) noexcept override {
+    broadcast([&](SdkObserver& value) { value.on_rtc_stats(stats); });
+  }
+  void on_participant_joined(std::uint32_t uid) noexcept override {
+    broadcast([&](SdkObserver& value) { value.on_participant_joined(uid); });
+  }
+  void on_participant_left(std::uint32_t uid, int reason) noexcept override {
+    broadcast([&](SdkObserver& value) { value.on_participant_left(uid, reason); });
+  }
+  void on_error(int code) noexcept override {
+    broadcast([&](SdkObserver& value) { value.on_error(code); });
+  }
+  void on_audio_frame(const Pcm16FrameView& frame) noexcept override {
+    broadcast([&](SdkObserver& value) { value.on_audio_frame(frame); });
+  }
+  void on_video_frame(const I420FrameView& frame) noexcept override {
+    broadcast([&](SdkObserver& value) { value.on_video_frame(frame); });
+  }
+
+  std::recursive_mutex mutex_;
+  std::mutex operation_mutex_;
+  std::shared_ptr<NativeSdk> sdk_;
+  std::vector<SdkObserver*> observers_;
+  std::string app_id_;
+  std::string token_;
+  std::string channel_;
+  std::uint32_t uid_ = 0;
+  bool joined_ = false;
+};
+
+SharedEngine& shared_engine() noexcept {
+  // Deliberately process-lived: Agora may retain internal threads until process
+  // shutdown, and IRtcEngine is a process singleton by contract.
+  static auto* value = new SharedEngine();
+  return *value;
+}
+
+class SharedSdk final : public Sdk {
+ public:
+  ~SharedSdk() override { shutdown(); }
+
+  int initialize(const std::string& app_id, SdkObserver* observer) noexcept override {
+    if (attached_) return -2;
+    const int result = shared_engine().attach(app_id, observer);
+    if (result == 0) {
+      observer_ = observer;
+      attached_ = true;
+    }
+    return result;
+  }
+  int join(const std::string& token, const std::string& channel,
+           std::uint32_t uid) noexcept override {
+    return attached_ ? shared_engine().join(token, channel, uid) : -7;
+  }
+  int leave() noexcept override { return attached_ ? 0 : -7; }
+  int renew_token(const std::string& token) noexcept override {
+    return attached_ ? shared_engine().renew_token(token) : -7;
+  }
+  int push_audio(const Pcm16FrameView& frame) noexcept override {
+    return attached_ ? shared_engine().push_audio(frame) : -7;
+  }
+  int push_video(const I420FrameView& frame) noexcept override {
+    return attached_ ? shared_engine().push_video(frame) : -7;
+  }
+  void shutdown() noexcept override {
+    if (!attached_) return;
+    shared_engine().detach(observer_);
+    observer_ = nullptr;
+    attached_ = false;
+  }
+
+ private:
+  SdkObserver* observer_ = nullptr;
+  bool attached_ = false;
+};
+
 }  // namespace
 
 std::unique_ptr<Sdk> make_native_sdk() noexcept {
   try {
-    return std::make_unique<NativeSdk>();
+    return std::make_unique<SharedSdk>();
   } catch (...) {
     return {};
   }

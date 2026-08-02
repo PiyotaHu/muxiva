@@ -34,9 +34,9 @@ class AgoraAudioSinkNode final : public voxa::MultimodalGraphNode {
     sdk_ = voxa::agora::make_native_sdk();
     if (!sdk_) throw std::runtime_error("Agora Native SDK is not enabled in this build");
     const auto app_id = required_env("VOXA_AGORA_APP_ID");
-    const auto token = required_env("VOXA_AGORA_SINK_TOKEN");
+    const auto token = required_env("VOXA_AGORA_BOT_TOKEN");
     const auto channel = required_env("VOXA_AGORA_CHANNEL");
-    const auto uid = static_cast<std::uint32_t>(std::stoul(required_env("VOXA_AGORA_SINK_UID")));
+    const auto uid = static_cast<std::uint32_t>(std::stoul(required_env("VOXA_AGORA_BOT_UID")));
     if (sdk_->initialize(app_id, &observer_) != 0 || sdk_->join(token, channel, uid) != 0) {
       sdk_->shutdown();
       throw std::runtime_error("Agora C++ SDK failed to join the configured room");

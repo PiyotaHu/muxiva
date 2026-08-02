@@ -124,7 +124,7 @@ struct VoiceCredential {
     obtain: &'static str,
 }
 
-const VOICE_CREDENTIALS: [VoiceCredential; 7] = [
+const VOICE_CREDENTIALS: [VoiceCredential; 6] = [
     VoiceCredential {
         label: "Qwen API Key",
         environment: "DASHSCOPE_API_KEY",
@@ -143,17 +143,12 @@ const VOICE_CREDENTIALS: [VoiceCredential; 7] = [
     VoiceCredential {
         label: "Agora Channel",
         environment: "VOXA_AGORA_CHANNEL",
-        obtain: "choose one exact name, for example voxa-demo; use it for all three tokens",
+        obtain: "choose one exact name, for example voxa-demo; use it for both tokens",
     },
     VoiceCredential {
-        label: "Agora Ingress Bot Token (UID 2001)",
-        environment: "VOXA_AGORA_SOURCE_TOKEN",
+        label: "Agora Voxa Bot Token (UID 2001)",
+        environment: "VOXA_AGORA_BOT_TOKEN",
         obtain: "Agora Token Builder; RTC token for the configured App ID + Channel + UID 2001",
-    },
-    VoiceCredential {
-        label: "Agora Egress Bot Token (UID 2002)",
-        environment: "VOXA_AGORA_SINK_TOKEN",
-        obtain: "Agora Token Builder; RTC token for the configured App ID + Channel + UID 2002",
     },
     VoiceCredential {
         label: "Agora Browser Token (UID 1001)",
@@ -162,27 +157,45 @@ const VOICE_CREDENTIALS: [VoiceCredential; 7] = [
     },
 ];
 
-fn report_credentials(warnings: &mut usize) {
+fn dotenv_has_value(project: &Path, key: &str) -> bool {
+    fs::read_to_string(project.join(".env"))
+        .ok()
+        .and_then(|content| {
+            content.lines().find_map(|line| {
+                let line = line.trim();
+                let (candidate, value) = line.split_once('=')?;
+                (candidate.trim() == key && !value.trim().trim_matches('"').is_empty())
+                    .then_some(())
+            })
+        })
+        .is_some()
+}
+
+fn credential_is_set(project: &Path, credential: &VoiceCredential) -> bool {
+    env::var_os(credential.environment).is_some_and(|value| !value.is_empty())
+        || dotenv_has_value(project, credential.environment)
+        || credential.environment == "VOXA_AGORA_CHANNEL"
+}
+
+fn report_credentials(project: &Path, warnings: &mut usize) {
     let configured = VOICE_CREDENTIALS
         .iter()
-        .filter(|credential| {
-            env::var_os(credential.environment).is_some_and(|value| !value.is_empty())
-        })
+        .filter(|credential| credential_is_set(project, credential))
         .count();
     let missing = VOICE_CREDENTIALS.len() - configured;
     if missing == 0 {
         println!(
-            "[VOXA][DOCTOR][PASS] voice-credentials source=environment configured={configured}/{} values=redacted",
+            "[VOXA][DOCTOR][PASS] voice-credentials source=environment-or-project-.env configured={configured}/{} values=redacted",
             VOICE_CREDENTIALS.len()
         );
     } else {
         *warnings += missing;
         println!(
-            "[VOXA][DOCTOR][WARN] voice-credentials ready=false environment={configured}/{} missing={missing}",
+            "[VOXA][DOCTOR][WARN] voice-credentials ready=false environment-or-project-.env={configured}/{} missing={missing}",
             VOICE_CREDENTIALS.len()
         );
         for credential in &VOICE_CREDENTIALS {
-            if env::var_os(credential.environment).is_none_or(|value| value.is_empty()) {
+            if !credential_is_set(project, credential) {
                 println!(
                     "[VOXA][DOCTOR][MISSING] label=\"{}\" env={} obtain=\"{}\"",
                     credential.label, credential.environment, credential.obtain
@@ -190,14 +203,15 @@ fn report_credentials(warnings: &mut usize) {
             }
         }
         println!(
-            "[VOXA][DOCTOR][NEXT] run=\"./run.sh\" then=\"Studio -> Connections -> fill every Required field -> Save connections\""
+            "[VOXA][DOCTOR][NEXT] run=\"./run.sh\" then=\"Studio -> Connections -> fill missing Required fields once -> Save to project .env\""
         );
         println!(
-            "[VOXA][DOCTOR][NOTE] Studio values are session-local and are not visible to this separate doctor process; both connection cards must show Ready before Run or Voice Room"
+            "[VOXA][DOCTOR][NOTE] Studio persists values in {} with mode 0600; the file is Git ignored and loaded automatically",
+            project.join(".env").display()
         );
     }
     println!(
-        "[VOXA][DOCTOR][INFO] agora-identities browser_uid=1001 ingress_uid=2001 egress_uid=2002 rule=\"same App ID + same Channel; generate one RTC token for each exact UID\""
+        "[VOXA][DOCTOR][INFO] agora-identities browser_uid=1001 bot_uid=2001 rule=\"same App ID + same Channel; generate one RTC token for each exact UID\""
     );
 }
 
@@ -219,8 +233,10 @@ pub(super) fn run(voice: bool, strict: bool) -> Result<(), String> {
     check_tool("CMake", &["cmake"], &mut warnings);
     check_tool("C++ compiler", &["c++", "clang++", "g++"], &mut warnings);
 
-    if voice && inspect_voice_project(&current, &mut warnings).is_some() {
-        report_credentials(&mut warnings);
+    if voice {
+        if let Some(project) = inspect_voice_project(&current, &mut warnings) {
+            report_credentials(&project, &mut warnings);
+        }
     }
 
     println!("[VOXA][DOCTOR][SUMMARY] warnings={warnings} guide={FLAGSHIP_GUIDE}");

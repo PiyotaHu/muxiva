@@ -1,6 +1,6 @@
 # Agora RTC 传输层
 
-Agora 是 C++ Transport Provider。它使用独立的输入端和输出端客户端加入频道，将凭据隔离
+Agora 是 C++ Transport Provider。输入和输出 Node 共享同一个进程级 RTC Engine，将凭据隔离
 在 Graph JSON 之外，并与 Voxa 交换类型化 PCM Audio Frame。
 
 - 分类：`transport`
@@ -15,7 +15,7 @@ macOS 运行：
 voxa doctor --voice
 ```
 
-在 Studio **Connections** 中配置 App ID、频道、输入 UID/Token、输出 UID/Token 和浏览器
+在 Studio **Connections** 中配置 App ID、频道、Voxa Bot UID/Token 和浏览器
 UID/Token。开发环境使用短期 Token，生产环境必须使用 Token Server。
 
 Node：

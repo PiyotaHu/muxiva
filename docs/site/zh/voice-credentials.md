@@ -1,7 +1,7 @@
 # 语音 Demo 凭据：逐字段配置
 
-如果你现在只有 Agora App ID，那么完成度是 **1/7**。先不要点击 Studio 的 **Run**
-或 **Voice Room**。按照本页取得其余 6 个值，直到 Connections 中两张卡片都显示
+如果你现在只有 Agora App ID，连同 Voxa 预设的 Channel，完成度是 **2/6**。先不要点击 Studio 的 **Run**
+或 **Voice Room**。按照本页取得其余 4 个值，直到 Connections 中两张卡片都显示
 **Ready**。
 
 !!! warning "不要把密钥发到 Issue、聊天或 Git"
@@ -20,10 +20,8 @@
 | Channel | 保持 `voxa-demo` | 这是你自己选择的频道名 |
 | Browser UID | 保持 `1001` | Voxa 预设 |
 | Browser Token | App ID + `voxa-demo` + UID `1001` 生成的 RTC Token | Agora Token Builder |
-| Ingress Bot UID | 保持 `2001` | Voxa 预设 |
-| Ingress Bot Token | App ID + `voxa-demo` + UID `2001` 生成的 RTC Token | Agora Token Builder |
-| Egress Bot UID | 保持 `2002` | Voxa 预设 |
-| Egress Bot Token | App ID + `voxa-demo` + UID `2002` 生成的 RTC Token | Agora Token Builder |
+| Voxa Bot UID | 保持 `2001` | Voxa 预设 |
+| Voxa Bot Token | App ID + `voxa-demo` + UID `2001` 生成的 RTC Token | Agora Token Builder |
 
 ### Alibaba Cloud Model Studio
 
@@ -32,7 +30,7 @@
 | API Key | 华北 2（北京）创建的百炼 API Key | 百炼控制台 API Key 页面 |
 | Workspace ID | 上述 Key 所属业务空间的 ID | 百炼控制台右上角业务空间菜单 |
 
-## 第一步：生成三个 Agora Token
+## 第一步：生成两个 Agora Token
 
 ### 1. 找到 App Certificate
 
@@ -42,7 +40,7 @@
 
 App Certificate 只用于生成 Token，**不要填进 Studio**。
 
-### 2. 在 Token Builder 生成三次
+### 2. 在 Token Builder 生成两次
 
 打开 [Agora Token Builder](https://agora-token-generator-demo.vercel.app/)，选择 RTC，
 每次都使用同一个 App ID、App Certificate 和 Channel `voxa-demo`：
@@ -50,10 +48,9 @@ App Certificate 只用于生成 Token，**不要填进 Studio**。
 | 第几次 | UID | Token 填入 Studio 的位置 |
 | ---: | ---: | --- |
 | 1 | `1001` | Browser Token |
-| 2 | `2001` | Ingress Bot Token |
-| 3 | `2002` | Egress Bot Token |
+| 2 | `2001` | Voxa Bot Token |
 
-第一次体验可为三者选择 Publisher 权限和足够完成测试的短期有效期。UID 必须使用
+第一次体验可为两者选择 Publisher 权限和足够完成测试的短期有效期。UID 必须使用
 **数字 UID**，Token 不能互换。Agora 官方也说明，临时 Token 由项目安全页面或 Token
 Builder 生成；参见 [Agora 账号与临时 Token 官方指南](https://docs.agora.io/en/realtime-media/voice/manage-agora-account)。
 
@@ -82,8 +79,8 @@ cd examples/voice-agent
 5. 点击 **Voice Room**，再点击 **Start live conversation**；
 6. 允许浏览器使用麦克风，然后开始说话。
 
-Connections 当前使用 Studio 进程内存保存，关闭 Studio 后需要重新填写。它不会把
-Token 或 API Key 写进 Graph 和 Git。
+Connections 会把值写入语音项目根目录的 `.env`，文件权限为 `0600` 且已被 Git
+忽略。只需填写一次，关闭并重新启动 Studio 后会自动加载；凭据不会写进 Graph。
 
 ## `doctor --voice` 到底检查什么
 
@@ -91,11 +88,10 @@ Token 或 API Key 写进 Graph 和 Git。
 
 - `native-node-pack PASS`：Agora C++ Node Pack 已正确编译；
 - `qwen-python PASS`：Python WebSocket 依赖可用；
-- `voice-credentials WARN/MISSING`：当前 Shell 的环境变量还缺哪些值；
+- `voice-credentials WARN/MISSING`：当前 Shell 或项目 `.env` 还缺哪些值；
 - `--strict`：任何缺失都会让命令返回非零，适合 CI。
 
-Studio 中临时填写的值存在另一个进程里，因此单独运行的 doctor 看不到；真正启动
-Graph 时，Studio 会再次检查当前 Graph 所需凭据。缺失时只打开 Connections，不会再
-让 C++ 异常终止进程。
+Studio 保存后，单独运行的 doctor 也能从项目 `.env` 看到配置状态，但不会输出值。
+启动 Graph 时仍会检查所需凭据；缺失时只打开 Connections，不会启动 C++ Node。
 
 继续：[完整安装与运行流程](voice-demo.md)。

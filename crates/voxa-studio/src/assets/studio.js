@@ -206,7 +206,7 @@ function renderProviderStatus(status) {
       const input = document.createElement('input'); input.dataset.connection = connection.id; input.dataset.field = field.name
       input.type = field.secret ? 'password' : 'text'; input.autocomplete = 'off'; input.spellcheck = false
       input.value = field.secret ? '' : field.value || ''
-      input.placeholder = field.secret && field.set ? 'Saved for this Studio session · paste to replace' : field.required ? `Required · ${field.environment}` : 'Optional'
+      input.placeholder = field.secret && field.set ? 'Saved in project .env · paste to replace' : field.required ? `Required · ${field.environment}` : 'Optional'
       label.append(input)
       if (field.help) { const help = document.createElement('small'); help.className = 'provider-help'; help.textContent = field.help; label.append(help) }
       if (field.acquire_url) { const link = document.createElement('a'); link.className = 'provider-acquire'; link.href = field.acquire_url; link.target = '_blank'; link.rel = 'noreferrer'; link.textContent = 'Get this value from the official console ↗'; label.append(link) }
@@ -218,8 +218,8 @@ function renderProviderStatus(status) {
     const empty = document.createElement('p'); empty.className = 'dialog-copy'; empty.textContent = 'No installed Node Pack declares a connection.'; cards.push(empty)
   }
   $('#provider-connections').replaceChildren(...cards)
-  $('#provider-storage').textContent = status.storage === 'process-memory'
-    ? 'Session-only storage · secrets are erased when Studio exits.'
+  $('#provider-storage').textContent = status.storage === 'project-.env'
+    ? 'Local storage: project .env · Git ignored · file mode 0600.'
     : `Secret storage: ${status.storage}`
 }
 async function saveProviders(event) {
@@ -233,7 +233,7 @@ async function saveProviders(event) {
   try {
     const status = await api('/api/v1/providers', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     renderProviderStatus(status)
-    toast('Connections saved. Confirm both cards show Ready before starting the Runtime.')
+    toast('Connections saved to project .env. They will load automatically next time.')
   } catch (error) { $('#provider-error').textContent = error.message }
 }
 

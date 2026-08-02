@@ -1,7 +1,7 @@
 # Voice demo credentials, field by field
 
-If you only have an Agora App ID, setup is **1/7 complete**. Do not select **Run** or open
-**Voice Room** yet. Obtain the other six values below and wait until both cards in Connections
+If you only have an Agora App ID, setup is **2/6 complete** together with Voxa's default Channel.
+Do not select **Run** or open **Voice Room** yet. Obtain the other four values below and wait until both cards in Connections
 show **Ready**.
 
 !!! warning "Never post secrets in an issue, chat, or Git"
@@ -20,10 +20,8 @@ Start Studio with `./run.sh`, then select **Connections** in the top toolbar.
 | Channel | Keep `voxa-demo` | A channel name you choose |
 | Browser UID | Keep `1001` | Voxa default |
 | Browser Token | RTC token for App ID + `voxa-demo` + UID `1001` | Agora Token Builder |
-| Ingress Bot UID | Keep `2001` | Voxa default |
-| Ingress Bot Token | RTC token for App ID + `voxa-demo` + UID `2001` | Agora Token Builder |
-| Egress Bot UID | Keep `2002` | Voxa default |
-| Egress Bot Token | RTC token for App ID + `voxa-demo` + UID `2002` | Agora Token Builder |
+| Voxa Bot UID | Keep `2001` | Voxa default |
+| Voxa Bot Token | RTC token for App ID + `voxa-demo` + UID `2001` | Agora Token Builder |
 
 ### Alibaba Cloud Model Studio
 
@@ -32,7 +30,7 @@ Start Studio with `./run.sh`, then select **Connections** in the top toolbar.
 | API Key | Model Studio API key created in China (Beijing) | API Key page in Model Studio |
 | Workspace ID | ID of the workspace that owns that key | Workspace menu in the top-right corner |
 
-## Step 1: generate three Agora tokens
+## Step 1: generate two Agora tokens
 
 ### Find the App Certificate
 
@@ -42,7 +40,7 @@ Start Studio with `./run.sh`, then select **Connections** in the top toolbar.
 
 The App Certificate is used only to create tokens. **Never enter it in Studio.**
 
-### Use Token Builder three times
+### Use Token Builder twice
 
 Open [Agora Token Builder](https://agora-token-generator-demo.vercel.app/) and select RTC.
 Use the same App ID, App Certificate, and `voxa-demo` Channel every time:
@@ -50,8 +48,7 @@ Use the same App ID, App Certificate, and `voxa-demo` Channel every time:
 | Generation | Numeric UID | Paste the token into |
 | ---: | ---: | --- |
 | 1 | `1001` | Browser Token |
-| 2 | `2001` | Ingress Bot Token |
-| 3 | `2002` | Egress Bot Token |
+| 2 | `2001` | Voxa Bot Token |
 
 For the first evaluation, Publisher permission and a short expiry long enough for the test are
 the simplest choices. Use **numeric UIDs**. Tokens are not interchangeable. Agora documents
@@ -82,8 +79,8 @@ cd examples/voice-agent
 5. Open **Voice Room** and select **Start live conversation**.
 6. Allow microphone access and begin speaking.
 
-Connections currently use Studio process memory. Closing Studio requires entering the values
-again. Tokens and API keys are never written to the Graph or Git.
+Connections are saved to `.env` in the voice-project root with mode `0600`; Git ignores that
+file. Fill them once and Studio loads them automatically next time. Credentials never enter the Graph.
 
 ## What `doctor --voice` actually checks
 
@@ -91,11 +88,10 @@ again. Tokens and API keys are never written to the Graph or Git.
 
 - `native-node-pack PASS` means the Agora C++ Node Packs compiled correctly.
 - `qwen-python PASS` means the Python WebSocket dependency works.
-- `voice-credentials WARN/MISSING` lists values absent from the current shell environment.
+- `voice-credentials WARN/MISSING` lists values absent from the shell and project `.env`.
 - `--strict` returns a non-zero status for any missing prerequisite and is suitable for CI.
 
-Values entered in Studio live in another process, so a separate doctor command cannot see them.
-Studio performs another preflight for the active Graph. Missing values open Connections and do
-not allow a C++ exception to terminate the process.
+After Studio saves values, a separate doctor command sees their configured state in project
+`.env` without printing the values. Studio also preflights the active Graph before creating Nodes.
 
 Next: [the complete install and run flow](voice-demo.md).

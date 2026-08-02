@@ -21,7 +21,7 @@ fi
 
 echo '[VOXA][WELCOME] Real voice setup requires two connection cards: Agora RTC and Alibaba Cloud Model Studio.'
 echo '[VOXA][STEP 1] Studio opens now. Click Connections in the top toolbar.'
-echo '[VOXA][STEP 2] Fill every Required field and click Save connections.'
+echo '[VOXA][STEP 2] Fill missing Required fields once and click Save connections. Studio persists them in this project .env.'
 echo '[VOXA][STEP 3] Do not click Run or Voice Room until both cards show Ready.'
 echo '[VOXA][HELP]  https://piyotahu.github.io/Voxa/voice-demo/'
 

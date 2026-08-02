@@ -6,11 +6,11 @@ through Agora into a Voxa Graph, Qwen generates a live response, and Agora
 plays it back.
 
 !!! danger "An App ID alone cannot run the demo"
-    Prepare three Agora RTC tokens, a Model Studio API key, and a Workspace ID before selecting
+    Prepare two Agora RTC tokens, a Model Studio API key, and a Workspace ID before selecting
     Run or Voice Room. Follow the [field-by-field credential checklist](voice-credentials.md).
 
 !!! info "What you actually need"
-    Agora requires an account, App ID, and three temporary RTC tokens. Qwen
+    Agora requires an account, App ID, and two temporary RTC tokens. Qwen
     requires **no SDK download**—only an Alibaba Cloud Model Studio API Key and
     Workspace ID. Voxa downloads and verifies the Agora macOS SDK and installs
     the Qwen WebSocket dependency in an isolated Python environment.
@@ -67,13 +67,12 @@ To use a manually downloaded SDK instead:
    exact same channel name.
 5. Follow Agora's official [account and temporary-token guide](https://docs.agora.io/en/realtime-media/voice/manage-agora-account)
    or use the linked [Agora Token Builder](https://agora-token-generator-demo.vercel.app/)
-   to create three short-lived RTC tokens:
+   to create two short-lived RTC tokens:
 
 | Studio field | UID | First-run role | Purpose |
 | --- | ---: | --- | --- |
 | Browser UID / Token | `1001` | Publisher | Browser microphone and playback |
-| Ingress Bot UID / Token | `2001` | Publisher | C++ Node receives browser audio |
-| Egress Bot UID / Token | `2002` | Publisher | C++ Node publishes assistant audio |
+| Voxa Bot UID / Token | `2001` | Publisher | One C++ RTC Engine receives microphone and publishes assistant audio |
 
 !!! warning "Never expose the App Certificate"
     The App Certificate belongs only on a token server. Never enter it in
@@ -107,11 +106,14 @@ that is a blocking diagnosis, not an optional hint. In Studio:
 
 1. Open **Connections**.
 2. Enter the Model Studio API Key and Workspace ID.
-3. Enter the Agora App ID, channel, and tokens for UIDs `1001`, `2001`, `2002`.
+3. Enter the Agora App ID, channel, and tokens for UIDs `1001` and `2001`.
 4. Select **Save connections** and confirm both cards show **Ready**; otherwise the Runtime will not start.
 5. Open **Templates** and choose **Qwen Realtime** for the first run.
 6. Open **Voice Room**, select **Start live conversation**, and allow microphone access.
 7. Speak naturally, then speak again while the assistant is playing to verify full-duplex interruption.
+
+Save connections writes values to `examples/voice-agent/.env` (mode `0600`, Git ignored).
+Future runs load it automatically. You can also create it manually from `.env.example`.
 
 After Realtime works, switch to **Qwen Cascade** to inspect VAD → ASR → LLM →
 TTS. The session remains live until you select **End session**.

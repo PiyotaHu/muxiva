@@ -117,7 +117,7 @@ reuse the same Qwen provider without Agora.
 ## Studio connection and template experience
 
 Studio owns a first-class **Connections** surface. A developer can paste the
-DashScope API key and three short-lived Agora RTC tokens, set workspace, App ID,
+DashScope API key and two short-lived Agora RTC tokens, set workspace, App ID,
 channel and distinct browser/ingress/egress UID fields, and see readiness without editing an environment
 file. Password fields are cleared immediately after submission. The browser
 does not store secrets and the status API never echoes them. Initial storage is

@@ -178,7 +178,7 @@
     <dialog id="provider-dialog" class="provider-dialog">
       <form id="provider-form">
         <div class="dialog-title"><div><span class="eyebrow">PRIVATE LOCAL CONFIGURATION</span><h2>Provider connections</h2></div><button id="provider-close" type="button" class="icon-button">×</button></div>
-        <p class="dialog-copy">Fields are declared by installed Node Pack Manifests. Studio has no provider-specific code. Secrets remain only in this local process and are passed to the owning language process as environment variables.</p>
+        <p class="dialog-copy">Fields are declared by installed Node Pack Manifests. Save once: values are stored in this project's gitignored <code>.env</code> file (local-only, mode 0600) and loaded automatically next time.</p>
         <div id="provider-connections"></div>
         <p id="provider-storage" class="provider-storage"></p>
         <p id="provider-error" class="field-error"></p>

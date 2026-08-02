@@ -39,18 +39,18 @@ credentialed live path. See the D10 design record in the repository for the
 media, configuration, and interruption contracts.
 
 Studio provides a **Connections** dialog for DashScope and Agora. Secret values
-are password inputs, are cleared after submission, remain only in local process
-memory for the initial implementation, and are never returned by the status
-API or saved with the Graph. The Voice Graph Gallery shows both a recommended
+are password inputs, are cleared after submission, and are stored in a Git-ignored
+project `.env` with mode `0600`. They are never returned by the status API or
+saved with the Graph. The Voice Graph Gallery shows both a recommended
 seven-Node end-to-end Realtime topology and an inspectable eleven-Node VAD → ASR →
 LLM → TTS cascade. Python ASR, sentence-streaming LLM, committed streaming TTS,
 generic VAD/turn context, and the C++ dynamic Node Pack loader are implemented.
 A graph becomes runnable only when every exact Factory is installed.
 
 The project **Voice Room** captures the microphone with Agora Web SDK, subscribes
-to bot audio, and visualizes graph, callback, and frame activity. Ingress,
-egress, and browser clients use three distinct UIDs and short-lived tokens so
-native clients cannot replace one another. Browser code receives only the App
+to bot audio, and visualizes graph, callback, and frame activity. Browser and
+Voxa Bot use two distinct UIDs and short-lived tokens; ingress and egress Nodes
+share one Agora Engine and Bot identity. Browser code receives only the App
 ID, channel, web UID, and short-lived web token explicitly exposed by the
 Manifest. DashScope keys, bot tokens, and the App Certificate stay server-side.
 

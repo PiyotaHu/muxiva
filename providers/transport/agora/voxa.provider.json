@@ -16,16 +16,14 @@
     {
       "id": "agora",
       "display_name": "Agora RTC",
-      "description": "Use one App ID and one Channel. Generate three separate temporary RTC tokens for the exact UIDs 1001, 2001, and 2002.",
+      "description": "Use one App ID and one Channel. Generate two temporary RTC tokens: browser UID 1001 and Voxa Bot UID 2001.",
       "fields": [
-        { "name": "app_id", "label": "App ID", "environment": "VOXA_AGORA_APP_ID", "secret": false, "required": true, "client_exposed": true, "default": "", "help": "Paste the App ID from the same Agora project used to generate all three tokens.", "acquire_url": "https://console.agora.io/" },
+        { "name": "app_id", "label": "App ID", "environment": "VOXA_AGORA_APP_ID", "secret": false, "required": true, "client_exposed": true, "default": "", "help": "Paste the App ID from the same Agora project used to generate both tokens.", "acquire_url": "https://console.agora.io/" },
         { "name": "channel", "label": "Channel", "environment": "VOXA_AGORA_CHANNEL", "secret": false, "required": true, "client_exposed": true, "default": "voxa-demo", "help": "Keep voxa-demo for the first run. Enter this exact Channel when generating every token.", "acquire_url": "https://docs.agora.io/en/realtime-media/voice/manage-agora-account" },
-        { "name": "source_uid", "label": "Ingress Bot UID", "environment": "VOXA_AGORA_SOURCE_UID", "secret": false, "required": true, "default": "2001", "help": "Keep 2001. This C++ participant receives browser microphone audio.", "acquire_url": "" },
-        { "name": "source_token", "label": "Ingress Bot Token", "environment": "VOXA_AGORA_SOURCE_TOKEN", "secret": true, "required": true, "default": "", "help": "Generate a temporary RTC token for this App ID, Channel voxa-demo, and numeric UID 2001.", "acquire_url": "https://agora-token-generator-demo.vercel.app/" },
-        { "name": "sink_uid", "label": "Egress Bot UID", "environment": "VOXA_AGORA_SINK_UID", "secret": false, "required": true, "default": "2002", "help": "Keep 2002. This C++ participant publishes assistant audio.", "acquire_url": "" },
-        { "name": "sink_token", "label": "Egress Bot Token", "environment": "VOXA_AGORA_SINK_TOKEN", "secret": true, "required": true, "default": "", "help": "Generate a different temporary RTC token for the same App ID and Channel, with numeric UID 2002.", "acquire_url": "https://agora-token-generator-demo.vercel.app/" },
+        { "name": "bot_uid", "label": "Voxa Bot UID", "environment": "VOXA_AGORA_BOT_UID", "secret": false, "required": true, "default": "2001", "help": "Keep 2001. One C++ participant receives microphone audio and publishes assistant audio.", "acquire_url": "" },
+        { "name": "bot_token", "label": "Voxa Bot Token", "environment": "VOXA_AGORA_BOT_TOKEN", "secret": true, "required": true, "default": "", "help": "Generate an RTC token for this App ID, the exact Channel, and numeric UID 2001.", "acquire_url": "https://agora-token-generator-demo.vercel.app/" },
         { "name": "web_uid", "label": "Browser UID", "environment": "VOXA_AGORA_WEB_UID", "secret": false, "required": true, "client_exposed": true, "default": "1001", "help": "Keep 1001. The Voice Room uses this identity for the browser microphone.", "acquire_url": "" },
-        { "name": "web_token", "label": "Browser Token", "environment": "VOXA_AGORA_WEB_TOKEN", "secret": true, "required": true, "client_exposed": true, "default": "", "help": "Generate a third temporary RTC token for the same App ID and Channel, with numeric UID 1001.", "acquire_url": "https://agora-token-generator-demo.vercel.app/" }
+        { "name": "web_token", "label": "Browser Token", "environment": "VOXA_AGORA_WEB_TOKEN", "secret": true, "required": true, "client_exposed": true, "default": "", "help": "Generate an RTC token for the same App ID and Channel, with numeric UID 1001.", "acquire_url": "https://agora-token-generator-demo.vercel.app/" }
       ]
     }
   ]

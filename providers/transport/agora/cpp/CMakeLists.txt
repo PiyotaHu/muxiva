@@ -61,6 +61,31 @@ else()
   target_sources(voxa_agora PRIVATE src/agora_native_sdk_stub.cc)
 endif()
 
+add_library(voxa_agora_node_runtime SHARED)
+target_compile_features(voxa_agora_node_runtime PUBLIC cxx_std_17)
+target_include_directories(voxa_agora_node_runtime PUBLIC
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<BUILD_INTERFACE:${VOXA_SOURCE_ROOT}/cpp/include>")
+if(APPLE)
+  target_include_directories(voxa_agora_node_runtime SYSTEM PRIVATE
+    "${VOXA_APPLE_SDK_PATH}/usr/include/c++/v1")
+endif()
+if(VOXA_ENABLE_AGORA)
+  target_sources(voxa_agora_node_runtime PRIVATE src/agora_native_sdk.cc)
+  target_compile_definitions(voxa_agora_node_runtime PRIVATE VOXA_ENABLE_AGORA=1)
+  target_include_directories(voxa_agora_node_runtime PRIVATE "${VOXA_AGORA_INCLUDE_DIR}")
+  target_link_libraries(voxa_agora_node_runtime PUBLIC "${VOXA_AGORA_LIBRARY}")
+else()
+  target_sources(voxa_agora_node_runtime PRIVATE src/agora_native_sdk_stub.cc)
+endif()
+set_target_properties(voxa_agora_node_runtime PROPERTIES
+  OUTPUT_NAME voxa_agora_provider
+  LIBRARY_OUTPUT_DIRECTORY "${VOXA_NODE_PACK_OUTPUT_ROOT}")
+if(APPLE AND VOXA_ENABLE_AGORA)
+  set_target_properties(voxa_agora_node_runtime PROPERTIES
+    BUILD_RPATH "${VOXA_AGORA_XCFRAMEWORK_SLICES}")
+endif()
+
 function(add_agora_node_pack package)
   add_library(${package} MODULE "nodes/${package}/node.cpp")
   target_compile_features(${package} PRIVATE cxx_std_17)
@@ -72,17 +97,12 @@ function(add_agora_node_pack package)
       "${VOXA_APPLE_SDK_PATH}/usr/include/c++/v1")
     set_target_properties(${package} PROPERTIES SUFFIX ".dylib")
   endif()
-  if(VOXA_ENABLE_AGORA)
-    target_sources(${package} PRIVATE src/agora_native_sdk.cc)
-    target_compile_definitions(${package} PRIVATE VOXA_ENABLE_AGORA=1)
-    target_include_directories(${package} PRIVATE "${VOXA_AGORA_INCLUDE_DIR}")
-    target_link_libraries(${package} PRIVATE "${VOXA_AGORA_LIBRARY}")
-    if(APPLE)
-      set_target_properties(${package} PROPERTIES
-        BUILD_RPATH "${VOXA_AGORA_XCFRAMEWORK_SLICES}")
-    endif()
-  else()
-    target_sources(${package} PRIVATE src/agora_native_sdk_stub.cc)
+  target_link_libraries(${package} PRIVATE voxa_agora_node_runtime)
+  if(APPLE)
+    set_target_properties(${package} PROPERTIES
+      BUILD_RPATH "@loader_path/..;${VOXA_AGORA_XCFRAMEWORK_SLICES}")
+  elseif(UNIX)
+    set_target_properties(${package} PROPERTIES BUILD_RPATH "$ORIGIN/..")
   endif()
   set_target_properties(${package} PROPERTIES
     OUTPUT_NAME voxa_node_pack
@@ -96,4 +116,6 @@ add_agora_node_pack(agora_audio_source)
 add_agora_node_pack(agora_audio_sink)
 
 install(DIRECTORY include/ DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
-install(TARGETS voxa_agora ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+install(TARGETS voxa_agora
+  ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+install(TARGETS voxa_agora_node_runtime LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}")
