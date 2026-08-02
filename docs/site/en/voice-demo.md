@@ -5,6 +5,10 @@ prior Agora or Qwen knowledge. At the end, browser microphone audio travels
 through Agora into a Voxa Graph, Qwen generates a live response, and Agora
 plays it back.
 
+!!! danger "An App ID alone cannot run the demo"
+    Prepare three Agora RTC tokens, a Model Studio API key, and a Workspace ID before selecting
+    Run or Voice Room. Follow the [field-by-field credential checklist](voice-credentials.md).
+
 !!! info "What you actually need"
     Agora requires an account, App ID, and three temporary RTC tokens. Qwen
     requires **no SDK download**—only an Alibaba Cloud Model Studio API Key and
@@ -98,14 +102,16 @@ voxa doctor --voice
 ```
 
 `doctor` should report both Agora packs as `mode=agora-native` and report
-`qwen-python dependency=websocket`. In Studio:
+`qwen-python dependency=websocket`. With no credentials it now prints every `MISSING` value;
+that is a blocking diagnosis, not an optional hint. In Studio:
 
 1. Open **Connections**.
 2. Enter the Model Studio API Key and Workspace ID.
 3. Enter the Agora App ID, channel, and tokens for UIDs `1001`, `2001`, `2002`.
-4. Open **Templates** and choose **Qwen Realtime** for the first run.
-5. Open **Voice Room**, select **Start live conversation**, and allow microphone access.
-6. Speak naturally, then speak again while the assistant is playing to verify full-duplex interruption.
+4. Select **Save connections** and confirm both cards show **Ready**; otherwise the Runtime will not start.
+5. Open **Templates** and choose **Qwen Realtime** for the first run.
+6. Open **Voice Room**, select **Start live conversation**, and allow microphone access.
+7. Speak naturally, then speak again while the assistant is playing to verify full-duplex interruption.
 
 After Realtime works, switch to **Qwen Cascade** to inspect VAD → ASR → LLM →
 TTS. The session remains live until you select **End session**.

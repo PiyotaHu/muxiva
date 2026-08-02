@@ -206,8 +206,11 @@ function renderProviderStatus(status) {
       const input = document.createElement('input'); input.dataset.connection = connection.id; input.dataset.field = field.name
       input.type = field.secret ? 'password' : 'text'; input.autocomplete = 'off'; input.spellcheck = false
       input.value = field.secret ? '' : field.value || ''
-      input.placeholder = field.secret && field.set ? 'Saved for this Studio session · paste to replace' : field.required ? 'Required' : 'Optional'
-      label.append(input); card.append(label)
+      input.placeholder = field.secret && field.set ? 'Saved for this Studio session · paste to replace' : field.required ? `Required · ${field.environment}` : 'Optional'
+      label.append(input)
+      if (field.help) { const help = document.createElement('small'); help.className = 'provider-help'; help.textContent = field.help; label.append(help) }
+      if (field.acquire_url) { const link = document.createElement('a'); link.className = 'provider-acquire'; link.href = field.acquire_url; link.target = '_blank'; link.rel = 'noreferrer'; link.textContent = 'Get this value from the official console ↗'; label.append(link) }
+      card.append(label)
     }
     return card
   })
@@ -230,7 +233,7 @@ async function saveProviders(event) {
   try {
     const status = await api('/api/v1/providers', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     renderProviderStatus(status)
-    toast('Provider connections saved for this Studio session')
+    toast('Connections saved. Confirm both cards show Ready before starting the Runtime.')
   } catch (error) { $('#provider-error').textContent = error.message }
 }
 
@@ -785,7 +788,8 @@ async function startRuntime() {
     renderRuntime(); renderCanvas(); scheduleRuntimePoll()
   } catch (error) {
     state.runtime = { status: 'idle', nodes: [], edges: [] }
-    toast(error.status === 409 ? 'A graph run is already active' : error.message, true)
+    if (error.status === 412) { toast(error.message, true); await openProviders() }
+    else toast(error.status === 409 ? 'A graph run is already active' : error.message, true)
     renderRuntime()
   }
 }

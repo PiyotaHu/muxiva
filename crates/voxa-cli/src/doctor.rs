@@ -118,23 +118,86 @@ fn inspect_voice_project(current: &Path, warnings: &mut usize) -> Option<PathBuf
     Some(project)
 }
 
-fn report_credentials() {
-    let names = [
-        "DASHSCOPE_API_KEY",
-        "DASHSCOPE_WORKSPACE_ID",
-        "VOXA_AGORA_APP_ID",
-        "VOXA_AGORA_CHANNEL",
-        "VOXA_AGORA_SOURCE_TOKEN",
-        "VOXA_AGORA_SINK_TOKEN",
-        "VOXA_AGORA_WEB_TOKEN",
-    ];
-    let configured = names
+struct VoiceCredential {
+    label: &'static str,
+    environment: &'static str,
+    obtain: &'static str,
+}
+
+const VOICE_CREDENTIALS: [VoiceCredential; 7] = [
+    VoiceCredential {
+        label: "Qwen API Key",
+        environment: "DASHSCOPE_API_KEY",
+        obtain: "https://bailian.console.aliyun.com/ (China Beijing -> API Key)",
+    },
+    VoiceCredential {
+        label: "Qwen Workspace ID",
+        environment: "DASHSCOPE_WORKSPACE_ID",
+        obtain: "Bailian console top-right Workspace menu; use the same region and workspace as the API Key",
+    },
+    VoiceCredential {
+        label: "Agora App ID",
+        environment: "VOXA_AGORA_APP_ID",
+        obtain: "https://console.agora.io/ -> Projects -> App ID",
+    },
+    VoiceCredential {
+        label: "Agora Channel",
+        environment: "VOXA_AGORA_CHANNEL",
+        obtain: "choose one exact name, for example voxa-demo; use it for all three tokens",
+    },
+    VoiceCredential {
+        label: "Agora Ingress Bot Token (UID 2001)",
+        environment: "VOXA_AGORA_SOURCE_TOKEN",
+        obtain: "Agora Token Builder; RTC token for the configured App ID + Channel + UID 2001",
+    },
+    VoiceCredential {
+        label: "Agora Egress Bot Token (UID 2002)",
+        environment: "VOXA_AGORA_SINK_TOKEN",
+        obtain: "Agora Token Builder; RTC token for the configured App ID + Channel + UID 2002",
+    },
+    VoiceCredential {
+        label: "Agora Browser Token (UID 1001)",
+        environment: "VOXA_AGORA_WEB_TOKEN",
+        obtain: "Agora Token Builder; RTC token for the configured App ID + Channel + UID 1001",
+    },
+];
+
+fn report_credentials(warnings: &mut usize) {
+    let configured = VOICE_CREDENTIALS
         .iter()
-        .filter(|name| env::var_os(name).is_some_and(|value| !value.is_empty()))
+        .filter(|credential| {
+            env::var_os(credential.environment).is_some_and(|value| !value.is_empty())
+        })
         .count();
+    let missing = VOICE_CREDENTIALS.len() - configured;
+    if missing == 0 {
+        println!(
+            "[VOXA][DOCTOR][PASS] voice-credentials source=environment configured={configured}/{} values=redacted",
+            VOICE_CREDENTIALS.len()
+        );
+    } else {
+        *warnings += missing;
+        println!(
+            "[VOXA][DOCTOR][WARN] voice-credentials ready=false environment={configured}/{} missing={missing}",
+            VOICE_CREDENTIALS.len()
+        );
+        for credential in &VOICE_CREDENTIALS {
+            if env::var_os(credential.environment).is_none_or(|value| value.is_empty()) {
+                println!(
+                    "[VOXA][DOCTOR][MISSING] label=\"{}\" env={} obtain=\"{}\"",
+                    credential.label, credential.environment, credential.obtain
+                );
+            }
+        }
+        println!(
+            "[VOXA][DOCTOR][NEXT] run=\"./run.sh\" then=\"Studio -> Connections -> fill every Required field -> Save connections\""
+        );
+        println!(
+            "[VOXA][DOCTOR][NOTE] Studio values are session-local and are not visible to this separate doctor process; both connection cards must show Ready before Run or Voice Room"
+        );
+    }
     println!(
-        "[VOXA][DOCTOR][INFO] voice-credentials environment={configured}/{} configure=Studio-Connections-or-environment values=redacted",
-        names.len()
+        "[VOXA][DOCTOR][INFO] agora-identities browser_uid=1001 ingress_uid=2001 egress_uid=2002 rule=\"same App ID + same Channel; generate one RTC token for each exact UID\""
     );
 }
 
@@ -157,7 +220,7 @@ pub(super) fn run(voice: bool, strict: bool) -> Result<(), String> {
     check_tool("C++ compiler", &["c++", "clang++", "g++"], &mut warnings);
 
     if voice && inspect_voice_project(&current, &mut warnings).is_some() {
-        report_credentials();
+        report_credentials(&mut warnings);
     }
 
     println!("[VOXA][DOCTOR][SUMMARY] warnings={warnings} guide={FLAGSHIP_GUIDE}");

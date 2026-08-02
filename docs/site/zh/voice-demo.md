@@ -3,6 +3,10 @@
 本页从一个干净的 macOS 开发环境开始，不假设你了解 Agora 或 Qwen。完成后，浏览器
 麦克风通过 Agora 进入 Voxa Graph，由 Qwen 生成实时回复，再通过 Agora 播放出来。
 
+!!! danger "只有 App ID 还不能运行"
+    必须先准备 3 个 Agora RTC Token、百炼 API Key 和 Workspace ID。没有全部配置时，
+    不要点击 Run 或 Voice Room。请先逐项完成[语音凭据配置清单](voice-credentials.md)。
+
 !!! info "你真正需要准备的东西"
     Agora 需要一个账号、App ID 和三个临时 RTC Token。Qwen **不需要下载 SDK**，
     只需要阿里云百炼 API Key 与 Workspace ID。Voxa 会自动下载并校验 Agora macOS
@@ -91,14 +95,16 @@ voxa doctor --voice
 ```
 
 `doctor` 应显示两个 Agora Node Pack 为 `mode=agora-native`，并显示
-`qwen-python dependency=websocket`。然后在 Studio 中：
+`qwen-python dependency=websocket`。凭据未配置时它会逐项打印 `MISSING`，这是诊断结果，
+不是可以跳过的提示。然后在 Studio 中：
 
 1. 打开 **Connections**。
 2. 在 **Alibaba Cloud Model Studio** 填写 API Key、Workspace ID。
 3. 在 **Agora RTC** 填写 App ID、Channel，以及 `1001`、`2001`、`2002` 对应的 UID/Token。
-4. 保存后进入 **Templates**，第一次选择 **Qwen Realtime**。
-5. 打开 **Voice Room**，点击 **Start live conversation**，允许麦克风权限。
-6. 自然说话；助手播放时再次开口，验证全双工打断。
+4. 点击 **Save connections**，确认两张卡片都显示 **Ready**；否则 Runtime 不会启动。
+5. 保存后进入 **Templates**，第一次选择 **Qwen Realtime**。
+6. 打开 **Voice Room**，点击 **Start live conversation**，允许麦克风权限。
+7. 自然说话；助手播放时再次开口，验证全双工打断。
 
 Realtime 跑通后，再切换 **Qwen Cascade**，观察 VAD → ASR → LLM → TTS 的各阶段。
 会话会持续运行，直到点击 **End session**。

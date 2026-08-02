@@ -27,6 +27,7 @@ const INDEX: &str = include_str!("assets/index.html");
 const STYLES: &str = include_str!("assets/studio.css");
 const RUNTIME_STYLES: &str = include_str!("assets/runtime.css");
 const NODE_LAB_STYLES: &str = include_str!("assets/node-lab.css");
+const PROVIDER_HELP_STYLES: &str = include_str!("assets/provider-help.css");
 const SCRIPT: &str = include_str!("assets/studio.js");
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 
@@ -243,6 +244,11 @@ fn route(
             "200 OK",
             "text/css; charset=utf-8",
             NODE_LAB_STYLES.to_owned(),
+        ),
+        ("GET", "/assets/provider-help.css") => (
+            "200 OK",
+            "text/css; charset=utf-8",
+            PROVIDER_HELP_STYLES.to_owned(),
         ),
         ("GET", "/assets/studio.js") => (
             "200 OK",
@@ -548,6 +554,38 @@ fn start_runtime(
         Ok(document) => document,
         Err(errors) => return diagnostics_response(errors),
     };
+    let used_node_types = document
+        .nodes
+        .iter()
+        .map(|node| node.node_type.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let required_connections = match node_library::list(graph_path) {
+        Ok(packages) => packages
+            .into_iter()
+            .filter(|package| used_node_types.contains(package.manifest.node_type.as_str()))
+            .filter_map(|package| package.resolved_connection_id().map(str::to_owned))
+            .collect::<std::collections::BTreeSet<_>>(),
+        Err(error) => {
+            return (
+                "400 Bad Request",
+                "application/json",
+                json_message(&format!("invalid project Node Library: {error}")),
+            )
+        }
+    };
+    let missing = state
+        .connections
+        .missing_required_for(&required_connections);
+    if !missing.is_empty() {
+        return (
+            "412 Precondition Failed",
+            "application/json",
+            json_message(&format!(
+                "Runtime not started. Open Connections and configure: {}",
+                missing.join(", ")
+            )),
+        );
+    }
     let registry = match studio_project_registry(graph_path, state) {
         Ok(registry) => registry,
         Err(error) => {
@@ -1159,5 +1197,30 @@ mod tests {
         assert!(!client_payload.contains("api_key"));
         assert_eq!(fs::read_to_string(&graph).unwrap(), original);
         fs::remove_file(graph).unwrap();
+    }
+
+    #[test]
+    fn runtime_preflight_rejects_missing_credentials_before_node_creation() {
+        let graph = graph_path();
+        let package_dir = graph.parent().unwrap().join(".voxa/nodes/requires_key");
+        fs::create_dir_all(&package_dir).unwrap();
+        fs::write(
+            package_dir.join("voxa.node.json"),
+            r#"{"format":"voxa.node/v1","package_id":"requires_key","display_name":"Requires Key","node_type":"test.requires_key","language":"python","factory_version":"1.0.0","kind":"source","entrypoint":"node:Node","ports":[],"config_schema":{"type":"object"},"connection":{"id":"test_service","display_name":"Test Service","description":"Test-only connection","fields":[{"name":"api_key","label":"API Key","environment":"VOXA_TEST_REQUIRED_KEY","secret":true,"required":true,"default":""}]}}"#,
+        )
+        .unwrap();
+        fs::write(package_dir.join("node.py"), "class Node: pass\n").unwrap();
+        let runtime = StudioRuntime::new(&graph).unwrap();
+        let request = HttpRequest {
+            method: "POST".into(),
+            path: "/api/v1/runtime/start".into(),
+            authorization: None,
+            body: r#"{"version":"voxa.graph/v1","graph_id":"preflight","nodes":[{"id":"guarded","node_type":"test.requires_key","language":"python","factory_version":"1.0.0","node_config":{}}],"edges":[]}"#.into(),
+        };
+        let (status, _, payload) = route(&request, &graph, true, &runtime);
+        assert_eq!(status, "412 Precondition Failed");
+        assert!(payload.contains("Runtime not started"));
+        assert!(payload.contains("VOXA_TEST_REQUIRED_KEY"));
+        fs::remove_dir_all(graph.parent().unwrap()).unwrap();
     }
 }

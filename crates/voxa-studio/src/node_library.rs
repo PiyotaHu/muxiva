@@ -226,6 +226,12 @@ pub struct ConnectionFieldManifest {
     pub client_exposed: bool,
     #[serde(default)]
     pub default: String,
+    /// Short in-product explanation shown next to the field.
+    #[serde(default)]
+    pub help: String,
+    /// Official console or documentation page where the value is obtained.
+    #[serde(default)]
+    pub acquire_url: String,
 }
 
 struct SecretBytes(Vec<u8>);
@@ -300,6 +306,9 @@ impl ConnectionStore {
                         "label": field.label,
                         "secret": field.secret,
                         "required": field.required,
+                        "environment": field.environment,
+                        "help": field.help,
+                        "acquire_url": field.acquire_url,
                         "set": value.is_some_and(|value| !value.0.is_empty()),
                         "value": if field.secret { "".into() } else { value.map(|value| String::from_utf8_lossy(&value.0).into_owned()).unwrap_or_default() },
                     })
@@ -315,6 +324,33 @@ impl ConnectionStore {
             }).collect::<Vec<_>>(),
             "storage": "process-memory",
         })
+    }
+
+    pub fn missing_required_for(
+        &self,
+        connection_ids: &std::collections::BTreeSet<String>,
+    ) -> Vec<String> {
+        let values = self
+            .values
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        self.manifests
+            .iter()
+            .filter(|connection| connection_ids.contains(&connection.id))
+            .flat_map(|connection| {
+                connection.fields.iter().filter_map(|field| {
+                    let configured = values
+                        .get(&(connection.id.clone(), field.name.clone()))
+                        .is_some_and(|value| !value.0.is_empty());
+                    (field.required && !configured).then(|| {
+                        format!(
+                            "{} / {} ({})",
+                            connection.display_name, field.label, field.environment
+                        )
+                    })
+                })
+            })
+            .collect()
     }
 
     pub fn client_json(&self) -> serde_json::Value {
@@ -466,6 +502,14 @@ pub struct NodePackage {
     source_directory: PathBuf,
     #[serde(skip)]
     resolved_connection: Option<ConnectionManifest>,
+}
+
+impl NodePackage {
+    pub fn resolved_connection_id(&self) -> Option<&str> {
+        self.resolved_connection
+            .as_ref()
+            .map(|connection| connection.id.as_str())
+    }
 }
 
 fn project_origin() -> String {

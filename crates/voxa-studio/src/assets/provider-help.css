@@ -1,0 +1,20 @@
+.provider-help,
+.provider-acquire {
+  display: block;
+  font-size: 9px;
+  line-height: 1.5;
+  margin-top: 5px;
+}
+
+.provider-help {
+  color: #8f9bad;
+}
+
+.provider-acquire {
+  color: var(--cyan);
+  text-decoration: none;
+}
+
+.provider-acquire:hover {
+  text-decoration: underline;
+}
