@@ -1139,23 +1139,32 @@ impl NodeFactory for AudioResampleFactory {
         _node_id: &NodeId,
         config: &ConfigMap,
     ) -> Result<Box<dyn Node>, NodeFactoryError> {
-        let (input_rate_hz, input_channels, target_rate_hz, target_channels) =
-            parse_resampler_config(config)?;
+        let parsed = parse_resampler_config(config)?;
         Ok(Box::new(AudioResample {
-            input_rate_hz,
-            input_channels,
-            target_rate_hz,
-            target_channels,
+            input_rate_hz: parsed.input_rate_hz,
+            input_channels: parsed.input_channels,
+            target_rate_hz: parsed.output_rate_hz,
+            target_channels: parsed.output_channels,
         }))
     }
 }
 
-fn parse_resampler_config(
-    config: &ConfigMap,
-) -> Result<(Option<u32>, Option<u16>, u32, Option<u16>), NodeFactoryError> {
+struct ResamplerConfig {
+    input_rate_hz: Option<u32>,
+    input_channels: Option<u16>,
+    output_rate_hz: u32,
+    output_channels: Option<u16>,
+}
+
+fn parse_resampler_config(config: &ConfigMap) -> Result<ResamplerConfig, NodeFactoryError> {
     if let Some(Value::Integer(rate)) = config.get("sample_rate_hz") {
         if config.len() == 1 && (8_000..=192_000).contains(rate) {
-            return Ok((None, None, *rate as u32, None));
+            return Ok(ResamplerConfig {
+                input_rate_hz: None,
+                input_channels: None,
+                output_rate_hz: *rate as u32,
+                output_channels: None,
+            });
         }
     }
     if config
@@ -1196,17 +1205,17 @@ fn parse_resampler_config(
             }
         }
     }
-    Ok((
-        input
+    Ok(ResamplerConfig {
+        input_rate_hz: input
             .map(|value| rate(value.get("sample_rate_hz")))
             .transpose()?,
-        input
+        input_channels: input
             .map(|value| channels(value.get("channels")))
             .transpose()?
             .flatten(),
-        rate(output.get("sample_rate_hz"))?,
-        channels(output.get("channels"))?,
-    ))
+        output_rate_hz: rate(output.get("sample_rate_hz"))?,
+        output_channels: channels(output.get("channels"))?,
+    })
 }
 
 struct AudioResample {
