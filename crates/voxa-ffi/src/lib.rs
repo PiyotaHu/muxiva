@@ -10,11 +10,12 @@ mod handles;
 mod ingress;
 
 use std::{
+    collections::BTreeMap,
     mem,
     panic::{catch_unwind, AssertUnwindSafe},
-    path::Path,
+    path::{Path, PathBuf},
     ptr,
-    sync::Arc,
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use abi::{
@@ -27,20 +28,47 @@ use serde::Deserialize;
 
 pub use abi::{ABI_VERSION as VOXA_ABI_VERSION_V1, MAX_COPY_BYTES};
 
+static NATIVE_NODE_PACKS: OnceLock<Mutex<BTreeMap<PathBuf, Arc<libloading::Library>>>> =
+    OnceLock::new();
+
+fn pinned_native_node_pack(path: &Path) -> Result<Arc<libloading::Library>, String> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|error| format!("cannot resolve C++ Node Pack `{}`: {error}", path.display()))?;
+    let cache = NATIVE_NODE_PACKS.get_or_init(|| Mutex::new(BTreeMap::new()));
+    if let Some(library) = cache
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .get(&canonical)
+    {
+        return Ok(library.clone());
+    }
+    // SAFETY: loading native code is explicitly restricted to a user-installed
+    // Node Pack path. ABI fields and callbacks are validated before exposure.
+    let library = Arc::new(
+        unsafe { libloading::Library::new(&canonical) }.map_err(|error| {
+            format!(
+                "cannot load C++ Node Pack `{}`: {error}",
+                canonical.display()
+            )
+        })?,
+    );
+    let mut libraries = cache.lock().unwrap_or_else(|error| error.into_inner());
+    Ok(libraries
+        .entry(canonical)
+        .or_insert_with(|| library.clone())
+        .clone())
+}
+
 /// Loads one trusted, in-process C++ multimodal Node Pack through ABI v1.
 ///
-/// The returned registration owns the dynamic library for at least as long as
-/// any factory or Node instance can call into it.
+/// Native Node Packs remain pinned until process exit. Vendor SDKs may retain
+/// background callbacks after registration discovery, so unloading a Pack at
+/// Registry scope would leave executable callback addresses dangling.
 pub fn load_cpp_multimodal_node_pack(path: &Path) -> Result<voxa_core::NodeRegistration, String> {
     type Entrypoint = unsafe extern "C" fn() -> abi::MultimodalNodeFactoryView;
 
-    // SAFETY: loading native code is explicitly restricted to a user-installed
-    // Node Pack path. ABI fields and every callback are validated before the
-    // registration becomes visible to the Runtime.
-    let library = Arc::new(
-        unsafe { libloading::Library::new(path) }
-            .map_err(|error| format!("cannot load C++ Node Pack `{}`: {error}", path.display()))?,
-    );
+    let library = pinned_native_node_pack(path)?;
     // SAFETY: the symbol name and return layout are the public Voxa ABI v1
     // contract. cpp_multimodal_factory_spec validates the returned descriptor.
     let view = unsafe {

@@ -225,7 +225,7 @@ fn cpp_registration(spec: CppFactorySpec) -> NodeRegistration {
 
 struct CppMultimodalProvider {
     spec: CppMultimodalFactorySpec,
-    _library: Option<Arc<Library>>,
+    library: Option<Arc<Library>>,
 }
 
 impl ForeignNodeProvider for CppMultimodalProvider {
@@ -273,12 +273,17 @@ impl ForeignNodeProvider for CppMultimodalProvider {
                 "C++ multimodal factory returned an invalid Graph Node vtable",
             ));
         }
-        Ok(Box::new(CppMultimodalInstance { table }))
+        Ok(Box::new(CppMultimodalInstance {
+            table,
+            _library: self.library.clone(),
+        }))
     }
 }
 
 struct CppMultimodalInstance {
     table: GraphNodeVtable,
+    // Keep callback code mapped until after `destroy` runs in Drop.
+    _library: Option<Arc<Library>>,
 }
 
 impl ForeignNodeInstance for CppMultimodalInstance {
@@ -465,10 +470,7 @@ pub fn cpp_multimodal_registration(
         descriptor,
         spec.version.clone(),
         Arc::new(ForeignNodeFactoryAdapter::new(Arc::new(
-            CppMultimodalProvider {
-                spec,
-                _library: library,
-            },
+            CppMultimodalProvider { spec, library },
         ))),
     )
 }
