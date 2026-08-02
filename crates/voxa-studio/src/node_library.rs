@@ -1423,7 +1423,9 @@ impl PythonDevNode {
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            // stdout is the framed host protocol; stderr is the provider's
+            // human-readable diagnostic channel and must reach runtime.log.
+            .stderr(Stdio::inherit())
             .spawn()
             .map_err(|error| format!("cannot start Python Host: {error}"))?;
         let input = BufWriter::new(
