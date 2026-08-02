@@ -21,7 +21,12 @@ struct OwnedAudio {
   std::uint16_t channels = 0;
   std::uint64_t samples_per_channel = 0;
   std::int64_t timestamp_ms = 0;
+  std::uint32_t remote_uid = 0;
 };
+
+voxa_str_v1 borrow(const std::string& value) noexcept {
+  return {value.data(), value.size()};
+}
 
 class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode,
                                    private voxa::agora::SdkObserver {
@@ -55,6 +60,13 @@ class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode,
     frame_.header.clock_kind = VOXA_CLOCK_MONOTONIC;
     frame_.header.timestamp_ns = current_.timestamp_ms * 1000000;
     frame_.header.sequence_id = ++sequence_;
+    frame_id_ = "agora-audio-" + std::to_string(sequence_);
+    stream_id_ = "agora-remote-" + std::to_string(current_.remote_uid);
+    trace_id_ = frame_id_;
+    frame_.header.frame_id = borrow(frame_id_);
+    frame_.header.clock_domain_id = borrow(clock_domain_);
+    frame_.header.stream_id = borrow(stream_id_);
+    frame_.header.trace_id = borrow(trace_id_);
     frame_.payload.audio.sample_rate_hz = current_.sample_rate_hz;
     frame_.payload.audio.channels = current_.channels;
     frame_.payload.audio.sample_format = VOXA_PCM_I16LE;
@@ -81,7 +93,8 @@ class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode,
     try {
       if (frame.data == nullptr || frame.size == 0 || frame.size > 256U * 1024U) return;
       OwnedAudio owned{{frame.data, frame.data + frame.size}, frame.sample_rate_hz,
-                       frame.channels, frame.samples_per_channel, frame.timestamp_ms};
+                       frame.channels, frame.samples_per_channel, frame.timestamp_ms,
+                       frame.remote_uid};
       std::lock_guard<std::mutex> lock(mutex_);
       if (queue_.size() == 256) queue_.pop_front();
       queue_.push_back(std::move(owned));
@@ -105,6 +118,10 @@ class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode,
   OwnedAudio current_;
   voxa_frame_view_v1 frame_{};
   std::uint64_t sequence_ = 0;
+  std::string frame_id_;
+  std::string clock_domain_ = "agora.remote.monotonic";
+  std::string stream_id_;
+  std::string trace_id_;
 };
 }  // namespace
 
