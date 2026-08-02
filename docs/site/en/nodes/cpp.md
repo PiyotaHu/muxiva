@@ -12,13 +12,16 @@ class MyNode final : public voxa::MultimodalGraphNode {
                   voxa::GraphNodeContext& ctx) override {
     // ctx.emit("text_out", output_frame);
   }
+  void on_signal(const voxa_frame_view_v1& signal) override {
+    // Receive graph control such as voxa.runtime.interrupt.
+  }
 };
 ```
 
 The older `std::vector<GraphEmission>` return hook remains source-compatible,
-but new Nodes should emit explicitly through the context. Signal and EventBus
-actions require the planned control-action ABI extension and are not exposed by
-the V1 C ABI yet.
+but new Nodes should emit explicitly through the context. The V1 C ABI receives
+Signals through `on_signal`; emitting new Signals or EventBus events from C++
+still requires a future control-action context extension.
 
 The repository includes installable headers, CMake package configuration, and
 independent consumer examples.

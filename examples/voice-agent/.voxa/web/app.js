@@ -20,6 +20,12 @@ let lastErrorMessage = ''
 let currentUserMessage = null
 let currentAgentMessage = null
 
+function showBargeState(mode, label) {
+  const status = $('#barge-status')
+  status.className = `barge-status ${mode || ''}`.trim()
+  status.querySelector('span').textContent = label
+}
+
 for (let index = 0; index < 32; index += 1) {
   const level = document.createElement('i')
   $('#levels').append(level)
@@ -144,6 +150,7 @@ async function join() {
     $('#diagnostic-log').replaceChildren()
     lastPipelineState = ''
     resetConversation()
+    showBargeState('', 'VOICE CONTROL READY')
   try {
     if (!token) throw new Error('Studio access token is missing. Open Voice Room from Studio.')
     if (!window.AgoraRTC) throw new Error('Agora Web SDK could not be loaded.')
@@ -262,13 +269,21 @@ async function renderVoiceEvents() {
     const text = typeof event.payload?.text === 'string' ? event.payload.text : ''
     if (event.topic === 'voxa.voice.speech.started') {
       beginUserMessage()
-      message('Listening — speak naturally', 'Barge-in signal sent; stale output is being cancelled')
+      showBargeState('listening', 'YOU ARE SPEAKING')
+      message('Listening — speak naturally', 'Speech-start signal entered the Voxa control plane')
+    } else if (event.topic === 'voxa.voice.barge_in') {
+      const interrupted = event.payload?.response_cancelled === true
+      showBargeState(interrupted ? 'interrupting' : 'listening', interrupted ? 'BARGE-IN · INTERRUPTING AGENT' : 'BARGE-IN SIGNAL ACTIVE')
+      diagnostic(interrupted ? 'Barge-in · Qwen generation cancelled; Agora output queue clearing' : 'Speech start · interrupt signal propagated through Graph')
+    } else if (event.topic === 'voxa.voice.speech.stopped') {
+      showBargeState('', 'UTTERANCE CAPTURED')
     } else if (event.topic === 'voxa.voice.transcript.preview') {
       previewUserMessage(text)
     } else if (event.topic === 'voxa.voice.transcript.delta') {
       previewUserMessage(`${currentUserMessage?.copy.textContent || ''}${text}`)
     } else if (event.topic === 'voxa.voice.transcript.completed') {
       completeUserMessage(text)
+      showBargeState('', 'VOICE CONTROL READY')
       message('Thinking…', 'Transcript committed to the typed Graph')
     } else if (event.topic === 'voxa.voice.response.delta') {
       appendAgentMessage(text)
@@ -295,6 +310,7 @@ async function leave() {
   lastEventSignature = ''
   sessionStartedAt = 0
   lastPipelineState = ''
+  showBargeState('', 'VOICE CONTROL READY')
   $('#launch').hidden = false
   $('#launch').disabled = false
   $('#leave').hidden = true

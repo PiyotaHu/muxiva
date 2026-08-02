@@ -366,6 +366,20 @@ impl ForeignNodeInstance for CppMultimodalInstance {
         Ok(ForeignNodeCallOutput::new(emissions, []))
     }
 
+    fn on_signal(&mut self, signal: SignalFrame) -> voxa_types::Result<ForeignNodeCallOutput> {
+        let Some(callback) = self.table.on_signal else {
+            return Ok(ForeignNodeCallOutput::default());
+        };
+        let frame = Frame::Signal(signal);
+        let view = borrowed_frame_view(&frame).map_err(to_voxa_error)?;
+        let mut error = empty_error();
+        let status = callback(self.table.user_data, &view, &mut error);
+        if status != abi::OK {
+            return Err(callback_error(status, &error));
+        }
+        Ok(ForeignNodeCallOutput::default())
+    }
+
     fn on_finish(&mut self) -> voxa_types::Result<ForeignNodeCallOutput> {
         if let Some(callback) = self.table.on_finish {
             call_simple(callback, self.table.user_data)?;

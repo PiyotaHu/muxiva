@@ -302,6 +302,7 @@ class MultimodalGraphNode {
   // V1 source compatibility. New Nodes should override the context form.
   virtual std::vector<GraphEmission> on_process(
       const voxa_frame_view_v1*, std::string_view) { return {}; }
+  virtual void on_signal(const voxa_frame_view_v1&) {}
   virtual void on_finish() {}
   virtual void on_abort(const voxa_abort_reason_v1&) noexcept {}
 };
@@ -343,6 +344,14 @@ inline voxa_status_v1 multimodal_finish(void* data, voxa_error_v1* error) noexce
   try { static_cast<MultimodalNodeBox*>(data)->implementation->on_finish(); return VOXA_STATUS_OK; }
   catch (...) { write_exception(error); return VOXA_STATUS_FOREIGN_EXCEPTION; }
 }
+inline voxa_status_v1 multimodal_signal(
+    void* data, const voxa_frame_view_v1* signal, voxa_error_v1* error) noexcept {
+  try {
+    if (data == nullptr || signal == nullptr) return VOXA_STATUS_INVALID_ARGUMENT;
+    static_cast<MultimodalNodeBox*>(data)->implementation->on_signal(*signal);
+    return VOXA_STATUS_OK;
+  } catch (...) { write_exception(error); return VOXA_STATUS_FOREIGN_EXCEPTION; }
+}
 inline void multimodal_abort(void* data, const voxa_abort_reason_v1* reason) noexcept {
   try { if (reason != nullptr) static_cast<MultimodalNodeBox*>(data)->implementation->on_abort(*reason); } catch (...) {}
 }
@@ -356,6 +365,7 @@ inline voxa_graph_node_vtable_v1 multimodal_vtable(MultimodalGraphNode* implemen
   table.user_data = new MultimodalNodeBox(implementation);
   table.on_prepare = multimodal_prepare;
   table.on_process = multimodal_process;
+  table.on_signal = multimodal_signal;
   table.on_finish = multimodal_finish;
   table.on_abort = multimodal_abort;
   table.destroy = multimodal_destroy;

@@ -675,8 +675,11 @@ fn studio_event_bus(events: &Arc<Mutex<VecDeque<serde_json::Value>>>) -> Result<
     for topic in [
         "voxa.voice.speech.started",
         "voxa.voice.speech.stopped",
+        "voxa.voice.barge_in",
+        "voxa.voice.transcript.preview",
         "voxa.voice.transcript.delta",
         "voxa.voice.transcript.completed",
+        "voxa.voice.transcript.failed",
         "voxa.voice.response.delta",
         "voxa.voice.response.completed",
     ] {

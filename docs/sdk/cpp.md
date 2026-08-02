@@ -55,8 +55,10 @@ more times, and register a
 text ABI remains layout-compatible. A null input identifies a Source call, an
 no `context.emit` call implements a Sink, and named emissions implement
 multi-port output. The previous vector-returning override remains available for
-source compatibility. Signal and EventBus control actions require a planned
-additive extension to the v1 C ABI. Audio PCM, packed RGBA8 or I420 video, text, and bytes are copied
+source compatibility. Override
+`void on_signal(const voxa_frame_view_v1&)` to receive graph Signals such as
+`voxa.runtime.interrupt`; emitting new control actions from C++ still requires a future
+context extension. Audio PCM, packed RGBA8 or I420 video, text, and bytes are copied
 and validated by Rust before queue admission. See
 `cpp/examples/multimodal_graph.cpp`.
 

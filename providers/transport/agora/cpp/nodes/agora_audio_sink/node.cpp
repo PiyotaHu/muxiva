@@ -11,6 +11,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -73,15 +74,35 @@ public:
     }
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      while (pcm_.size() + audio.bytes.len > kMaximumQueuedBytes &&
-             !pcm_.empty()) {
-        pcm_.pop_front();
-        ++dropped_bytes_;
-      }
+      if (pcm_.size() + audio.bytes.len > kMaximumQueuedBytes)
+        throw std::runtime_error(
+            "Agora audio Sink exceeded its 120 second safety buffer");
       pcm_.insert(pcm_.end(), audio.bytes.data,
                   audio.bytes.data + audio.bytes.len);
     }
     cv_.notify_one();
+  }
+
+  void on_signal(const voxa_frame_view_v1 &signal) override {
+    if (signal.header.frame_type != VOXA_FRAME_SIGNAL)
+      return;
+    const auto &name = signal.payload.signal.signal_name;
+    const std::string_view value(name.data == nullptr ? "" : name.data,
+                                 name.data == nullptr ? 0 : name.len);
+    if (value != "voxa.runtime.interrupt")
+      return;
+    std::size_t cancelled = 0;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      cancelled = pcm_.size();
+      pcm_.clear();
+      ++interruptions_;
+    }
+    std::fprintf(stderr,
+                 "[VOXA][AGORA][audio.cancelled] signal=voxa.runtime.interrupt "
+                 "bytes=%zu interruptions=%llu\n",
+                 cancelled,
+                 static_cast<unsigned long long>(interruptions_.load()));
   }
 
   void on_finish() override {
@@ -159,7 +180,7 @@ private:
   static constexpr std::uint32_t kSampleRate = 48000;
   static constexpr std::uint64_t kSamplesPerPacket = 480;
   static constexpr std::size_t kPacketBytes = kSamplesPerPacket * 2;
-  static constexpr std::size_t kMaximumQueuedBytes = kSampleRate * 2 * 5;
+  static constexpr std::size_t kMaximumQueuedBytes = kSampleRate * 2 * 120;
   Observer observer_;
   std::unique_ptr<voxa::agora::Sdk> sdk_;
   mutable std::mutex mutex_;
@@ -169,6 +190,7 @@ private:
   bool stopping_ = false;
   std::uint64_t published_packets_ = 0;
   std::atomic<std::uint64_t> dropped_bytes_{0};
+  std::atomic<std::uint64_t> interruptions_{0};
 };
 } // namespace
 

@@ -11,7 +11,7 @@
       { "id": "rtc-clock", "node_type": "builtin.interval_tick", "language": "rust", "factory_version": "1.0.0", "node_config": { "interval_ms": 20 } },
       { "id": "agora-in", "node_type": "provider.agora.audio_source", "language": "cpp", "factory_version": "1.0.0", "node_config": {} },
       { "id": "input-16k", "node_type": "builtin.audio_resample", "language": "rust", "factory_version": "1.0.0", "node_config": { "sample_rate_hz": 16000 } },
-      { "id": "qwen-realtime", "node_type": "provider.qwen.audio_realtime", "language": "python", "factory_version": "1.0.0", "node_config": { "model": "qwen-audio-3.0-realtime-flash", "voice": "longanqian", "instructions": "You are a concise, helpful realtime voice assistant.", "turn_detection": "server_vad", "vad_threshold": 0.5, "silence_duration_ms": 800 } },
+      { "id": "qwen-realtime", "node_type": "provider.qwen.audio_realtime", "language": "python", "factory_version": "1.0.0", "node_config": { "model": "qwen-audio-3.0-realtime-flash", "voice": "longanqian", "instructions": "You are a concise, helpful realtime voice assistant.", "turn_detection": "server_vad", "vad_threshold": 0.35, "silence_duration_ms": 600 } },
       { "id": "output-48k", "node_type": "builtin.audio_resample", "language": "rust", "factory_version": "1.0.0", "node_config": { "sample_rate_hz": 48000 } },
       { "id": "agora-out", "node_type": "provider.agora.audio_sink", "language": "cpp", "factory_version": "1.0.0", "node_config": {} },
       { "id": "captions", "node_type": "builtin.stdout_text_sink", "language": "rust", "factory_version": "1.0.0", "node_config": {} }

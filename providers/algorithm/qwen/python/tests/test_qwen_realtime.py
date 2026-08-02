@@ -74,6 +74,10 @@ class QwenNodeTests(unittest.TestCase):
         self.assertEqual(transport.sent[0]["type"], "input_audio_buffer.append")
         self.assertEqual(transport.sent[1]["type"], "response.cancel")
         self.assertEqual(ctx.signals[0][0], "voxa.runtime.interrupt")
+        self.assertIn(
+            ("voxa.voice.barge_in", {"provider": "qwen", "response_cancelled": True}),
+            ctx.events,
+        )
         self.assertEqual(ctx.emissions[0][1].text, "你好")
         self.assertEqual(ctx.emissions[1][1].sample_rate_hz, 24000)
         self.assertIn(("voxa.voice.transcript.preview", {"text": "用户说"}), ctx.events)
@@ -84,8 +88,8 @@ class QwenNodeTests(unittest.TestCase):
         rendered = str(update)
         self.assertNotIn("secret", rendered)
         self.assertIn("server_vad", rendered)
-        self.assertEqual(update["session"]["turn_detection"]["threshold"], 0.5)
-        self.assertEqual(update["session"]["turn_detection"]["silence_duration_ms"], 800)
+        self.assertEqual(update["session"]["turn_detection"]["threshold"], 0.35)
+        self.assertEqual(update["session"]["turn_detection"]["silence_duration_ms"], 600)
         self.assertEqual(update["session"]["input_audio_format"], "pcm")
         self.assertEqual(update["session"]["output_audio_format"], "pcm")
         self.assertEqual(update["session"]["voice"], "longanqian")
@@ -106,6 +110,10 @@ class QwenNodeTests(unittest.TestCase):
         node.on_process(AudioFrame(b"\0" * 640, 16000), ctx)
         self.assertEqual([item["type"] for item in transport.sent], ["input_audio_buffer.append"])
         self.assertEqual(ctx.signals[0][0], "voxa.runtime.interrupt")
+        self.assertIn(
+            ("voxa.voice.barge_in", {"provider": "qwen", "response_cancelled": False}),
+            ctx.events,
+        )
 
 
 if __name__ == "__main__":

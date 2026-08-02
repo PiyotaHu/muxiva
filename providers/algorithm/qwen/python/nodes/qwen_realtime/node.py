@@ -140,11 +140,16 @@ class QwenAudioRealtimeNode:
                     {"text": self._response_text, "audio_bytes": self._response_audio_bytes},
                 )
             elif kind == "input_audio_buffer.speech_started":
+                response_cancelled = self._response_active
                 if self._response_active:
                     self._transport.send(response_cancel())
                     self._response_active = False
                 ctx.emit_signal("voxa.runtime.interrupt", {"provider": "qwen"})
                 ctx.publish_event("voxa.voice.speech.started", {"provider": "qwen"})
+                ctx.publish_event(
+                    "voxa.voice.barge_in",
+                    {"provider": "qwen", "response_cancelled": response_cancelled},
+                )
             elif kind == "input_audio_buffer.speech_stopped":
                 ctx.publish_event("voxa.voice.speech.stopped", {"provider": "qwen"})
             elif kind == "response.audio.delta":
@@ -197,18 +202,24 @@ def session_update(config: dict[str, Any]) -> dict[str, Any]:
     turn_detection: dict[str, Any] = {"type": detection}
     if detection == "server_vad":
         turn_detection.update(
-            threshold=float(config.get("vad_threshold", 0.5)),
-            silence_duration_ms=int(config.get("silence_duration_ms", 800)),
+            threshold=float(config.get("vad_threshold", 0.35)),
+            silence_duration_ms=int(config.get("silence_duration_ms", 600)),
         )
+    instructions = str(
+        config.get("instructions", "You are a concise, helpful realtime voice assistant.")
+    ).strip()
+    instructions += (
+        "\nRealtime voice rules: reply in at most two short spoken sentences unless the "
+        "user explicitly asks for detail. Respond promptly. If a request needs missing "
+        "information, such as a weather location, ask one concise follow-up question."
+    )
     return {
         "event_id": _event_id(),
         "type": "session.update",
         "session": {
             "modalities": ["text", "audio"],
             "voice": config.get("voice", DEFAULT_VOICE),
-            "instructions": config.get(
-                "instructions", "You are a concise, helpful realtime voice assistant."
-            ),
+            "instructions": instructions,
             "input_audio_format": "pcm",
             "output_audio_format": "pcm",
             "turn_detection": turn_detection,

@@ -12,12 +12,15 @@ class MyNode final : public voxa::MultimodalGraphNode {
                   voxa::GraphNodeContext& ctx) override {
     // ctx.emit("text_out", output_frame);
   }
+  void on_signal(const voxa_frame_view_v1& signal) override {
+    // 接收 voxa.runtime.interrupt 等图内控制信号。
+  }
 };
 ```
 
 旧的 `std::vector<GraphEmission>` 返回 Hook 继续保持源码兼容，新 Node 应通过
-Context 显式发送。Signal 与 EventBus 动作需要后续控制动作 ABI 扩展，V1 C ABI
-目前尚未暴露这两项能力。
+Context 显式发送。V1 C ABI 已支持通过 `on_signal` 接收 Signal；从 C++ 主动发送
+Signal 或 EventBus 事件仍需要后续控制动作 Context 扩展。
 
 仓库已经提供可安装 Header、CMake Package 配置与独立 Consumer Example。
 

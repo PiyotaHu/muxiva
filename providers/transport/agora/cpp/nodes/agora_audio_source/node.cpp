@@ -1,6 +1,8 @@
 #include <voxa/agora_rtc.hpp>
 #include <voxa/voxa.hpp>
 
+#include <atomic>
+#include <cstdio>
 #include <cstdlib>
 #include <deque>
 #include <mutex>
@@ -46,11 +48,27 @@ class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode,
 
   void on_process(const voxa_frame_view_v1*, voxa::GraphNodeContext& ctx) override {
     OwnedAudio audio;
+    std::size_t combined_frames = 0;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (queue_.empty()) return;
       audio = std::move(queue_.front());
       queue_.pop_front();
+      combined_frames = 1;
+      const auto maximum_samples =
+          static_cast<std::uint64_t>(audio.sample_rate_hz) * 40 / 1000;
+      while (!queue_.empty() && combined_frames < 8) {
+        const auto& next = queue_.front();
+        if (next.sample_rate_hz != audio.sample_rate_hz ||
+            next.channels != audio.channels || next.remote_uid != audio.remote_uid ||
+            audio.samples_per_channel + next.samples_per_channel > maximum_samples) {
+          break;
+        }
+        audio.bytes.insert(audio.bytes.end(), next.bytes.begin(), next.bytes.end());
+        audio.samples_per_channel += next.samples_per_channel;
+        queue_.pop_front();
+        ++combined_frames;
+      }
     }
     current_ = std::move(audio);
     frame_ = {};
@@ -74,6 +92,16 @@ class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode,
     frame_.payload.audio.samples_per_channel = current_.samples_per_channel;
     frame_.payload.audio.bytes = {current_.bytes.data(), current_.bytes.size()};
     ctx.emit("audio_out", frame_);
+    const auto emitted = ++emitted_frames_;
+    if (emitted == 1 || emitted % 500 == 0) {
+      std::fprintf(stderr,
+                   "[VOXA][AGORA][audio.forwarded] frames=%llu bytes=%zu "
+                   "combined=%zu received=%llu dropped=%llu\n",
+                   static_cast<unsigned long long>(emitted), current_.bytes.size(),
+                   combined_frames,
+                   static_cast<unsigned long long>(received_frames_.load()),
+                   static_cast<unsigned long long>(dropped_frames_.load()));
+    }
   }
 
   void on_finish() override {
@@ -96,7 +124,11 @@ class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode,
                        frame.channels, frame.samples_per_channel, frame.timestamp_ms,
                        frame.remote_uid};
       std::lock_guard<std::mutex> lock(mutex_);
-      if (queue_.size() == 256) queue_.pop_front();
+      ++received_frames_;
+      if (queue_.size() == 512) {
+        queue_.pop_front();
+        ++dropped_frames_;
+      }
       queue_.push_back(std::move(owned));
     } catch (...) {}
   }
@@ -118,6 +150,9 @@ class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode,
   OwnedAudio current_;
   voxa_frame_view_v1 frame_{};
   std::uint64_t sequence_ = 0;
+  std::atomic<std::uint64_t> received_frames_{0};
+  std::atomic<std::uint64_t> emitted_frames_{0};
+  std::atomic<std::uint64_t> dropped_frames_{0};
   std::string frame_id_;
   std::string clock_domain_ = "agora.remote.monotonic";
   std::string stream_id_;
