@@ -6,6 +6,7 @@ import base64
 import json
 import os
 import re
+import ssl
 import uuid
 from typing import Any, Callable, Iterable
 from urllib.parse import quote
@@ -36,7 +37,7 @@ class _WebSocketTransport:
         for _ in range(maximum):
             try:
                 value = self._socket.recv()
-            except (self._websocket.WebSocketTimeoutException, BlockingIOError):
+            except (self._websocket.WebSocketTimeoutException, BlockingIOError, ssl.SSLWantReadError):
                 return
             if value is None:
                 return

@@ -1,6 +1,7 @@
 import importlib.util
 import os
 import pathlib
+import ssl
 import sys
 import types
 import unittest
@@ -44,6 +45,15 @@ class Context:
 
 
 class QwenNodeTests(unittest.TestCase):
+    def test_nonblocking_ssl_want_read_is_not_a_runtime_failure(self):
+        class Socket:
+            def recv(self): raise ssl.SSLWantReadError()
+
+        transport = module._QwenWebSocket.__new__(module._QwenWebSocket)
+        transport._socket = Socket()
+        transport._websocket = types.SimpleNamespace(WebSocketTimeoutException=TimeoutError)
+        self.assertEqual(list(transport.poll()), [])
+
     def test_protocol_and_barge_in_without_credentials_or_network(self):
         transport = FakeTransport([
             {"type": "response.created"},
