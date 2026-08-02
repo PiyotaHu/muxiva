@@ -6,6 +6,7 @@ repository_root="$(cd "$application_root/../.." && pwd)"
 qwen_provider_root="$repository_root/providers/algorithm/qwen/python"
 agora_provider_root="$repository_root/providers/transport/agora/cpp"
 sdk_root="${1:-${VOXA_AGORA_SDK_ROOT:-}}"
+bootstrap_python="${VOXA_BOOTSTRAP_PYTHON:-}"
 
 if [[ "$sdk_root" == "--help" || "$sdk_root" == "-h" ]]; then
   cat <<'EOF'
@@ -18,6 +19,9 @@ Usage:
 
 Qwen does not require a vendor SDK download. This command creates a project
 Python virtual environment and installs the websocket dependency automatically.
+
+Set VOXA_BOOTSTRAP_PYTHON=/absolute/path/to/python3 to override automatic
+Python selection. Voxa requires Python 3.10 or newer for this demo.
 EOF
   exit 0
 fi
@@ -37,8 +41,23 @@ if [[ ! -d "$sdk_root" ]]; then
   exit 2
 fi
 
+if [[ -z "$bootstrap_python" ]]; then
+  for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
+      bootstrap_python="$(command -v "$candidate")"
+      break
+    fi
+  done
+fi
+if [[ -z "$bootstrap_python" ]] || ! "$bootstrap_python" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
+  echo '[VOXA][ERROR] Python 3.10 or newer is required to create the Qwen environment.' >&2
+  echo '[VOXA][HELP]  Set VOXA_BOOTSTRAP_PYTHON=/absolute/path/to/python3 and rerun setup.sh.' >&2
+  exit 2
+fi
+
+echo "[VOXA][SETUP] Python bootstrap=$bootstrap_python version=$($bootstrap_python --version 2>&1)"
 echo "[VOXA][SETUP] Creating isolated Python environment"
-python3 -m venv "$application_root/.voxa/venv"
+"$bootstrap_python" -m venv "$application_root/.voxa/venv"
 "$application_root/.voxa/venv/bin/python" -m pip install \
   --disable-pip-version-check -r "$qwen_provider_root/requirements.txt"
 
