@@ -6,6 +6,11 @@ grouped by vendor and implementation language:
 - `qwen/python`: Realtime, ASR, streaming LLM, and TTS Python Node Packs.
 - `agora/cpp`: RTC transport, C++ Node Packs, native adapter, and tests.
 
+Setup guides:
+
+- [Qwen Provider](../docs/providers/qwen.md)
+- [Agora Provider](../docs/providers/agora.md)
+
 Applications reference one or more Node Pack roots through
 `.voxa/providers.json`. Provider source remains inspectable but read-only in
 Studio; application-owned Nodes continue to live in `.voxa/nodes` and can be

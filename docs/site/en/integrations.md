@@ -16,6 +16,11 @@ Live credentials are never committed. Production certification still requires
 retained per-platform live-room evidence, long-duration tests, reconnect and
 late-callback faults, and release-specific SDK compatibility.
 
+For a first run, use the [from-scratch voice guide](voice-demo.md). On macOS,
+`./examples/voice-agent/setup.sh` downloads Agora `4.6.2` from the official CDN,
+verifies SHA-256 checksums, and builds the C++ packs. Qwen requires no SDK
+download; the same command creates an isolated Python environment.
+
 ## Flagship voice profile: Agora + Qwen
 
 The live Voice Playground architecture uses Agora Web SDK for browser microphone and

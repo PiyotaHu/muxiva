@@ -6,6 +6,11 @@ build_directory="${TMPDIR:-/tmp}/voxa-voice-node-pack-check"
 cxx="${CXX:-c++}"
 mkdir -p "$build_directory"
 
+bash -n \
+  "$repository_root/providers/agora/cpp/download-macos-sdk.sh" \
+  "$repository_root/examples/voice-agent/setup.sh" \
+  "$repository_root/examples/voice-agent/run.sh"
+
 cxx_system=()
 if [[ "$(uname -s)" == "Darwin" ]]; then
   sdk_path="$(xcrun --show-sdk-path)"

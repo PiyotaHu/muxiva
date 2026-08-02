@@ -89,7 +89,7 @@ voxa --version
 使用 Agora C++ Transport 和浏览器麦克风：
 
 ```bash
-./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/setup.sh       # macOS：自动下载并校验 Agora SDK
 ./examples/voice-agent/run.sh
 ```
 

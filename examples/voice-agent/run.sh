@@ -15,4 +15,8 @@ else
   exit 2
 fi
 
+if [[ -x "$application_root/.voxa/venv/bin/python" ]]; then
+  export VOXA_PYTHON="$application_root/.voxa/venv/bin/python"
+fi
+
 exec "$voxa_binary" studio "$application_root/graph.json"

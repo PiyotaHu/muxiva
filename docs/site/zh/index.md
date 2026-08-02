@@ -13,7 +13,7 @@ Node 提供语音、推理、媒体、传输与业务能力。
 ## 体验真实语音 Agent
 
 ```bash
-./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/setup.sh
 ./examples/voice-agent/run.sh
 ```
 

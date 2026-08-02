@@ -14,6 +14,10 @@ Provider 将 Voxa 连接到 RTC SDK、媒体库、模型 API、Transport 和设�
 真实凭据永远不能提交到仓库。生产认证仍需保留各平台实房证据、长时间测试、重连
 与晚到回调故障结果，以及与 Release 对应的 SDK 兼容记录。
 
+第一次运行请直接阅读[从零运行真实语音 Agent](voice-demo.md)。macOS 执行
+`./examples/voice-agent/setup.sh` 会从 Agora 官方 CDN 下载 `4.6.2`、校验 SHA-256
+并编译 C++ Node Pack；Qwen 不需要下载 SDK，同一命令会创建隔离 Python 环境。
+
 ## 门面语音方案：Agora + Qwen
 
 真实 Voice Playground 的架构使用 Agora Web SDK 承担浏览器麦克风采集与播放。

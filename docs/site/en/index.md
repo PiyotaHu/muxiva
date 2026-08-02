@@ -15,7 +15,7 @@ reasoning, media, transport, and business logic.
 ## Experience a real voice agent
 
 ```bash
-./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/setup.sh
 ./examples/voice-agent/run.sh
 ```
 

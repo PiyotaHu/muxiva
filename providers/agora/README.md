@@ -7,3 +7,6 @@ manifests, build definition, and tests.
 An offline stub build is available for CI. A real build requires the Agora
 Native SDK and `-DVOXA_ENABLE_AGORA=ON`; compiled Node Pack artifacts are placed
 under the configured `VOXA_NODE_PACK_OUTPUT_ROOT`.
+
+On macOS, `cpp/download-macos-sdk.sh` downloads the pinned official SDK and
+verifies every archive. See the [Agora Provider guide](../../docs/providers/agora.md).

@@ -34,10 +34,25 @@ if(APPLE)
 endif()
 
 if(VOXA_ENABLE_AGORA)
-  find_path(VOXA_AGORA_INCLUDE_DIR IAgoraRtcEngine.h
-    PATHS "${VOXA_AGORA_SDK_ROOT}" PATH_SUFFIXES include sdk/include REQUIRED)
-  find_library(VOXA_AGORA_LIBRARY NAMES agora_rtc_sdk AgoraRtcKit
-    PATHS "${VOXA_AGORA_SDK_ROOT}" PATH_SUFFIXES lib libs libs/x86_64 REQUIRED)
+  if(APPLE)
+    file(GLOB VOXA_AGORA_FRAMEWORKS
+      "${VOXA_AGORA_SDK_ROOT}/AgoraRtcKit.xcframework/macos-*/AgoraRtcKit.framework")
+    list(LENGTH VOXA_AGORA_FRAMEWORKS VOXA_AGORA_FRAMEWORK_COUNT)
+    if(NOT VOXA_AGORA_FRAMEWORK_COUNT EQUAL 1)
+      message(FATAL_ERROR
+        "Agora macOS SDK root must contain one AgoraRtcKit.xcframework macOS slice. "
+        "Run providers/agora/cpp/download-macos-sdk.sh or see the Voxa Provider guide.")
+    endif()
+    list(GET VOXA_AGORA_FRAMEWORKS 0 VOXA_AGORA_LIBRARY)
+    set(VOXA_AGORA_INCLUDE_DIR "${VOXA_AGORA_LIBRARY}/Headers")
+    file(GLOB VOXA_AGORA_XCFRAMEWORK_SLICES
+      "${VOXA_AGORA_SDK_ROOT}/*.xcframework/macos-*")
+  else()
+    find_path(VOXA_AGORA_INCLUDE_DIR IAgoraRtcEngine.h
+      PATHS "${VOXA_AGORA_SDK_ROOT}" PATH_SUFFIXES include sdk/include REQUIRED)
+    find_library(VOXA_AGORA_LIBRARY NAMES agora_rtc_sdk AgoraRtcKit
+      PATHS "${VOXA_AGORA_SDK_ROOT}" PATH_SUFFIXES lib libs libs/x86_64 REQUIRED)
+  endif()
   target_sources(voxa_agora PRIVATE src/agora_native_sdk.cc)
   target_compile_definitions(voxa_agora PRIVATE VOXA_ENABLE_AGORA=1)
   target_include_directories(voxa_agora PRIVATE "${VOXA_AGORA_INCLUDE_DIR}")
@@ -62,6 +77,10 @@ function(add_agora_node_pack package)
     target_compile_definitions(${package} PRIVATE VOXA_ENABLE_AGORA=1)
     target_include_directories(${package} PRIVATE "${VOXA_AGORA_INCLUDE_DIR}")
     target_link_libraries(${package} PRIVATE "${VOXA_AGORA_LIBRARY}")
+    if(APPLE)
+      set_target_properties(${package} PROPERTIES
+        BUILD_RPATH "${VOXA_AGORA_XCFRAMEWORK_SLICES}")
+    endif()
   else()
     target_sources(${package} PRIVATE src/agora_native_sdk_stub.cc)
   endif()

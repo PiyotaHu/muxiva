@@ -41,12 +41,13 @@ explains every command:
 ## First run: a real voice assistant
 
 Voxa's primary developer experience is the credentialed Qwen + Agora Voice
-Room, not synthetic ASR, LLM, or TTS output. After preparing an Agora Native
-C++ SDK, three short-lived RTC tokens, and DashScope credentials, continue with
-the [flagship voice demo](voice-demo.md).
+Room, not synthetic ASR, LLM, or TTS output. On macOS the setup command
+downloads and verifies Agora automatically; Qwen requires no SDK download.
+Follow the [from-scratch flagship guide](voice-demo.md) to create the three RTC
+tokens, Model Studio API Key, and Workspace ID.
 
 ```bash
-./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/setup.sh
 ./examples/voice-agent/run.sh
 ```
 

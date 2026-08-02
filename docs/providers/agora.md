@@ -3,7 +3,27 @@
 Agora is optional. Voxa does not download, redistribute, or silently accept the
 license of either SDK.
 
-## C++ Native SDK
+## Fastest macOS installation
+
+Voxa pins the official Agora macOS SDK `4.6.2`. The downloader obtains the six
+RTC Basic XCFrameworks from Agora's official CDN and verifies the SHA-256 values
+published by the official Swift package:
+
+```sh
+./providers/agora/cpp/download-macos-sdk.sh
+./examples/voice-agent/setup.sh
+```
+
+Official sources:
+
+- [Agora Voice SDK downloads](https://docs.agora.io/en/api-reference/sdks?product=voice&platform=macos)
+- [AgoraRtcEngine macOS 4.6.2 package](https://github.com/AgoraIO/AgoraRtcEngine_macOS/tree/4.6.2)
+- [Agora account, App ID, and temporary-token guide](https://docs.agora.io/en/realtime-media/voice/manage-agora-account)
+
+The complete beginner credential walkthrough is on the
+[flagship voice guide](../site/en/voice-demo.md).
+
+## Manual C++ Native SDK
 
 Obtain the Agora Native SDK for the target platform, then configure:
 
@@ -15,8 +35,9 @@ cmake -S providers/agora/cpp -B build/agora \
 cmake --build build/agora --target voxa_agora
 ```
 
-The SDK root must contain `IAgoraRtcEngine.h` under `include` or `sdk/include`,
-and `agora_rtc_sdk`/`AgoraRtcKit` under a supported library directory. Link an
+The SDK root must contain either an Agora macOS `AgoraRtcKit.xcframework`, or
+`IAgoraRtcEngine.h` under `include`/`sdk/include` plus
+`agora_rtc_sdk`/`AgoraRtcKit` under a supported library directory. Link an
 application to `VoxaAgora::agora` and the installed Voxa C++ runtime, create an
 external ingress, then pass
 `make_native_sdk()` to `RtcAdapter::create`.
@@ -43,7 +64,7 @@ The flagship C++ source/sink Node Packs and their Manifests are under
 itself. Build the complete flagship packs with:
 
 ```sh
-./examples/voice-agent/setup.sh /absolute/path/to/agora-sdk
+./examples/voice-agent/setup.sh
 ```
 
 Ingress, egress, and browser clients use separate UIDs and short-lived RTC

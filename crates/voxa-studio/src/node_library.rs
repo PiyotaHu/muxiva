@@ -477,8 +477,8 @@ pub fn register_project_nodes_with_connections(
 ) -> Result<(), String> {
     for package in list(graph).map_err(|error| error.to_string())? {
         let registration = match package.manifest.language.as_str() {
-            "python" if python_host_supported(&package) => {
-                python_registration(&package, connections.clone())?
+            "python" if python_host_supported(graph, &package) => {
+                python_registration(graph, &package, connections.clone())?
             }
             "cpp" if cpp_host_supported(graph, &package.manifest) => {
                 cpp_registration(graph, &package.manifest)?
@@ -712,7 +712,7 @@ fn read_package(
         serde_json::from_str(&fs::read_to_string(directory.join("voxa.node.json"))?)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let code = fs::read_to_string(directory.join(source_filename(&manifest.language)))?;
-    let runtime_available = python_host_supported_manifest(&manifest)
+    let runtime_available = python_host_supported_manifest(graph, &manifest)
         || (manifest.language == "cpp" && cpp_artifact_path(graph, &manifest.package_id).is_file());
     Ok(NodePackage {
         manifest,
@@ -807,6 +807,7 @@ fn native_library_filename() -> &'static str {
 }
 
 fn python_registration(
+    graph: &Path,
     package: &NodePackage,
     connections: ConnectionStore,
 ) -> Result<NodeRegistration, String> {
@@ -855,6 +856,7 @@ fn python_registration(
         NodeFactoryVersion::new(manifest.factory_version.clone())
             .map_err(|error| error.to_string())?,
         Arc::new(PythonDevFactory {
+            executable: python_executable(graph),
             source,
             entrypoint: manifest.entrypoint.clone(),
             default_output,
@@ -876,12 +878,28 @@ fn parse_frame_type(value: &str) -> Result<FrameType, String> {
     }
 }
 
-fn python_executable() -> String {
-    std::env::var("VOXA_PYTHON").unwrap_or_else(|_| "python3".into())
+fn python_executable(graph: &Path) -> PathBuf {
+    if let Some(executable) = std::env::var_os("VOXA_PYTHON") {
+        return PathBuf::from(executable);
+    }
+    let voxa_root = graph
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(".voxa/venv");
+    let project_python = if cfg!(target_os = "windows") {
+        voxa_root.join("Scripts/python.exe")
+    } else {
+        voxa_root.join("bin/python")
+    };
+    if project_python.is_file() {
+        project_python
+    } else {
+        PathBuf::from("python3")
+    }
 }
 
-fn python_available() -> bool {
-    Command::new(python_executable())
+fn python_available(graph: &Path) -> bool {
+    Command::new(python_executable(graph))
         .arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -890,20 +908,21 @@ fn python_available() -> bool {
         .is_ok_and(|status| status.success())
 }
 
-fn python_host_supported(package: &NodePackage) -> bool {
-    python_host_supported_manifest(&package.manifest)
+fn python_host_supported(graph: &Path, package: &NodePackage) -> bool {
+    python_host_supported_manifest(graph, &package.manifest)
 }
 
-fn python_host_supported_manifest(manifest: &NodePackageManifest) -> bool {
+fn python_host_supported_manifest(graph: &Path, manifest: &NodePackageManifest) -> bool {
     manifest.language == "python"
         && manifest
             .ports
             .iter()
             .all(|port| matches!(port.frame_type.as_str(), "text" | "audio"))
-        && python_available()
+        && python_available(graph)
 }
 
 struct PythonDevFactory {
+    executable: PathBuf,
     source: PathBuf,
     entrypoint: String,
     default_output: Option<String>,
@@ -918,12 +937,10 @@ impl NodeFactory for PythonDevFactory {
         config: &ConfigMap,
     ) -> Result<Box<dyn Node>, NodeFactoryError> {
         PythonDevNode::spawn(
-            &self.source,
-            &self.entrypoint,
+            self,
             self.default_output.clone(),
             config,
             &self.connections,
-            self.connection.as_ref(),
             node_id.clone(),
         )
         .map(|node| Box::new(node) as Box<dyn Node>)
@@ -941,12 +958,10 @@ struct PythonDevNode {
 
 impl PythonDevNode {
     fn spawn(
-        source: &Path,
-        entrypoint: &str,
+        factory: &PythonDevFactory,
         default_output: Option<String>,
         config: &ConfigMap,
         connections: &ConnectionStore,
-        connection: Option<&ConnectionManifest>,
         node_id: NodeId,
     ) -> Result<Self, String> {
         let config = serde_json::Value::Object(
@@ -960,16 +975,19 @@ impl PythonDevNode {
                 })
                 .collect(),
         );
-        let mut command = Command::new(python_executable());
+        let mut command = Command::new(&factory.executable);
         command.args([
             "-u",
             "-c",
             PYTHON_HOST,
-            source.to_str().ok_or("Python Node path is not UTF-8")?,
-            entrypoint,
+            factory
+                .source
+                .to_str()
+                .ok_or("Python Node path is not UTF-8")?,
+            &factory.entrypoint,
             &config.to_string(),
         ]);
-        connections.apply_to_command(&mut command, connection);
+        connections.apply_to_command(&mut command, factory.connection.as_ref());
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

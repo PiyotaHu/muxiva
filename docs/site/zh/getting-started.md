@@ -39,11 +39,12 @@ Workspace。
 ## 第一次运行：真实语音助手
 
 Voxa 的开发者主体验是带真实凭据的 Qwen + Agora Voice Room，而不是合成 ASR、
-LLM 或 TTS 输出。准备 Agora Native C++ SDK、三个短期 RTC Token 和 DashScope
-凭据后，继续阅读[旗舰语音 Demo](voice-demo.md)。
+LLM 或 TTS 输出。macOS 安装脚本会自动下载并校验 Agora SDK；Qwen 不需要下载
+SDK。三个短期 RTC Token、API Key 与 Workspace ID 的申请步骤见
+[从零运行真实语音 Agent](voice-demo.md)。
 
 ```bash
-./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/setup.sh
 ./examples/voice-agent/run.sh
 ```
 

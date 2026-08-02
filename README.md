@@ -91,7 +91,7 @@ The flagship application offers both Qwen Audio Realtime and an inspectable
 VAD → ASR → LLM → TTS graph, with Agora C++ transport and a browser microphone:
 
 ```bash
-./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/setup.sh       # macOS: downloads and verifies Agora SDK
 ./examples/voice-agent/run.sh
 ```
 

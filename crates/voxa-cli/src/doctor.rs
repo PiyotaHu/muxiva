@@ -65,13 +65,13 @@ fn native_node_pack_filename() -> &'static str {
     }
 }
 
-fn inspect_voice_project(current: &Path, warnings: &mut usize) -> bool {
+fn inspect_voice_project(current: &Path, warnings: &mut usize) -> Option<PathBuf> {
     let Some(project) = voice_project(current) else {
         *warnings += 1;
         println!(
             "[VOXA][DOCTOR][WARN] voice-project missing next=\"clone Voxa and open examples/voice-agent\""
         );
-        return false;
+        return None;
     };
     println!(
         "[VOXA][DOCTOR][PASS] voice-project root={}",
@@ -90,12 +90,32 @@ fn inspect_voice_project(current: &Path, warnings: &mut usize) -> bool {
         } else {
             *warnings += 1;
             println!(
-                "[VOXA][DOCTOR][WARN] native-node-pack package={package} mode={} ready=false next=\"./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk\"",
+                "[VOXA][DOCTOR][WARN] native-node-pack package={package} mode={} ready=false next=\"./examples/voice-agent/setup.sh\"",
                 mode.trim()
             );
         }
     }
-    true
+    let project_python = if cfg!(target_os = "windows") {
+        project.join(".voxa/venv/Scripts/python.exe")
+    } else {
+        project.join(".voxa/venv/bin/python")
+    };
+    let qwen_ready = Command::new(&project_python)
+        .args(["-c", "import websocket"])
+        .status()
+        .is_ok_and(|status| status.success());
+    if qwen_ready {
+        println!(
+            "[VOXA][DOCTOR][PASS] qwen-python dependency=websocket executable={}",
+            project_python.display()
+        );
+    } else {
+        *warnings += 1;
+        println!(
+            "[VOXA][DOCTOR][WARN] qwen-python ready=false next=\"./examples/voice-agent/setup.sh\""
+        );
+    }
+    Some(project)
 }
 
 fn report_credentials() {
@@ -136,7 +156,7 @@ pub(super) fn run(voice: bool, strict: bool) -> Result<(), String> {
     check_tool("CMake", &["cmake"], &mut warnings);
     check_tool("C++ compiler", &["c++", "clang++", "g++"], &mut warnings);
 
-    if voice && inspect_voice_project(&current, &mut warnings) {
+    if voice && inspect_voice_project(&current, &mut warnings).is_some() {
         report_credentials();
     }
 

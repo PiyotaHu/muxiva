@@ -17,7 +17,7 @@ Node implementations.
 Install the `voxa` binary once, then start the Qwen + Agora flagship Voice Room:
 
 ```bash
-./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/setup.sh
 ./examples/voice-agent/run.sh
 ```
 

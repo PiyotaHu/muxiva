@@ -1,0 +1,24 @@
+# Qwen provider setup
+
+The Qwen Provider does **not** require a Qwen or DashScope SDK download. Voxa
+uses the documented WebSocket and HTTP protocols directly. Run:
+
+```sh
+./examples/voice-agent/setup.sh
+```
+
+This creates `examples/voice-agent/.voxa/venv` and installs the declared Python
+requirements from `providers/qwen/python/requirements.txt`. Studio and the CLI
+automatically select that project Python environment.
+
+The Provider currently targets Alibaba Cloud Model Studio China (Beijing).
+Create the API Key and Workspace ID in the same Workspace and region:
+
+- [Create a Model Studio API Key](https://help.aliyun.com/en/model-studio/get-api-key)
+- [Make the first Qwen API call and find the Workspace ID](https://help.aliyun.com/en/model-studio/first-api-call-to-qwen)
+- [Qwen Audio Realtime official guide](https://help.aliyun.com/en/model-studio/qwen-audio-realtime-user-guides)
+
+Enter the Key and Workspace ID in Studio **Connections**. Never commit the Key
+or expose it to the browser. See the
+[complete flagship voice guide](../site/en/voice-demo.md) for the click-by-click
+setup and troubleshooting flow.
