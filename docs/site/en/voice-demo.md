@@ -118,6 +118,19 @@ Future runs load it automatically. You can also create it manually from `.env.ex
 After Realtime works, switch to **Qwen Cascade** to inspect VAD → ASR → LLM →
 TTS. The session remains live until you select **End session**.
 
+## Runtime logs and pipeline diagnosis
+
+`run.sh` mirrors terminal output to `examples/voice-agent/.voxa/runtime.log`. If both clients
+look connected but there is no response, find the first signal that does not advance:
+
+1. Voice Room reports that the browser joined and published the microphone.
+2. The log reports `[VOXA][AGORA][participant.joined] uid=1001`.
+3. The log reports `[VOXA][AGORA][audio.received]` and `agora-in.audio_out` advances in Studio.
+4. `audio-to-qwen`, Qwen Node calls, and captions advance.
+5. `qwen-audio` and `agora-out` advance and the browser plays the response.
+
+The first missing signal identifies the failing layer. Credential values are never logged.
+
 ## 5. Troubleshooting
 
 | Symptom | Cause and fix |

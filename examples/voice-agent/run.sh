@@ -24,5 +24,12 @@ echo '[VOXA][STEP 1] Studio opens now. Click Connections in the top toolbar.'
 echo '[VOXA][STEP 2] Fill missing Required fields once and click Save connections. Studio persists them in this project .env.'
 echo '[VOXA][STEP 3] Do not click Run or Voice Room until both cards show Ready.'
 echo '[VOXA][HELP]  https://piyotahu.github.io/Voxa/voice-demo/'
+echo "[VOXA][LOG]   $application_root/.voxa/runtime.log"
 
-exec "$voxa_binary" studio "$application_root/graph.json"
+mkdir -p "$application_root/.voxa"
+set +e
+"$voxa_binary" studio "$application_root/graph.json" 2>&1 \
+  | tee "$application_root/.voxa/runtime.log"
+status=${PIPESTATUS[0]}
+set -e
+exit "$status"

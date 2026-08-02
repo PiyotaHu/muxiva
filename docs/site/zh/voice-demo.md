@@ -111,6 +111,19 @@ voxa doctor --voice
 Realtime 跑通后，再切换 **Qwen Cascade**，观察 VAD → ASR → LLM → TTS 的各阶段。
 会话会持续运行，直到点击 **End session**。
 
+## 运行日志与链路定位
+
+`run.sh` 会同时把终端输出保存到 `examples/voice-agent/.voxa/runtime.log`。遇到“已经
+连接但没有回复”时，按下面的顺序找第一个没有增长的指标：
+
+1. Voice Room 显示浏览器已加入、麦克风已发布；
+2. 日志出现 `[VOXA][AGORA][participant.joined] uid=1001`；
+3. 日志出现 `[VOXA][AGORA][audio.received]`，Studio 的 `agora-in.audio_out` 增长；
+4. `audio-to-qwen`、Qwen Node 调用与字幕开始增长；
+5. `qwen-audio` 和 `agora-out` 增长，浏览器听到回复。
+
+第一个没有出现的步骤，就是故障所在层。凭据值不会写入日志。
+
 ## 5. 常见错误
 
 | 现象 | 原因与处理 |

@@ -6,6 +6,7 @@
   <title>Voxa Live Voice Room</title>
   <link rel="stylesheet" href="/project/app.css">
   <link rel="stylesheet" href="/project/conversation.css">
+  <link rel="stylesheet" href="/project/diagnostics.css">
 </head>
 <body>
   <main>
@@ -37,7 +38,7 @@
     <section class="pipeline">
       <div data-node="agora-in"><span>C++</span><b>Agora In</b><small>microphone</small></div>
       <i>→</i><div data-node="vad"><span>Rust</span><b>VAD + Barge-in</b><small>control plane</small></div>
-      <i>→</i><div data-node="reasoning"><span>Python</span><b>Qwen Intelligence</b><small>realtime / cascade</small></div>
+      <i>→</i><div data-node="qwen"><span>Python</span><b>Qwen Intelligence</b><small>realtime / cascade</small></div>
       <i>→</i><div data-node="agora-out"><span>C++</span><b>Agora Out</b><small>voice response</small></div>
     </section>
 
@@ -46,6 +47,10 @@
       <div><small>NODE CALLS</small><b id="calls">0</b></div>
       <div><small>FRAMES</small><b id="frames">0</b></div>
       <div><small>LATENCY SIGNAL</small><b id="latency">LIVE</b></div>
+    </section>
+    <section class="diagnostics">
+      <div class="diagnostics-title"><div><small>LIVE DIAGNOSTICS</small><b>Voice pipeline log</b></div><button id="copy-log" class="secondary" type="button">Copy log</button></div>
+      <ol id="diagnostic-log"><li>Waiting to start. Runtime logs are also saved to <code>.voxa/runtime.log</code>.</li></ol>
     </section>
     <section id="error" class="error" hidden></section>
   </main>

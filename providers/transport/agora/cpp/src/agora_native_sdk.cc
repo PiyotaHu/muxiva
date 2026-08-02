@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <cstdio>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -100,6 +101,12 @@ class NativeSdk final : public Sdk,
         media_ = static_cast<::agora::media::IMediaEngine*>(media);
         if ((result = media_->registerAudioFrameObserver(this)) != 0) return result;
         if ((result = media_->registerVideoFrameObserver(this)) != 0) return result;
+        // Agora only activates the per-user before-mixing callback after its
+        // output format is configured before joinChannel.
+        if ((result = engine_->setPlaybackAudioFrameBeforeMixingParameters(16000, 1)) != 0) {
+          return result;
+        }
+        if ((result = engine_->enableAudio()) != 0) return result;
         ::agora::rtc::AudioTrackConfig audio_config;
         audio_config.enableLocalPlayback = false;
         audio_track_ = media_->createCustomAudioTrack(
@@ -107,7 +114,12 @@ class NativeSdk final : public Sdk,
         if (audio_track_ == kInvalidTrack) return -1;
         video_track_ = engine_->createCustomVideoTrack();
         if (video_track_ == kInvalidTrack) return -1;
-        return engine_->enableVideo();
+        result = engine_->enableVideo();
+        if (result == 0) {
+          std::fprintf(stderr,
+                       "[VOXA][AGORA][native.initialized] audio=pcm_s16le/16000/mono\n");
+        }
+        return result;
       });
     } catch (...) {
       return -1;
@@ -126,8 +138,15 @@ class NativeSdk final : public Sdk,
         options.publishCustomAudioTrackId = audio_track_;
         options.publishCustomVideoTrack = true;
         options.customVideoTrackId = video_track_;
-        return engine_->joinChannel(token.empty() ? nullptr : token.c_str(),
-                                    channel.c_str(), uid, options);
+        options.autoSubscribeAudio = true;
+        options.autoSubscribeVideo = true;
+        options.enableAudioRecordingOrPlayout = true;
+        const int result = engine_->joinChannel(token.empty() ? nullptr : token.c_str(),
+                                                channel.c_str(), uid, options);
+        std::fprintf(stderr,
+                     "[VOXA][AGORA][native.join.requested] uid=%u result=%d\n", uid,
+                     result);
+        return result;
       });
     } catch (...) {
       return -1;
@@ -249,6 +268,14 @@ class NativeSdk final : public Sdk,
            static_cast<std::uint32_t>(frame.samplesPerSec),
            static_cast<std::uint16_t>(frame.channels),
            static_cast<std::uint64_t>(frame.samplesPerChannel), frame.renderTimeMs, uid});
+      const auto count = received_audio_frames_.fetch_add(1, std::memory_order_relaxed) + 1;
+      if (count == 1 || count % 500 == 0) {
+        std::fprintf(stderr,
+                     "[VOXA][AGORA][audio.received] remote_uid=%u frames=%llu rate_hz=%d "
+                     "channels=%d\n",
+                     uid, static_cast<unsigned long long>(count), frame.samplesPerSec,
+                     frame.channels);
+      }
     }
     return true;
   }
@@ -296,6 +323,8 @@ class NativeSdk final : public Sdk,
 
   void onConnectionStateChanged(::agora::rtc::CONNECTION_STATE_TYPE state,
                                 ::agora::rtc::CONNECTION_CHANGED_REASON_TYPE reason) override {
+    std::fprintf(stderr, "[VOXA][AGORA][connection.state] state=%d reason=%d\n",
+                 static_cast<int>(state), static_cast<int>(reason));
     if (auto* observer = observer_.load(std::memory_order_acquire)) {
       observer->on_connection_state(static_cast<ConnectionState>(state),
                                     static_cast<int>(reason));
@@ -336,17 +365,21 @@ class NativeSdk final : public Sdk,
     }
   }
   void onUserJoined(::agora::rtc::uid_t uid, int) override {
+    std::fprintf(stderr, "[VOXA][AGORA][participant.joined] uid=%u\n", uid);
     if (auto* observer = observer_.load(std::memory_order_acquire)) {
       observer->on_participant_joined(uid);
     }
   }
   void onUserOffline(::agora::rtc::uid_t uid,
                      ::agora::rtc::USER_OFFLINE_REASON_TYPE reason) override {
+    std::fprintf(stderr, "[VOXA][AGORA][participant.left] uid=%u reason=%d\n", uid,
+                 static_cast<int>(reason));
     if (auto* observer = observer_.load(std::memory_order_acquire)) {
       observer->on_participant_left(uid, static_cast<int>(reason));
     }
   }
   void onError(int error, const char*) override {
+    std::fprintf(stderr, "[VOXA][AGORA][native.error] code=%d\n", error);
     if (auto* observer = observer_.load(std::memory_order_acquire)) {
       observer->on_error(error);
     }
@@ -359,6 +392,7 @@ class NativeSdk final : public Sdk,
   ::agora::rtc::track_id_t audio_track_ = kInvalidTrack;
   ::agora::rtc::video_track_id_t video_track_ = kInvalidTrack;
   std::atomic<SdkObserver*> observer_{nullptr};
+  std::atomic<std::uint64_t> received_audio_frames_{0};
   bool shutdown_ = false;
 };
 
