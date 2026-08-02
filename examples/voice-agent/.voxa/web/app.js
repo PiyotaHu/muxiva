@@ -15,6 +15,8 @@ let lastEventSignature = ''
 let sessionStartedAt = 0
 let lastPipelineState = ''
 let lastErrorMessage = ''
+let currentUserMessage = null
+let currentAgentMessage = null
 
 for (let index = 0; index < 32; index += 1) {
   const level = document.createElement('i')
@@ -33,6 +35,73 @@ async function api(path, options = {}) {
 function message(text, detail = '') {
   $('#voice-state').textContent = text
   if (detail) $('#session-copy').textContent = detail
+}
+
+function resetConversation() {
+  $('#message-list').replaceChildren()
+  const empty = document.createElement('div')
+  empty.id = 'conversation-empty'
+  empty.className = 'conversation-empty'
+  const title = document.createElement('b')
+  title.textContent = 'Your conversation will appear here'
+  const detail = document.createElement('span')
+  detail.textContent = 'You on the right · Voxa on the left'
+  empty.append(title, detail)
+  $('#message-list').append(empty)
+  currentUserMessage = null
+  currentAgentMessage = null
+}
+
+function createChatMessage(role) {
+  $('#conversation-empty')?.remove()
+  const article = document.createElement('article')
+  article.className = `chat-message ${role} streaming`
+  const body = document.createElement('div')
+  body.className = 'message-body'
+  const label = document.createElement('small')
+  label.textContent = role === 'user' ? 'YOU · LIVE ASR' : 'VOXA · STREAMING RESPONSE'
+  const copy = document.createElement('p')
+  body.append(label, copy)
+  article.append(body)
+  $('#message-list').append(article)
+  while ($('#message-list').children.length > 50) $('#message-list').firstElementChild.remove()
+  $('#message-list').scrollTop = $('#message-list').scrollHeight
+  return { article, copy }
+}
+
+function beginUserMessage() {
+  currentAgentMessage?.article.classList.remove('streaming')
+  currentAgentMessage = null
+  currentUserMessage?.article.classList.remove('streaming')
+  currentUserMessage = createChatMessage('user')
+  currentUserMessage.copy.textContent = 'Listening…'
+}
+
+function previewUserMessage(text) {
+  if (!currentUserMessage) currentUserMessage = createChatMessage('user')
+  currentUserMessage.copy.textContent = text
+  $('#message-list').scrollTop = $('#message-list').scrollHeight
+}
+
+function completeUserMessage(text) {
+  previewUserMessage(text)
+  currentUserMessage.article.classList.remove('streaming')
+  currentUserMessage = null
+}
+
+function appendAgentMessage(text) {
+  if (!currentAgentMessage) currentAgentMessage = createChatMessage('agent')
+  currentAgentMessage.copy.textContent += text
+  $('#message-list').scrollTop = $('#message-list').scrollHeight
+}
+
+function completeAgentMessage(text = '') {
+  if (text && !currentAgentMessage) {
+    currentAgentMessage = createChatMessage('agent')
+    currentAgentMessage.copy.textContent = text
+  }
+  currentAgentMessage?.article.classList.remove('streaming')
+  currentAgentMessage = null
 }
 
 function diagnostic(text, error = false) {
@@ -72,6 +141,7 @@ async function join() {
     lastErrorMessage = ''
     $('#diagnostic-log').replaceChildren()
     lastPipelineState = ''
+    resetConversation()
   try {
     if (!token) throw new Error('Studio access token is missing. Open Voice Room from Studio.')
     if (!window.AgoraRTC) throw new Error('Agora Web SDK could not be loaded.')
@@ -177,17 +247,22 @@ async function renderVoiceEvents() {
   for (const event of events.slice(start)) {
     const text = typeof event.payload?.text === 'string' ? event.payload.text : ''
     if (event.topic === 'voxa.voice.speech.started') {
-      $('#user-text').textContent = ''
-      $('#agent-text').textContent = ''
+      beginUserMessage()
       message('Listening — speak naturally', 'Barge-in signal sent; stale output is being cancelled')
+    } else if (event.topic === 'voxa.voice.transcript.preview') {
+      previewUserMessage(text)
     } else if (event.topic === 'voxa.voice.transcript.delta') {
-      $('#user-text').textContent += text
+      previewUserMessage(`${currentUserMessage?.copy.textContent || ''}${text}`)
     } else if (event.topic === 'voxa.voice.transcript.completed') {
-      $('#user-text').textContent = text
+      completeUserMessage(text)
       message('Thinking…', 'Transcript committed to the typed Graph')
     } else if (event.topic === 'voxa.voice.response.delta') {
-      $('#agent-text').textContent += text
+      appendAgentMessage(text)
       message('Voxa is responding', 'Text and audio are streaming through separate typed branches')
+    } else if (event.topic === 'voxa.voice.response.completed') {
+      completeAgentMessage(text)
+    } else if (event.topic === 'voxa.voice.transcript.failed') {
+      diagnostic(`ASR failed · ${event.payload?.message || 'unknown error'}`, true)
     }
   }
   if (events.length) lastEventSignature = JSON.stringify(events[events.length - 1])

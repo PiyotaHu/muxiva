@@ -58,7 +58,8 @@ class QwenNodeTests(unittest.TestCase):
         transport = FakeTransport([
             {"type": "response.created"},
             {"type": "input_audio_buffer.speech_started"},
-            {"type": "conversation.item.input_audio_transcription.delta", "text": "用户说"},
+            {"type": "conversation.item.input_audio_transcription.delta", "text": "用户", "stash": "说"},
+            {"type": "conversation.item.input_audio_transcription.completed", "transcript": "用户说"},
             {"type": "response.audio_transcript.delta", "delta": "你好"},
             {"type": "response.audio.delta", "delta": "AQIDBA=="},
             {"type": "response.done"},
@@ -73,9 +74,10 @@ class QwenNodeTests(unittest.TestCase):
         self.assertEqual(transport.sent[0]["type"], "input_audio_buffer.append")
         self.assertEqual(transport.sent[1]["type"], "response.cancel")
         self.assertEqual(ctx.signals[0][0], "voxa.runtime.interrupt")
-        self.assertEqual(ctx.emissions[0][1].text, "用户说")
-        self.assertEqual(ctx.emissions[1][1].text, "你好")
-        self.assertEqual(ctx.emissions[2][1].sample_rate_hz, 24000)
+        self.assertEqual(ctx.emissions[0][1].text, "你好")
+        self.assertEqual(ctx.emissions[1][1].sample_rate_hz, 24000)
+        self.assertIn(("voxa.voice.transcript.preview", {"text": "用户说"}), ctx.events)
+        self.assertIn(("voxa.voice.transcript.completed", {"text": "用户说"}), ctx.events)
 
     def test_session_update_contains_no_credentials(self):
         update = module.session_update({})

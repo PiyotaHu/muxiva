@@ -30,9 +30,14 @@
       <p id="session-copy">The agent stays alive until you end the session.</p>
     </section>
 
-    <section class="conversation" aria-live="polite">
-      <div class="bubble user"><small>YOU · LIVE TRANSCRIPT</small><p id="user-text">Your words will appear here…</p></div>
-      <div class="bubble agent"><small>VOXA · STREAMING RESPONSE</small><p id="agent-text">The response will stream here while audio plays…</p></div>
+    <section class="conversation" aria-live="polite" aria-label="Voice conversation">
+      <div class="conversation-title"><div><small>LIVE CONVERSATION</small><b>Transcript &amp; response</b></div><span>Qwen ASR + Voice</span></div>
+      <div id="message-list" class="message-list">
+        <div id="conversation-empty" class="conversation-empty">
+          <b>Your conversation will appear here</b>
+          <span>You on the right · Voxa on the left</span>
+        </div>
+      </div>
     </section>
 
     <section class="pipeline">

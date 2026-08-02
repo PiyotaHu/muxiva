@@ -130,6 +130,11 @@ Realtime 跑通后，再切换 **Qwen Cascade**，观察 VAD → ASR → LLM →
 
 第一个没有出现的步骤，就是故障所在层。凭据值不会写入日志。
 
+Voice Room 会把每轮对话显示成聊天记录：用户 ASR 在右侧，Agent 流式回复在左侧。
+Qwen 增量 ASR 使用 `text + stash` 作为实时预览，并在
+`conversation.item.input_audio_transcription.completed` 到达后固定最终文本。Agora Bot
+只消费远端 PCM，不在运行机器的扬声器播放用户声音；助手音频以 10 ms PCM 包匀速发布。
+
 ## 5. 常见错误
 
 | 现象 | 原因与处理 |
@@ -140,6 +145,9 @@ Realtime 跑通后，再切换 **Qwen Cascade**，观察 VAD → ASR → LLM →
 | Qwen 返回鉴权/模型错误 | API Key、Workspace ID、模型必须属于华北 2（北京）同一 Workspace |
 | Agora 加入 Channel 失败 | App ID、Channel、UID 必须与生成该 Token 时完全一致，Token 也不能过期 |
 | 页面没有麦克风 | 浏览器未授权；在浏览器站点权限中允许本地 Studio 使用麦克风 |
+| 清晰听到自己的声音 | 更新 Voxa 并重新运行 `setup.sh` 编译 Agora Node Pack；Bot 本地远端播放日志必须显示 `muted` |
+| 有文字但没有语音 | 查找 `[VOXA][AGORA][audio.published]`；没有该日志说明 Qwen 未产生音频，有日志则检查浏览器是否订阅 Bot 音轨 |
+| 页面没有用户 ASR | 查找 Qwen `input_audio_transcription.completed`；新版页面显示 `text + stash` 实时预览和最终 `transcript` |
 
 ## 6. 工程验收
 

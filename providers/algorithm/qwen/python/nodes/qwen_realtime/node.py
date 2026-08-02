@@ -73,6 +73,8 @@ class QwenAudioRealtimeNode:
         self._transport: Any | None = None
         self._response_active = False
         self._audio_frames_sent = 0
+        self._response_text = ""
+        self._response_audio_bytes = 0
 
     @staticmethod
     def _log(event: str, **fields: Any) -> None:
@@ -120,6 +122,8 @@ class QwenAudioRealtimeNode:
                 "input_audio_buffer.speech_started",
                 "input_audio_buffer.speech_stopped",
                 "input_audio_buffer.committed",
+                "conversation.item.input_audio_transcription.completed",
+                "conversation.item.input_audio_transcription.failed",
                 "response.created",
                 "response.done",
                 "error",
@@ -127,17 +131,27 @@ class QwenAudioRealtimeNode:
                 self._log("event", type=kind)
             if kind == "response.created":
                 self._response_active = True
+                self._response_text = ""
+                self._response_audio_bytes = 0
             elif kind == "response.done":
                 self._response_active = False
+                ctx.publish_event(
+                    "voxa.voice.response.completed",
+                    {"text": self._response_text, "audio_bytes": self._response_audio_bytes},
+                )
             elif kind == "input_audio_buffer.speech_started":
                 if self._response_active:
                     self._transport.send(response_cancel())
                     self._response_active = False
                 ctx.emit_signal("voxa.runtime.interrupt", {"provider": "qwen"})
+                ctx.publish_event("voxa.voice.speech.started", {"provider": "qwen"})
+            elif kind == "input_audio_buffer.speech_stopped":
+                ctx.publish_event("voxa.voice.speech.stopped", {"provider": "qwen"})
             elif kind == "response.audio.delta":
                 audio = base64.b64decode(event["delta"], validate=True)
                 if not audio or len(audio) > 256 * 1024 or len(audio) % 2:
                     raise QwenProtocolError("invalid Qwen response audio size")
+                self._response_audio_bytes += len(audio)
                 ctx.emit(
                     "audio_out",
                     voxa.AudioFrame(audio, sample_rate_hz=24_000, channels=1, sequence=frame.sequence),
@@ -145,13 +159,23 @@ class QwenAudioRealtimeNode:
             elif kind in ("response.audio_transcript.delta", "response.text.delta"):
                 text = event.get("delta", "")
                 if text:
+                    self._response_text += text
                     ctx.emit("text_out", voxa.TextFrame(text, sequence=frame.sequence))
                     ctx.publish_event("voxa.voice.response.delta", {"text": text})
             elif kind == "conversation.item.input_audio_transcription.delta":
-                text = event.get("text", "")
+                text = f"{event.get('text', '')}{event.get('stash', '')}"
                 if text:
-                    ctx.emit("text_out", voxa.TextFrame(text, sequence=frame.sequence))
-                    ctx.publish_event("voxa.voice.transcript.delta", {"text": text})
+                    ctx.publish_event("voxa.voice.transcript.preview", {"text": text})
+            elif kind == "conversation.item.input_audio_transcription.completed":
+                text = event.get("transcript", "")
+                if text:
+                    ctx.publish_event("voxa.voice.transcript.completed", {"text": text})
+            elif kind == "conversation.item.input_audio_transcription.failed":
+                error = event.get("error", {})
+                ctx.publish_event(
+                    "voxa.voice.transcript.failed",
+                    {"message": str(error.get("message", "ASR transcription failed"))[:512]},
+                )
             elif kind == "error":
                 error = event.get("error", {})
                 raise QwenProtocolError(

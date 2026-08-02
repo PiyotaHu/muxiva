@@ -137,6 +137,12 @@ look connected but there is no response, find the first signal that does not adv
 
 The first missing signal identifies the failing layer. Credential values are never logged.
 
+Voice Room renders each turn as chat history: user ASR on the right and the Agent's streaming
+response on the left. Qwen incremental ASR uses `text + stash` for the live preview and commits
+the final text from `conversation.item.input_audio_transcription.completed`. The Agora Bot consumes
+remote PCM without playing the user's voice on the Runtime machine and publishes assistant audio
+as paced 10 ms PCM packets.
+
 ## 5. Troubleshooting
 
 | Symptom | Cause and fix |
@@ -147,6 +153,9 @@ The first missing signal identifies the failing layer. Credential values are nev
 | Qwen authentication/model error | Key, Workspace ID, and model must belong to the same China (Beijing) Workspace |
 | Agora cannot join | App ID, channel, and UID must exactly match token generation and the token must be unexpired |
 | No microphone input | Allow microphone access for the local Studio page in browser site permissions |
+| You clearly hear your own voice | Update Voxa and rerun `setup.sh` to rebuild the Agora Node Pack; Bot remote playout must log `muted` |
+| Text appears but no voice plays | Look for `[VOXA][AGORA][audio.published]`; if absent Qwen produced no audio, otherwise verify the browser subscribed to the Bot track |
+| User ASR is missing | Look for Qwen `input_audio_transcription.completed`; the current page renders `text + stash` previews and final `transcript` |
 
 ## 6. Engineering verification
 
