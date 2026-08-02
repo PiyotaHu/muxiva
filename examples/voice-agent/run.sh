@@ -26,9 +26,26 @@ echo '[VOXA][STEP 3] Do not click Run or Voice Room until both cards show Ready.
 echo '[VOXA][HELP]  https://piyotahu.github.io/Voxa/voice-demo/'
 echo "[VOXA][LOG]   $application_root/.voxa/runtime.log"
 
+studio_args=("$application_root/graph.json" "$@")
+if [[ "$(uname -s)" == "Linux" && -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
+  has_no_open=false
+  for argument in "$@"; do
+    if [[ "$argument" == "--no-open" ]]; then
+      has_no_open=true
+      break
+    fi
+  done
+  if [[ "$has_no_open" == false ]]; then
+    studio_args+=("--no-open")
+  fi
+  echo '[VOXA][HEADLESS] No desktop session detected; browser auto-open is disabled.'
+  echo '[VOXA][HEADLESS] For SSH access, restart with --port 5678 and forward 127.0.0.1:5678 from your laptop.'
+  echo '[VOXA][HEADLESS] Guide: https://piyotahu.github.io/Voxa/remote-studio/'
+fi
+
 mkdir -p "$application_root/.voxa"
 set +e
-"$voxa_binary" studio "$application_root/graph.json" 2>&1 \
+"$voxa_binary" studio "${studio_args[@]}" 2>&1 \
   | tee "$application_root/.voxa/runtime.log"
 status=${PIPESTATUS[0]}
 set -e

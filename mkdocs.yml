@@ -57,6 +57,7 @@ plugins:
             Installation and first run: 安装与首次运行
             Flagship voice demo: 旗舰语音 Demo
             Voice credentials checklist: 语音凭据清单
+            Remote and headless Linux: 远程与无 GUI Linux
             Studio: Studio 可视化开发
             Core concepts: 核心概念
             System overview: 系统全景
@@ -114,6 +115,7 @@ nav:
       - Installation and first run: getting-started.md
       - Voice credentials checklist: voice-credentials.md
       - Flagship voice demo: voice-demo.md
+      - Remote and headless Linux: remote-studio.md
       - Studio: studio.md
   - Core concepts:
       - System overview: concepts.md
