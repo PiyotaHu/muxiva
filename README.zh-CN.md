@@ -100,12 +100,12 @@ voxa --version
 ### 创建、校验并运行 Graph
 
 ```bash
-voxa init my-agent.voxa.json
-voxa validate my-agent.voxa.json
-voxa run my-agent.voxa.json
+voxa init my-agent
+voxa validate my-agent
+voxa run my-agent
 ```
 
-`voxa validate` 是无副作用的，不会创建或启动 Node。`voxa run` 会使用内置
+`voxa init` 会创建完整项目目录。`voxa validate` 是无副作用的，不会创建或启动 Node。`voxa run` 会使用内置
 Registry 编译 Graph，实例化每个精确版本的 Factory，并通过并发 Runtime
 真正执行。默认执行期限为 30 秒；可用 `--timeout-ms` 和
 `--shutdown-timeout-ms` 设置有界的执行与清理等待时间。
@@ -113,9 +113,10 @@ Registry 编译 Graph，实例化每个精确版本的 Factory，并通过并发
 ### 启动本地可视化 Studio
 
 ```bash
-voxa studio my-agent.voxa.json
+voxa studio
 ```
 
+无参数时会自动发现当前项目；在 Voxa 仓库根目录会直接打开旗舰 Voice Agent。
 Studio 会打开内置 Graph v1 可视化编辑器。开发者可以把 Node 从 Palette
 拖进画布，在类型兼容的端口之间直接拉线，也可以点击 **Create Node**，在网页里
 编辑代码、声明端口并保存注册到项目 Node Library。当前文本 Python Node 可由

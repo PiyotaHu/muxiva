@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use std::{
-    fs,
+    env, fs,
     net::{IpAddr, TcpListener},
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
@@ -11,6 +11,8 @@ use voxa_core::{
     EventBus, NodeRegistry, RuntimeOptions, RuntimeWaitError,
 };
 use voxa_types::NamespacedName;
+
+mod doctor;
 
 const DEFAULT_RUN_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS: u64 = 5_000;
@@ -30,40 +32,64 @@ const STARTER: &str = r#"{
   ]
 }"#;
 const VOICE_DEMO: &str = include_str!("../../../examples/graphs/mock-realtime-voice.v1.json");
+const FLAGSHIP_GUIDE: &str = "https://piyotahu.github.io/Voxa/voice-demo/";
+const PROJECT_README: &str = r#"# Voxa Agent
+
+This project contains a typed Voxa Graph and project-owned Node packages.
+
+```sh
+voxa validate .
+voxa studio .
+voxa run .
+```
+
+Build a real voice assistant with the flagship guide:
+https://piyotahu.github.io/Voxa/voice-demo/
+"#;
 
 #[derive(Parser)]
 #[command(
     name = "voxa",
     version,
-    about = "Build and run real-time multimodal agent graphs"
+    about = "Build and run real-time multimodal agent graphs",
+    long_about = "Voxa is a real-time multimodal Agent Runtime for typed, concurrent graphs.\n\nStart Studio without arguments, create a project, or inspect your environment with doctor.",
+    after_help = "Start here:\n  voxa studio          Open or create a local Studio workspace\n  voxa init my-agent   Create a complete Voxa project\n  voxa doctor --voice  Check flagship voice-demo prerequisites\n\nReal voice guide: https://piyotahu.github.io/Voxa/voice-demo/"
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run a self-contained product demo without requiring a project checkout.
-    Demo {
-        /// Demo journey: voice shows fork/join multimodal execution; text is a basic smoke test.
-        #[arg(long, value_enum, default_value_t = DemoScenario::Voice)]
-        scenario: DemoScenario,
-        /// Number of scripted voice turns (1-100).
-        #[arg(long, default_value_t = 4)]
-        turns: u16,
-        /// Delay between source ticks in the mock voice session.
-        #[arg(long, default_value_t = 650)]
-        interval_ms: u64,
+    /// Open local visual Studio; auto-discover or create a workspace.
+    Studio {
+        /// Project directory or Graph JSON. Omit to discover the current workspace.
+        graph: Option<PathBuf>,
+        /// Bind to this exact TCP port; the default selects a free local port.
+        #[arg(long)]
+        port: Option<u16>,
+        /// Bind address. Keep the loopback default for local development.
+        #[arg(long, default_value = "127.0.0.1")]
+        host: IpAddr,
+        /// Print the URL without opening the default browser.
+        #[arg(long)]
+        no_open: bool,
     },
+    /// Create a Voxa project with graph.json and project Node directories.
     Init {
-        #[arg(default_value = "voxa.graph.json")]
+        /// New project directory. A .json path creates one Graph for compatibility.
+        #[arg(default_value = ".")]
         path: PathBuf,
     },
+    /// Validate a project or Graph without executing any Node.
     Validate {
+        /// Project directory or Graph JSON.
         graph: PathBuf,
     },
+    /// Execute a project or Graph with the concurrent Runtime.
     Run {
+        /// Project directory or Graph JSON.
         graph: PathBuf,
         /// Maximum wall-clock time to wait for graph completion.
         #[arg(long, default_value_t = DEFAULT_RUN_TIMEOUT_MS)]
@@ -72,21 +98,41 @@ enum Command {
         #[arg(long, default_value_t = DEFAULT_SHUTDOWN_TIMEOUT_MS)]
         shutdown_timeout_ms: u64,
     },
-    /// Launch the local visual Graph v1 editor.
-    Studio {
-        graph: PathBuf,
+    /// Check local tools, project discovery, and optional voice-demo readiness.
+    Doctor {
+        /// Also inspect Qwen + Agora flagship voice-demo prerequisites.
         #[arg(long)]
-        port: Option<u16>,
-        #[arg(long, default_value = "127.0.0.1")]
-        host: IpAddr,
-        /// Print the URL without opening the default browser.
+        voice: bool,
+        /// Return a failure when a recommended prerequisite is missing.
         #[arg(long)]
-        no_open: bool,
+        strict: bool,
+    },
+    /// Run synthetic, network-free Runtime fixtures for engineering checks.
+    Simulate {
+        /// Fixture: voice exercises fork/join control flow; text is a minimal smoke test.
+        #[arg(long, value_enum, default_value_t = SimulationScenario::Voice)]
+        scenario: SimulationScenario,
+        /// Number of scripted voice turns (1-100).
+        #[arg(long, default_value_t = 4)]
+        turns: u16,
+        /// Delay between source ticks in the synthetic voice fixture.
+        #[arg(long, default_value_t = 650)]
+        interval_ms: u64,
+    },
+    /// Deprecated alias for `simulate`; hidden because it is not a product demo.
+    #[command(hide = true)]
+    Demo {
+        #[arg(long, value_enum, default_value_t = SimulationScenario::Voice)]
+        scenario: SimulationScenario,
+        #[arg(long, default_value_t = 4)]
+        turns: u16,
+        #[arg(long, default_value_t = 650)]
+        interval_ms: u64,
     },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
-enum DemoScenario {
+enum SimulationScenario {
     Voice,
     Text,
 }
@@ -101,8 +147,27 @@ fn load_source(data: &str, registry: &NodeRegistry) -> Result<voxa_core::GraphDe
     voxa_graph_json::compile_with_registry(&document, registry).map_err(render)
 }
 
-fn validate(path: &Path) -> Result<(), String> {
-    load(path, &voxa_graph_json::builtin_registry()).map(|_| ())
+fn resolve_graph_path(path: &Path) -> Result<PathBuf, String> {
+    if !path.is_dir() {
+        return Ok(path.to_owned());
+    }
+    for name in ["graph.json", "voxa.graph.json"] {
+        let candidate = path.join(name);
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "project {} contains neither graph.json nor voxa.graph.json",
+        path.display()
+    ))
+}
+
+fn validate(path: &Path) -> Result<PathBuf, String> {
+    let graph = resolve_graph_path(path)?;
+    let registry = voxa_studio::project_registry(&graph)?;
+    load(&graph, &registry)?;
+    Ok(graph)
 }
 
 fn render(errors: Vec<voxa_graph_json::GraphDiagnostic>) -> String {
@@ -114,6 +179,36 @@ fn render(errors: Vec<voxa_graph_json::GraphDiagnostic>) -> String {
 }
 
 fn init(path: &Path) -> Result<(), String> {
+    if path
+        .extension()
+        .is_some_and(|extension| extension == "json")
+    {
+        return init_graph(path);
+    }
+    if path.exists() && !path.is_dir() {
+        return Err(format!("{} exists and is not a directory", path.display()));
+    }
+    let created_root = !path.exists();
+    let graph = path.join("graph.json");
+    if graph.exists() {
+        return Err(format!("refusing to overwrite {}", graph.display()));
+    }
+    fs::create_dir_all(path.join(".voxa/nodes")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(path.join(".voxa/templates")).map_err(|error| error.to_string())?;
+    fs::write(&graph, STARTER).map_err(|error| error.to_string())?;
+    if created_root {
+        fs::write(path.join("README.md"), PROJECT_README).map_err(|error| error.to_string())?;
+    }
+    println!(
+        "[VOXA][INFO][project.created] root={} graph={} credentials=external",
+        path.display(),
+        graph.display()
+    );
+    println!("[VOXA][NEXT] voxa studio {}", path.display());
+    Ok(())
+}
+
+fn init_graph(path: &Path) -> Result<(), String> {
     if path.exists() {
         return Err(format!("refusing to overwrite {}", path.display()));
     }
@@ -125,8 +220,54 @@ fn init(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn studio(graph: PathBuf, port: Option<u16>, host: IpAddr, no_open: bool) -> Result<(), String> {
-    validate(&graph)?;
+fn discover_studio_graph(current: &Path) -> Option<PathBuf> {
+    let current_project = current.join("graph.json");
+    if current.join(".voxa").is_dir() && current_project.is_file() {
+        return Some(current_project);
+    }
+    let standalone = current.join("voxa.graph.json");
+    if standalone.is_file() {
+        return Some(standalone);
+    }
+    for ancestor in current.ancestors() {
+        let flagship = ancestor.join("examples/voice-agent/graph.json");
+        if flagship.is_file() {
+            return Some(flagship);
+        }
+    }
+    None
+}
+
+fn studio(
+    graph: Option<PathBuf>,
+    port: Option<u16>,
+    host: IpAddr,
+    no_open: bool,
+) -> Result<(), String> {
+    let graph = match graph {
+        Some(path) => resolve_graph_path(&path)?,
+        None => {
+            let current = env::current_dir().map_err(|error| error.to_string())?;
+            if let Some(path) = discover_studio_graph(&current) {
+                println!(
+                    "[VOXA][INFO][studio.workspace] mode=discovered graph={}",
+                    path.display()
+                );
+                path
+            } else {
+                let path = current.join("voxa.graph.json");
+                init_graph(&path)?;
+                println!(
+                    "[VOXA][INFO][studio.workspace] mode=created graph={}",
+                    path.display()
+                );
+                path
+            }
+        }
+    };
+    if !graph.is_file() {
+        return Err(format!("Studio graph does not exist: {}", graph.display()));
+    }
     let graph = fs::canonicalize(&graph)
         .map_err(|error| format!("cannot resolve {}: {error}", graph.display()))?;
     if !host.is_loopback() {
@@ -151,8 +292,9 @@ fn studio(graph: PathBuf, port: Option<u16>, host: IpAddr, no_open: bool) -> Res
 fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(), String> {
     let timeout = cli_timeout("timeout-ms", timeout_ms)?;
     let shutdown_timeout = cli_timeout("shutdown-timeout-ms", shutdown_timeout_ms)?;
-    let registry = voxa_graph_json::builtin_registry();
-    let graph = load(graph_path, &registry)?;
+    let graph_path = resolve_graph_path(graph_path)?;
+    let registry = voxa_studio::project_registry(&graph_path)?;
+    let graph = load(&graph_path, &registry)?;
     run_graph(
         graph,
         &registry,
@@ -163,7 +305,7 @@ fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(
     )
 }
 
-fn demo(scenario: DemoScenario, turns: u16, interval_ms: u64) -> Result<(), String> {
+fn simulate(scenario: SimulationScenario, turns: u16, interval_ms: u64) -> Result<(), String> {
     if !(1..=100).contains(&turns) {
         return Err("--turns must be between 1 and 100".into());
     }
@@ -172,7 +314,7 @@ fn demo(scenario: DemoScenario, turns: u16, interval_ms: u64) -> Result<(), Stri
     }
     let registry = voxa_graph_json::builtin_registry();
     let (name, source) = match scenario {
-        DemoScenario::Voice => {
+        SimulationScenario::Voice => {
             let mut document: serde_json::Value =
                 serde_json::from_str(VOICE_DEMO).map_err(|error| error.to_string())?;
             let microphone = document["nodes"]
@@ -186,14 +328,14 @@ fn demo(scenario: DemoScenario, turns: u16, interval_ms: u64) -> Result<(), Stri
                 serde_json::to_string(&document).map_err(|error| error.to_string())?,
             )
         }
-        DemoScenario::Text => ("text-uppercase", STARTER.to_owned()),
+        SimulationScenario::Text => ("text-uppercase", STARTER.to_owned()),
     };
     let graph = load_source(&source, &registry)?;
-    println!("[VOXA][INFO][demo.started] name={name}");
-    if matches!(scenario, DemoScenario::Voice) {
-        println!("[VOXA][INFO][demo.mode] providers=mock network=disabled turns={turns} interval_ms={interval_ms} purpose=runtime-session");
+    println!("[VOXA][INFO][simulation.started] fixture={name}");
+    if matches!(scenario, SimulationScenario::Voice) {
+        println!("[VOXA][WARN][simulation.synthetic] real_audio=false real_ai=false network=disabled turns={turns} interval_ms={interval_ms} purpose=runtime-contract-test");
     }
-    let event_bus = if matches!(scenario, DemoScenario::Voice) {
+    let event_bus = if matches!(scenario, SimulationScenario::Voice) {
         let bus = EventBus::default();
         bus.subscribe(
             NamespacedName::new("voxa.demo.speech.detected").map_err(|error| error.to_string())?,
@@ -340,28 +482,54 @@ fn open_browser(url: &str) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+fn welcome() {
+    println!("[VOXA] Real-time multimodal Agent Runtime");
+    println!();
+    println!("Start here:");
+    println!("  voxa studio          Open or create a local Studio workspace");
+    println!("  voxa init my-agent   Create a complete Voxa project");
+    println!("  voxa doctor --voice  Check flagship voice-demo prerequisites");
+    println!();
+    println!("Real voice guide: {FLAGSHIP_GUIDE}");
+    println!("Run `voxa --help` for every command.");
+}
+
 fn main() {
     let result = match Cli::parse().command {
-        Command::Demo {
-            scenario,
-            turns,
-            interval_ms,
-        } => demo(scenario, turns, interval_ms),
-        Command::Init { path } => init(&path),
-        Command::Validate { graph } => {
-            validate(&graph).map(|_| println!("[VOXA][INFO][graph.valid] path={}", graph.display()))
+        None => {
+            welcome();
+            Ok(())
         }
-        Command::Run {
-            graph,
-            timeout_ms,
-            shutdown_timeout_ms,
-        } => run(&graph, timeout_ms, shutdown_timeout_ms),
-        Command::Studio {
+        Some(Command::Studio {
             graph,
             port,
             host,
             no_open,
-        } => studio(graph, port, host, no_open),
+        }) => studio(graph, port, host, no_open),
+        Some(Command::Init { path }) => init(&path),
+        Some(Command::Validate { graph }) => validate(&graph)
+            .map(|path| println!("[VOXA][INFO][graph.valid] path={}", path.display())),
+        Some(Command::Run {
+            graph,
+            timeout_ms,
+            shutdown_timeout_ms,
+        }) => run(&graph, timeout_ms, shutdown_timeout_ms),
+        Some(Command::Doctor { voice, strict }) => doctor::run(voice, strict),
+        Some(Command::Simulate {
+            scenario,
+            turns,
+            interval_ms,
+        }) => simulate(scenario, turns, interval_ms),
+        Some(Command::Demo {
+            scenario,
+            turns,
+            interval_ms,
+        }) => {
+            eprintln!(
+                "[VOXA][WARN][command.deprecated] `voxa demo` is an offline synthetic fixture; use `voxa simulate`"
+            );
+            simulate(scenario, turns, interval_ms)
+        }
     };
     if let Err(error) = result {
         eprintln!("[VOXA][ERROR][command.failed] {error}");

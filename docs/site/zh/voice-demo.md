@@ -21,6 +21,7 @@ Runtime 只负责厂商无关的 Frame、Graph、Signal、EventBus、Turn 和调
 git clone https://github.com/PiyotaHu/Voxa.git
 cd Voxa
 cargo install --locked --path crates/voxa-cli
+voxa doctor --voice
 ```
 
 还需要：
@@ -42,10 +43,12 @@ cargo install --locked --path crates/voxa-cli
 
 ```bash
 ./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+voxa doctor --voice
 ```
 
 该命令安装 Qwen Python Node 依赖，并将两个 Agora C++ Node Pack 编译到项目的
 `.voxa/native/` 目录。成功时最后会显示 `[VOXA][READY]`。
+`doctor` 只报告凭据是否配置，永远不会打印 Secret 值。
 
 ## 3. 启动 Studio
 

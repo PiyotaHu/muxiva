@@ -24,6 +24,20 @@ voxa --version
 After installation, application developers use `voxa`; they do not run the
 workspace through `cargo run` for normal workflows.
 
+## CLI entry point
+
+Running `voxa` alone shows three recommended entry points. `voxa --help`
+explains every command:
+
+| Command | Purpose |
+| --- | --- |
+| `voxa studio [project or graph]` | Open Studio; auto-discover or create a workspace when omitted |
+| `voxa init [directory]` | Create a complete project with `graph.json` and `.voxa/` |
+| `voxa validate <project or graph>` | Validate without creating or executing Nodes |
+| `voxa run <project or graph>` | Execute a Graph with the concurrent Runtime |
+| `voxa doctor [--voice]` | Check tools, project discovery, and real-voice readiness |
+| `voxa simulate` | Run synthetic, network-free Runtime fixtures; not a product demo |
+
 ## First run: a real voice assistant
 
 Voxa's primary developer experience is the credentialed Qwen + Agora Voice
@@ -39,20 +53,25 @@ the [flagship voice demo](voice-demo.md).
 ## Create and run a graph
 
 ```bash
-voxa init my-agent.voxa.json
-voxa validate my-agent.voxa.json
-voxa run my-agent.voxa.json
+voxa init my-agent
+voxa validate my-agent
+voxa run my-agent
 ```
 
-`validate` is side-effect free. `run` compiles the Graph against the exact Node
-Registry, materializes selected Factories, and executes them through the
-concurrent Runtime with bounded execution and shutdown deadlines.
+`init` creates `my-agent/graph.json`, `.voxa/nodes/`, `.voxa/templates/`, and a
+project README. `validate` is side-effect free. `run` compiles the Graph against
+the exact Node Registry, materializes selected Factories, and executes them
+through the concurrent Runtime with bounded execution and shutdown deadlines.
+The older single-`.json` form remains compatible.
 
 ## Open Studio
 
 ```bash
-voxa studio my-agent.voxa.json
+cd my-agent
+voxa studio
 ```
 
-Studio opens locally with a random access token. Continue with the
+Studio discovers `graph.json` automatically. Outside a project it safely
+creates `voxa.graph.json`; from the Voxa source root it discovers the flagship
+Voice Agent workspace. It binds locally with a random access token. Continue with the
 [Studio guide](studio.md).

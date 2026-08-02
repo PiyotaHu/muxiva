@@ -3,6 +3,25 @@
 Studio is the local visual environment bundled with the `voxa` CLI. It edits
 the same strict Graph v1 document used by validation and runtime compilation.
 
+## Start Studio
+
+```bash
+voxa studio
+```
+
+With no argument, the CLI discovers the current project's `graph.json`, a
+standalone `voxa.graph.json`, or the flagship Voice Agent inside a Voxa source
+checkout, in that order. If none exists, it creates a new `voxa.graph.json`
+without overwriting any file. You can also pass a project directory or Graph:
+
+```bash
+voxa studio my-agent
+voxa studio path/to/graph.json
+```
+
+Studio can open a Graph that does not yet validate so that you can repair it on
+the canvas with exact diagnostics.
+
 ## Visual workflow
 
 1. Drag a built-in or project Node from the Palette onto the canvas.

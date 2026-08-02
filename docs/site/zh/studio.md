@@ -3,6 +3,23 @@
 Studio 是随 `voxa` CLI 发布的本地可视化开发环境。它编辑的就是校验器与
 Runtime Compiler 使用的严格 Graph v1 文档，不存在浏览器专用图格式。
 
+## 启动
+
+```bash
+voxa studio
+```
+
+无参数启动时，CLI 按顺序发现当前项目的 `graph.json`、独立的
+`voxa.graph.json`，以及 Voxa 源码仓库内的旗舰 Voice Agent。都不存在时会创建一份
+新的 `voxa.graph.json`，不会覆盖已有文件。也可以显式传入项目目录或 Graph：
+
+```bash
+voxa studio my-agent
+voxa studio path/to/graph.json
+```
+
+Studio 允许打开尚未通过校验的 Graph，以便在画布和诊断面板中修复错误。
+
 ## 可视化开发流程
 
 1. 将内置或项目 Node 从 Palette 拖到画布。

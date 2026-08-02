@@ -662,12 +662,20 @@ fn cpp_host_supported(graph: &Path, manifest: &NodePackageManifest) -> bool {
 }
 
 fn cpp_artifact_path(graph: &Path, package_id: &str) -> PathBuf {
-    graph
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(".voxa/native")
+    native_node_root(graph)
         .join(package_id)
         .join(native_library_filename())
+}
+
+fn native_node_root(graph: &Path) -> PathBuf {
+    std::env::var_os("VOXA_NATIVE_NODE_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            graph
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join(".voxa/native")
+        })
 }
 
 fn cpp_artifact_path_from_directory(directory: &Path) -> PathBuf {
@@ -675,11 +683,14 @@ fn cpp_artifact_path_from_directory(directory: &Path) -> PathBuf {
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or_default();
-    directory
+    let default_root = directory
         .parent()
         .and_then(Path::parent)
         .unwrap_or_else(|| Path::new("."))
-        .join("native")
+        .join("native");
+    std::env::var_os("VOXA_NATIVE_NODE_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or(default_root)
         .join(package_id)
         .join(native_library_filename())
 }

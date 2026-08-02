@@ -7,9 +7,14 @@ bounded queue policies.  The parser rejects unknown fields/types and documents
 above 1 MiB.  JSON describes configuration only: no frames, credentials,
 URLs, scripts, paths, or code are accepted.
 
-`voxa init`, `validate`, and `run` all use the same parser/compiler.  `studio`
-validates the document, binds the exact requested address, creates a local
-bearer token, and serves the Graph v1 schema, graph, and validation endpoint.
+`voxa init`, `validate`, and `run` all use the same parser/compiler. `init`
+creates a project directory by default, while a `.json` path retains the
+single-file compatibility form. `validate`, `run`, and `studio` accept either a
+project directory or Graph file. With no argument, `studio` discovers the
+current workspace or creates a non-overwriting starter Graph, binds the exact
+requested address, creates a local bearer token, and serves the Graph v1 schema,
+graph, and validation endpoint. Studio intentionally opens invalid documents so
+the visual diagnostics can repair them.
 The token is carried in the initial URL fragment and removed from browser
 history before authenticated API requests.
 

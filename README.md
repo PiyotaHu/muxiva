@@ -102,12 +102,12 @@ are documented in the [flagship voice demo guide](https://piyotahu.github.io/Vox
 ### Create, validate, and run a graph
 
 ```bash
-voxa init my-agent.voxa.json
-voxa validate my-agent.voxa.json
-voxa run my-agent.voxa.json
+voxa init my-agent
+voxa validate my-agent
+voxa run my-agent
 ```
 
-`voxa validate` is side-effect free: it never creates or starts a Node. `voxa run`
+`voxa init` creates a complete project directory. `voxa validate` is side-effect free: it never creates or starts a Node. `voxa run`
 compiles the graph against the built-in Registry, materializes every exact
 Factory selection, and executes it through the concurrent Runtime. Runs have a
 30-second default deadline; use `--timeout-ms` and `--shutdown-timeout-ms` to
@@ -116,10 +116,11 @@ set bounded execution and cleanup waits.
 ### Start the local visual Studio
 
 ```bash
-voxa studio my-agent.voxa.json
+voxa studio
 ```
 
-Studio opens a bundled visual Graph v1 editor. Drag Nodes from the Palette,
+With no argument, Studio discovers the current project; from the Voxa source
+root it opens the flagship Voice Agent. Studio opens a bundled visual Graph v1 editor. Drag Nodes from the Palette,
 wire compatible typed ports, inspect live runtime metrics, or open **Create
 Node** to edit and register a project Node without leaving the browser. Text
 Python project Nodes run through the trusted local development Host. Studio

@@ -22,6 +22,7 @@ and rejects previous-turn audio immediately before the speaker Sink.
 git clone https://github.com/PiyotaHu/Voxa.git
 cd Voxa
 cargo install --locked --path crates/voxa-cli
+voxa doctor --voice
 ```
 
 You also need:
@@ -43,11 +44,13 @@ Never place an Agora App Certificate in the repository, Studio, or browser.
 
 ```bash
 ./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+voxa doctor --voice
 ```
 
 This installs Qwen Python Node dependencies and builds both Agora C++ Node
 Packs into the project's `.voxa/native/` directory. A successful run ends with
-`[VOXA][READY]`.
+`[VOXA][READY]`. `doctor` reports only whether credentials are configured; it
+never prints secret values.
 
 ## 3. Start Studio
 

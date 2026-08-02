@@ -33,6 +33,7 @@ tests/reports/benchmarks/*.json
 *.out
 *.app
 *.dwo
+**/.voxa/native/
 
 # Native build directories and generated files
 build/

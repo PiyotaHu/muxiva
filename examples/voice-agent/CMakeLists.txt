@@ -4,6 +4,15 @@ project(VoxaVoiceAgentNativeNodes VERSION 0.1.0 LANGUAGES CXX)
 get_filename_component(VOXA_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 set(VOXA_AGORA_SDK_ROOT "" CACHE PATH "Agora Native C++ SDK root")
 option(VOXA_ENABLE_AGORA "Compile the real Agora Native SDK backend" OFF)
+set(VOXA_NODE_PACK_OUTPUT_ROOT
+  "${CMAKE_CURRENT_SOURCE_DIR}/.voxa/native" CACHE PATH
+  "Destination for generated Voxa Node Pack artifacts")
+
+if(VOXA_ENABLE_AGORA)
+  set(VOXA_AGORA_PROVIDER_MODE "agora-native")
+else()
+  set(VOXA_AGORA_PROVIDER_MODE "offline-stub")
+endif()
 
 if(APPLE)
   execute_process(COMMAND xcrun --show-sdk-path
@@ -41,7 +50,10 @@ function(add_agora_node_pack package source)
   set_target_properties(${package} PROPERTIES
     OUTPUT_NAME voxa_node_pack
     LIBRARY_OUTPUT_DIRECTORY
-      "${CMAKE_CURRENT_SOURCE_DIR}/.voxa/native/${package}")
+      "${VOXA_NODE_PACK_OUTPUT_ROOT}/${package}")
+  file(GENERATE
+    OUTPUT "${VOXA_NODE_PACK_OUTPUT_ROOT}/${package}/provider-mode"
+    CONTENT "${VOXA_AGORA_PROVIDER_MODE}\n")
 endfunction()
 
 add_agora_node_pack(agora_audio_source

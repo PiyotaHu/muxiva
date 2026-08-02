@@ -23,6 +23,19 @@ voxa --version
 完成安装后，应用开发者日常只使用 `voxa`，不需要通过 `cargo run` 启动整个
 Workspace。
 
+## CLI 入口
+
+直接运行 `voxa` 会显示三个推荐入口；`voxa --help` 会解释每个命令：
+
+| 命令 | 作用 |
+| --- | --- |
+| `voxa studio [项目或图]` | 打开 Studio；省略参数时自动发现或创建工作区 |
+| `voxa init [目录]` | 创建包含 `graph.json` 与 `.voxa/` 的完整项目 |
+| `voxa validate <项目或图>` | 只校验，不创建或执行 Node |
+| `voxa run <项目或图>` | 使用并发 Runtime 执行 Graph |
+| `voxa doctor [--voice]` | 检查工具链、项目和真实语音 Demo 就绪状态 |
+| `voxa simulate` | 运行无网络的合成 Runtime 测试夹具，不是产品 Demo |
+
 ## 第一次运行：真实语音助手
 
 Voxa 的开发者主体验是带真实凭据的 Qwen + Agora Voice Room，而不是合成 ASR、
@@ -37,19 +50,24 @@ LLM 或 TTS 输出。准备 Agora Native C++ SDK、三个短期 RTC Token 和 Da
 ## 创建并运行 Graph
 
 ```bash
-voxa init my-agent.voxa.json
-voxa validate my-agent.voxa.json
-voxa run my-agent.voxa.json
+voxa init my-agent
+voxa validate my-agent
+voxa run my-agent
 ```
 
-`validate` 不产生副作用。`run` 使用精确 Node Registry 编译 Graph、实例化
-Factory，并通过并发 Runtime 在有界执行与关闭期限内运行。
+`init` 会创建 `my-agent/graph.json`、`.voxa/nodes/`、`.voxa/templates/` 与项目
+README。`validate` 不产生副作用。`run` 使用精确 Node Registry 编译 Graph、实例化
+Factory，并通过并发 Runtime 在有界执行与关闭期限内运行。传入单个 `.json` 文件的
+旧用法仍然兼容。
 
 ## 打开 Studio
 
 ```bash
-voxa studio my-agent.voxa.json
+cd my-agent
+voxa studio
 ```
 
-Studio 会在本机启动并生成随机访问 Token。下一步阅读
+Studio 会自动发现 `graph.json`。如果当前目录不是项目，则安全创建
+`voxa.graph.json`；在 Voxa 源码仓库根目录运行时，会自动打开旗舰 Voice Agent
+工作区。服务只监听本机并生成随机访问 Token。下一步阅读
 [Studio 指南](studio.md)。

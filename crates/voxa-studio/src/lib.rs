@@ -472,7 +472,16 @@ fn project_templates(graph: &Path) -> std::io::Result<Vec<serde_json::Value>> {
         .collect()
 }
 
-fn project_registry(
+/// Builds the exact runtime Registry for a project Graph and its local Node
+/// Library without starting Studio or executing a Node lifecycle callback.
+pub fn project_registry(graph: &Path) -> Result<voxa_core::NodeRegistry, String> {
+    let connections = node_library::ConnectionStore::load(graph)?;
+    let mut registry = voxa_graph_json::builtin_registry();
+    node_library::register_project_nodes_with_connections(graph, &mut registry, connections)?;
+    Ok(registry)
+}
+
+fn studio_project_registry(
     graph: &Path,
     runtime: &StudioRuntime,
 ) -> Result<voxa_core::NodeRegistry, String> {
@@ -486,7 +495,7 @@ fn project_registry(
 }
 
 fn catalog_response(graph: &Path, runtime: &StudioRuntime) -> (&'static str, &'static str, String) {
-    match project_registry(graph, runtime) {
+    match studio_project_registry(graph, runtime) {
         Ok(registry) => (
             "200 OK",
             "application/json",
@@ -506,7 +515,7 @@ fn validate(
     graph_path: &Path,
     runtime: &StudioRuntime,
 ) -> Result<GraphDocument, Vec<GraphDiagnostic>> {
-    let registry = project_registry(graph_path, runtime).map_err(|message| {
+    let registry = studio_project_registry(graph_path, runtime).map_err(|message| {
         vec![GraphDiagnostic {
             code: "VOXA-STUDIO-NODE-LIBRARY".into(),
             message,
@@ -527,7 +536,7 @@ fn start_runtime(
         Ok(document) => document,
         Err(errors) => return diagnostics_response(errors),
     };
-    let registry = match project_registry(graph_path, state) {
+    let registry = match studio_project_registry(graph_path, state) {
         Ok(registry) => registry,
         Err(error) => {
             return (

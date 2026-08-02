@@ -14,7 +14,7 @@ cd voxa
 cargo install --locked --path crates/voxa-cli
 
 voxa --version
-voxa demo
+voxa
 ```
 
 The executable is installed to Cargo's binary directory, normally
@@ -32,11 +32,12 @@ After installation, the product commands are:
 安装完成后的产品命令是：
 
 ```bash
-voxa demo
-voxa init my-agent.voxa.json
-voxa validate my-agent.voxa.json
-voxa run my-agent.voxa.json
-voxa studio my-agent.voxa.json
+voxa studio
+voxa init my-agent
+voxa validate my-agent
+voxa run my-agent
+voxa doctor --voice
+voxa simulate --turns 4  # offline Runtime fixture, not a product demo
 ```
 
 To update a source installation:

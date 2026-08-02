@@ -104,13 +104,15 @@ EventBus is not the real-time interruption path.
 
 ## Product command and modes
 
-The target command is `voxa voice serve`. It starts the Bot and a loopback-only
-Voice Playground, opens the browser, performs readiness checks, and never
-silently falls back to scripted output. Missing credentials produce an
-actionable setup screen.
+`voxa studio` is the product entry point. With no argument it discovers the
+current project, and from the Voxa source root it opens the flagship Voice Agent
+workspace. `voxa doctor --voice` reports native-pack and credential readiness
+without printing secrets. Missing credentials remain actionable in Studio and
+never trigger a silent fallback to scripted output.
 
-The old deterministic path becomes `voxa demo --mock`. A future local-device
-transport can reuse the same Qwen provider without Agora.
+The deterministic, network-free path is named `voxa simulate` and is documented
+only as a Runtime engineering fixture. A future local-device transport can
+reuse the same Qwen provider without Agora.
 
 ## Studio connection and template experience
 

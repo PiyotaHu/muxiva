@@ -12,30 +12,25 @@ Node implementations.
     The foundation is tested, but APIs and provider integrations are still
     evolving. Do not run untrusted Node code or expose Studio to the internet.
 
-## Try the technical vision
+## Run the real voice experience
 
-Install the `voxa` binary once, then run the branching voice-agent demo:
+Install the `voxa` binary once, then start the Qwen + Agora flagship Voice Room:
 
 ```bash
-voxa demo
-voxa studio examples/graphs/mock-realtime-voice.v1.json
+./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+./examples/voice-agent/run.sh
 ```
 
 ```mermaid
 flowchart LR
-    MIC["Microphone · audio"] --> ASR["Streaming ASR · text"]
-    MIC --> VAD["Voice activity · event"]
-    ASR --> FUSION["Context fusion"]
-    VAD --> FUSION
-    FUSION --> LLM["Reasoning LLM"]
-    LLM --> TEXT["Live transcript"]
-    LLM --> TTS["Neural TTS · audio"]
-    TTS --> SPEAKER["Speaker"]
+    WEB["Browser microphone"] --> RTC_IN["Agora C++ ingress"]
+    RTC_IN --> AI["Qwen Realtime or cascade"]
+    AI --> RTC_OUT["Agora C++ egress"]
+    RTC_OUT --> WEB
 ```
 
-The providers in this demo are clearly marked Mock. The graph compiler,
-immutable Frames, concurrent fork/join routing, bounded queues, and lifecycle
-execution are real Voxa Runtime behavior.
+This path captures and plays real audio. The offline synthetic fixture is named
+`voxa simulate` and belongs to testing, not the product quick start.
 
 ## Create a Node without leaving Studio
 
@@ -55,6 +50,6 @@ privately through GitHub, never through a public Issue.
 
 ## 中文快速说明
 
-Voxa 是 Rust 驱动的实时多模态 Agent Runtime。推荐先运行八节点、带两处分叉
-与一次汇合的语音 Agent Demo，再进入 Studio。Studio 里可以直接编写 Python
-Node、声明类型化端口、保存注册，并拖到画布中连线运行。
+Voxa 是 Rust 驱动的实时多模态 Agent Runtime。产品入口是 Qwen + Agora 真实语音
+房间；`voxa studio` 无参数即可发现或创建工作区。`voxa simulate` 只用于无网络
+Runtime 测试，不是语音产品体验。
