@@ -1,97 +1,151 @@
-# 语音 Demo 凭据：逐字段配置
+# 语音 Demo 凭据：从申请到填入 Voxa
 
-如果你现在只有 Agora App ID，连同 Voxa 预设的 Channel，完成度是 **2/6**。先不要点击 Studio 的 **Run**
-或 **Voice Room**。按照本页取得其余 4 个值，直到 Connections 中两张卡片都显示
-**Ready**。
+这是一份可以逐项照做的首次运行清单。最终你需要自己取得 **5 个值**：Agora App ID、
+两个 RTC Token、百炼 API Key、百炼 Workspace ID。Channel 和两个 UID 使用 Voxa 的
+预设值即可。
 
-!!! warning "不要把密钥发到 Issue、聊天或 Git"
-    App ID 不是密钥，但 App Certificate、RTC Token 和 Qwen API Key 都应保密。
-    本地临时 Token 仅用于首次体验，生产环境必须使用服务端 Token 服务。
+!!! warning "先别点击 Run"
+    先让 Studio **Connections** 中的 Agora RTC 与 Alibaba Cloud Model Studio 两张卡片
+    都显示 **Ready**，再选择图并进入 Voice Room。
 
-## 最终需要填写什么
+## 一眼看懂：什么填到哪里
 
-打开 `./run.sh` 启动的 Studio，点击顶部 **Connections**。界面共有两张卡片：
-
-### Agora RTC
-
-| Studio 字段 | 第一次运行填什么 | 从哪里获得 |
+| 服务 | Voxa 字段 | 首次运行填什么 |
 | --- | --- | --- |
-| App ID | 你的 32 位 Agora App ID | Agora Console 的 Projects 页面 |
-| Channel | 保持 `voxa-demo` | 这是你自己选择的频道名 |
-| Browser UID | 保持 `1001` | Voxa 预设 |
-| Browser Token | App ID + `voxa-demo` + UID `1001` 生成的 RTC Token | Agora Token Builder |
-| Voxa Bot UID | 保持 `2001` | Voxa 预设 |
-| Voxa Bot Token | App ID + `voxa-demo` + UID `2001` 生成的 RTC Token | Agora Token Builder |
+| Agora | App ID | Agora 项目的 32 位 App ID |
+| Agora | Channel | `voxa-demo` |
+| Agora | Browser UID | `1001` |
+| Agora | Browser Token | 为 Channel `voxa-demo`、UID `1001` 生成的 RTC Token |
+| Agora | Voxa Bot UID | `2001` |
+| Agora | Voxa Bot Token | 为 Channel `voxa-demo`、UID `2001` 生成的 RTC Token |
+| 百炼 | API Key | 华北 2（北京）业务空间创建的按量付费 API Key |
+| 百炼 | Workspace ID | 上述 API Key 所属业务空间的 ID |
 
-### Alibaba Cloud Model Studio
+Agora **App Certificate 不填入 Voxa**。它只在 Token Builder 中生成 Token 时使用。
 
-| Studio 字段 | 填什么 | 从哪里获得 |
+## A. 申请 Agora App ID 与两个 Token
+
+### A1. 创建 Agora 项目
+
+1. 打开 [Agora Console](https://console.agora.io/) 并注册或登录。
+2. 进入 [Projects](https://console.agora.io/legacy/project-management)，点击 **Create New**。
+3. 填写项目名称；Authentication mechanism 选择
+   **Secured mode: APP ID + Token (Recommended)**。
+4. 创建完成后，在项目列表的 **App ID** 列点击复制。这就是 Studio 的 **App ID**。
+
+Agora 官方的[账号和项目指南](https://docs.agora.io/en/realtime-media/voice/manage-agora-account)
+也给出了相同流程。
+
+### A2. 找到 App Certificate
+
+1. 在 Projects 页面找到刚才的项目，点击铅笔图标。
+2. 在 Security 区域找到 **Primary Certificate**，点击复制。
+3. 临时保存它，下一步要用；不要放进 `.env`、Graph、网页或 Git。
+
+### A3. 在 Token Builder 连续生成两次
+
+打开 [Agora Token Builder](https://agora-token-generator-demo.vercel.app/)。如果页面要求选择
+产品，选择 **RTC**。两次生成都填写同一个 App ID、App Certificate 和 Channel；只有 UID
+不同。
+
+| Token Builder 输入框 | 第一次 | 第二次 |
 | --- | --- | --- |
-| API Key | 华北 2（北京）创建的百炼 API Key | 百炼控制台 API Key 页面 |
-| Workspace ID | 上述 Key 所属业务空间的 ID | 百炼控制台右上角业务空间菜单 |
+| App ID | 你的 App ID | 同一个 App ID |
+| App Certificate | Primary Certificate | 同一个 Certificate |
+| User ID / UID | `1001` | `2001` |
+| Token expiration time | `3600`（首次测试一小时） | `3600` |
+| Channel name | `voxa-demo` | `voxa-demo` |
+| 生成结果填入 Studio | Browser Token | Voxa Bot Token |
 
-## 第一步：生成两个 Agora Token
+!!! important "Channel 不需要提前创建"
+    `voxa-demo` 只是双方约定的房间名。它区分大小写；Token Builder、Studio 和所有客户端
+    必须逐字符一致。两个 Token 与 UID 绑定，不能交换使用。
 
-### 1. 找到 App Certificate
+Agora Console 也提供 **Generate Temp Token**。为了让 Voxa 的浏览器与 Bot 使用明确且
+不同的数字 UID，首次运行推荐使用上面的 Token Builder 分别生成两个 UID Token。
 
-1. 打开 [Agora Console](https://console.agora.io/)；
-2. 进入 **Projects**，找到 App ID 所属项目；
-3. 点击编辑图标，在 Security 中复制 **Primary Certificate**。
+## B. 申请阿里云百炼 API Key 与 Workspace ID
 
-App Certificate 只用于生成 Token，**不要填进 Studio**。
+### B1. 开通服务并固定地域
 
-### 2. 在 Token Builder 生成两次
+1. 登录[阿里云百炼控制台](https://bailian.console.aliyun.com/)。
+2. 如果提示未开通或未实名认证，先按页面提示完成。
+3. 在页面右上角将地域切换为 **华北 2（北京）**。Voxa 当前 Qwen Provider 使用北京
+   Workspace 专属端点，之后不要切换地域。
 
-打开 [Agora Token Builder](https://agora-token-generator-demo.vercel.app/)，选择 RTC，
-每次都使用同一个 App ID、App Certificate 和 Channel `voxa-demo`：
+### B2. 创建 API Key
 
-| 第几次 | UID | Token 填入 Studio 的位置 |
-| ---: | ---: | --- |
-| 1 | `1001` | Browser Token |
-| 2 | `2001` | Voxa Bot Token |
+1. 在百炼控制台进入 **API Key** 页面，点击 **创建 API Key**。
+2. “归属业务空间”第一次建议选择**默认业务空间**；权限选择“全部”。
+3. 创建后立即复制完整 Key。关闭弹窗后通常不能再次查看明文；丢失时应重置或新建。
+4. 将它填入 Studio 的 **Alibaba Cloud Model Studio → API Key**。
 
-第一次体验可为两者选择 Publisher 权限和足够完成测试的短期有效期。UID 必须使用
-**数字 UID**，Token 不能互换。Agora 官方也说明，临时 Token 由项目安全页面或 Token
-Builder 生成；参见 [Agora 账号与临时 Token 官方指南](https://docs.agora.io/en/realtime-media/voice/manage-agora-account)。
+官方步骤：[如何获取 API Key](https://help.aliyun.com/zh/model-studio/get-api-key/)。Voxa
+需要的是百炼按量付费 API Key，不是 Coding Plan 或 Token Plan 的专用 Key。
 
-## 第二步：取得 Qwen 的两个值
+### B3. 复制同一业务空间的 Workspace ID
 
-1. 打开[阿里云百炼控制台](https://bailian.console.aliyun.com/)，右上角选择
-   **华北 2（北京）**；
-2. 进入 API Key 页面，创建按量付费 API Key，创建后立即复制；
-3. 打开右上角业务空间菜单，复制这个 Key 所属空间的 **Workspace ID**；
-4. 保证两个值来自同一地域、同一业务空间。
+1. 保持地域为 **华北 2（北京）**。
+2. 点击控制台右上角的业务空间入口，在当前空间信息中复制 **Workspace ID**；也可进入
+   “业务空间管理”，从 Workspace ID 列复制。
+3. 确认这个 Workspace 正是上一步 API Key 的“归属业务空间”。
+4. 将它填入 Studio 的 **Workspace ID**。
 
-官方入口：[获取 API Key](https://help.aliyun.com/zh/model-studio/get-api-key/) ·
-[获取 Workspace ID](https://help.aliyun.com/zh/model-studio/obtain-the-app-id-and-workspace-id)。
+官方步骤：[获取 Workspace ID](https://help.aliyun.com/zh/model-studio/obtain-the-app-id-and-workspace-id)。
+API Key 和 Workspace ID 若跨地域或跨业务空间组合，WebSocket 会鉴权失败。
 
-## 第三步：填写、确认、运行
+这里没有“下载 Qwen SDK”步骤。Voxa 的 Python Provider 直接调用百炼官方 WebSocket/HTTP
+协议，`setup.sh` 会安装所需 Python 依赖。
+
+## C. 在 Voxa 中只填写一次
 
 ```bash
-cd examples/voice-agent
-./run.sh
+cd /你的路径/Voxa
+./examples/voice-agent/run.sh
 ```
 
-1. Studio 打开后点击 **Connections**；
-2. 按上面的表填写，点击 **Save connections**；
-3. 确认 Agora RTC 和 Alibaba Cloud Model Studio 两张卡片都显示 **Ready**；
-4. 点击 **Templates**，第一次选择 **Qwen Realtime**；
-5. 点击 **Voice Room**，再点击 **Start live conversation**；
-6. 允许浏览器使用麦克风，然后开始说话。
+1. Studio 打开后，点击顶部 **Connections**。
+2. 填完两张卡片，点击 **Save connections**。
+3. 两张卡片都显示 **Ready** 后，点击 **Templates → Qwen Realtime**。
+4. 点击 **Voice Room → Start live conversation**，允许麦克风权限。
+5. 说一句完整的话，然后停顿约一秒，等待首次回复。
 
-Connections 会把值写入语音项目根目录的 `.env`，文件权限为 `0600` 且已被 Git
-忽略。只需填写一次，关闭并重新启动 Studio 后会自动加载；凭据不会写进 Graph。
+保存后，凭据写入 `examples/voice-agent/.env`，权限为 `0600`，并已被 Git 忽略；下次
+启动会自动读取，不需要重复填写。文件形状如下，值不要提交：
 
-## `doctor --voice` 到底检查什么
+```dotenv
+VOXA_AGORA_APP_ID="..."
+VOXA_AGORA_CHANNEL="voxa-demo"
+VOXA_AGORA_WEB_UID="1001"
+VOXA_AGORA_WEB_TOKEN="..."
+VOXA_AGORA_BOT_UID="2001"
+VOXA_AGORA_BOT_TOKEN="..."
+DASHSCOPE_API_KEY="..."
+DASHSCOPE_WORKSPACE_ID="..."
+```
 
-`voxa doctor --voice` 是环境诊断，不负责申请凭据：
+## D. 如何确认配置和定位失败
 
-- `native-node-pack PASS`：Agora C++ Node Pack 已正确编译；
-- `qwen-python PASS`：Python WebSocket 依赖可用；
-- `voice-credentials WARN/MISSING`：当前 Shell 或项目 `.env` 还缺哪些值；
-- `--strict`：任何缺失都会让命令返回非零，适合 CI。
+```bash
+voxa doctor --voice
+tail -f examples/voice-agent/.voxa/runtime.log
+```
 
-Studio 保存后，单独运行的 doctor 也能从项目 `.env` 看到配置状态，但不会输出值。
-启动 Graph 时仍会检查所需凭据；缺失时只打开 Connections，不会启动 C++ Node。
+`doctor` 只检查工具链、Provider 和凭据是否存在，不会替你创建 Token，也不会输出密钥。
+真实会话按以下顺序定位：
+
+1. Voice Room：`Browser joined Agora`、`microphone published`；
+2. 日志：`[VOXA][AGORA][participant.joined] uid=1001`；
+3. 日志：`[VOXA][AGORA][audio.received]`；
+4. 日志：`[VOXA][QWEN][event] type=input_audio_buffer.speech_started`；
+5. 日志：`response.created`、字幕和 `Agora Out` 开始增长。
+
+| 现象 | 优先检查 |
+| --- | --- |
+| Agora 加入失败 | App ID、Channel、UID 是否与各自 Token 完全一致；Token 是否过期 |
+| 只有 Browser 或 Bot 一侧加入 | 是否把 `1001` 与 `2001` 的 Token 填反 |
+| Agora 有输入但 Qwen 无事件 | 北京地域、Key 与 Workspace 是否同一业务空间 |
+| 能连接但不回复 | 完整说话后停顿；查看 Qwen `speech_started/stopped` 与 `response.created` |
+| 听到自己的声音 | 关闭历史 Voice Room 标签页；使用耳机；确认页面显示 AEC 已开启 |
 
 继续：[完整安装与运行流程](voice-demo.md)。

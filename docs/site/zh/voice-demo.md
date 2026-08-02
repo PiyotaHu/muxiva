@@ -55,6 +55,9 @@ cargo install --locked --path crates/voxa-cli
 
 ## 2. 申请 Agora App ID 与 Token
 
+如果这是第一次申请，请直接按[Agora App ID、Certificate、Token Builder 每个输入框的逐项指南](voice-credentials.md#a-agora-app-id-token)
+操作。下面只是完成标准的摘要。
+
 1. 打开 [Agora Console](https://console.agora.io/) 并注册或登录。
 2. 进入 [Projects](https://console.agora.io/legacy/project-management)，点击
    **Create New**，认证方式选择 **Secured mode: APP ID + Token**。
@@ -74,6 +77,9 @@ cargo install --locked --path crates/voxa-cli
     临时 Token 适合本地体验；生产环境必须部署自己的 Token Server。
 
 ## 3. 申请 Qwen 凭据
+
+如果不熟悉百炼地域与业务空间，请直接按[百炼 API Key 与 Workspace ID 逐项指南](voice-credentials.md#b-api-key-workspace-id)
+操作。Key 与 Workspace ID 必须是华北 2（北京）同一业务空间的一对值。
 
 1. 打开[阿里云百炼控制台](https://bailian.console.aliyun.com/)，选择
    **华北 2（北京）**并开通服务。

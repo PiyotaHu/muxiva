@@ -1,97 +1,149 @@
-# Voice demo credentials, field by field
+# Voice demo credentials: obtain and enter every value
 
-If you only have an Agora App ID, setup is **2/6 complete** together with Voxa's default Channel.
-Do not select **Run** or open **Voice Room** yet. Obtain the other four values below and wait until both cards in Connections
-show **Ready**.
+This is the copy-and-follow path for a first run. You obtain **five values**: one Agora App ID,
+two RTC tokens, one Model Studio API key, and one Workspace ID. Keep Voxa's default channel and
+two numeric UIDs.
 
-!!! warning "Never post secrets in an issue, chat, or Git"
-    An App ID is not a secret, but the App Certificate, RTC tokens, and Qwen API key are.
-    Temporary tokens are for local evaluation. Production requires a server-side token service.
+!!! warning "Do not select Run yet"
+    Wait until both cards in Studio **Connections** show **Ready**, then select a Graph and open
+    Voice Room.
 
-## Every field you will fill
+## Field map
 
-Start Studio with `./run.sh`, then select **Connections** in the top toolbar.
-
-### Agora RTC
-
-| Studio field | First-run value | Where it comes from |
+| Service | Voxa field | First-run value |
 | --- | --- | --- |
-| App ID | Your 32-character Agora App ID | Projects in Agora Console |
-| Channel | Keep `voxa-demo` | A channel name you choose |
-| Browser UID | Keep `1001` | Voxa default |
-| Browser Token | RTC token for App ID + `voxa-demo` + UID `1001` | Agora Token Builder |
-| Voxa Bot UID | Keep `2001` | Voxa default |
-| Voxa Bot Token | RTC token for App ID + `voxa-demo` + UID `2001` | Agora Token Builder |
+| Agora | App ID | The 32-character App ID of your Agora project |
+| Agora | Channel | `voxa-demo` |
+| Agora | Browser UID | `1001` |
+| Agora | Browser Token | RTC token generated for channel `voxa-demo`, UID `1001` |
+| Agora | Voxa Bot UID | `2001` |
+| Agora | Voxa Bot Token | RTC token generated for channel `voxa-demo`, UID `2001` |
+| Model Studio | API Key | Pay-as-you-go key created in China (Beijing) |
+| Model Studio | Workspace ID | ID of the workspace that owns that key |
 
-### Alibaba Cloud Model Studio
+The Agora **App Certificate never goes into Voxa**. It is used only by Token Builder.
 
-| Studio field | Value | Where it comes from |
+## A. Create an Agora project and two tokens
+
+### A1. Create the project
+
+1. Sign in to [Agora Console](https://console.agora.io/).
+2. Open [Projects](https://console.agora.io/legacy/project-management) and select **Create New**.
+3. Enter a name and choose **Secured mode: APP ID + Token (Recommended)**.
+4. Copy the **App ID** from the project list. This is Studio's App ID.
+
+See Agora's official [account and project guide](https://docs.agora.io/en/realtime-media/voice/manage-agora-account).
+
+### A2. Copy the App Certificate
+
+1. Select the pencil icon for the project.
+2. In Security, copy the **Primary Certificate**.
+3. Keep it temporarily for Token Builder. Never put it in `.env`, a Graph, a web page, or Git.
+
+### A3. Use Token Builder twice
+
+Open [Agora Token Builder](https://agora-token-generator-demo.vercel.app/). Select **RTC** if a
+product selector is shown. Both runs use the same App ID, Certificate, and channel; only the UID
+changes.
+
+| Token Builder field | First token | Second token |
 | --- | --- | --- |
-| API Key | Model Studio API key created in China (Beijing) | API Key page in Model Studio |
-| Workspace ID | ID of the workspace that owns that key | Workspace menu in the top-right corner |
+| App ID | Your App ID | The same App ID |
+| App Certificate | Primary Certificate | The same Certificate |
+| User ID / UID | `1001` | `2001` |
+| Token expiration time | `3600` (one hour for evaluation) | `3600` |
+| Channel name | `voxa-demo` | `voxa-demo` |
+| Paste result into Studio | Browser Token | Voxa Bot Token |
 
-## Step 1: generate two Agora tokens
+!!! important "You do not pre-create the channel"
+    `voxa-demo` is a case-sensitive room name agreed by every participant. It must match Token
+    Builder and Studio character for character. UID-bound tokens are not interchangeable.
 
-### Find the App Certificate
+Agora Console also offers **Generate Temp Token**. For deterministic, separate browser and bot
+identities, this guide uses Token Builder to generate two explicit numeric-UID tokens.
 
-1. Open [Agora Console](https://console.agora.io/).
-2. Open **Projects** and find the project that owns the App ID.
-3. Select its edit icon and copy **Primary Certificate** from Security.
+## B. Create the Model Studio key and Workspace ID
 
-The App Certificate is used only to create tokens. **Never enter it in Studio.**
+### B1. Activate the service and select the region
 
-### Use Token Builder twice
+1. Sign in to [Alibaba Cloud Model Studio](https://bailian.console.aliyun.com/).
+2. Complete activation or identity verification if prompted.
+3. In the upper-right corner, select **China (Beijing)** and keep this region selected. Voxa's
+   current Qwen Provider uses the Beijing workspace endpoint.
 
-Open [Agora Token Builder](https://agora-token-generator-demo.vercel.app/) and select RTC.
-Use the same App ID, App Certificate, and `voxa-demo` Channel every time:
+### B2. Create the API key
 
-| Generation | Numeric UID | Paste the token into |
-| ---: | ---: | --- |
-| 1 | `1001` | Browser Token |
-| 2 | `2001` | Voxa Bot Token |
+1. Open **API Key** and select **Create API Key**.
+2. For a first run, select the default workspace and all model permissions.
+3. Copy the complete key immediately. If it is lost, reset it or create another key.
+4. Paste it into **Alibaba Cloud Model Studio → API Key** in Studio.
 
-For the first evaluation, Publisher permission and a short expiry long enough for the test are
-the simplest choices. Use **numeric UIDs**. Tokens are not interchangeable. Agora documents
-temporary-token generation in its [official account and token guide](https://docs.agora.io/en/realtime-media/voice/manage-agora-account).
+Official instructions: [obtain an API key](https://help.aliyun.com/en/model-studio/get-api-key).
+Voxa expects a pay-as-you-go Model Studio key, not a Coding Plan or Token Plan key.
 
-## Step 2: obtain the two Qwen values
+### B3. Copy the Workspace ID that owns the key
 
-1. Open [Alibaba Cloud Model Studio](https://bailian.console.aliyun.com/) and select China
-   (Beijing) in the top-right corner.
-2. Open API Key, create a pay-as-you-go key, and copy it immediately.
-3. Open the top-right workspace menu and copy the **Workspace ID** that owns the key.
-4. Ensure both values belong to the same region and workspace.
+1. Keep **China (Beijing)** selected.
+2. Open the workspace control in the upper-right and copy the current **Workspace ID**, or copy it
+   from Workspace Management.
+3. Confirm that this is the same workspace selected when the API key was created.
+4. Paste it into Studio's **Workspace ID**.
 
-Official guides: [obtain an API key](https://help.aliyun.com/en/model-studio/get-api-key) ·
-[obtain a Workspace ID](https://help.aliyun.com/en/model-studio/obtain-the-app-id-and-workspace-id).
+Official instructions: [obtain a Workspace ID](https://help.aliyun.com/en/model-studio/obtain-the-app-id-and-workspace-id).
+A region or workspace mismatch causes WebSocket authentication failures.
 
-## Step 3: fill, confirm, and run
+There is no Qwen SDK download. Voxa's Python Provider uses the documented WebSocket/HTTP
+protocols, and `setup.sh` installs the Python dependency.
+
+## C. Save the values once in Voxa
 
 ```bash
-cd examples/voice-agent
-./run.sh
+cd /path/to/Voxa
+./examples/voice-agent/run.sh
 ```
 
 1. Select **Connections** in Studio.
-2. Fill the tables above and select **Save connections**.
-3. Confirm that both Agora RTC and Alibaba Cloud Model Studio show **Ready**.
-4. Select **Templates**, then use **Qwen Realtime** for the first run.
-5. Open **Voice Room** and select **Start live conversation**.
-6. Allow microphone access and begin speaking.
+2. Fill both cards and select **Save connections**.
+3. After both cards show **Ready**, select **Templates → Qwen Realtime**.
+4. Open **Voice Room → Start live conversation** and allow microphone access.
+5. Say a complete sentence and pause for about one second for the first response.
 
-Connections are saved to `.env` in the voice-project root with mode `0600`; Git ignores that
-file. Fill them once and Studio loads them automatically next time. Credentials never enter the Graph.
+Studio saves credentials to `examples/voice-agent/.env` with mode `0600`; Git ignores the file
+and later runs load it automatically:
 
-## What `doctor --voice` actually checks
+```dotenv
+VOXA_AGORA_APP_ID="..."
+VOXA_AGORA_CHANNEL="voxa-demo"
+VOXA_AGORA_WEB_UID="1001"
+VOXA_AGORA_WEB_TOKEN="..."
+VOXA_AGORA_BOT_UID="2001"
+VOXA_AGORA_BOT_TOKEN="..."
+DASHSCOPE_API_KEY="..."
+DASHSCOPE_WORKSPACE_ID="..."
+```
 
-`voxa doctor --voice` diagnoses the environment; it does not issue credentials:
+## D. Verify and troubleshoot
 
-- `native-node-pack PASS` means the Agora C++ Node Packs compiled correctly.
-- `qwen-python PASS` means the Python WebSocket dependency works.
-- `voice-credentials WARN/MISSING` lists values absent from the shell and project `.env`.
-- `--strict` returns a non-zero status for any missing prerequisite and is suitable for CI.
+```bash
+voxa doctor --voice
+tail -f examples/voice-agent/.voxa/runtime.log
+```
 
-After Studio saves values, a separate doctor command sees their configured state in project
-`.env` without printing the values. Studio also preflights the active Graph before creating Nodes.
+`doctor` checks tooling, Providers, and credential presence. It does not issue tokens or print
+secret values. Follow a real session in order:
 
-Next: [the complete install and run flow](voice-demo.md).
+1. Voice Room reports `Browser joined Agora` and `microphone published`.
+2. The log reports `[VOXA][AGORA][participant.joined] uid=1001`.
+3. The log reports `[VOXA][AGORA][audio.received]`.
+4. The log reports `[VOXA][QWEN][event] type=input_audio_buffer.speech_started`.
+5. `response.created`, captions, and `Agora Out` begin increasing.
+
+| Symptom | Check first |
+| --- | --- |
+| Agora cannot join | App ID, channel, UID, token binding, and token expiry |
+| Only browser or bot joins | Browser UID `1001` and bot UID `2001` tokens may be swapped |
+| Agora receives audio but Qwen has no events | Beijing region, key, and Workspace must match |
+| Connected but no response | Finish a sentence and pause; inspect Qwen speech and response events |
+| You hear your own voice | Close old Voice Room tabs, use headphones, and confirm AEC is enabled |
+
+Next: [complete installation and run flow](voice-demo.md).

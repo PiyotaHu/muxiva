@@ -59,6 +59,9 @@ To use a manually downloaded SDK instead:
 
 ## 2. Create an Agora App ID and tokens
 
+For a first-time Agora account, follow the [field-by-field App ID, Certificate, and Token Builder guide](voice-credentials.md#a-create-an-agora-project-and-two-tokens).
+The steps below are only a completion summary.
+
 1. Sign up or log in to [Agora Console](https://console.agora.io/).
 2. Open [Projects](https://console.agora.io/legacy/project-management), select
    **Create New**, and choose **Secured mode: APP ID + Token**.
@@ -80,6 +83,9 @@ To use a manually downloaded SDK instead:
     evaluation; production deployments require a token server.
 
 ## 3. Create Qwen credentials
+
+If Model Studio regions and workspaces are new to you, follow the [field-by-field API key and Workspace ID guide](voice-credentials.md#b-create-the-model-studio-key-and-workspace-id).
+The key and Workspace ID must be a matching pair from the same China (Beijing) workspace.
 
 1. Open [Alibaba Cloud Model Studio](https://bailian.console.aliyun.com/),
    select China (Beijing), and activate the service.
