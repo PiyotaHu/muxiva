@@ -13,14 +13,14 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
 fi
 
 python3 -m unittest discover \
-  -s "$repository_root/examples/voice-agent/tests" -v
+  -s "$repository_root/providers/qwen/python/tests" -v
 
 for package in agora_audio_source agora_audio_sink; do
   "$cxx" -std=c++17 -Wall -Wextra -Wpedantic -Werror \
     "${cxx_system[@]}" \
     -I"$repository_root/cpp/include" \
     -I"$repository_root/providers/agora/cpp/include" \
-    -c "$repository_root/examples/voice-agent/.voxa/nodes/$package/node.cpp" \
+    -c "$repository_root/providers/agora/cpp/nodes/$package/node.cpp" \
     -o "$build_directory/$package.o"
 done
 
@@ -30,11 +30,12 @@ cmake -S "$repository_root/providers/agora/cpp" \
   -DVOXA_SOURCE_ROOT="$repository_root"
 cmake --build "$build_directory/agora-provider" --target voxa_agora
 
-cmake -S "$repository_root/examples/voice-agent" \
-  -B "$build_directory/voice-agent" \
+cmake -S "$repository_root/providers/agora/cpp" \
+  -B "$build_directory/agora-node-packs" \
   -DVOXA_ENABLE_AGORA=OFF \
+  -DVOXA_SOURCE_ROOT="$repository_root" \
   -DVOXA_NODE_PACK_OUTPUT_ROOT="$build_directory/voice-node-packs"
-cmake --build "$build_directory/voice-agent"
+cmake --build "$build_directory/agora-node-packs"
 for package in agora_audio_source agora_audio_sink; do
   test "$(cat "$build_directory/voice-node-packs/$package/provider-mode")" = "offline-stub"
 done

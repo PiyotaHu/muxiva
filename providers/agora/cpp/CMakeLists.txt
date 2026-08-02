@@ -8,6 +8,15 @@ set(VOXA_SOURCE_ROOT "${VOXA_DEFAULT_SOURCE_ROOT}" CACHE PATH
     "Voxa source checkout used for the public C/C++ ABI headers")
 set(VOXA_AGORA_SDK_ROOT "" CACHE PATH "Agora Native C++ SDK root")
 option(VOXA_ENABLE_AGORA "Compile the real Agora Native SDK backend" OFF)
+set(VOXA_NODE_PACK_OUTPUT_ROOT
+  "${CMAKE_CURRENT_BINARY_DIR}/native" CACHE PATH
+  "Destination for generated Voxa Node Pack artifacts")
+
+if(VOXA_ENABLE_AGORA)
+  set(VOXA_AGORA_PROVIDER_MODE "agora-native")
+else()
+  set(VOXA_AGORA_PROVIDER_MODE "offline-stub")
+endif()
 
 add_library(voxa_agora STATIC src/agora_rtc_adapter.cc)
 add_library(VoxaAgora::agora ALIAS voxa_agora)
@@ -36,6 +45,36 @@ if(VOXA_ENABLE_AGORA)
 else()
   target_sources(voxa_agora PRIVATE src/agora_native_sdk_stub.cc)
 endif()
+
+function(add_agora_node_pack package)
+  add_library(${package} MODULE "nodes/${package}/node.cpp")
+  target_compile_features(${package} PRIVATE cxx_std_17)
+  target_include_directories(${package} PRIVATE
+    "${VOXA_SOURCE_ROOT}/cpp/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include")
+  if(APPLE)
+    target_include_directories(${package} SYSTEM PRIVATE
+      "${VOXA_APPLE_SDK_PATH}/usr/include/c++/v1")
+    set_target_properties(${package} PROPERTIES SUFFIX ".dylib")
+  endif()
+  if(VOXA_ENABLE_AGORA)
+    target_sources(${package} PRIVATE src/agora_native_sdk.cc)
+    target_compile_definitions(${package} PRIVATE VOXA_ENABLE_AGORA=1)
+    target_include_directories(${package} PRIVATE "${VOXA_AGORA_INCLUDE_DIR}")
+    target_link_libraries(${package} PRIVATE "${VOXA_AGORA_LIBRARY}")
+  else()
+    target_sources(${package} PRIVATE src/agora_native_sdk_stub.cc)
+  endif()
+  set_target_properties(${package} PROPERTIES
+    OUTPUT_NAME voxa_node_pack
+    LIBRARY_OUTPUT_DIRECTORY "${VOXA_NODE_PACK_OUTPUT_ROOT}/${package}")
+  file(GENERATE
+    OUTPUT "${VOXA_NODE_PACK_OUTPUT_ROOT}/${package}/provider-mode"
+    CONTENT "${VOXA_AGORA_PROVIDER_MODE}\n")
+endfunction()
+
+add_agora_node_pack(agora_audio_source)
+add_agora_node_pack(agora_audio_sink)
 
 install(DIRECTORY include/ DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 install(TARGETS voxa_agora ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")

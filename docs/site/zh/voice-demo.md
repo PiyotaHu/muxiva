@@ -50,6 +50,9 @@ voxa doctor --voice
 `.voxa/native/` 目录。成功时最后会显示 `[VOXA][READY]`。
 `doctor` 只报告凭据是否配置，永远不会打印 Secret 值。
 
+Provider 源码统一位于 `providers/qwen/python` 与 `providers/agora/cpp`。示例工程只
+保留 Graph、Voice Room 与项目配置，并通过 `.voxa/providers.json` 引用这两个 Catalog。
+
 ## 3. 启动 Studio
 
 ```bash

@@ -41,14 +41,33 @@ Token，避免两个 Native Client 相互顶替。浏览器只会收到 Manifest
 ID、Channel、Web UID 与短期 Web Token；DashScope Key、Bot Token 和 App
 Certificate 永不进入浏览器。
 
-Provider 代码现在严格归应用所有。Qwen Audio Realtime Node Pack 使用 Python，位于
-`examples/voice-agent`；Agora Transport 使用 C++，位于 `providers/agora/cpp` 以及
-应用自己的 C++ Node 中。Core、Graph Builtin 与 Studio 不包含任何 Qwen、DashScope
+Provider 代码现在集中放在示例应用之外。Qwen Realtime、ASR、LLM、TTS Node Pack
+统一位于 `providers/qwen/python`；Agora RTC Adapter、Source/Sink Node Pack、Manifest、
+测试和构建定义统一位于 `providers/agora/cpp`。Core、Graph Builtin 与 Studio 不包含任何 Qwen、DashScope
 或 Agora 代码。根 CMake 工程也不声明 Agora Target；Provider 使用自己的独立
 CMake 工程，并且只单向依赖 Voxa 公共 ABI。Studio 只从项目 Manifest 发现通用连接字段和图模板。Python Qwen
 协议测试覆盖 Realtime、ASR、句段化流式 LLM、显式 commit TTS 与
 `response.cancel`；C++ 门禁会编译 Node Pack、通过 ABI 动态加载，并用 Studio
 真实 Registry 编译两张图模板。
+
+## Provider Root
+
+应用通过项目内 `.voxa/providers.json` 引用共享 Provider Catalog：
+
+```json
+{
+  "format": "voxa.providers/v1",
+  "roots": [
+    "../../../providers/qwen/python/nodes",
+    "../../../providers/agora/cpp/nodes"
+  ]
+}
+```
+
+Root 路径相对于项目的 `.voxa` 目录解析。Studio 会把这些 Provider 与应用自己的
+`.voxa/nodes` 合并，拒绝重复的 Package ID 或 Factory 身份，展示 Provider 的精确
+源码，并把共享 Provider 标记为只读。Python Node 直接从 Provider 目录执行；编译后的
+C++ Artifact 仍放在项目 `.voxa/native` 或显式配置的 Native Artifact Root 中。
 
 ## FFmpeg
 

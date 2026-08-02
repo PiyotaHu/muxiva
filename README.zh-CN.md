@@ -44,7 +44,7 @@ Voxa 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部
 | Node-API 包 | 实验性 | 独立 Worker 与宿主 Graph v1 文本 Factory；明确拒绝返回 Promise 的 Transform |
 | JSON Graph v1 与 CLI | 实验性 | 精确版本 Registry 编译、内置 Factory 并发执行、有界等待、初始化和本地 Studio |
 | 本地 Studio | 可用 | Node Lab、类型化连线、Python Host、C++ ABI Pack、项目体验与本地 Run/Stop |
-| 模型 Provider | 实验性 | 应用层 Qwen Python Node Pack，绝不链接进 Core |
+| 模型 Provider | 实验性 | 集中放在 `providers/` 的 Qwen Python Node Pack，绝不链接进 Core |
 
 ## 架构
 
@@ -156,7 +156,8 @@ voxa/
 │   ├── voxa-node/        # Node-API Native Module
 │   └── voxa-testkit/     # 确定性测试 Harness
 ├── bindings/node/        # @voxa/core 包
-├── cpp/                  # C/C++ SDK、RTC Adapter 与媒体 Provider
+├── cpp/                  # 公共 C/C++ SDK
+├── providers/            # 厂商集成：Qwen/Python 与 Agora/C++
 ├── examples/             # Rust、Graph、Python、TypeScript 与 C++ 示例
 ├── fuzz/                 # Fuzz Target
 ├── docs/                 # 设计、测试与预发布报告

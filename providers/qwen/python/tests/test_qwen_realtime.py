@@ -21,7 +21,7 @@ class TextFrame:
 shim = types.ModuleType("voxa")
 shim.AudioFrame, shim.TextFrame = AudioFrame, TextFrame
 sys.modules["voxa"] = shim
-path = pathlib.Path(__file__).parents[1] / ".voxa/nodes/qwen_realtime/node.py"
+path = pathlib.Path(__file__).parents[1] / "nodes/qwen_realtime/node.py"
 spec = importlib.util.spec_from_file_location("qwen_node", path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)

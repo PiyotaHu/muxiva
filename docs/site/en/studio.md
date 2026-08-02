@@ -51,7 +51,9 @@ identity, version, role, and exact port shape against the Manifest. TypeScript
 and Rust project source still requires an externally built supported artifact.
 
 Selecting a project Node shows the exact source stored under `.voxa/nodes/`
-and offers **Edit in Node Lab**. Selecting a compiled built-in shows its exact
+and offers **Edit in Node Lab**. Shared packages loaded through
+`.voxa/providers.json` show their exact source as read-only, while project-owned
+`.voxa/nodes` remain editable. Selecting a compiled built-in shows its exact
 Factory identity and a link to the authoritative Rust implementation.
 
 ## Runtime observability

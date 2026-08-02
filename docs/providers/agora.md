@@ -37,9 +37,10 @@ The adapter never copies a token into a frame or metrics snapshot.
 Agora integration is C++-only. Its headers, implementation, build project, and
 tests live under `providers/agora/cpp`; the root Voxa CMake project and Python
 package contain no Agora target or SDK wrapper.
-The flagship application's C++ Node Pack is under
-`examples/voice-agent/.voxa/nodes/agora_*`. Studio discovers its Manifest but
-does not compile or link Agora itself. Build the complete flagship packs with:
+The flagship C++ source/sink Node Packs and their Manifests are under
+`providers/agora/cpp/nodes`. The application references that catalog through
+`.voxa/providers.json`; Studio discovers it but does not compile or link Agora
+itself. Build the complete flagship packs with:
 
 ```sh
 ./examples/voice-agent/setup.sh /absolute/path/to/agora-sdk

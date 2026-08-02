@@ -36,11 +36,19 @@ fn check_tool(label: &str, commands: &[&str], warnings: &mut usize) {
 
 fn voice_project(current: &Path) -> Option<PathBuf> {
     for ancestor in current.ancestors() {
-        if ancestor.join(".voxa/nodes/qwen_realtime").is_dir() {
+        if ancestor.join(".voxa/providers.json").is_file()
+            && ancestor
+                .join(".voxa/templates/01-qwen-realtime.json")
+                .is_file()
+        {
             return Some(ancestor.to_owned());
         }
         let candidate = ancestor.join("examples/voice-agent");
-        if candidate.join(".voxa/nodes/qwen_realtime").is_dir() {
+        if candidate.join(".voxa/providers.json").is_file()
+            && candidate
+                .join(".voxa/templates/01-qwen-realtime.json")
+                .is_file()
+        {
             return Some(candidate);
         }
     }

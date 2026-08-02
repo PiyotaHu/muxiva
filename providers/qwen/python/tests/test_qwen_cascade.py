@@ -21,7 +21,7 @@ class TextFrame:
 shim = types.ModuleType("voxa")
 shim.AudioFrame, shim.TextFrame = AudioFrame, TextFrame
 sys.modules["voxa"] = shim
-root = pathlib.Path(__file__).parents[1] / ".voxa/nodes"
+root = pathlib.Path(__file__).parents[1] / "nodes"
 
 
 def load(package):

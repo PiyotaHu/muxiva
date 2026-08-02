@@ -45,7 +45,7 @@ Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but
 | Node-API package | Experimental | Dedicated Worker and hosted Graph v1 text factories; Promise-returning transforms are rejected |
 | JSON Graph v1 and CLI | Experimental | Exact-version Registry compilation, concurrent execution of compiled-in factories, bounded waits, initialization, and local Studio |
 | Local Studio | Available | Node Lab, typed wiring, Python Host, C++ ABI packs, project experiences, local Run/Stop |
-| Model providers | Experimental | Application-owned Qwen Python packs; never linked into Core |
+| Model providers | Experimental | Centralized Qwen Python packs under `providers/`; never linked into Core |
 
 ## Architecture
 
@@ -161,7 +161,8 @@ voxa/
 │   ├── voxa-node/        # Node-API native module
 │   └── voxa-testkit/     # Deterministic test harnesses
 ├── bindings/node/        # @voxa/core package
-├── cpp/                  # Public C/C++ SDK, RTC adapters and media providers
+├── cpp/                  # Public C/C++ SDK
+├── providers/            # Vendor integrations: Qwen/Python and Agora/C++
 ├── examples/             # Rust, graph, Python, TypeScript and C++ examples
 ├── fuzz/                 # Fuzz targets
 ├── docs/                 # Design, testing and pre-release reports

@@ -98,7 +98,7 @@ function renderPalette() {
     const button = document.createElement('button'); button.className = `palette-item ${entry.kind}`; button.dataset.addNode = key; button.draggable = true
     const icon = document.createElement('span'); icon.className = 'node-icon'; icon.textContent = entry.kind[0].toUpperCase()
     const copy = document.createElement('span'), label = document.createElement('b'), detail = document.createElement('small')
-    label.textContent = entry.display_name || entry.label; detail.textContent = `${entry.language} · v${entry.factory_version}${entry.package_id ? ' · project' : ''}`; copy.append(label, detail)
+    label.textContent = entry.display_name || entry.label; detail.textContent = `${entry.language} · v${entry.factory_version}${entry.package_id ? ` · ${entry.origin || 'project'}` : ''}`; copy.append(label, detail)
     const add = document.createElement('span'); add.textContent = '＋'; button.append(icon, copy, add); return button
   })
   $('#node-palette').replaceChildren(...buttons)
@@ -290,7 +290,7 @@ function updateNodeLabHelp() {
 function editSelectedNodeCode() {
   const node = selectedNode()
   const packageValue = node && nodePackages.find((candidate) => factoryKey(candidate) === factoryKey(node))
-  if (packageValue) openNodeLab(packageValue)
+  if (packageValue?.editable) openNodeLab(packageValue)
 }
 async function saveNodePackage(event) {
   event.preventDefault()
@@ -681,10 +681,11 @@ function renderInspector() {
   const info = nodeInfo(node)
   const projectPackage = nodePackages.find((candidate) => factoryKey(candidate) === factoryKey(node))
   const code = $('#node-source-code'), meta = $('#node-source-meta'), edit = $('#edit-node-code'), link = $('#node-source-link')
-  edit.classList.toggle('hidden', !projectPackage)
+  edit.classList.toggle('hidden', !projectPackage?.editable)
   link.classList.toggle('hidden', Boolean(projectPackage) || node.language !== 'rust' || !node.node_type.startsWith('builtin.'))
   if (projectPackage) {
-    meta.textContent = `${projectPackage.language} · .voxa/nodes/${projectPackage.package_id}/ · exact project source`
+    const location = projectPackage.origin === 'provider' ? `providers/ · ${projectPackage.package_id} · shared read-only source` : `.voxa/nodes/${projectPackage.package_id}/ · exact project source`
+    meta.textContent = `${projectPackage.language} · ${location}`
     code.value = projectPackage.code
   } else if (node.language === 'rust' && node.node_type.startsWith('builtin.')) {
     meta.textContent = `Rust · ${node.node_type} is compiled into Voxa; open the authoritative source below.`

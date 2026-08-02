@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
     io::{self, BufRead, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
@@ -22,7 +22,9 @@ use voxa_types::{
 };
 
 const FORMAT: &str = "voxa.node/v1";
+const PROVIDER_CONFIG_FORMAT: &str = "voxa.providers/v1";
 const MAX_CODE_BYTES: usize = 512 * 1024;
+const MAX_PROVIDER_CONFIG_BYTES: u64 = 64 * 1024;
 const MAX_HOST_RESPONSE_BYTES: usize = 1024 * 1024;
 static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
 static NEXT_FRAME: AtomicU64 = AtomicU64::new(0);
@@ -391,6 +393,27 @@ pub struct NodePackage {
     pub manifest: NodePackageManifest,
     pub code: String,
     pub runtime_available: bool,
+    #[serde(default = "project_origin")]
+    pub origin: String,
+    #[serde(default = "default_editable")]
+    pub editable: bool,
+    #[serde(skip)]
+    source_directory: PathBuf,
+}
+
+fn project_origin() -> String {
+    "project".to_owned()
+}
+
+const fn default_editable() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProviderRootsConfig {
+    format: String,
+    roots: Vec<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -406,22 +429,45 @@ impl From<io::Error> for SaveError {
 }
 
 pub fn list(graph: &Path) -> io::Result<Vec<NodePackage>> {
-    let root = library_root(graph);
-    let entries = match fs::read_dir(root) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(error),
-    };
-    let mut directories = entries
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-        .map(|entry| entry.path())
-        .collect::<Vec<_>>();
-    directories.sort();
-    directories
-        .into_iter()
-        .map(read_package)
-        .collect::<io::Result<Vec<_>>>()
+    let mut packages = Vec::new();
+    let mut identities = BTreeSet::new();
+    let mut package_ids = BTreeSet::new();
+    for (root, origin, editable) in package_roots(graph)? {
+        let entries = match fs::read_dir(&root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::NotFound && editable => continue,
+            Err(error) => return Err(error),
+        };
+        let mut directories = entries
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+            .map(|entry| entry.path())
+            .filter(|directory| directory.join("voxa.node.json").is_file())
+            .collect::<Vec<_>>();
+        directories.sort();
+        for directory in directories {
+            let package = read_package(directory, graph, origin.clone(), editable)?;
+            let identity = (
+                package.manifest.node_type.clone(),
+                package.manifest.language.clone(),
+                package.manifest.factory_version.clone(),
+            );
+            if !package_ids.insert(package.manifest.package_id.clone()) {
+                return Err(invalid_data(format!(
+                    "duplicate Node package_id `{}` across project and Provider Roots",
+                    package.manifest.package_id
+                )));
+            }
+            if !identities.insert(identity) {
+                return Err(invalid_data(format!(
+                    "duplicate Node Factory identity for `{}`",
+                    package.manifest.node_type
+                )));
+            }
+            packages.push(package);
+        }
+    }
+    Ok(packages)
 }
 
 pub fn register_project_nodes_with_connections(
@@ -432,7 +478,7 @@ pub fn register_project_nodes_with_connections(
     for package in list(graph).map_err(|error| error.to_string())? {
         let registration = match package.manifest.language.as_str() {
             "python" if python_host_supported(&package) => {
-                python_registration(graph, &package, connections.clone())?
+                python_registration(&package, connections.clone())?
             }
             "cpp" if cpp_host_supported(graph, &package.manifest) => {
                 cpp_registration(graph, &package.manifest)?
@@ -452,7 +498,10 @@ pub fn save(graph: &Path, input: &str) -> Result<NodePackage, SaveError> {
     validate(&package)?;
     package.manifest.format = FORMAT.to_owned();
     package.runtime_available = false;
+    package.origin = project_origin();
+    package.editable = true;
     let directory = library_root(graph).join(&package.manifest.package_id);
+    package.source_directory = directory.clone();
     fs::create_dir_all(&directory)?;
     atomic_write(
         &directory.join("voxa.node.json"),
@@ -582,6 +631,67 @@ fn library_root(graph: &Path) -> PathBuf {
         .join("nodes")
 }
 
+fn package_roots(graph: &Path) -> io::Result<Vec<(PathBuf, String, bool)>> {
+    let project_root = graph.parent().unwrap_or_else(|| Path::new("."));
+    let voxa_root = project_root.join(".voxa");
+    let mut roots = vec![(voxa_root.join("nodes"), project_origin(), true)];
+    let config_path = voxa_root.join("providers.json");
+    let metadata = match fs::metadata(&config_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(roots),
+        Err(error) => return Err(error),
+    };
+    if metadata.len() > MAX_PROVIDER_CONFIG_BYTES {
+        return Err(invalid_data("Provider Root config exceeds 64 KiB"));
+    }
+    let config: ProviderRootsConfig = serde_json::from_str(&fs::read_to_string(&config_path)?)
+        .map_err(|error| invalid_data(format!("invalid Provider Root config: {error}")))?;
+    if config.format != PROVIDER_CONFIG_FORMAT {
+        return Err(invalid_data(format!(
+            "unsupported Provider Root format `{}`",
+            config.format
+        )));
+    }
+    if config.roots.len() > 32 {
+        return Err(invalid_data("at most 32 Provider Roots may be configured"));
+    }
+    let mut seen = BTreeSet::new();
+    for relative in config.roots {
+        if relative.is_absolute() {
+            return Err(invalid_data(
+                "Provider Roots must be relative to the .voxa directory",
+            ));
+        }
+        let resolved = voxa_root.join(&relative).canonicalize().map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "cannot resolve Provider Root `{}`: {error}",
+                    relative.display()
+                ),
+            )
+        })?;
+        if !resolved.is_dir() {
+            return Err(invalid_data(format!(
+                "Provider Root is not a directory: {}",
+                relative.display()
+            )));
+        }
+        if !seen.insert(resolved.clone()) {
+            return Err(invalid_data(format!(
+                "duplicate Provider Root: {}",
+                relative.display()
+            )));
+        }
+        roots.push((resolved, "provider".to_owned(), false));
+    }
+    Ok(roots)
+}
+
+fn invalid_data(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message.into())
+}
+
 fn source_filename(language: &str) -> &'static str {
     match language {
         "python" => "node.py",
@@ -592,17 +702,25 @@ fn source_filename(language: &str) -> &'static str {
     }
 }
 
-fn read_package(directory: PathBuf) -> io::Result<NodePackage> {
+fn read_package(
+    directory: PathBuf,
+    graph: &Path,
+    origin: String,
+    editable: bool,
+) -> io::Result<NodePackage> {
     let manifest: NodePackageManifest =
         serde_json::from_str(&fs::read_to_string(directory.join("voxa.node.json"))?)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let code = fs::read_to_string(directory.join(source_filename(&manifest.language)))?;
     let runtime_available = python_host_supported_manifest(&manifest)
-        || (manifest.language == "cpp" && cpp_artifact_path_from_directory(&directory).is_file());
+        || (manifest.language == "cpp" && cpp_artifact_path(graph, &manifest.package_id).is_file());
     Ok(NodePackage {
         manifest,
         code,
         runtime_available,
+        origin,
+        editable,
+        source_directory: directory,
     })
 }
 
@@ -678,23 +796,6 @@ fn native_node_root(graph: &Path) -> PathBuf {
         })
 }
 
-fn cpp_artifact_path_from_directory(directory: &Path) -> PathBuf {
-    let package_id = directory
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or_default();
-    let default_root = directory
-        .parent()
-        .and_then(Path::parent)
-        .unwrap_or_else(|| Path::new("."))
-        .join("native");
-    std::env::var_os("VOXA_NATIVE_NODE_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or(default_root)
-        .join(package_id)
-        .join(native_library_filename())
-}
-
 fn native_library_filename() -> &'static str {
     if cfg!(target_os = "macos") {
         "libvoxa_node_pack.dylib"
@@ -706,7 +807,6 @@ fn native_library_filename() -> &'static str {
 }
 
 fn python_registration(
-    graph: &Path,
     package: &NodePackage,
     connections: ConnectionStore,
 ) -> Result<NodeRegistration, String> {
@@ -743,9 +843,7 @@ fn python_registration(
         ConfigSchema::new(voxa_graph_json::value_from_json(&manifest.config_schema)?),
         LifecycleCapabilities::new(true, true, true, true),
     );
-    let source = library_root(graph)
-        .join(&manifest.package_id)
-        .join(source_filename("python"));
+    let source = package.source_directory.join(source_filename("python"));
     let default_output = manifest
         .ports
         .iter()
@@ -1317,6 +1415,36 @@ mod tests {
             .join(".voxa/nodes/hello_python/node.py")
             .exists());
         fs::remove_dir_all(graph.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn configured_provider_roots_are_discovered_as_read_only_packages() {
+        let graph = graph();
+        let project = graph.parent().unwrap();
+        let package = project.join("providers/python/hello_provider");
+        fs::create_dir_all(&package).unwrap();
+        fs::write(
+            package.join("voxa.node.json"),
+            r#"{"format":"voxa.node/v1","package_id":"hello_provider","display_name":"Hello Provider","node_type":"provider.example.hello","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:HelloNode","ports":[],"config_schema":{"type":"object"}}"#,
+        )
+        .unwrap();
+        fs::write(package.join("node.py"), "class HelloNode:\n    pass\n").unwrap();
+        fs::create_dir_all(project.join(".voxa")).unwrap();
+        fs::write(
+            project.join(".voxa/providers.json"),
+            r#"{"format":"voxa.providers/v1","roots":["../providers/python"]}"#,
+        )
+        .unwrap();
+
+        let packages = list(&graph).unwrap();
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].origin, "provider");
+        assert!(!packages[0].editable);
+        assert_eq!(
+            packages[0].source_directory,
+            package.canonicalize().unwrap()
+        );
+        fs::remove_dir_all(project).unwrap();
     }
 
     #[test]

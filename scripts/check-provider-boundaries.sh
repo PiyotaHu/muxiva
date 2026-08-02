@@ -21,7 +21,7 @@ import json
 from pathlib import Path
 
 root = Path("examples/voice-agent")
-manifests = [json.loads(path.read_text()) for path in root.glob(".voxa/nodes/*/voxa.node.json")]
+manifests = [json.loads(path.read_text()) for path in Path("providers").glob("*/*/nodes/*/voxa.node.json")]
 for manifest in manifests:
     node_type = manifest["node_type"]
     language = manifest["language"]
@@ -40,7 +40,7 @@ for path in root.glob(".voxa/templates/*.json"):
             raise SystemExit(f"template {path} couples Agora to {language}")
 PY
 
-if find providers/agora examples/voice-agent/.voxa/nodes/agora_* \
+if find providers/agora \
   -type f \( -name '*.rs' -o -name '*.py' -o -name '*.ts' \) | grep -q .; then
   echo "Agora provider implementation must remain C++-only" >&2
   exit 1

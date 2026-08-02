@@ -52,6 +52,10 @@ Packs into the project's `.voxa/native/` directory. A successful run ends with
 `[VOXA][READY]`. `doctor` reports only whether credentials are configured; it
 never prints secret values.
 
+Provider source is centralized under `providers/qwen/python` and
+`providers/agora/cpp`. The example contains only its Graphs, Voice Room, and
+project configuration; `.voxa/providers.json` connects it to those catalogs.
+
 ## 3. Start Studio
 
 ```bash

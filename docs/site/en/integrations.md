@@ -49,9 +49,10 @@ native clients cannot replace one another. Browser code receives only the App
 ID, channel, web UID, and short-lived web token explicitly exposed by the
 Manifest. DashScope keys, bot tokens, and the App Certificate stay server-side.
 
-Provider code is now strictly application-owned. The Qwen Audio Realtime Node
-Pack is Python and lives under `examples/voice-agent`; the Agora transport is
-C++ and lives under `providers/agora/cpp` plus the application's C++ Nodes.
+Provider code is centralized outside application examples. Qwen Realtime, ASR,
+LLM, and TTS Node Packs live under `providers/qwen/python`; Agora RTC adapters,
+source/sink Node Packs, manifests, tests, and build definitions live under
+`providers/agora/cpp`.
 Core, Graph builtins, and Studio contain no Qwen, DashScope, or Agora code.
 The root CMake project also contains no Agora target; the provider has its own
 standalone CMake project and depends one-way on Voxa's public ABI.
@@ -60,6 +61,28 @@ Manifests. Python protocol tests cover Realtime, ASR, sentence-sized streaming
 LLM output, explicitly committed TTS, and `response.cancel`. The C++ gate builds
 Node Packs, dynamically loads their ABI, and compiles both templates with
 Studio's real Registry.
+
+## Provider Roots
+
+An application opts into shared Provider catalogs with a project-local
+`.voxa/providers.json` file:
+
+```json
+{
+  "format": "voxa.providers/v1",
+  "roots": [
+    "../../../providers/qwen/python/nodes",
+    "../../../providers/agora/cpp/nodes"
+  ]
+}
+```
+
+Roots are relative to the project's `.voxa` directory. Studio combines them
+with application-owned `.voxa/nodes`, rejects duplicate package or Factory
+identities, displays exact Provider source, and treats shared Provider code as
+read-only. Python Nodes execute from their Provider directory; compiled C++
+artifacts remain project-local under `.voxa/native` or the explicitly selected
+native artifact root.
 
 ## FFmpeg
 
