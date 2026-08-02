@@ -11,6 +11,7 @@ import json
 import os
 import re
 import ssl
+import sys
 import uuid
 from typing import Any, Callable, Iterable
 from urllib.parse import quote
@@ -71,6 +72,12 @@ class QwenAudioRealtimeNode:
         self._transport_factory = transport_factory
         self._transport: Any | None = None
         self._response_active = False
+        self._audio_frames_sent = 0
+
+    @staticmethod
+    def _log(event: str, **fields: Any) -> None:
+        detail = " ".join(f"{key}={value}" for key, value in fields.items())
+        print(f"[VOXA][QWEN][{event}] {detail}".rstrip(), file=sys.stderr, flush=True)
 
     def on_prepare(self, _ctx: Any = None) -> None:
         api_key = os.environ.get("DASHSCOPE_API_KEY", "")
@@ -89,6 +96,12 @@ class QwenAudioRealtimeNode:
         self._transport = self._transport_factory(
             endpoint, api_key, session_update(self.config)
         )
+        self._log(
+            "session.connect",
+            model=model,
+            turn_detection=self.config.get("turn_detection", "server_vad"),
+            audio="pcm_s16le/16000/mono",
+        )
 
     def on_process(self, frame: Any, ctx: Any) -> None:
         if self._transport is None:
@@ -96,8 +109,22 @@ class QwenAudioRealtimeNode:
         if frame.sample_rate_hz != 16_000 or frame.channels != 1:
             raise ValueError("Qwen input must be mono PCM s16le at 16000 Hz")
         self._transport.send(audio_append(frame.data))
+        self._audio_frames_sent += 1
+        if self._audio_frames_sent == 1 or self._audio_frames_sent % 500 == 0:
+            self._log("audio.sent", frames=self._audio_frames_sent, bytes=len(frame.data))
         for event in self._transport.poll():
             kind = event["type"]
+            if kind in {
+                "session.created",
+                "session.updated",
+                "input_audio_buffer.speech_started",
+                "input_audio_buffer.speech_stopped",
+                "input_audio_buffer.committed",
+                "response.created",
+                "response.done",
+                "error",
+            }:
+                self._log("event", type=kind)
             if kind == "response.created":
                 self._response_active = True
             elif kind == "response.done":
@@ -142,6 +169,13 @@ class QwenAudioRealtimeNode:
 
 
 def session_update(config: dict[str, Any]) -> dict[str, Any]:
+    detection = str(config.get("turn_detection", "server_vad"))
+    turn_detection: dict[str, Any] = {"type": detection}
+    if detection == "server_vad":
+        turn_detection.update(
+            threshold=float(config.get("vad_threshold", 0.5)),
+            silence_duration_ms=int(config.get("silence_duration_ms", 800)),
+        )
     return {
         "event_id": _event_id(),
         "type": "session.update",
@@ -153,7 +187,7 @@ def session_update(config: dict[str, Any]) -> dict[str, Any]:
             ),
             "input_audio_format": "pcm",
             "output_audio_format": "pcm",
-            "turn_detection": {"type": config.get("turn_detection", "smart_turn")},
+            "turn_detection": turn_detection,
         },
     }
 

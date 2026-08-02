@@ -70,6 +70,8 @@ async function join() {
     $('#launch').disabled = true
     $('#error').hidden = true
     lastErrorMessage = ''
+    $('#diagnostic-log').replaceChildren()
+    lastPipelineState = ''
   try {
     if (!token) throw new Error('Studio access token is missing. Open Voice Room from Studio.')
     if (!window.AgoraRTC) throw new Error('Agora Web SDK could not be loaded.')
@@ -96,8 +98,13 @@ async function join() {
     client.on('user-unpublished', user => { $('#orb').classList.remove('speaking'); diagnostic(`Agora remote media unpublished · uid=${user.uid}`) })
     await client.join(connection.app_id, connection.channel, connection.web_token, Number(connection.web_uid))
     diagnostic(`Browser joined Agora · channel=${connection.channel} uid=${connection.web_uid}`)
-    microphone = await window.AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: 'speech_standard' })
-    diagnostic('Browser microphone track created')
+    microphone = await window.AgoraRTC.createMicrophoneAudioTrack({
+      encoderConfig: 'speech_standard',
+      AEC: true,
+      ANS: true,
+      AGC: true,
+    })
+    diagnostic('Browser microphone track created · AEC/ANS/AGC enabled · local playback disabled')
     await client.publish([microphone])
     diagnostic('Browser microphone published to Agora')
     sessionStartedAt = Date.now()
@@ -143,7 +150,8 @@ async function pollRuntime() {
       stage.classList.toggle('active', live && (runtime.nodes || []).some(node => node.node_id.includes(hint) && nodeCalls(node) > 0))
     }
     const edge = id => (runtime.edges || []).find(value => value.edge_id === id)?.enqueue_total || 0
-    const pipelineState = `${edge('agora-input')}/${edge('audio-to-qwen')}/${edge('qwen-audio')}/${edge('audio-to-room')}`
+    const milestone = count => count === 0 ? 0 : 1 + Math.floor(count / 500)
+    const pipelineState = `${milestone(edge('agora-input'))}/${milestone(edge('audio-to-qwen'))}/${milestone(edge('qwen-audio'))}/${milestone(edge('audio-to-room'))}`
     if (pipelineState !== lastPipelineState) {
       diagnostic(`Frames · Agora In=${edge('agora-input')} · Qwen In=${edge('audio-to-qwen')} · Qwen Out=${edge('qwen-audio')} · Agora Out=${edge('audio-to-room')}`)
       lastPipelineState = pipelineState
@@ -199,6 +207,7 @@ async function leave() {
   $('#launch').hidden = false
   $('#launch').disabled = false
   $('#leave').hidden = true
+  $('#error').hidden = true
   message('Session ended', 'Start again whenever you are ready.')
   await pollRuntime()
 }

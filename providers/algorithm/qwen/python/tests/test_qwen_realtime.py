@@ -81,11 +81,17 @@ class QwenNodeTests(unittest.TestCase):
         update = module.session_update({})
         rendered = str(update)
         self.assertNotIn("secret", rendered)
-        self.assertIn("smart_turn", rendered)
+        self.assertIn("server_vad", rendered)
+        self.assertEqual(update["session"]["turn_detection"]["threshold"], 0.5)
+        self.assertEqual(update["session"]["turn_detection"]["silence_duration_ms"], 800)
         self.assertEqual(update["session"]["input_audio_format"], "pcm")
         self.assertEqual(update["session"]["output_audio_format"], "pcm")
         self.assertEqual(update["session"]["voice"], "longanqian")
         self.assertNotIn("input_audio_transcription", update["session"])
+
+    def test_smart_turn_does_not_include_server_vad_tuning(self):
+        detection = module.session_update({"turn_detection": "smart_turn"})["session"]["turn_detection"]
+        self.assertEqual(detection, {"type": "smart_turn"})
 
     def test_idle_speech_interrupts_voxa_without_invalid_provider_cancel(self):
         transport = FakeTransport([{"type": "input_audio_buffer.speech_started"}])
