@@ -599,7 +599,7 @@ impl NodeContext {
 
     /// Returns the graph-local typed resources available to this runtime.
     ///
-    /// Secrets and provider clients belong here rather than in serializable
+    /// Secrets and Node clients belong here rather than in serializable
     /// node configuration.
     pub const fn resources(&self) -> &ResourceStore {
         &self.resources

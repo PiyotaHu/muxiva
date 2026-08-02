@@ -2,7 +2,7 @@
 
 ## Decision
 
-The first live Voxa voice demo uses two optional providers:
+The first live Voxa voice demo uses two official Node collections:
 
 - Agora RTC transports user media between a browser and the Voxa Bot.
 - Alibaba Cloud Model Studio Qwen Audio Realtime provides acoustic turn
@@ -10,7 +10,7 @@ The first live Voxa voice demo uses two optional providers:
   one server-side WebSocket.
 
 The initial low-latency model profile is
-`qwen-audio-3.0-realtime-flash` in the Beijing region. Provider model names,
+`qwen-audio-3.0-realtime-flash` in the Beijing region. Vendor model names,
 region endpoints, voice, and instructions are configuration, never Core API.
 The deterministic scripted demo remains available only as an explicitly named
 simulation and CI fixture.
@@ -25,10 +25,10 @@ transcripts, streaming response audio, response completion, and cancellation.
 It therefore provides the shortest path to an honest full-duplex demo with one
 Model Studio account and API key.
 
-Voxa still owns the runtime semantics. The Qwen provider may suggest acoustic
-or semantic turn boundaries, but Voxa assigns `TurnId`, converts provider
-events into typed Signal/Event Frames, cancels or seals old work, filters stale
-output immediately before the Sink, and records latency and queue metrics.
+Voxa Core owns only generic runtime semantics. The Qwen Node owns acoustic or
+semantic turn boundaries, remote cancellation, and rejection of late response
+chunks. It emits typed Signal/Event Frames; the Agora Sink owns playback queue
+clearing. Core routes those opaque messages and records queue/runtime metrics.
 
 ## Media path
 
@@ -55,12 +55,12 @@ Graph JSON, Studio state, and recordings.
 
 ```text
 Voxa public Node/Frame ABI <- Python Qwen Node Pack
-Voxa public C++ ABI        <- C++ Agora Provider and Node Pack
+Voxa public C++ ABI        <- C++ Agora Nodes
 
 Core / Graph / Studio -X-> Qwen, DashScope, or Agora SDK
 ```
 
-Provider packages may depend one-way on stable Voxa contracts. The framework
+Official and project Node packages may depend one-way on stable Voxa contracts. The framework
 workspace, root build, Registry, and Studio UI may not import, link, register,
 or name a vendor. Discovery and configuration flow only through generic Node
 Pack Manifests.
@@ -89,15 +89,11 @@ the App Certificate never reaches the browser or Graph document.
 
 ## Interruption contract
 
-When Qwen reports `input_audio_buffer.speech_started`, the provider emits an
-adjacent Signal stamped with the current/new turn boundary. The Turn controller
-must then atomically:
-
-1. interrupt the active response;
-2. cancel provider generation and stop admitting its old audio;
-3. clear Voxa's pending TTS queue and the Agora sender buffer;
-4. transition to the new `TurnId`;
-5. reject late audio carrying the old turn at the Sink gate.
+When Qwen reports `input_audio_buffer.speech_started`, its Node cancels the
+active remote response, marks subsequent chunks from that response for discard,
+and emits `voxa.voice.speech.started`. Core broadcasts the opaque Signal. The
+Agora Audio Sink clears pending PCM when it receives it. No voice Turn identity
+or vendor cancellation logic exists in Core.
 
 An EventBus notification may mirror the result for UI and telemetry, but the
 EventBus is not the real-time interruption path.
@@ -157,7 +153,7 @@ Implemented after the provider-boundary correction:
   are passed only to the owning language process as declared environment values;
 - the application-owned Python Qwen Node Pack performs authenticated WebSocket
   setup, session configuration, PCM append, event decoding, and cancellation;
-- `provider.qwen.audio_realtime` accepts 16 kHz mono PCM16 and emits 24 kHz
+- `qwen.audio_realtime` accepts 16 kHz mono PCM16 and emits 24 kHz
   PCM16 plus incremental text without a Rust provider dependency;
 - Agora implementation and Node sources are C++-only under the provider and
   flagship application directories;

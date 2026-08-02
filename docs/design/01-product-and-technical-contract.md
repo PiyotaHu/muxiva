@@ -427,16 +427,16 @@ Exit: slow consumers, pressure prediction, overflow policies, zero-loss tests,
 session isolation, network isolation, and shutdown tests pass without busy wait,
 silent loss, or unbounded queues.
 
-### Stage 6: Signal, EventBus, resources, and turn control
+### Stage 6: Signal, EventBus, and resources
 
 Input: Stage 5 queue, worker, and cancellation boundaries.
 
-Output: queued adjacent Signal routing, non-blocking global EventBus,
-ResourceStore, TransportControl semantics, atomic turn state, interruption, and
-tests.
+Output: queued Signal routing, non-blocking global EventBus, typed ResourceStore,
+opaque control delivery, and tests. Business Turn and interruption policy belongs
+to Nodes, not Core.
 
 Exit: routing scope, ordering, unsubscribe, slow subscribers, resource type
-errors, stale-turn filtering, and idempotent interruption are tested.
+errors, queue bounds, and stop races are tested.
 
 No stage may implement a later stage's output before its own exit criteria pass.
 

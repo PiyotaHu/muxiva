@@ -25,7 +25,7 @@ the canvas with exact diagnostics.
 ## Visual workflow
 
 The Palette separates architecture layer from graph role. Filter by Transport,
-Algorithm, Media, Control, or Utility, or search by provider, capability, tag,
+Algorithm, Media, Control, or Utility, or search by capability, tag,
 or Node type. Selecting a Node shows its summary, stable capability, detailed
 Port schemas, implementation source, and Node-specific guide.
 
@@ -57,7 +57,8 @@ and Rust project source still requires an externally built supported artifact.
 
 Selecting a project Node shows the exact source stored under `.voxa/nodes/`
 and offers **Edit in Node Lab**. Shared packages loaded through
-`.voxa/providers.json` show their exact source as read-only, while project-owned
+Official Nodes loaded through the compatibility file `.voxa/providers.json` show their exact
+source as read-only, while project-owned
 `.voxa/nodes` remain editable. Selecting a compiled built-in shows its exact
 Factory identity and a link to the authoritative Rust implementation.
 

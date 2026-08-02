@@ -31,7 +31,7 @@ results or business logic can be inserted:
 flowchart LR
     IN["Agora Ingress"] --> VAD["VAD"]
     IN --> ASR["Qwen ASR"]
-    VAD --> FUSION["Turn / Context"]
+    VAD --> FUSION["Context / Policy"]
     ASR --> FUSION
     FUSION --> LLM["Qwen LLM"]
     LLM --> TEXT["Transcript / Tool"]
@@ -48,9 +48,9 @@ TTS. Branching and joining are normal Graph capabilities; Voxa is not limited to
 | Layer | Implementation | Owns | Does not own |
 | --- | --- | --- | --- |
 | Project web | HTML/JS + Agora Web SDK | Microphone permission, channel, playback, interaction UI | Model secrets or Runtime scheduling |
-| Transport Provider | Agora C++ Node Pack | RTC ingress/egress and PCM Frame conversion | ASR, LLM, or Graph scheduling |
-| Runtime Core | Rust | Types, queues, concurrency, turns, interruption, shutdown | Vendor requests or product UI |
-| Algorithm Provider | Qwen Python Node Pack | Realtime or ASR/LLM/TTS streams | RTC channels or Edge queues |
+| Official Agora Nodes | C++ Node Pack | RTC ingress/egress and PCM Frame conversion | ASR, LLM, or Graph scheduling |
+| Runtime Core | Rust | Types, queues, concurrency, opaque Signal routing, shutdown | Vendor requests, voice turns, or product UI |
+| Official Qwen Nodes | Python Node Pack | Realtime or ASR/LLM/TTS streams | RTC channels or Edge queues |
 | Developer tools | CLI + Studio | Create, configure, validate, run, observe | Production end-user UI |
 
 ## Full duplex and barge-in
@@ -60,25 +60,27 @@ Full duplex requires more than opening two sockets. An interruption coordinates 
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant T as Agora Transport
+    participant T as Agora Nodes
     participant R as Rust Runtime
-    participant M as Qwen Provider
+    participant M as Qwen Node
     participant P as Playback
 
-    M->>R: audio Frame for the current turn
+    M->>R: response audio Frame
     R->>T: send playback audio
     T->>P: play the agent answer
     U->>T: user speaks during playback
     T->>R: new audio Frame
-    R->>R: VAD/model confirms barge-in and changes turn
-    R-->>M: interrupt / cancel Signal
-    R-->>T: stop old-turn audio
-    R->>M: begin the new turn
+    M->>M: model confirms speech and cancels its response
+    M-->>R: voxa.voice.speech.started Signal
+    R-->>T: route the opaque Signal
+    T->>T: Audio Sink clears queued playback
+    R->>M: subsequent audio continues into the same Node
 ```
 
-The Provider attempts to cancel remote generation while the Runtime filters late results by turn
-identity. Even if vendor cancellation is delayed by the network, stale audio cannot re-enter the
-current playback path.
+Interruption semantics live entirely in Nodes. The Qwen Node cancels the remote response and
+discards late chunks; the Agora Audio Sink stops queued playback. Core understands neither voice,
+turns, nor a particular Signal name—it only broadcasts the opaque Signal reliably. Custom Nodes
+can therefore reuse EventBus without placing application policy in the framework core.
 
 ## Credential and deployment boundary
 

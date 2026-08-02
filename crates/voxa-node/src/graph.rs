@@ -17,7 +17,7 @@ use napi_derive::napi;
 use serde::Deserialize;
 use voxa_core::{
     start_registered_runtime, ConfigMap, ConfigSchema, EdgePolicies, ForeignNodeCallOutput,
-    ForeignNodeFactoryAdapter, ForeignNodeInstance, ForeignNodeProvider, LifecycleCapabilities,
+    ForeignNodeConstructor, ForeignNodeFactoryAdapter, ForeignNodeInstance, LifecycleCapabilities,
     NodeDescriptor, NodeFactoryError, NodeFactoryVersion, NodeKind, NodeLanguage, NodeRegistration,
     NodeTypeName, PortDescriptor, PortDirection, PortName, RuntimeOptions, RuntimeWaitError,
 };
@@ -93,14 +93,14 @@ pub struct JsGraphCommand {
 type GraphCallback =
     Arc<ThreadsafeFunction<GraphCommand, String, JsGraphCommand, Status, false, false, 1024>>;
 
-struct TypeScriptProvider {
+struct TypeScriptNodeConstructor {
     callback: GraphCallback,
     factory_key: String,
     node_type: String,
     output_ports: Vec<PortName>,
 }
 
-impl ForeignNodeProvider for TypeScriptProvider {
+impl ForeignNodeConstructor for TypeScriptNodeConstructor {
     fn create(
         &self,
         node_id: &NodeId,
@@ -550,7 +550,7 @@ fn registration(spec: &FactorySpec, callback: GraphCallback) -> NodeRegistration
         spec.config_schema.clone(),
         LifecycleCapabilities::new(true, true, true, true),
     );
-    let provider = TypeScriptProvider {
+    let constructor = TypeScriptNodeConstructor {
         callback,
         factory_key: format!("{}@{}", spec.node_type.as_str(), spec.version.as_str()),
         node_type: spec.node_type.as_str().to_owned(),
@@ -565,7 +565,7 @@ fn registration(spec: &FactorySpec, callback: GraphCallback) -> NodeRegistration
         NodeLanguage::TypeScript,
         descriptor,
         spec.version.clone(),
-        Arc::new(ForeignNodeFactoryAdapter::new(Arc::new(provider))),
+        Arc::new(ForeignNodeFactoryAdapter::new(Arc::new(constructor))),
     )
 }
 

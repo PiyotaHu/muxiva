@@ -2,7 +2,7 @@
   "format": "voxa.node/v1",
   "package_id": "agora_audio_sink",
   "display_name": "Agora Audio Egress",
-  "node_type": "provider.agora.audio_sink",
+  "node_type": "agora.audio_sink",
   "language": "cpp",
   "factory_version": "1.0.0",
   "kind": "sink",
@@ -10,7 +10,6 @@
   "category": "transport",
   "capability": "rtc.audio.egress",
   "summary": "Publishes generated PCM Audio Frames into an Agora channel.",
-  "provider_id": "agora",
   "connection_id": "agora",
   "documentation": "https://piyotahu.github.io/Voxa/en/providers/agora/audio-egress/",
   "tags": ["rtc", "audio", "egress", "realtime"],
@@ -21,7 +20,7 @@
       "frame_type": "audio",
       "schema": {
         "encoding": "pcm_s16le",
-        "sample_rate_hz": 16000,
+        "sample_rate_hz": 48000,
         "channels": 1,
         "frame_duration_ms": 20,
         "streaming": true

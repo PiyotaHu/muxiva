@@ -28,7 +28,7 @@ flowchart LR
 flowchart LR
     IN["Agora Ingress"] --> VAD["VAD"]
     IN --> ASR["Qwen ASR"]
-    VAD --> FUSION["Turn / Context"]
+    VAD --> FUSION["Context / Policy"]
     ASR --> FUSION
     FUSION --> LLM["Qwen LLM"]
     LLM --> TEXT["字幕 / Tool"]
@@ -44,9 +44,9 @@ flowchart LR
 | 层 | 实现 | 职责 | 不负责 |
 | --- | --- | --- | --- |
 | 项目 Web | HTML/JS + Agora Web SDK | 麦克风权限、频道、播放、交互 UI | 模型密钥与 Runtime 调度 |
-| Transport Provider | Agora C++ Node Pack | RTC 收发与 PCM Frame 转换 | ASR、LLM、Graph 调度 |
-| Runtime Core | Rust | 类型、队列、并发、Turn、打断、关闭 | 厂商请求与产品 UI |
-| Algorithm Provider | Qwen Python Node Pack | Realtime 或 ASR/LLM/TTS 流 | RTC 频道与 Edge Queue |
+| Agora 官方 Node | C++ Node Pack | RTC 收发与 PCM Frame 转换 | ASR、LLM、Graph 调度 |
+| Runtime Core | Rust | 类型、队列、并发、透明 Signal 路由、关闭 | 厂商请求、语音 Turn 或产品 UI |
+| Qwen 官方 Node | Python Node Pack | Realtime 或 ASR/LLM/TTS 流 | RTC 频道与 Edge Queue |
 | 开发工具 | CLI + Studio | 创建、配置、校验、运行、观测 | 生产用户界面 |
 
 ## 全双工与 Barge-in
@@ -56,24 +56,26 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     participant U as 用户
-    participant T as Agora Transport
+    participant T as Agora Nodes
     participant R as Rust Runtime
-    participant M as Qwen Provider
+    participant M as Qwen Node
     participant P as 播放端
 
-    M->>R: 当前 Turn 的音频 Frame
+    M->>R: 回答音频 Frame
     R->>T: 发送播放音频
     T->>P: 播放 Agent 回答
     U->>T: 用户在播放期间开口
     T->>R: 新音频 Frame
-    R->>R: VAD/模型确认 Barge-in，切换 Turn
-    R-->>M: Interrupt / Cancel Signal
-    R-->>T: 停止旧 Turn 音频
-    R->>M: 开始新 Turn
+    M->>M: 模型确认用户正在说话并取消当前回答
+    M-->>R: voxa.voice.speech.started Signal
+    R-->>T: 透明转发 Signal
+    T->>T: Audio Sink 清空尚未播放的音频
+    R->>M: 后续音频继续进入同一 Node
 ```
 
-Provider 尽力取消远端生成，Runtime 同时用 Turn 身份过滤晚到结果；即使供应商的取消
-存在网络延迟，旧音频也不能重新进入当前播放链路。
+打断语义完全属于 Node：Qwen Node 负责取消远端回答并丢弃晚到片段，Agora Audio Sink
+负责停止旧音频。Core 不理解语音、Turn 或具体 Signal 名称，只负责把这个不透明 Signal
+可靠地广播给 Node。因此自定义 Node 可以复用 EventBus，而不会把业务规则写进框架核心。
 
 ## 凭据与部署边界
 

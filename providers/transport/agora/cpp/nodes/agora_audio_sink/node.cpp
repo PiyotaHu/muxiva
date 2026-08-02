@@ -89,7 +89,7 @@ public:
     const auto &name = signal.payload.signal.signal_name;
     const std::string_view value(name.data == nullptr ? "" : name.data,
                                  name.data == nullptr ? 0 : name.len);
-    if (value != "voxa.runtime.interrupt")
+    if (value != "voxa.voice.speech.started")
       return;
     std::size_t cancelled = 0;
     {
@@ -99,7 +99,7 @@ public:
       ++interruptions_;
     }
     std::fprintf(stderr,
-                 "[VOXA][AGORA][audio.cancelled] signal=voxa.runtime.interrupt "
+                 "[VOXA][AGORA][audio.cancelled] signal=voxa.voice.speech.started "
                  "bytes=%zu interruptions=%llu\n",
                  cancelled,
                  static_cast<unsigned long long>(interruptions_.load()));
@@ -197,7 +197,7 @@ private:
 extern "C" voxa_multimodal_node_factory_v1 voxa_node_pack_factory() {
   static const auto factory = voxa::MultimodalGraphNodeFactory::make<
       AgoraAudioSinkNode>(
-      "provider.agora.audio_sink", VOXA_NODE_SINK,
+      "agora.audio_sink", VOXA_NODE_SINK,
       R"json([{"name":"audio_in","direction":"input","frameType":"audio"}])json");
   return factory.view();
 }

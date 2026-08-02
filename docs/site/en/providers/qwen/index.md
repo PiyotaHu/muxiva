@@ -1,6 +1,6 @@
 # Alibaba Cloud Qwen algorithms
 
-Qwen is a Python algorithm Provider implemented against documented DashScope WebSocket and HTTP
+The official Qwen Nodes are implemented in Python against documented DashScope WebSocket and HTTP
 protocols. There is no separate Qwen SDK download.
 
 - Category: `algorithm`
@@ -16,7 +16,7 @@ Run setup, then enter the API Key and Workspace ID in Studio **Connections**:
 voxa doctor --voice
 ```
 
-Both values must belong to the same China (Beijing) workspace. The Qwen Provider requires no
+Both values must belong to the same China (Beijing) workspace. These Qwen Nodes require no
 vendor SDK download.
 
 Nodes:

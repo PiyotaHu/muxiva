@@ -4,7 +4,7 @@
 
 | 属性 | 值 |
 | --- | --- |
-| Node Type | `provider.qwen.llm_stream` |
+| Node Type | `qwen.llm_stream` |
 | 层级 / 角色 | `algorithm` / `transform` |
 | Capability | `language.generation.streaming` |
 

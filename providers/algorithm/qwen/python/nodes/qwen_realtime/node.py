@@ -73,6 +73,7 @@ class QwenAudioRealtimeNode:
         self._transport: Any | None = None
         self._response_active = False
         self._cancel_pending = False
+        self._discard_response_output = False
         self._audio_frames_sent = 0
         self._response_text = ""
         self._response_audio_bytes = 0
@@ -133,30 +134,35 @@ class QwenAudioRealtimeNode:
             if kind == "response.created":
                 self._response_active = True
                 self._cancel_pending = False
+                self._discard_response_output = False
                 self._response_text = ""
                 self._response_audio_bytes = 0
             elif kind == "response.done":
                 self._response_active = False
-                ctx.publish_event(
-                    "voxa.voice.response.completed",
-                    {"text": self._response_text, "audio_bytes": self._response_audio_bytes},
-                )
+                if not self._discard_response_output:
+                    ctx.publish_event(
+                        "voxa.voice.response.completed",
+                        {"text": self._response_text, "audio_bytes": self._response_audio_bytes},
+                    )
             elif kind == "input_audio_buffer.speech_started":
                 response_cancelled = self._response_active
                 if self._response_active:
                     self._transport.send(response_cancel())
                     self._response_active = False
                     self._cancel_pending = True
-                ctx.emit_signal("voxa.runtime.interrupt", {"provider": "qwen"})
-                ctx.publish_event("voxa.voice.speech.started", {"provider": "qwen"})
+                    self._discard_response_output = True
+                ctx.emit_signal("voxa.voice.speech.started", {"node": "qwen.audio_realtime"})
+                ctx.publish_event("voxa.voice.speech.started", {"node": "qwen.audio_realtime"})
                 if response_cancelled:
                     ctx.publish_event(
                         "voxa.voice.barge_in",
-                        {"provider": "qwen", "response_cancelled": True},
+                        {"node": "qwen.audio_realtime", "response_cancelled": True},
                     )
             elif kind == "input_audio_buffer.speech_stopped":
-                ctx.publish_event("voxa.voice.speech.stopped", {"provider": "qwen"})
+                ctx.publish_event("voxa.voice.speech.stopped", {"node": "qwen.audio_realtime"})
             elif kind == "response.audio.delta":
+                if self._discard_response_output:
+                    continue
                 audio = base64.b64decode(event["delta"], validate=True)
                 if not audio or len(audio) > 256 * 1024 or len(audio) % 2:
                     raise QwenProtocolError("invalid Qwen response audio size")
@@ -166,6 +172,8 @@ class QwenAudioRealtimeNode:
                     voxa.AudioFrame(audio, sample_rate_hz=24_000, channels=1, sequence=frame.sequence),
                 )
             elif kind in ("response.audio_transcript.delta", "response.text.delta"):
+                if self._discard_response_output:
+                    continue
                 text = event.get("delta", "")
                 if text:
                     self._response_text += text
@@ -189,13 +197,13 @@ class QwenAudioRealtimeNode:
                 error = event.get("error", {})
                 code = str(error.get("code", "unknown"))[:128]
                 message = str(error.get("message", "request failed"))[:512]
-                self._log("provider.error", code=code, message=json.dumps(message))
+                self._log("node.error", code=code, message=json.dumps(message))
                 if self._cancel_pending and _is_cancel_race(code, message):
                     self._cancel_pending = False
                     self._log("cancel.race", action="ignored", reason="response_already_done")
                     continue
                 raise QwenProtocolError(
-                    f"Qwen provider error {code}: {message}"
+                    f"Qwen Node error {code}: {message}"
                 )
 
     def on_finish(self, _ctx: Any = None) -> None:

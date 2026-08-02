@@ -5,7 +5,7 @@ though they share the Rust runtime binary.
 
 | Node type | Layer | Capability | Contract |
 | --- | --- | --- | --- |
-| `builtin.audio_resample` | Media | `audio.resample` | PCM S16LE Audio in and configured-rate Audio out |
+| `builtin.audio_resampler` | Media | `audio.resample` | PCM S16LE Audio in and configured-rate Audio out |
 | `builtin.audio_vad` | Algorithm | `speech.vad` | PCM Audio in and speech activity Event out |
 | `builtin.voice_turn_context` | Control | `conversation.turn_context` | Transcript plus speech Event in and turn context Text out |
 | `builtin.interval_tick` | Control | `clock.interval` | Periodic Event out |
@@ -15,8 +15,10 @@ though they share the Rust runtime binary.
 | `builtin.stdout_text_sink` | Utility | `observability.stdout` | UTF-8 Text in and branded stdout logging |
 
 `builtin.demo.*` factories are deterministic architecture previews used by tests and are marked
-`utility / demo.voice`. They are not production microphone, ASR, LLM, TTS, or speaker Providers.
+`utility / demo.voice`. They are not production microphone, ASR, LLM, TTS, or speaker Nodes.
 
 Select any built-in in Studio to inspect its configuration and Port schemas. Media conversion is
-explicit: incompatible sample rates should be connected through `builtin.audio_resample`, not
+explicit: incompatible sample rates should be connected through `builtin.audio_resampler`, not
 silently converted inside an Edge.
+The generic Node declares `sample_format`, `sample_rate_hz`, and `channels` in explicit `input`
+and `output` configuration objects, so 16 kHz input and 48 kHz output are not separate Node types.

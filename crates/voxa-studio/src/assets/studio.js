@@ -48,7 +48,7 @@ async function loadStudio() {
     const [graph, metadata, registrations, packages, runtime] = await Promise.all([
       api('/api/v1/graph'), api('/api/v1/studio'), api('/api/v1/registry/nodes'), api('/api/v1/node-library'), api('/api/v1/runtime'),
     ])
-    state.graph = typeof graph === 'string' ? JSON.parse(graph) : graph
+    state.graph = migrateGraph(typeof graph === 'string' ? JSON.parse(graph) : graph)
     state.runtime = runtime
     nodePackages = packages
     installCatalog([...registrations, ...packages.map(packageCatalogEntry)])
@@ -70,6 +70,27 @@ async function loadStudio() {
   } catch (error) {
     fatal(error.status === 401 ? 'The Studio access token is invalid or expired.' : error.message)
   }
+}
+
+function migrateGraph(graph) {
+  const names = {
+    'provider.agora.audio_source': 'agora.audio_source',
+    'provider.agora.audio_sink': 'agora.audio_sink',
+    'provider.qwen.audio_realtime': 'qwen.audio_realtime',
+    'provider.qwen.asr_realtime': 'qwen.asr_realtime',
+    'provider.qwen.llm_stream': 'qwen.llm_stream',
+    'provider.qwen.tts_realtime': 'qwen.tts_realtime',
+    'builtin.audio_resample': 'builtin.audio_resampler',
+  }
+  const oldSources = new Set(graph.nodes.filter(node => node.node_type === 'provider.agora.audio_source').map(node => node.id))
+  graph.nodes.forEach(node => {
+    if (node.node_type === 'provider.agora.audio_source') node.factory_version = '1.1.0'
+    node.node_type = names[node.node_type] || node.node_type
+  })
+  graph.edges = graph.edges.filter(edge => !(oldSources.has(edge.to.node_id) && edge.to.port === 'tick_in'))
+  const referenced = new Set(graph.edges.flatMap(edge => [edge.from.node_id, edge.to.node_id]))
+  graph.nodes = graph.nodes.filter(node => node.node_type !== 'builtin.interval_tick' || referenced.has(node.id))
+  return graph
 }
 
 function factoryKey(value) { return JSON.stringify([value.node_type, value.language, value.factory_version]) }
@@ -98,7 +119,7 @@ function renderPalette() {
   const selectedCategory = $('#palette-category')?.value || 'all'
   const entries = [...catalog.entries()]
     .filter(([, entry]) => selectedCategory === 'all' || (entry.category || 'utility') === selectedCategory)
-    .filter(([, entry]) => !query || [entry.display_name, entry.node_type, entry.capability, entry.provider_id, ...(entry.tags || [])].join(' ').toLowerCase().includes(query))
+    .filter(([, entry]) => !query || [entry.display_name, entry.node_type, entry.capability, ...(entry.tags || [])].join(' ').toLowerCase().includes(query))
     .sort((left, right) => `${left[1].category}:${left[1].display_name || left[1].node_type}`.localeCompare(`${right[1].category}:${right[1].display_name || right[1].node_type}`))
   const layers = new Map()
   for (const item of entries) {
@@ -113,7 +134,7 @@ function renderPalette() {
     const button = document.createElement('button'); button.className = `palette-item ${entry.kind}`; button.dataset.addNode = key; button.draggable = true
     const icon = document.createElement('span'); icon.className = `node-icon category-${entry.category || 'utility'}`; icon.textContent = (entry.category || 'utility')[0].toUpperCase()
     const copy = document.createElement('span'), label = document.createElement('b'), detail = document.createElement('small')
-    label.textContent = entry.display_name || entry.label; detail.textContent = `${entry.capability || entry.node_type} · ${entry.language}${entry.provider_id ? ` · ${entry.provider_id}` : ''}`; copy.append(label, detail)
+    label.textContent = entry.display_name || entry.label; detail.textContent = `${entry.capability || entry.node_type} · ${entry.language}`; copy.append(label, detail)
     const add = document.createElement('span'); add.textContent = '＋'; button.append(icon, copy, add); return button
     })
     group.append(heading, ...buttons); return group
@@ -184,7 +205,7 @@ function bindEvents() {
 async function openProviders() {
   $('#provider-error').textContent = ''
   try {
-    const status = await api('/api/v1/providers')
+    const status = await api('/api/v1/connections')
     renderProviderStatus(status)
     $('#provider-dialog').showModal()
   } catch (error) { toast(error.message, true) }
@@ -231,7 +252,7 @@ async function saveProviders(event) {
     payload.connections[input.dataset.connection][input.dataset.field] = input.value
   })
   try {
-    const status = await api('/api/v1/providers', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    const status = await api('/api/v1/connections', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     renderProviderStatus(status)
     toast('Connections saved to project .env. They will load automatically next time.')
   } catch (error) { $('#provider-error').textContent = error.message }
@@ -246,7 +267,7 @@ async function openTemplates() {
     const title = document.createElement('div'); title.className = 'template-title'; title.innerHTML = `<div><b>${template.name}</b><small>${template.badge}</small></div><span>${template.graph.nodes.length} Nodes</span>`
     const description = document.createElement('p'); description.textContent = template.description
     const traits = document.createElement('ul'); traits.replaceChildren(...template.traits.map((value) => { const item = document.createElement('li'); item.textContent = value; return item }))
-    const button = document.createElement('button'); button.className = 'button primary'; button.textContent = available ? 'Use this graph' : 'Provider Nodes installing'; button.disabled = !available
+    const button = document.createElement('button'); button.className = 'button primary'; button.textContent = available ? 'Use this graph' : 'Official Nodes installing'; button.disabled = !available
     button.addEventListener('click', () => applyTemplate(template))
     card.append(title, description, traits, button); return card
     })
@@ -721,7 +742,7 @@ function renderInspector() {
   edit.classList.toggle('hidden', !projectPackage?.editable)
   link.classList.toggle('hidden', Boolean(projectPackage) || node.language !== 'rust' || !node.node_type.startsWith('builtin.'))
   if (projectPackage) {
-    const location = projectPackage.origin === 'provider' ? `providers/ · ${projectPackage.package_id} · shared read-only source` : `.voxa/nodes/${projectPackage.package_id}/ · exact project source`
+    const location = projectPackage.origin === 'provider' ? `official Nodes · ${projectPackage.package_id} · shared read-only source` : `.voxa/nodes/${projectPackage.package_id}/ · exact project source`
     meta.textContent = `${projectPackage.language} · ${location}`
     code.value = projectPackage.code
   } else if (node.language === 'rust' && node.node_type.startsWith('builtin.')) {

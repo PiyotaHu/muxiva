@@ -22,7 +22,7 @@ flowchart TB
 | TypeScript | Web ecosystem, application integrations, JS teams | N-API / Worker Host | Productive development; asynchronous and Worker lifecycle matters |
 
 The language does not change a Port contract. A `text` Frame from Python ASR can enter a Rust
-Transform or C++ Sink, while the Runtime applies the same queues, backpressure, turn, and
+Transform or C++ Sink, while the Runtime applies the same queues, backpressure, Signal routing, and
 shutdown rules.
 
 ## Four rules at every boundary
@@ -41,7 +41,7 @@ A Graph stores only `node_type + language + factory_version` and configuration. 
 shared libraries, Python packages, and JavaScript packages live in trusted Node Packages loaded
 by a Factory or Host. This separates reviewable topology from the executable supply chain.
 
-## Layered Provider example
+## Layered official Node example
 
 - Agora Transport Nodes use C++ close to the official native SDK, audio callbacks, and RTC
   lifecycle.

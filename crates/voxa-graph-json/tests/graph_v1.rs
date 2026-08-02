@@ -69,6 +69,32 @@ fn factory_version_is_required_and_language_has_no_implicit_default() {
 }
 
 #[test]
+fn legacy_official_node_names_and_agora_clock_are_migrated() {
+    let legacy = r#"{
+        "version":"voxa.graph/v1",
+        "graph_id":"legacy-voice",
+        "nodes":[
+          {"id":"clock","node_type":"builtin.interval_tick","language":"rust","factory_version":"1.0.0","node_config":{"interval_ms":20}},
+          {"id":"source","node_type":"provider.agora.audio_source","language":"cpp","factory_version":"1.0.0","node_config":{}},
+          {"id":"resampler","node_type":"builtin.audio_resample","language":"rust","factory_version":"1.0.0","node_config":{"sample_rate_hz":16000}},
+          {"id":"model","node_type":"provider.qwen.audio_realtime","language":"python","factory_version":"1.0.0","node_config":{}}
+        ],
+        "edges":[
+          {"id":"tick","from":{"node_id":"clock","port":"tick_out"},"to":{"node_id":"source","port":"tick_in"},"frame_type":"event","queue_policy":{"capacity":1,"overflow":"drop_oldest"}},
+          {"id":"audio","from":{"node_id":"source","port":"audio_out"},"to":{"node_id":"resampler","port":"audio_in"},"frame_type":"audio","queue_policy":{"capacity":8,"overflow":"block"}}
+        ]
+    }"#;
+
+    let graph = parse(legacy).unwrap();
+    assert!(!graph.nodes.iter().any(|node| node.id == "clock"));
+    assert_eq!(graph.edges.len(), 1);
+    assert_eq!(graph.nodes[0].node_type, "agora.audio_source");
+    assert_eq!(graph.nodes[0].factory_version, "1.1.0");
+    assert_eq!(graph.nodes[1].node_type, "builtin.audio_resampler");
+    assert_eq!(graph.nodes[2].node_type, "qwen.audio_realtime");
+}
+
+#[test]
 fn every_core_frame_spelling_reaches_exact_port_type_validation() {
     for frame_type in ["audio", "video", "byte", "signal", "event"] {
         let changed = VALID.replacen(

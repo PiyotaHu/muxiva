@@ -33,7 +33,7 @@ body:
         - Python SDK
         - TypeScript SDK
         - C / C++ SDK
-        - Provider / RTC / Media
+        - Node integration / RTC / Media
         - Documentation / Developer Experience
         - Release / Operations
     validations:

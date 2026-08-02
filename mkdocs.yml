@@ -66,7 +66,7 @@ plugins:
             Real-time flow and control: 实时流控与控制
             Node extensibility: Node 扩展机制
             Multi-language execution: 多语言执行
-            Provider architecture: Provider 架构
+            Node architecture: Node 架构
             CLI, Studio, and web: CLI、Studio 与 Web
             End-to-end voice path: 端到端语音链路
             Build Nodes: 开发 Node
@@ -76,8 +76,8 @@ plugins:
             Rust: Rust
             C++: C++
             Integrations: 集成
-            Providers: Provider
-            Provider catalog: Provider 目录
+            Official and custom Nodes: 官方与自定义 Node
+            Node catalog: Node 目录
             Overview: 概览
             Built-in Nodes: 内置 Node
             Agora RTC: Agora RTC
@@ -124,7 +124,7 @@ nav:
       - Real-time flow and control: realtime-control.md
       - Node extensibility: extensibility.md
       - Multi-language execution: languages.md
-      - Provider architecture: provider-architecture.md
+      - Node architecture: provider-architecture.md
       - CLI, Studio, and web: developer-surfaces.md
       - End-to-end voice path: voice-architecture.md
   - Build Nodes:
@@ -134,8 +134,8 @@ nav:
       - Rust: nodes/rust.md
       - C++: nodes/cpp.md
   - Integrations:
-      - Providers: integrations.md
-      - Provider catalog:
+      - Official and custom Nodes: integrations.md
+      - Node catalog:
           - Overview: providers/index.md
           - Built-in Nodes: providers/builtin.md
           - Agora RTC:

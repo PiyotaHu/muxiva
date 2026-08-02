@@ -3,9 +3,9 @@
 Voxa is not an ASR, LLM, or TTS SDK, and it is not a flowchart that only runs
 inside a web editor. It is a **real-time multimodal Agent Runtime**. Developers
 place audio, video, text, bytes, and control messages into a typed Graph. Voxa
-owns scheduling, concurrency, backpressure, interruption, shutdown, and
-observability, while replaceable Nodes and Providers supply algorithms and
-external services.
+owns scheduling, concurrency, backpressure, Signal routing, shutdown, and
+observability, while replaceable Nodes supply algorithms, interruption policy,
+and external services.
 
 Think of a voice Agent as a factory:
 
@@ -22,9 +22,9 @@ Think of a voice Agent as a factory:
 flowchart TB
     DEV["Developers and end users"]
     SURFACE["Product and tooling<br/>voxa CLI · Studio · project web app"]
-    DEF["Definition and discovery<br/>Graph v1 · Node Manifest · Provider Manifest · Registry"]
+    DEF["Definition and discovery<br/>Graph v1 · Node Manifest · Registry · Connection"]
     LANG["Node extension layer<br/>Rust · C++ · Python · TypeScript"]
-    PROVIDER["Provider adaptation<br/>Transport · Algorithm · Media · Control · Utility"]
+    PACK["Node categories and distribution<br/>built-in · official · project"]
     CORE["Rust Runtime Core<br/>Node · Port · Edge · Frame · Graph · Scheduler"]
     EXTERNAL["External systems<br/>RTC · model APIs · codecs · devices · databases"]
 
@@ -33,9 +33,9 @@ flowchart TB
     DEF --> LANG
     DEF --> CORE
     LANG --> CORE
-    PROVIDER --> LANG
-    EXTERNAL <--> PROVIDER
-    CORE --> OBS["Bounded queues · backpressure · Turn · Signal · EventBus · metrics"]
+    PACK --> LANG
+    EXTERNAL <--> LANG
+    CORE --> OBS["Bounded queues · backpressure · Signal · EventBus · metrics"]
 ```
 
 ### 1. Rust Runtime Core: the stable kernel
@@ -65,14 +65,16 @@ implementation language does not change Graph semantics.
 
 Continue with [Multi-language execution](languages.md).
 
-### 4. Provider adaptation: vendor code stays outside Core
+### 4. Node categories: vendor code stays outside Core
 
-A Provider packages Agora, Qwen, FFmpeg, or another external capability as
-Node Packs. A Provider Manifest declares vendor, SDK, license, credentials, and
-documentation once. Node Manifests declare individual capabilities,
-configuration, and input/output schemas.
+Voxa presents one extension concept to developers: the Node. `builtin.*` Nodes
+ship with the Runtime; official Agora and Qwen Nodes demonstrate multi-language
+integrations; project Nodes live under `.voxa/nodes/`, where Studio can inspect
+and edit their source. `voxa.node.json` declares capability, configuration, and
+I/O schemas. A Connection only shares local credentials among Nodes—it is not
+another runtime entity.
 
-Continue with [Provider architecture](provider-architecture.md).
+Continue with [Node architecture](provider-architecture.md).
 
 ### 5. Product and tooling: several entrances to one Runtime
 
@@ -97,7 +99,7 @@ sequenceDiagram
     Agora->>Core: Audio Frame
     Core->>Qwen: scheduled through bounded Edge
     Qwen-->>Core: Text Frame and Audio Frame
-    Core-->>Agora: audio from the current Turn only
+    Core-->>Agora: audio over a bounded Edge
     Agora-->>Speaker: RTC playout
 ```
 
@@ -117,6 +119,6 @@ For a first visit, read:
 3. [Graph and typed Ports](graph.md);
 4. [Real-time flow and control](realtime-control.md);
 5. [Node extensibility](extensibility.md) and [multi-language execution](languages.md);
-6. [Provider architecture](provider-architecture.md);
+6. [Node architecture](provider-architecture.md);
 7. [CLI, Studio, and web](developer-surfaces.md); and
 8. [the real voice path](voice-architecture.md) and [runnable demo](voice-demo.md).

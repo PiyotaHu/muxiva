@@ -12,8 +12,8 @@ use std::{
 
 use voxa_core::{
     start_registered_runtime, AbortReason, ConfigMap, ConfigSchema, EdgeDescriptor, EdgePolicies,
-    EnabledCondition, ForeignNodeCallOutput, ForeignNodeFactoryAdapter, ForeignNodeInstance,
-    ForeignNodeProvider, GraphBuilder, GraphRunner, LifecycleCapabilities, Node, NodeContext,
+    EnabledCondition, ForeignNodeCallOutput, ForeignNodeConstructor, ForeignNodeFactoryAdapter,
+    ForeignNodeInstance, GraphBuilder, GraphRunner, LifecycleCapabilities, Node, NodeContext,
     NodeDescriptor, NodeFactoryError, NodeFactoryVersion, NodeInstances, NodeKind, NodeLanguage,
     NodeRegistration, NodeTypeName, PortDescriptor, PortDirection, PortName, QueuePolicy,
     RuntimeOptions, RuntimeWaitError, TransformPolicy, ValidationPolicy, VisibilityDescriptor,
@@ -50,11 +50,11 @@ pub struct CppMultimodalFactorySpec {
     pub create: GraphFactoryCreateCallback,
 }
 
-struct CppProvider {
+struct CppNodeConstructor {
     spec: CppFactorySpec,
 }
 
-impl ForeignNodeProvider for CppProvider {
+impl ForeignNodeConstructor for CppNodeConstructor {
     fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
         if config.is_empty() {
             Ok(())
@@ -217,18 +217,18 @@ fn cpp_registration(spec: CppFactorySpec) -> NodeRegistration {
         NodeLanguage::Cpp,
         descriptor,
         spec.version.clone(),
-        Arc::new(ForeignNodeFactoryAdapter::new(Arc::new(CppProvider {
-            spec,
-        }))),
+        Arc::new(ForeignNodeFactoryAdapter::new(Arc::new(
+            CppNodeConstructor { spec },
+        ))),
     )
 }
 
-struct CppMultimodalProvider {
+struct CppMultimodalNodeConstructor {
     spec: CppMultimodalFactorySpec,
     library: Option<Arc<Library>>,
 }
 
-impl ForeignNodeProvider for CppMultimodalProvider {
+impl ForeignNodeConstructor for CppMultimodalNodeConstructor {
     fn create(
         &self,
         node_id: &NodeId,
@@ -246,6 +246,7 @@ impl ForeignNodeProvider for CppMultimodalProvider {
             destroy: None,
             capabilities: 0,
             reserved: [0; 3],
+            take_next_source_tick_ns: None,
         };
         let mut output = empty_error();
         let config_json = voxa_graph_json::config_map_to_json(config).to_string();
@@ -260,8 +261,16 @@ impl ForeignNodeProvider for CppMultimodalProvider {
             return Err(factory_callback_error(&output));
         }
         let expected = u32::try_from(mem::size_of::<GraphNodeVtable>()).unwrap_or(u32::MAX);
+        // `take_next_source_tick_ns` is an additive, trailing ABI field. Keep loading
+        // Node packs compiled against the previous v1 header; the zero-initialized
+        // callback above makes them behave exactly as before.
+        let legacy_expected = u32::try_from(
+            mem::size_of::<GraphNodeVtable>()
+                - mem::size_of::<Option<extern "C" fn(*mut c_void) -> u64>>(),
+        )
+        .unwrap_or(u32::MAX);
         if table.abi_version != abi::ABI_VERSION
-            || table.struct_size != expected
+            || (table.struct_size != expected && table.struct_size != legacy_expected)
             || table.reserved != [0; 3]
             || table.on_process.is_none()
         {
@@ -363,7 +372,14 @@ impl ForeignNodeInstance for CppMultimodalInstance {
                 .map_err(to_voxa_error)?;
             emissions.push(voxa_core::ForeignNodeEmission::new(port, frame));
         }
-        Ok(ForeignNodeCallOutput::new(emissions, []))
+        let mut output = ForeignNodeCallOutput::new(emissions, []);
+        if let Some(callback) = self.table.take_next_source_tick_ns {
+            let delay_ns = callback(self.table.user_data);
+            if delay_ns != 0 {
+                output = output.with_next_source_tick(Duration::from_nanos(delay_ns));
+            }
+        }
+        Ok(output)
     }
 
     fn on_signal(&mut self, signal: SignalFrame) -> voxa_types::Result<ForeignNodeCallOutput> {
@@ -484,7 +500,7 @@ pub fn cpp_multimodal_registration(
         descriptor,
         spec.version.clone(),
         Arc::new(ForeignNodeFactoryAdapter::new(Arc::new(
-            CppMultimodalProvider { spec, library },
+            CppMultimodalNodeConstructor { spec, library },
         ))),
     )
 }

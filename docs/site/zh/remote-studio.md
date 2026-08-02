@@ -12,7 +12,7 @@ flowchart LR
     S -->|"WebSocket"| Q["阿里云百炼"]
 ```
 
-这种方式下，网页和麦克风在你的电脑上；Graph、Python/C++ Provider、日志和 `.env`
+这种方式下，网页和麦克风在你的电脑上；Graph、Python/C++ Node、日志和 `.env`
 仍在 Linux 服务器上。
 
 ## 推荐方案：SSH 端口转发
@@ -117,7 +117,7 @@ Studio 可以读写 Graph、保存 Connections 并启动 Runtime；不要把它�
 
 ## Linux 语音 Demo 的额外要求
 
-- Qwen Python Provider 不需要 GUI，也不需要 Qwen SDK；服务器必须能访问百炼 WebSocket。
+- Qwen Python Node 不需要 GUI，也不需要 Qwen SDK；服务器必须能访问百炼 WebSocket。
 - 浏览器麦克风由你的本地电脑提供，因此 Linux 服务器不需要声卡。
 - Agora C++ Bot 需要与你的 Linux 架构匹配的 Agora Native SDK。macOS 的自动下载包不能
   在 Linux 使用；将 Linux SDK 解压目录传给 `setup.sh`：

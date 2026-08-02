@@ -62,7 +62,7 @@ Runtime with unmanaged global threads.
 ## Discovery locations
 
 Studio and the CLI discover Packages in trusted locations, including project-local
-`.voxa/nodes/` and configured Provider roots. The Node Library displays the Manifest, Port
+`.voxa/nodes/` and configured official Node roots. The Node Library displays the Manifest, Port
 schemas, configuration, and source code. A developer can create or edit a project Node in
 Studio, import it into the Library, and place it on the canvas.
 
@@ -74,7 +74,7 @@ Studio, import it into the Library, and place it on the canvas.
 4. Connect the Node in an example Graph.
 5. Run `voxa validate <project>` to check identity, types, and topology.
 6. Test success, slow-consumer, cancellation, and error paths.
-7. Distribute it as a project Node or a Provider Node Pack.
+7. Distribute it as a project Node or an official Node Pack.
 
 Choose an implementation language in [multi-language execution](languages.md), then follow the
 [Build Nodes](nodes/index.md) tutorials.

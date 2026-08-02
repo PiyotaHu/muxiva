@@ -18,13 +18,13 @@ plays it back.
 ## 0. Current support boundary
 
 - The one-command path is verified on Apple Silicon macOS and pins Agora macOS SDK `4.6.2`.
-- Qwen Providers currently use the China (Beijing) endpoint. The API Key and
+- Qwen Nodes currently use the China (Beijing) endpoint. The API Key and
   Workspace ID must come from that same region.
 - On Windows or another platform, download the SDK from the
   [official Agora SDK page](https://docs.agora.io/en/api-reference/sdks?product=voice)
   and pass its extracted directory to `setup.sh`.
 
-## 1. Install Voxa and the Providers
+## 1. Install Voxa and the official Nodes
 
 Install Git, Rust, Python 3, CMake 3.20+, and Xcode Command Line Tools, then run:
 
@@ -94,7 +94,7 @@ The key and Workspace ID must be a matching pair from the same China (Beijing) w
 3. Follow the official [first Qwen API call guide](https://help.aliyun.com/en/model-studio/first-api-call-to-qwen)
    to locate the **Workspace ID** in the same Workspace.
 
-There is no Qwen SDK download step. Voxa's Python Provider talks directly to
+There is no Qwen SDK download step. Voxa's Python Node talks directly to
 the documented WebSocket/HTTP protocols; `setup.sh` installs its only external
 Python dependency. Realtime defaults to `qwen-audio-3.0-realtime-flash`; the
 cascade uses Qwen ASR, LLM, and TTS.
@@ -159,7 +159,7 @@ as paced 10 ms PCM packets.
 
 ## 6. Engineering verification
 
-Without credentials, verify code, Provider boundaries, and dynamic ABI loading:
+Without credentials, verify code, Node boundaries, and dynamic ABI loading:
 
 ```bash
 ./scripts/check-provider-boundaries.sh

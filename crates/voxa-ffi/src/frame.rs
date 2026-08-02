@@ -507,7 +507,7 @@ pub fn borrowed_frame_view(frame: &Frame) -> Result<FrameView, FfiError> {
             signal: abi::SignalPayload {
                 signal_name: str_view(frame.data().name().as_str()),
                 source_node_id: str_view(frame.data().source().as_str()),
-                // ABI v1 leaves structured Value serialization provider-defined.
+                // ABI v1 leaves structured Value serialization implementation-defined.
                 value: abi::BytesView {
                     data: std::ptr::null(),
                     len: 0,

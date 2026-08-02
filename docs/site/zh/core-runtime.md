@@ -94,7 +94,7 @@ text_out  · output · text
 Graph 不会根据 Node 名称猜 Port，也不存在 `any`。连接必须明确写出
 `microphone.audio_out -> asr.audio_in`，并且两端 Frame Type 完全一致。
 
-Provider Node 还可以在 Manifest 中声明更具体的 Schema，例如 PCM S16LE、16 kHz、
+官方或项目 Node 还可以在 Manifest 中声明更具体的 Schema，例如 PCM S16LE、16 kHz、
 单声道、20 ms。Studio 会把这份契约直接展示给开发者。
 
 ### Edge：有界的传送带
@@ -140,7 +140,7 @@ Graph 只写“我要哪个实现”，Registry 才保存可执行 Factory。精
 node_type + language + factory_version
 ```
 
-例如 `provider.qwen.asr_realtime + python + 1.0.0`。Runtime 不猜版本、不自动换
+例如 `qwen.asr_realtime + python + 1.0.0`。Runtime 不猜版本、不自动换
 语言，也不会因为名字相似就加载另一个 Node。校验成功后，Factory 为 Graph 中的
 每个 Node ID 创建独立运行实例。
 

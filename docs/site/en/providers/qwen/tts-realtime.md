@@ -4,7 +4,7 @@ Synthesizes incremental response text into streaming speech.
 
 | Property | Value |
 | --- | --- |
-| Node type | `provider.qwen.tts_realtime` |
+| Node type | `qwen.tts_realtime` |
 | Layer / kind | `algorithm` / `transform` |
 | Capability | `speech.tts.streaming` |
 

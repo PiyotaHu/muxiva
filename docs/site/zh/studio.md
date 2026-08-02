@@ -23,7 +23,7 @@ Studio 允许打开尚未通过校验的 Graph，以便在画布和诊断面板�
 ## 可视化开发流程
 
 Palette 将架构层级与图中角色分开：可以按 Transport、Algorithm、Media、Control 或
-Utility 过滤，也可以按 Provider、Capability、Tag 或 Node Type 搜索。选择 Node 后，
+Utility 过滤，也可以按 Capability、Tag 或 Node Type 搜索。选择 Node 后，
 Inspector 会展示功能摘要、稳定 Capability、详细 Port Schema、实现源码和独立指南。
 
 1. 将内置或项目 Node 从 Palette 拖到画布。
@@ -52,7 +52,7 @@ Manifest 身份、版本、角色与 Port 后加载。TypeScript 与 Rust 项目
 在 Studio 外构建为受支持的运行产物。
 
 选中项目 Node 后，Inspector 会展示 `.voxa/nodes/` 中保存的完整源码，并提供
-**Edit in Node Lab**。通过 `.voxa/providers.json` 加载的共享 Package 会展示精确源码，
+**Edit in Node Lab**。通过兼容配置 `.voxa/providers.json` 加载的官方 Node 会展示精确源码，
 但保持只读；项目自己的 `.voxa/nodes` 仍可编辑。选中编译内置 Node 时会展示精确 Factory 身份，并链接到
 权威 Rust 实现。
 

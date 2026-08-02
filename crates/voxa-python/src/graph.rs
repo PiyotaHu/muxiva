@@ -6,8 +6,8 @@ use pyo3::prelude::*;
 use serde::Deserialize;
 use voxa_core::{
     start_registered_runtime, AbortReason, ConfigMap, ConfigSchema, EdgePolicies,
-    ForeignCommandKind, ForeignCompletionKind, ForeignNodeCallOutput, ForeignNodeEmission,
-    ForeignNodeFactoryAdapter, ForeignNodeInstance, ForeignNodeProvider, LifecycleCapabilities,
+    ForeignCommandKind, ForeignCompletionKind, ForeignNodeCallOutput, ForeignNodeConstructor,
+    ForeignNodeEmission, ForeignNodeFactoryAdapter, ForeignNodeInstance, LifecycleCapabilities,
     NodeDescriptor, NodeFactoryError, NodeFactoryVersion, NodeKind, NodeLanguage, NodeRegistration,
     NodeTypeName, PortDescriptor, PortDirection, PortName, RuntimeOptions, RuntimeWaitError,
 };
@@ -116,7 +116,7 @@ impl PyGraphNodeFactory {
             self.config_schema.clone(),
             LifecycleCapabilities::new(true, true, true, true),
         );
-        let provider = PythonProvider {
+        let constructor = PythonNodeConstructor {
             constructor: self.constructor.clone_ref(py),
             output_ports: self
                 .ports
@@ -130,18 +130,18 @@ impl PyGraphNodeFactory {
             NodeLanguage::Python,
             descriptor,
             self.version.clone(),
-            Arc::new(ForeignNodeFactoryAdapter::new(Arc::new(provider))),
+            Arc::new(ForeignNodeFactoryAdapter::new(Arc::new(constructor))),
         )
     }
 }
 
-struct PythonProvider {
+struct PythonNodeConstructor {
     constructor: Py<PyAny>,
     output_ports: Vec<PortName>,
     pass_config: bool,
 }
 
-impl ForeignNodeProvider for PythonProvider {
+impl ForeignNodeConstructor for PythonNodeConstructor {
     fn create(
         &self,
         _node_id: &NodeId,

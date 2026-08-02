@@ -25,7 +25,7 @@ After installation, use the `voxa` binary directly. Running through `cargo run` 
 | `voxa validate my-agent` | Check identity, configuration, Ports, and topology before CI or a run | No |
 | `voxa run my-agent` | Execute a project with the concurrent Runtime | Yes |
 | `voxa studio` | Discover a project and open the local visual environment | Only after the user selects Run |
-| `voxa doctor --voice` | Check tools, Providers, native libraries, and voice credential readiness | No |
+| `voxa doctor --voice` | Check tools, official Nodes, native libraries, and voice credential readiness | No |
 | `voxa simulate --scenario voice` | Run a network-free fixture for Runtime control flow | Yes, with synthetic data |
 
 `simulate` is an engineering tool for the Runtime, not a real ASR, LLM, or TTS product demo.
@@ -37,12 +37,12 @@ Studio ships with the CLI and listens on `127.0.0.1` by default. It reads and wr
 directly and provides:
 
 - drag-and-drop Nodes and connections from an output Port to a compatible input Port;
-- filters for Transport, Algorithm, Media, Control, Utility, Provider, and Capability;
+- filters for Transport, Algorithm, Media, Control, Utility, and Capability;
 - an Inspector with Manifest data, detailed Port schemas, configuration, source, and guides;
 - a Node Lab for creating, editing, and registering project Nodes;
 - validation and execution of the canvas with Node callbacks, Edge queues, drops, events, and
   results;
-- local Provider credentials in Connections, without writing their values to the Graph.
+- local Node credentials in Connections, without writing their values to the Graph.
 
 Studio is a local development tool, not a production control plane to expose to the internet.
 See [Voxa Studio](studio.md) for the complete workflow.

@@ -73,15 +73,34 @@ class QwenNodeTests(unittest.TestCase):
         node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=7), ctx)
         self.assertEqual(transport.sent[0]["type"], "input_audio_buffer.append")
         self.assertEqual(transport.sent[1]["type"], "response.cancel")
-        self.assertEqual(ctx.signals[0][0], "voxa.runtime.interrupt")
+        self.assertEqual(ctx.signals[0][0], "voxa.voice.speech.started")
         self.assertIn(
-            ("voxa.voice.barge_in", {"provider": "qwen", "response_cancelled": True}),
+            ("voxa.voice.barge_in", {"node": "qwen.audio_realtime", "response_cancelled": True}),
             ctx.events,
         )
-        self.assertEqual(ctx.emissions[0][1].text, "你好")
-        self.assertEqual(ctx.emissions[1][1].sample_rate_hz, 24000)
+        self.assertEqual(ctx.emissions, [], "late output from the cancelled response is discarded")
         self.assertIn(("voxa.voice.transcript.preview", {"text": "用户说"}), ctx.events)
         self.assertIn(("voxa.voice.transcript.completed", {"text": "用户说"}), ctx.events)
+
+    def test_uncancelled_response_emits_text_audio_and_completion(self):
+        transport = FakeTransport([
+            {"type": "response.created"},
+            {"type": "response.audio_transcript.delta", "delta": "你好"},
+            {"type": "response.audio.delta", "delta": "AQIDBA=="},
+            {"type": "response.done"},
+        ])
+        node = module.QwenAudioRealtimeNode({}, lambda *_: transport)
+        with mock.patch.dict(os.environ, {
+            "DASHSCOPE_API_KEY": "secret", "DASHSCOPE_WORKSPACE_ID": "workspace"
+        }):
+            node.on_prepare()
+        ctx = Context()
+        node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=8), ctx)
+        self.assertEqual([port for port, _ in ctx.emissions], ["text_out", "audio_out"])
+        self.assertIn(
+            ("voxa.voice.response.completed", {"text": "你好", "audio_bytes": 4}),
+            ctx.events,
+        )
 
     def test_session_update_contains_no_credentials(self):
         update = module.session_update({})
@@ -109,7 +128,7 @@ class QwenNodeTests(unittest.TestCase):
         ctx = Context()
         node.on_process(AudioFrame(b"\0" * 640, 16000), ctx)
         self.assertEqual([item["type"] for item in transport.sent], ["input_audio_buffer.append"])
-        self.assertEqual(ctx.signals[0][0], "voxa.runtime.interrupt")
+        self.assertEqual(ctx.signals[0][0], "voxa.voice.speech.started")
         self.assertFalse(any(topic == "voxa.voice.barge_in" for topic, _ in ctx.events))
 
     def test_late_cancel_error_does_not_abort_the_next_turn(self):

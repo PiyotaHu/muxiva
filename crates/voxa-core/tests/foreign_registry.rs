@@ -1,19 +1,19 @@
 use std::sync::{Arc, Mutex};
 
 use voxa_core::{
-    ConfigMap, ForeignNodeCallOutput, ForeignNodeFactoryAdapter, ForeignNodeInstance,
-    ForeignNodeProvider, NodeFactory, NodeFactoryError, PortName,
+    ConfigMap, ForeignNodeCallOutput, ForeignNodeConstructor, ForeignNodeFactoryAdapter,
+    ForeignNodeInstance, NodeFactory, NodeFactoryError, PortName,
 };
 use voxa_types::{Frame, NodeId, VoxaError};
 
 #[derive(Default)]
 struct Calls(Vec<&'static str>);
 
-struct Provider {
+struct Constructor {
     calls: Arc<Mutex<Calls>>,
 }
 
-impl ForeignNodeProvider for Provider {
+impl ForeignNodeConstructor for Constructor {
     fn create(
         &self,
         _node_id: &NodeId,
@@ -53,9 +53,9 @@ impl ForeignNodeInstance for Instance {
 }
 
 #[test]
-fn provider_creation_does_not_run_lifecycle_and_adapter_preserves_order() {
+fn constructor_creation_does_not_run_lifecycle_and_adapter_preserves_order() {
     let calls = Arc::new(Mutex::new(Calls::default()));
-    let factory = ForeignNodeFactoryAdapter::new(Arc::new(Provider {
+    let factory = ForeignNodeFactoryAdapter::new(Arc::new(Constructor {
         calls: calls.clone(),
     }));
     let mut node = factory

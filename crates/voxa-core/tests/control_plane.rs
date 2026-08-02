@@ -7,18 +7,18 @@ use std::{
 };
 
 use voxa_core::{
-    ConcurrentRuntime, ConfigMap, ConfigSchema, ConnectionState, ControlApplyOutcome, DrainMode,
-    EdgeDescriptor, EdgePolicies, EnabledCondition, EventBus, GraphBuilder, LifecycleCapabilities,
-    Node, NodeContext, NodeDescriptor, NodeInstances, NodeKind, NodeTypeName, PortDescriptor,
-    PortDirection, PortName, QueueOverflowPolicy, QueuePolicy, ResourceKey, ResourceStore,
-    ResourceStoreError, RuntimeOptions, RuntimeWaitError, SignalEmissionError, TransformPolicy,
-    TransportControl, ValidationPolicy, VisibilityDescriptor,
+    ConcurrentRuntime, ConfigMap, ConfigSchema, EdgeDescriptor, EdgePolicies, EnabledCondition,
+    EventBus, GraphBuilder, LifecycleCapabilities, Node, NodeContext, NodeDescriptor,
+    NodeInstances, NodeKind, NodeTypeName, PortDescriptor, PortDirection, PortName,
+    QueueOverflowPolicy, QueuePolicy, ResourceKey, ResourceStore, ResourceStoreError,
+    RuntimeOptions, RuntimeWaitError, SignalEmissionError, TransformPolicy, ValidationPolicy,
+    VisibilityDescriptor,
 };
 use voxa_types::{
     ClockDomain, ClockDomainId, ClockKind, EdgeId, EventData, EventFrame, Extensions, Frame,
     FrameHeader, FrameId, FramePayload, FrameType, Lineage, Metadata, NamespacedName, NodeId,
-    SchemaVersion, SequenceId, SignalData, SignalFrame, StreamId, TextData, Timestamp, TraceId,
-    TurnId, Value, VoxaError,
+    SchemaVersion, SequenceId, SignalData, SignalFrame, StreamId, Timestamp, TraceId, Value,
+    VoxaError,
 };
 
 fn node_id(value: &str) -> NodeId {
@@ -44,14 +44,6 @@ fn header(sequence: u64, frame_type: FrameType, prefix: &str) -> FrameHeader {
         Metadata::empty(),
         Extensions::empty(),
         Lineage::empty(),
-    )
-    .unwrap()
-}
-
-fn text_frame(sequence: u64) -> Frame {
-    Frame::new(
-        header(sequence, FrameType::Text, "text"),
-        FramePayload::Text(TextData::new(sequence.to_string())),
     )
     .unwrap()
 }
@@ -313,149 +305,6 @@ fn resource_store_reports_missing_and_wrong_types_and_cleans_up() {
         store.get::<u64>(&key),
         Err(ResourceStoreError::Missing { .. })
     ));
-}
-
-#[test]
-fn turn_snapshot_switch_stale_filter_and_interrupt_are_atomic_and_idempotent() {
-    let turn_one = TurnId::new("turn-1").unwrap();
-    let turn_two = TurnId::new("turn-2").unwrap();
-    let control = TransportControl::new(turn_one.clone());
-    assert_eq!(control.interrupt(&turn_one), ControlApplyOutcome::Applied);
-    assert_eq!(
-        control.interrupt(&turn_one),
-        ControlApplyOutcome::AlreadyApplied
-    );
-    assert!(control.snapshot().interrupted());
-
-    let old = control
-        .stamp_frame(
-            &text_frame(1),
-            FrameId::new("turn-frame-1").unwrap(),
-            node_id("source"),
-        )
-        .unwrap();
-    assert_eq!(
-        control.transition_turn(turn_two.clone()),
-        ControlApplyOutcome::Applied
-    );
-    let snapshot = control.snapshot();
-    assert_eq!(snapshot.turn_id(), &turn_two);
-    assert!(!snapshot.interrupted());
-    assert!(!snapshot.audio_ended());
-    assert!(!control.should_deliver_to_sink(&old).unwrap());
-    assert_eq!(control.stale_sink_drops(), 1);
-
-    let current = control
-        .stamp_frame(
-            &text_frame(2),
-            FrameId::new("turn-frame-2").unwrap(),
-            node_id("source"),
-        )
-        .unwrap();
-    assert!(control.should_deliver_to_sink(&current).unwrap());
-    assert_eq!(control.interrupt(&turn_one), ControlApplyOutcome::StaleTurn);
-    assert_eq!(
-        control.set_connection(ConnectionState::Connected),
-        ControlApplyOutcome::Applied
-    );
-}
-
-#[test]
-fn runtime_interrupt_advances_turn_and_invalidates_in_flight_frames() {
-    let control = TransportControl::new(TurnId::new("turn.initial").unwrap());
-    let old = control
-        .stamp_frame(
-            &text_frame(3),
-            FrameId::new("before-barge-in").unwrap(),
-            node_id("microphone"),
-        )
-        .unwrap();
-
-    let next = control.advance_after_interrupt();
-
-    assert_eq!(next.as_str(), "turn.runtime.1");
-    assert_eq!(control.snapshot().turn_id(), &next);
-    assert!(!control.should_deliver_to_sink(&old).unwrap());
-    let current = control
-        .stamp_frame(
-            &text_frame(4),
-            FrameId::new("after-barge-in").unwrap(),
-            node_id("microphone"),
-        )
-        .unwrap();
-    assert!(control.should_deliver_to_sink(&current).unwrap());
-}
-
-struct TurnSource {
-    control: TransportControl,
-}
-
-impl Node for TurnSource {
-    fn on_process(
-        &mut self,
-        _: Option<Frame>,
-        context: &mut NodeContext,
-    ) -> voxa_types::Result<()> {
-        let old = self
-            .control
-            .stamp_frame(
-                &text_frame(10),
-                FrameId::new("runtime-old-turn").unwrap(),
-                node_id("source"),
-            )
-            .unwrap();
-        self.control.transition_turn(TurnId::new("turn-2").unwrap());
-        let current = self
-            .control
-            .stamp_frame(
-                &text_frame(11),
-                FrameId::new("runtime-current-turn").unwrap(),
-                node_id("source"),
-            )
-            .unwrap();
-        context.emit(port("out"), old)?;
-        context.emit(port("out"), current)?;
-        Ok(())
-    }
-}
-
-struct CollectSink(Arc<Mutex<Vec<u64>>>);
-
-impl Node for CollectSink {
-    fn on_process(&mut self, frame: Option<Frame>, _: &mut NodeContext) -> voxa_types::Result<()> {
-        self.0
-            .lock()
-            .unwrap()
-            .push(frame.unwrap().header().sequence_id().get());
-        Ok(())
-    }
-}
-
-#[test]
-fn concurrent_runtime_filters_old_turn_immediately_before_sink() {
-    let control = TransportControl::new(TurnId::new("turn-1").unwrap());
-    let received = Arc::new(Mutex::new(Vec::new()));
-    let mut nodes: NodeInstances = BTreeMap::new();
-    nodes.insert(
-        node_id("source"),
-        Box::new(TurnSource {
-            control: control.clone(),
-        }),
-    );
-    nodes.insert(node_id("sink"), Box::new(CollectSink(received.clone())));
-    let runtime = ConcurrentRuntime::new(
-        connected_graph(),
-        nodes,
-        EdgePolicies::new(),
-        RuntimeOptions::new(DrainMode::Discard, DrainMode::Discard),
-    )
-    .unwrap()
-    .with_transport_control(control.clone())
-    .start()
-    .unwrap();
-    runtime.wait(Duration::from_secs(2)).unwrap();
-    assert_eq!(*received.lock().unwrap(), [11]);
-    assert_eq!(control.stale_sink_drops(), 1);
 }
 
 #[test]

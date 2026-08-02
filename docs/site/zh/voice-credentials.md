@@ -70,7 +70,7 @@ Agora Console 也提供 **Generate Temp Token**。为了让 Voxa 的浏览器与
 
 1. 登录[阿里云百炼控制台](https://bailian.console.aliyun.com/)。
 2. 如果提示未开通或未实名认证，先按页面提示完成。
-3. 在页面右上角将地域切换为 **华北 2（北京）**。Voxa 当前 Qwen Provider 使用北京
+3. 在页面右上角将地域切换为 **华北 2（北京）**。Voxa 当前 Qwen Node 使用北京
    Workspace 专属端点，之后不要切换地域。
 
 ### B2. 创建 API Key
@@ -94,7 +94,7 @@ Agora Console 也提供 **Generate Temp Token**。为了让 Voxa 的浏览器与
 官方步骤：[获取 Workspace ID](https://help.aliyun.com/zh/model-studio/obtain-the-app-id-and-workspace-id)。
 API Key 和 Workspace ID 若跨地域或跨业务空间组合，WebSocket 会鉴权失败。
 
-这里没有“下载 Qwen SDK”步骤。Voxa 的 Python Provider 直接调用百炼官方 WebSocket/HTTP
+这里没有“下载 Qwen SDK”步骤。Voxa 的 Python Node 直接调用百炼官方 WebSocket/HTTP
 协议，`setup.sh` 会安装所需 Python 依赖。
 
 ## C. 在 Voxa 中只填写一次
@@ -131,7 +131,7 @@ voxa doctor --voice
 tail -f examples/voice-agent/.voxa/runtime.log
 ```
 
-`doctor` 只检查工具链、Provider 和凭据是否存在，不会替你创建 Token，也不会输出密钥。
+`doctor` 只检查工具链、官方 Node 和凭据是否存在，不会替你创建 Token，也不会输出密钥。
 真实会话按以下顺序定位：
 
 1. Voice Room：`Browser joined Agora`、`microphone published`；

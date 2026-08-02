@@ -1036,9 +1036,14 @@ fn read_package(
     origin: String,
     editable: bool,
 ) -> io::Result<NodePackage> {
-    let manifest: NodePackageManifest =
+    let mut manifest: NodePackageManifest =
         serde_json::from_str(&fs::read_to_string(directory.join("voxa.node.json"))?)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    let legacy_node_type = manifest.node_type.clone();
+    manifest.node_type = voxa_graph_json::canonical_node_type(&legacy_node_type).to_owned();
+    if legacy_node_type == "provider.agora.audio_source" {
+        manifest.factory_version = "1.1.0".to_owned();
+    }
     let provider_manifest = read_nearest_provider_manifest(&directory, provider_root)?;
     if let (Some(expected), Some(provider)) = (&manifest.provider_id, &provider_manifest) {
         if expected != &provider.provider_id {
@@ -1161,8 +1166,14 @@ fn cpp_registration(
     manifest: &NodePackageManifest,
 ) -> Result<NodeRegistration, String> {
     let path = cpp_artifact_path(graph, &manifest.package_id);
-    let registration = voxa_ffi::load_cpp_multimodal_node_pack(&path)?;
+    let mut registration = voxa_ffi::load_cpp_multimodal_node_pack(&path)?;
     validate_cpp_registration(manifest, &registration)?;
+    if registration.descriptor().node_type().as_str() != manifest.node_type {
+        registration = voxa_ffi::load_cpp_multimodal_node_pack_as(
+            &path,
+            NodeTypeName::new(manifest.node_type.clone()).map_err(|error| error.to_string())?,
+        )?;
+    }
     Ok(registration)
 }
 
@@ -1177,8 +1188,19 @@ fn validate_cpp_registration(
         "sink" => NodeKind::Sink,
         _ => return Err("invalid C++ Node kind".into()),
     };
+    if voxa_graph_json::canonical_node_type(descriptor.node_type().as_str()) == manifest.node_type
+        && registration.version().as_str() != manifest.factory_version
+    {
+        return Err(format!(
+            "C++ artifact `{}` is version {}, but its Manifest requires {}; rebuild the Node pack",
+            manifest.package_id,
+            registration.version().as_str(),
+            manifest.factory_version
+        ));
+    }
     if registration.language() != NodeLanguage::Cpp
-        || descriptor.node_type().as_str() != manifest.node_type
+        || voxa_graph_json::canonical_node_type(descriptor.node_type().as_str())
+            != manifest.node_type
         || registration.version().as_str() != manifest.factory_version
         || descriptor.kind() != expected_kind
         || descriptor.ports().len() != manifest.ports.len()

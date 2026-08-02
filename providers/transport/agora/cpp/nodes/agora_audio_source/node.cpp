@@ -2,6 +2,7 @@
 #include <voxa/voxa.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
@@ -47,6 +48,7 @@ class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode,
   }
 
   void on_process(const voxa_frame_view_v1*, voxa::GraphNodeContext& ctx) override {
+    ctx.schedule_next_tick(std::chrono::milliseconds(20));
     OwnedAudio audio;
     std::size_t combined_frames = 0;
     {
@@ -162,7 +164,8 @@ class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode,
 
 extern "C" voxa_multimodal_node_factory_v1 voxa_node_pack_factory() {
   static const auto factory = voxa::MultimodalGraphNodeFactory::make<AgoraAudioSourceNode>(
-      "provider.agora.audio_source", VOXA_NODE_TRANSFORM,
-      R"json([{"name":"tick_in","direction":"input","frameType":"event"},{"name":"audio_out","direction":"output","frameType":"audio"}])json");
+      "agora.audio_source", VOXA_NODE_SOURCE,
+      R"json([{"name":"audio_out","direction":"output","frameType":"audio"}])json",
+      "{}", "1.1.0");
   return factory.view();
 }

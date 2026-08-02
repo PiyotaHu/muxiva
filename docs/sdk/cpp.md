@@ -57,10 +57,16 @@ no `context.emit` call implements a Sink, and named emissions implement
 multi-port output. The previous vector-returning override remains available for
 source compatibility. Override
 `void on_signal(const voxa_frame_view_v1&)` to receive graph Signals such as
-`voxa.runtime.interrupt`; emitting new control actions from C++ still requires a future
+`voxa.voice.speech.started`; emitting new control actions from C++ still requires a future
 context extension. Audio PCM, packed RGBA8 or I420 video, text, and bytes are copied
 and validated by Rust before queue admission. See
 `cpp/examples/multimodal_graph.cpp`.
+
+A Source controls its own polling cadence with
+`context.schedule_next_tick(std::chrono::milliseconds(20))`. This scheduling request is
+returned through an additive trailing ABI callback; Node packs built against the previous v1
+header remain loadable. Device and RTC Sources therefore do not need a surprising clock Node or
+`tick_in` Port in the user's Graph.
 
 ## Agora RTC adapter
 

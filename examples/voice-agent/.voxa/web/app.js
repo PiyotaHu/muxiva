@@ -159,7 +159,7 @@ async function join() {
       if (!connection[field]) throw new Error(`Agora browser field ${field} is not configured.`)
     }
     message('Starting Voxa graph…', 'Loading native and Python Node Packs')
-    diagnostic('Starting Voxa Runtime and loading Provider Nodes')
+    diagnostic('Starting Voxa Runtime and loading official Nodes')
     await startRuntime()
     client = window.AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' })
     client.on('user-published', async (user, mediaType) => {

@@ -1,6 +1,6 @@
 # 阿里云 Qwen 算法层
 
-Qwen 是 Python Algorithm Provider，直接使用 DashScope 官方 WebSocket 与 HTTP 协议，
+Qwen 官方 Node 使用 Python 实现，直接调用 DashScope 官方 WebSocket 与 HTTP 协议，
 不需要另外下载所谓的 Qwen SDK。
 
 - 分类：`algorithm`
@@ -16,7 +16,7 @@ Qwen 是 Python Algorithm Provider，直接使用 DashScope 官方 WebSocket 与
 voxa doctor --voice
 ```
 
-两者必须来自华北 2（北京）的同一业务空间。Qwen Provider 不需要下载厂商 SDK。
+两者必须来自华北 2（北京）的同一业务空间。这些 Qwen Node 不需要下载厂商 SDK。
 
 Node：
 

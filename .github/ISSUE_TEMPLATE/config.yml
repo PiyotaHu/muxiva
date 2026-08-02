@@ -8,4 +8,4 @@ contact_links:
     about: Report vulnerabilities privately. Never disclose a vulnerability in a public Issue.
   - name: Documentation
     url: https://piyotahu.github.io/Voxa/
-    about: Read the installation, Studio, Node, SDK, provider, and testing guides.
+    about: Read the installation, Studio, Node, SDK, integration, and testing guides.

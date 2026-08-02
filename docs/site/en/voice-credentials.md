@@ -69,7 +69,7 @@ identities, this guide uses Token Builder to generate two explicit numeric-UID t
 1. Sign in to [Alibaba Cloud Model Studio](https://bailian.console.aliyun.com/).
 2. Complete activation or identity verification if prompted.
 3. In the upper-right corner, select **China (Beijing)** and keep this region selected. Voxa's
-   current Qwen Provider uses the Beijing workspace endpoint.
+   current Qwen Nodes use the Beijing workspace endpoint.
 
 ### B2. Create the API key
 
@@ -92,7 +92,7 @@ Voxa expects a pay-as-you-go Model Studio key, not a Coding Plan or Token Plan k
 Official instructions: [obtain a Workspace ID](https://help.aliyun.com/en/model-studio/obtain-the-app-id-and-workspace-id).
 A region or workspace mismatch causes WebSocket authentication failures.
 
-There is no Qwen SDK download. Voxa's Python Provider uses the documented WebSocket/HTTP
+There is no Qwen SDK download. Voxa's Python Nodes use the documented WebSocket/HTTP
 protocols, and `setup.sh` installs the Python dependency.
 
 ## C. Save the values once in Voxa
@@ -129,7 +129,7 @@ voxa doctor --voice
 tail -f examples/voice-agent/.voxa/runtime.log
 ```
 
-`doctor` checks tooling, Providers, and credential presence. It does not issue tokens or print
+`doctor` checks tooling, official Nodes, and credential presence. It does not issue tokens or print
 secret values. Follow a real session in order:
 
 1. Voice Room reports `Browser joined Agora` and `microphone published`.

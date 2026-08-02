@@ -161,6 +161,7 @@ typedef struct voxa_graph_node_vtable_v1 {
   voxa_node_destroy_fn_v1 destroy;
   uint64_t capabilities;
   uint64_t reserved[3];
+  uint64_t (*take_next_source_tick_ns)(void *);
 } voxa_graph_node_vtable_v1;
 typedef voxa_status_v1 (*voxa_multimodal_node_factory_create_fn_v1)(
     void *, voxa_str_v1, voxa_str_v1, voxa_graph_node_vtable_v1 *, voxa_error_v1 *);

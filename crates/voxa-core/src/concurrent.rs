@@ -13,8 +13,7 @@ use std::{
 };
 
 use voxa_types::{
-    EdgeId, ErrorCategory, Frame, FrameId, NodeId, SignalFrame, TransformOrigin, TurnId, Value,
-    VoxaError,
+    EdgeId, ErrorCategory, Frame, NodeId, SignalFrame, TransformOrigin, Value, VoxaError,
 };
 
 use crate::queue::QueueWake;
@@ -24,12 +23,9 @@ use crate::{
     EdgePolicies, EdgePolicy, EnabledCondition, EnqueueOutcome, GraphDefinition,
     GraphRunnerBuildError, Node, NodeContext, NodeEmission, NodeInstances, NodeKind, PortDirection,
     PortName, QueuePushError, ResourceStore, SignalQueuePushError, StopToken, TransformPolicy,
-    TransportControl, ValidationDecision, ValidationFailureAction, ValidationPolicy,
-    RUNTIME_INTERRUPT_SIGNAL,
+    ValidationDecision, ValidationFailureAction, ValidationPolicy,
 };
 use crate::{EventBus, SignalQueueSnapshot};
-
-static NEXT_TURN_STAMP: AtomicU64 = AtomicU64::new(1);
 
 /// Stage 5A scheduler options. Admission is deliberately fixed at one active
 /// callback per node; later profiles may lower or raise the declared ceiling.
@@ -334,7 +330,6 @@ pub struct ConcurrentRuntime {
     options: RuntimeOptions,
     event_bus: EventBus,
     resources: ResourceStore,
-    transport: TransportControl,
 }
 
 impl ConcurrentRuntime {
@@ -362,9 +357,6 @@ impl ConcurrentRuntime {
             options,
             event_bus: EventBus::default(),
             resources: ResourceStore::new(),
-            transport: TransportControl::new(
-                TurnId::new("turn.initial").expect("valid static turn ID"),
-            ),
         })
     }
 
@@ -375,11 +367,6 @@ impl ConcurrentRuntime {
 
     pub fn with_resources(mut self, resources: ResourceStore) -> Self {
         self.resources = resources;
-        self
-    }
-
-    pub fn with_transport_control(mut self, transport: TransportControl) -> Self {
-        self.transport = transport;
         self
     }
 
@@ -452,7 +439,6 @@ impl ConcurrentRuntime {
             abort_diagnostics: abort_diagnostics.clone(),
             event_bus: self.event_bus.clone(),
             resources: self.resources.clone(),
-            transport: self.transport.clone(),
             node_metrics: node_metrics.clone(),
         });
 
@@ -604,7 +590,6 @@ impl ConcurrentRuntime {
             abort_diagnostics,
             event_bus: self.event_bus,
             resources: self.resources,
-            transport: self.transport,
             node_metrics,
         })
     }
@@ -621,7 +606,6 @@ pub struct GraphRuntime {
     abort_diagnostics: Arc<Mutex<Vec<AbortHookDiagnostic>>>,
     event_bus: EventBus,
     resources: ResourceStore,
-    transport: TransportControl,
     node_metrics: Arc<BTreeMap<NodeId, NodeMetrics>>,
 }
 
@@ -665,10 +649,6 @@ impl GraphRuntime {
 
     pub const fn resources(&self) -> &ResourceStore {
         &self.resources
-    }
-
-    pub const fn transport_control(&self) -> &TransportControl {
-        &self.transport
     }
 
     pub fn abort_diagnostics(&self) -> Vec<AbortHookDiagnostic> {
@@ -918,7 +898,6 @@ struct WorkerShared {
     abort_diagnostics: Arc<Mutex<Vec<AbortHookDiagnostic>>>,
     event_bus: EventBus,
     resources: ResourceStore,
-    transport: TransportControl,
     node_metrics: Arc<BTreeMap<NodeId, NodeMetrics>>,
 }
 
@@ -1103,29 +1082,6 @@ impl NodeWorker {
                 }
             }
             if let Some((index, frame)) = received {
-                let is_sink = self
-                    .shared
-                    .graph
-                    .node(&self.node_id)
-                    .expect("validated node")
-                    .descriptor()
-                    .kind()
-                    == NodeKind::Sink;
-                if is_sink {
-                    match self.shared.transport.should_deliver_to_sink(&frame) {
-                        Ok(true) => {}
-                        Ok(false) => continue,
-                        Err(error) => {
-                            let reason = error.to_string();
-                            return Err(runtime_abort_details(
-                                "VOXA-TRANSPORT-TURN-FRAME",
-                                "invalid turn scope before Sink delivery",
-                                Some(self.node_id.clone()),
-                                [("reason", reason.as_str())],
-                            ));
-                        }
-                    }
-                }
                 let input_port = self.incoming[index].port.clone();
                 let output = call_process(
                     &mut *self.node,
@@ -1155,17 +1111,6 @@ impl NodeWorker {
     }
 
     fn route(&mut self, output: NodeCallOutput) -> Result<(), AbortReason> {
-        // Barge-in is a graph-wide control transition, not merely an adjacent
-        // edge notification. Advance the private turn before routing this
-        // callback so every previously stamped response becomes stale at the
-        // mandatory Sink gate immediately.
-        if output
-            .signals
-            .iter()
-            .any(|signal| signal.data().name().as_str() == RUNTIME_INTERRUPT_SIGNAL)
-        {
-            self.shared.transport.advance_after_interrupt();
-        }
         let descriptor = self
             .shared
             .graph
@@ -1176,7 +1121,7 @@ impl NodeWorker {
             .map(|_| Vec::new())
             .collect::<Vec<_>>();
         for emission in output.emissions {
-            let (output_port, mut frame) = emission.into_parts();
+            let (output_port, frame) = emission.into_parts();
             let Some(port) = descriptor.ports().iter().find(|candidate| {
                 candidate.name() == &output_port && candidate.direction() == PortDirection::Output
             }) else {
@@ -1195,39 +1140,6 @@ impl NodeWorker {
                     AbortCategory::NodeError,
                     AbortStage::Process,
                 ));
-            }
-            match self.shared.transport.frame_turn(&frame) {
-                Ok(Some(_)) => {}
-                Ok(None) => {
-                    let stamp = NEXT_TURN_STAMP.fetch_add(1, Ordering::Relaxed);
-                    frame = self
-                        .shared
-                        .transport
-                        .stamp_frame(
-                            &frame,
-                            FrameId::new(format!("runtime-turn-stamp-{stamp}"))
-                                .expect("bounded runtime frame ID"),
-                            self.node_id.clone(),
-                        )
-                        .map_err(|error| {
-                            let reason = error.to_string();
-                            runtime_abort_details(
-                                "VOXA-TRANSPORT-TURN-STAMP",
-                                "failed to attach runtime turn scope to emitted frame",
-                                Some(self.node_id.clone()),
-                                [("reason", reason.as_str())],
-                            )
-                        })?;
-                }
-                Err(error) => {
-                    let reason = error.to_string();
-                    return Err(runtime_abort_details(
-                        "VOXA-TRANSPORT-TURN-FRAME",
-                        "node emitted a frame with an invalid turn scope",
-                        Some(self.node_id.clone()),
-                        [("reason", reason.as_str())],
-                    ));
-                }
             }
             for (index, output) in self.outgoing.iter().enumerate() {
                 if output.descriptor.from_output_port() == &output_port {

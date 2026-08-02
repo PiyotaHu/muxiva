@@ -8,7 +8,7 @@ Voxa 把通信分成数据面和控制面：
 ```mermaid
 flowchart LR
     N1["上游 Node"] -->|"Frame · 经过类型化 Edge"| N2["下游 Node"]
-    N1 -.->|"Signal · Runtime 控制"| R["Rust Runtime"]
+    N1 -.->|"Signal · 不透明控制消息"| R["Rust Runtime"]
     N1 -.->|"Event · 全局观察"| B["EventBus"]
     R -.->|"on_signal"| N2
     B -.-> UI["Studio · 日志 · 指标 · 应用"]
@@ -21,23 +21,24 @@ Overflow Policy 和拓扑约束。下游 Node 收到 Frame 后，才执行 `on_p
 
 ## Signal：改变运行状态的控制消息
 
-Signal 用于打断、取消、Turn 切换或其他 Runtime 控制。Node 通过
-`ctx.emit_signal(...)` 发出，由 Runtime 决定传播与处理，不需要把控制信息伪装成
-普通文本或音频。
+Signal 用于打断、取消、刷新缓存或其他跨 Node 控制。Node 通过
+`ctx.emit_signal(...)` 发出，Runtime 只负责广播，并调用接收 Node 的 `on_signal`；
+Core 不解释 Signal 名称，也不执行语音业务规则。
 
-典型场景是 Barge-in：用户在 Agent 播放回答时重新说话，VAD Node 发出打断 Signal，
-Runtime 结束旧 Turn，取消旧生成，并阻止旧音频继续进入扬声器。
+典型场景是 Barge-in：用户在 Agent 播放回答时重新说话，Qwen Realtime 或 VAD Node
+发出 `voxa.voice.speech.started`。Qwen Node 取消自己的生成并丢弃晚到片段，Agora
+Audio Sink 收到同一 Signal 后清空播放队列。Runtime 只负责投递。
 
 ## EventBus：让旁观者知道发生了什么
 
-Event 是全局可观察通知，例如转写完成、首 Token 到达、Provider 重连或延迟超限。
+Event 是全局可观察通知，例如转写完成、首 Token 到达、Node 重连或延迟超限。
 Node 用 `ctx.publish_event(...)` 发布；Studio、日志、指标系统或应用订阅者可以观察，
 但 Event 不替代 Graph 的业务数据流。
 
 | 需求 | 应使用 |
 | --- | --- |
 | 把音频交给 ASR | Frame + Edge |
-| 通知 Runtime 停止旧回答 | Signal |
+| 通知相关 Node 停止旧回答 | Signal |
 | 在 Studio 展示转写或延迟 | EventBus Event |
 | 把 LLM 文本交给 TTS | Frame + Edge |
 
@@ -55,18 +56,19 @@ Node 用 `ctx.publish_event(...)` 发布；Studio、日志、指标系统或应�
 无限队列看似“不丢数据”，实际上会把短暂拥塞变成长延迟和内存失控。Voxa 强制开发者
 明确选择容量和策略，使延迟、完整性和故障行为可预测。
 
-## Turn 与打断
+## 业务会话与打断
 
-Turn 表示一次可被整体管理的交互。Frame 的标识、时间和 Lineage 让 Runtime 能判断
-结果属于哪个 Turn。发生打断后，系统需要同时做到：
+如果应用需要 Turn，它应由模型 Node、上下文 Node 或项目 Node 管理，而不是由 Core
+硬编码。发生打断时，相关 Node 通常需要做到：
 
-1. 标记旧 Turn 已取消；
-2. 向支持取消的 Provider/Node 发送控制；
-3. 清理或忽略队列中的旧 Frame；
-4. 拒绝晚到的旧模型结果；
-5. 让新 Turn 立即获得调度机会。
+1. 模型 Node 取消当前远端请求；
+2. 模型 Node 丢弃该请求晚到的片段；
+3. 播放 Node 清理尚未播放的音频；
+4. EventBus 发布可供 UI 展示的状态；
+5. 后续输入继续沿 Graph 流动。
 
-这比在 TTS Node 里写一个布尔变量更可靠，因为打断同时影响模型、队列、播放和观测。
+策略留在 Node，机制留在 Core：既能协调模型、播放和观测，也不会让通用 Runtime
+依赖某一家模型或某一种语音交互协议。
 
 ## 生命周期与关闭
 

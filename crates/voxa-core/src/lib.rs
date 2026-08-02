@@ -22,7 +22,6 @@ pub mod registry;
 pub mod resource;
 pub mod runner;
 mod signal;
-pub mod transport;
 
 pub use admission::{AdmissionError, AdmissionLease, AdmissionSlots, AdmissionSnapshot};
 pub use audio_merge::{merge_audio_prefix, FrameIdSource, MergedAudioFrame};
@@ -53,8 +52,8 @@ pub use foreign::{
     ForeignShutdownDiagnostics, ForeignSubmitOutcome,
 };
 pub use foreign_registry::{
-    ForeignNodeCallOutput, ForeignNodeEmission, ForeignNodeFactoryAdapter, ForeignNodeInstance,
-    ForeignNodeProvider,
+    ForeignNodeCallOutput, ForeignNodeConstructor, ForeignNodeEmission, ForeignNodeFactoryAdapter,
+    ForeignNodeInstance,
 };
 pub use graph::{
     EdgeEndpoint, EndpointRole, GraphBuildError, GraphBuilder, GraphDefinition, NodeDefinition,
@@ -94,7 +93,3 @@ pub use runner::{
     GraphRunnerState, NodeInstances, ObservedEdgeSignal,
 };
 pub use signal::{SignalQueuePushError, SignalQueueSnapshot};
-pub use transport::{
-    ConnectionState, ControlApplyOutcome, TransportControl, TransportControlError,
-    TransportSnapshot, RUNTIME_INTERRUPT_SIGNAL,
-};

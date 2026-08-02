@@ -12,7 +12,7 @@ flowchart LR
     S -->|"WebSocket"| Q["Alibaba Cloud Model Studio"]
 ```
 
-The page and microphone run on your computer. Graphs, Python/C++ Providers, logs, and `.env`
+The page and microphone run on your computer. Graphs, Python/C++ Nodes, logs, and `.env`
 remain on Linux.
 
 ## Recommended: SSH port forwarding
@@ -118,7 +118,7 @@ firewall. Prefer SSH forwarding for individual development.
 
 ## Additional Linux voice-demo requirements
 
-- The Qwen Python Provider needs no GUI and no Qwen SDK; the server must reach Model Studio's
+- The Qwen Python Node needs no GUI and no Qwen SDK; the server must reach Model Studio's
   WebSocket endpoint.
 - Your local browser supplies the microphone, so the Linux server needs no audio device.
 - The Agora C++ Bot needs an Agora Native SDK matching the Linux architecture. The automatic

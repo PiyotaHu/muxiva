@@ -1,11 +1,11 @@
-name: Provider proposal
-description: Propose an RTC, model, transport, codec, or media provider
-title: "[Provider]: "
-labels: [provider]
+name: Official Node proposal
+description: Propose an RTC, model, transport, codec, or media Node integration
+title: "[Node]: "
+labels: [node]
 body:
   - type: input
     attributes:
-      label: Provider and capability
+      label: Node integration and capability
       placeholder: ExampleRTC — real-time PCM16 audio ingress/egress
     validations:
       required: true

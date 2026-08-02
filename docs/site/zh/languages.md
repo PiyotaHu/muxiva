@@ -22,7 +22,7 @@ flowchart TB
 | TypeScript | Web 生态、业务集成、JS 团队 | N-API / Worker Host | 开发友好，需尊重异步和 Worker 生命周期 |
 
 语言不会改变 Port 契约。例如 Python ASR 输出的 `text` Frame 可以直接进入 Rust
-Transform 或 C++ Sink；Runtime 仍然执行相同的队列、背压、Turn 和关闭规则。
+Transform 或 C++ Sink；Runtime 仍然执行相同的队列、背压、Signal 路由和关闭规则。
 
 ## 边界上的四条规则
 
@@ -38,7 +38,7 @@ Graph 只保存 `node_type + language + factory_version` 和配置。源码、�
 或 JavaScript 包位于受信任的 Node Package 中，由 Factory/Host 加载。这把可审查的
 拓扑声明和可执行供应链清楚分开。
 
-## 当前 Provider 的分层示例
+## 当前官方 Node 的分层示例
 
 - Agora Transport Node 使用 C++，贴近官方 Native SDK、音频回调和 RTC 生命周期；
 - Qwen Algorithm Node 使用 Python，贴近模型 API、流式事件与算法迭代；

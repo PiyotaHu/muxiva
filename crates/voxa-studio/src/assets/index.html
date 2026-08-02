@@ -37,7 +37,7 @@
       <aside class="sidebar palette-panel">
         <div class="panel-heading"><span>NODE PALETTE</span><button id="open-node-lab" class="mini-button">＋ Create Node</button></div>
         <div class="palette-filters">
-          <input id="palette-search" type="search" placeholder="Search capability or provider" aria-label="Search Node Palette">
+          <input id="palette-search" type="search" placeholder="Search Node type or capability" aria-label="Search Node Palette">
           <select id="palette-category" aria-label="Filter Node category">
             <option value="all">All layers</option>
             <option value="transport">Transport</option>
@@ -177,7 +177,7 @@
 
     <dialog id="provider-dialog" class="provider-dialog">
       <form id="provider-form">
-        <div class="dialog-title"><div><span class="eyebrow">PRIVATE LOCAL CONFIGURATION</span><h2>Provider connections</h2></div><button id="provider-close" type="button" class="icon-button">×</button></div>
+        <div class="dialog-title"><div><span class="eyebrow">PRIVATE LOCAL CONFIGURATION</span><h2>Node connections</h2></div><button id="provider-close" type="button" class="icon-button">×</button></div>
         <p class="dialog-copy">Fields are declared by installed Node Pack Manifests. Save once: values are stored in this project's gitignored <code>.env</code> file (local-only, mode 0600) and loaded automatically next time.</p>
         <div id="provider-connections"></div>
         <p id="provider-storage" class="provider-storage"></p>
@@ -188,7 +188,7 @@
 
     <dialog id="template-dialog" class="template-dialog">
       <div class="dialog-title"><div><span class="eyebrow">VOICE GRAPH GALLERY</span><h2>Choose an architecture</h2></div><button id="template-close" type="button" class="icon-button">×</button></div>
-      <p class="dialog-copy">Templates are loaded from this project's <code>.voxa/templates/</code> directory. Studio contains no application- or provider-specific graph definitions.</p>
+      <p class="dialog-copy">Templates are loaded from this project's <code>.voxa/templates/</code> directory. Every entry is an ordinary Node graph.</p>
       <div id="template-gallery" class="template-gallery"></div>
       <div class="dialog-actions"><button id="template-cancel" type="button" class="button ghost">Close</button></div>
     </dialog>

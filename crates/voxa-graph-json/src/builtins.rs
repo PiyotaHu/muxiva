@@ -25,7 +25,7 @@ pub const TEXT_SOURCE: &str = "builtin.text_source";
 pub const UPPERCASE: &str = "builtin.uppercase";
 pub const TEXT_SINK: &str = "builtin.text_sink";
 pub const STDOUT_TEXT_SINK: &str = "builtin.stdout_text_sink";
-pub const AUDIO_RESAMPLE: &str = "builtin.audio_resample";
+pub const AUDIO_RESAMPLER: &str = "builtin.audio_resampler";
 pub const INTERVAL_TICK: &str = "builtin.interval_tick";
 pub const AUDIO_VAD: &str = "builtin.audio_vad";
 pub const VOICE_TURN_CONTEXT: &str = "builtin.voice_turn_context";
@@ -105,7 +105,7 @@ fn register_audio_nodes(registry: &mut NodeRegistry) {
     register(
         registry,
         typed_descriptor(
-            AUDIO_RESAMPLE,
+            AUDIO_RESAMPLER,
             NodeKind::Transform,
             &[
                 ("audio_in", PortDirection::Input, FrameType::Audio),
@@ -795,22 +795,53 @@ fn audio_resample_schema() -> ConfigSchema {
         ("type", Value::String("object".into())),
         (
             "properties",
-            map([(
-                "sample_rate_hz",
-                map([
-                    ("type", Value::String("integer".into())),
-                    ("minimum", Value::Integer(8_000)),
-                    ("maximum", Value::Integer(192_000)),
-                    ("default", Value::Integer(16_000)),
-                ]),
-            )]),
-        ),
-        (
-            "required",
-            Value::List(vec![Value::String("sample_rate_hz".into())].into_boxed_slice()),
+            map([
+                (
+                    "sample_rate_hz",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(8_000)),
+                        ("maximum", Value::Integer(192_000)),
+                    ]),
+                ),
+                ("input", audio_format_schema()),
+                ("output", audio_format_schema()),
+            ]),
         ),
         ("additionalProperties", Value::Bool(false)),
     ]))
+}
+
+fn audio_format_schema() -> Value {
+    map([
+        ("type", Value::String("object".into())),
+        (
+            "properties",
+            map([
+                (
+                    "sample_rate_hz",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(8_000)),
+                        ("maximum", Value::Integer(192_000)),
+                    ]),
+                ),
+                (
+                    "channels",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(1)),
+                        ("maximum", Value::Integer(32)),
+                    ]),
+                ),
+                (
+                    "sample_format",
+                    map([("type", Value::String("string".into()))]),
+                ),
+            ]),
+        ),
+        ("additionalProperties", Value::Bool(false)),
+    ])
 }
 
 fn audio_vad_schema() -> ConfigSchema {
@@ -941,7 +972,7 @@ impl AudioVad {
                 context.node_id(),
                 "audio-vad-interrupt",
                 FramePayload::Signal(SignalData::new(
-                    NamespacedName::new(voxa_core::RUNTIME_INTERRUPT_SIGNAL)?,
+                    NamespacedName::new("voxa.voice.speech.started")?,
                     SchemaVersion::new(1)?,
                     context.node_id().clone(),
                     Value::String("barge-in".into()),
@@ -1100,17 +1131,7 @@ struct AudioResampleFactory;
 
 impl NodeFactory for AudioResampleFactory {
     fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
-        if config.len() != 1 {
-            return Err(config_error(
-                "audio resampler accepts exactly `sample_rate_hz`",
-            ));
-        }
-        match config.get("sample_rate_hz") {
-            Some(Value::Integer(rate)) if (8_000..=192_000).contains(rate) => Ok(()),
-            _ => Err(config_error(
-                "audio resampler sample_rate_hz must be an integer from 8000 through 192000",
-            )),
-        }
+        parse_resampler_config(config).map(|_| ())
     }
 
     fn create(
@@ -1118,17 +1139,81 @@ impl NodeFactory for AudioResampleFactory {
         _node_id: &NodeId,
         config: &ConfigMap,
     ) -> Result<Box<dyn Node>, NodeFactoryError> {
-        let Some(Value::Integer(rate)) = config.get("sample_rate_hz") else {
-            return Err(config_error("validated sample_rate_hz is unavailable"));
-        };
+        let (input_rate_hz, input_channels, target_rate_hz, target_channels) =
+            parse_resampler_config(config)?;
         Ok(Box::new(AudioResample {
-            target_rate_hz: *rate as u32,
+            input_rate_hz,
+            input_channels,
+            target_rate_hz,
+            target_channels,
         }))
     }
 }
 
+fn parse_resampler_config(
+    config: &ConfigMap,
+) -> Result<(Option<u32>, Option<u16>, u32, Option<u16>), NodeFactoryError> {
+    if let Some(Value::Integer(rate)) = config.get("sample_rate_hz") {
+        if config.len() == 1 && (8_000..=192_000).contains(rate) {
+            return Ok((None, None, *rate as u32, None));
+        }
+    }
+    if config
+        .iter()
+        .any(|(key, _)| key.as_str() != "input" && key.as_str() != "output")
+    {
+        return Err(config_error(
+            "audio resampler accepts `input` and `output` format objects",
+        ));
+    }
+    let input = match config.get("input") {
+        Some(Value::Map(value)) => Some(value),
+        None => None,
+        _ => return Err(config_error("audio resampler `input` must be an object")),
+    };
+    let output = match config.get("output") {
+        Some(Value::Map(value)) => value,
+        _ => return Err(config_error("audio resampler requires an `output` object")),
+    };
+    let rate = |value: Option<&Value>| match value {
+        Some(Value::Integer(value)) if (8_000..=192_000).contains(value) => Ok(*value as u32),
+        None => Err(config_error("audio format requires `sample_rate_hz`")),
+        _ => Err(config_error(
+            "sample_rate_hz must be an integer from 8000 through 192000",
+        )),
+    };
+    let channels = |value: Option<&Value>| match value {
+        Some(Value::Integer(value)) if (1..=32).contains(value) => Ok(Some(*value as u16)),
+        None => Ok(None),
+        _ => Err(config_error(
+            "channels must be an integer from 1 through 32",
+        )),
+    };
+    for format in input.into_iter().chain([output]) {
+        if let Some(Value::String(value)) = format.get("sample_format") {
+            if value.as_ref() != "pcm_s16le" {
+                return Err(config_error("audio resampler currently supports pcm_s16le"));
+            }
+        }
+    }
+    Ok((
+        input
+            .map(|value| rate(value.get("sample_rate_hz")))
+            .transpose()?,
+        input
+            .map(|value| channels(value.get("channels")))
+            .transpose()?
+            .flatten(),
+        rate(output.get("sample_rate_hz"))?,
+        channels(output.get("channels"))?,
+    ))
+}
+
 struct AudioResample {
+    input_rate_hz: Option<u32>,
+    input_channels: Option<u16>,
     target_rate_hz: u32,
+    target_channels: Option<u16>,
 }
 
 impl Node for AudioResample {
@@ -1145,6 +1230,21 @@ impl Node for AudioResample {
             return Err(node_error(
                 "VOXA-AUDIO-RESAMPLE-FORMAT",
                 "audio resampler requires interleaved PCM s16le",
+            ));
+        }
+        if self
+            .input_rate_hz
+            .is_some_and(|value| value != source.sample_rate_hz())
+            || self
+                .input_channels
+                .is_some_and(|value| value != source.channels())
+            || self
+                .target_channels
+                .is_some_and(|value| value != source.channels())
+        {
+            return Err(node_error(
+                "VOXA-AUDIO-RESAMPLE-CONTRACT",
+                "audio frame does not match the configured input/output channel contract",
             ));
         }
         let payload = if source.sample_rate_hz() == self.target_rate_hz {

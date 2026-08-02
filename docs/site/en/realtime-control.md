@@ -9,7 +9,7 @@ Voxa separates the data plane from the control plane:
 ```mermaid
 flowchart LR
     N1["Upstream Node"] -->|"Frame over a typed Edge"| N2["Downstream Node"]
-    N1 -.->|"Signal · runtime control"| R["Rust Runtime"]
+    N1 -.->|"Signal · opaque control"| R["Rust Runtime"]
     N1 -.->|"Event · global observation"| B["EventBus"]
     R -.->|"on_signal"| N2
     B -.-> UI["Studio · logs · metrics · application"]
@@ -23,25 +23,25 @@ Node's `on_process` callback to run.
 
 ## Signals change runtime state
 
-Signals express interruption, cancellation, turn changes, and other runtime control. A Node
-calls `ctx.emit_signal(...)`; the Runtime owns propagation and handling. Control information
-does not need to masquerade as ordinary text or audio.
+Signals express interruption, cancellation, cache flushes, and other cross-Node control. A Node
+calls `ctx.emit_signal(...)`; the Runtime broadcasts it and invokes each receiver's `on_signal`.
+Core does not interpret Signal names or execute voice-product policy.
 
-A common example is barge-in. When a user speaks while the agent is playing an answer, the VAD
-Node emits an interruption Signal. The Runtime ends the old turn, cancels old generation, and
-prevents stale audio from reaching the speaker.
+A common example is barge-in. Qwen Realtime or a VAD Node emits
+`voxa.voice.speech.started`. The Qwen Node cancels its own generation and discards late chunks;
+the Agora Audio Sink clears playback when it receives the same Signal. Runtime only delivers it.
 
 ## EventBus lets observers see what happened
 
 Events are globally observable notifications such as a completed transcript, first-token
-arrival, Provider reconnection, or excessive latency. A Node calls `ctx.publish_event(...)`.
+arrival, Node reconnection, or excessive latency. A Node calls `ctx.publish_event(...)`.
 Studio, logs, metrics, or application subscribers can observe the event, but an Event does not
 replace business data flowing through the Graph.
 
 | Requirement | Use |
 | --- | --- |
 | Send audio to ASR | Frame + Edge |
-| Tell the Runtime to stop an old answer | Signal |
+| Tell relevant Nodes to stop an old answer | Signal |
 | Show a transcript or latency in Studio | EventBus Event |
 | Send LLM text to TTS | Frame + Edge |
 
@@ -60,19 +60,19 @@ An unlimited queue appears lossless but turns a short slowdown into high latency
 memory use. Voxa makes capacity and policy explicit so latency, completeness, and failure
 behavior remain predictable.
 
-## Turns and interruption
+## Application turns and interruption
 
-A turn is one interaction that can be managed as a unit. Frame identity, time, and lineage let
-the Runtime determine which turn produced a result. On interruption, the system must:
+If an application needs turns, a model Node, context Node, or project Node owns them—not Core.
+On interruption, relevant Nodes normally:
 
-1. mark the old turn as canceled;
-2. notify Providers and Nodes that support cancellation;
-3. remove or ignore stale queued Frames;
-4. reject late results from the old model request;
-5. let the new turn run immediately.
+1. cancel the current remote model request;
+2. discard late chunks from that request;
+3. clear audio that has not played yet;
+4. publish observable UI state through EventBus; and
+5. keep subsequent input flowing through the Graph.
 
-This is more reliable than a boolean inside a TTS Node because interruption affects model
-generation, queues, playback, and observation together.
+Policy stays in Nodes and mechanism stays in Core. This coordinates model generation, playback,
+and observation without coupling the generic Runtime to one model or voice protocol.
 
 ## Lifecycle and shutdown
 

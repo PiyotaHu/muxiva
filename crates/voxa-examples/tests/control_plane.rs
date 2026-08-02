@@ -8,6 +8,6 @@ fn control_plane_example_runs() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "voxa.transport.turn.interrupted interrupted=true\n"
+        "voxa.voice.speech.started\n"
     );
 }

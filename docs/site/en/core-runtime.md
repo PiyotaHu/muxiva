@@ -102,7 +102,7 @@ The Graph never guesses a Port from a Node name and has no `any` type. A
 connection spells out `microphone.audio_out -> asr.audio_in`, and both Frame
 Types must match exactly.
 
-Provider Nodes can add a detailed schema such as PCM S16LE, 16 kHz, mono, and
+Official or project Nodes can add a detailed schema such as PCM S16LE, 16 kHz, mono, and
 20 ms. Studio displays this contract directly.
 
 ### Edge: a bounded conveyor
@@ -148,7 +148,7 @@ Factories. Their exact identity is:
 node_type + language + factory_version
 ```
 
-For example, `provider.qwen.asr_realtime + python + 1.0.0`. Runtime does not
+For example, `qwen.asr_realtime + python + 1.0.0`. Runtime does not
 guess a version or silently switch languages. After validation, a Factory
 creates an independent runtime instance for each Graph Node ID.
 

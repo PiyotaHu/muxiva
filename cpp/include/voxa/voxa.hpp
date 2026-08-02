@@ -4,6 +4,8 @@
 #include "voxa.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstddef>
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -282,11 +284,21 @@ class GraphNodeContext {
   void emit(std::string output_port, voxa_frame_view_v1 frame) {
     emissions_.push_back({std::move(output_port), frame});
   }
+  void schedule_next_tick(std::chrono::nanoseconds delay) {
+    next_source_tick_ns_ = delay.count() > 0
+        ? static_cast<std::uint64_t>(delay.count()) : 1;
+  }
   std::vector<GraphEmission> take_emissions() { return std::move(emissions_); }
+  std::uint64_t take_next_source_tick_ns() noexcept {
+    const auto value = next_source_tick_ns_;
+    next_source_tick_ns_ = 0;
+    return value;
+  }
 
  private:
   std::string_view input_port_;
   std::vector<GraphEmission> emissions_;
+  std::uint64_t next_source_tick_ns_ = 0;
 };
 
 class MultimodalGraphNode {
@@ -313,6 +325,7 @@ struct MultimodalNodeBox {
   std::unique_ptr<MultimodalGraphNode> implementation;
   std::vector<GraphEmission> emissions;
   std::vector<voxa_named_frame_v1> views;
+  std::uint64_t next_source_tick_ns = 0;
 };
 inline voxa_status_v1 multimodal_prepare(void* data, voxa_error_v1* error) noexcept {
   try { static_cast<MultimodalNodeBox*>(data)->implementation->on_prepare(); return VOXA_STATUS_OK; }
@@ -330,6 +343,7 @@ inline voxa_status_v1 multimodal_process(
     GraphNodeContext context(port);
     box->implementation->on_process(input, context);
     box->emissions = context.take_emissions();
+    box->next_source_tick_ns = context.take_next_source_tick_ns();
     box->views.clear();
     box->views.reserve(box->emissions.size());
     for (const auto& emission : box->emissions) {
@@ -358,6 +372,13 @@ inline void multimodal_abort(void* data, const voxa_abort_reason_v1* reason) noe
 inline void multimodal_destroy(void* data) noexcept {
   try { delete static_cast<MultimodalNodeBox*>(data); } catch (...) {}
 }
+inline std::uint64_t multimodal_take_next_source_tick(void* data) noexcept {
+  if (data == nullptr) return 0;
+  auto* box = static_cast<MultimodalNodeBox*>(data);
+  const auto value = box->next_source_tick_ns;
+  box->next_source_tick_ns = 0;
+  return value;
+}
 inline voxa_graph_node_vtable_v1 multimodal_vtable(MultimodalGraphNode* implementation) {
   voxa_graph_node_vtable_v1 table{};
   table.abi_version = VOXA_ABI_VERSION_V1;
@@ -369,6 +390,7 @@ inline voxa_graph_node_vtable_v1 multimodal_vtable(MultimodalGraphNode* implemen
   table.on_finish = multimodal_finish;
   table.on_abort = multimodal_abort;
   table.destroy = multimodal_destroy;
+  table.take_next_source_tick_ns = multimodal_take_next_source_tick;
   return table;
 }
 }  // namespace detail
@@ -387,7 +409,8 @@ class MultimodalGraphNodeFactory final {
   template <typename T>
   static MultimodalGraphNodeFactory make(std::string node_type, uint32_t kind,
                                           std::string ports_json,
-                                          std::string config_schema_json = "{}") {
+                                          std::string config_schema_json = "{}",
+                                          std::string version = "1.0.0") {
     static_assert(std::is_base_of<MultimodalGraphNode, T>::value,
                   "T must derive from voxa::MultimodalGraphNode");
     return MultimodalGraphNodeFactory(
@@ -395,7 +418,7 @@ class MultimodalGraphNodeFactory final {
         [](const std::string& config) -> MultimodalGraphNode* {
           if constexpr (std::is_constructible<T, const std::string&>::value) return new T(config);
           else return new T();
-        }, std::move(config_schema_json));
+        }, std::move(config_schema_json), std::move(version));
   }
 
   voxa_multimodal_node_factory_v1 view() const noexcept {
@@ -418,7 +441,17 @@ class MultimodalGraphNodeFactory final {
                                      config.data == nullptr ? 0 : config.len);
       auto* implementation = (*static_cast<Creator*>(data))(config_value);
       if (implementation == nullptr) return VOXA_STATUS_INVALID_ARGUMENT;
-      *output = detail::multimodal_vtable(implementation);
+      const auto caller_size = static_cast<std::size_t>(output->struct_size);
+      constexpr auto legacy_size = offsetof(voxa_graph_node_vtable_v1,
+                                             take_next_source_tick_ns);
+      if (caller_size < legacy_size) {
+        delete implementation;
+        return VOXA_STATUS_INVALID_ARGUMENT;
+      }
+      auto table = detail::multimodal_vtable(implementation);
+      const auto copied_size = std::min(caller_size, sizeof(table));
+      std::memcpy(output, &table, copied_size);
+      output->struct_size = static_cast<std::uint32_t>(copied_size);
       return VOXA_STATUS_OK;
     } catch (...) { detail::write_exception(error); return VOXA_STATUS_FOREIGN_EXCEPTION; }
   }

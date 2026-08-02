@@ -7,7 +7,7 @@ Voxa 负责调度、有界队列、背压、取消、生命周期、控制消息
 Node 提供语音、推理、媒体、传输与业务能力。
 
 !!! warning "Pre-alpha"
-    Runtime 基础已经过测试，但公开 Package 与 Provider 集成仍在演进。请勿执行
+    Runtime 基础已经过测试，但公开 Package 与官方 Node 集成仍在演进。请勿执行
     不受信任的 Node 代码，也不要把 Studio 直接暴露到互联网。
 
 ## 体验真实语音 Agent
@@ -42,7 +42,7 @@ VAD → ASR → LLM → TTS 图，并持续展示 Node、Frame 和对话状态�
 | 可视化开发 | [Voxa Studio](studio.md) |
 | 理解 Runtime | [Runtime 架构](concepts.md) |
 | 编写 Node | [Node Package](nodes/index.md) |
-| 集成 RTC 或媒体 | [Provider](integrations.md) |
+| 集成 RTC 或媒体 | [官方与自定义 Node](integrations.md) |
 | 参与贡献 | [参与贡献](contributing.md) |
 
 [开发 Node](nodes/index.md){ .md-button }

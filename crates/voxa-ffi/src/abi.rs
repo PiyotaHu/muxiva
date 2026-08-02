@@ -209,6 +209,7 @@ pub struct GraphNodeVtable {
     pub destroy: Option<DestroyCallback>,
     pub capabilities: u64,
     pub reserved: [u64; 3],
+    pub take_next_source_tick_ns: Option<extern "C" fn(*mut c_void) -> u64>,
 }
 
 unsafe impl Send for GraphNodeVtable {}

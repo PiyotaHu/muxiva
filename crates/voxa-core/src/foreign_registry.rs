@@ -1,6 +1,6 @@
 //! Language-hosted Node factories adapted to the common Registry contract.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use voxa_types::{EventFrame, Frame, NodeId, SignalFrame, VoxaError};
 
@@ -32,6 +32,7 @@ pub struct ForeignNodeCallOutput {
     emissions: Vec<ForeignNodeEmission>,
     signals: Vec<SignalFrame>,
     events: Vec<EventFrame>,
+    next_source_tick: Option<Duration>,
 }
 
 impl ForeignNodeCallOutput {
@@ -43,11 +44,17 @@ impl ForeignNodeCallOutput {
             emissions: emissions.into(),
             signals: signals.into(),
             events: Vec::new(),
+            next_source_tick: None,
         }
     }
 
     pub fn with_events(mut self, events: impl Into<Vec<EventFrame>>) -> Self {
         self.events = events.into();
+        self
+    }
+
+    pub fn with_next_source_tick(mut self, delay: Duration) -> Self {
+        self.next_source_tick = Some(delay);
         self
     }
 
@@ -109,7 +116,7 @@ pub trait ForeignNodeInstance: Send + 'static {
 }
 
 /// Trusted host-side constructor for fresh foreign Node instances.
-pub trait ForeignNodeProvider: Send + Sync + 'static {
+pub trait ForeignNodeConstructor: Send + Sync + 'static {
     fn validate_config(&self, _config: &ConfigMap) -> Result<(), NodeFactoryError> {
         Ok(())
     }
@@ -121,20 +128,20 @@ pub trait ForeignNodeProvider: Send + Sync + 'static {
     ) -> Result<Box<dyn ForeignNodeInstance>, NodeFactoryError>;
 }
 
-/// Adapts a language host provider into the executable [`NodeFactory`] Registry contract.
+/// Adapts a language-hosted constructor into the executable [`NodeFactory`] contract.
 pub struct ForeignNodeFactoryAdapter {
-    provider: Arc<dyn ForeignNodeProvider>,
+    constructor: Arc<dyn ForeignNodeConstructor>,
 }
 
 impl ForeignNodeFactoryAdapter {
-    pub fn new(provider: Arc<dyn ForeignNodeProvider>) -> Self {
-        Self { provider }
+    pub fn new(constructor: Arc<dyn ForeignNodeConstructor>) -> Self {
+        Self { constructor }
     }
 }
 
 impl NodeFactory for ForeignNodeFactoryAdapter {
     fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
-        self.provider.validate_config(config)
+        self.constructor.validate_config(config)
     }
 
     fn create(
@@ -143,7 +150,7 @@ impl NodeFactory for ForeignNodeFactoryAdapter {
         config: &ConfigMap,
     ) -> Result<Box<dyn Node>, NodeFactoryError> {
         Ok(Box::new(ForeignNodeAdapter {
-            instance: self.provider.create(node_id, config)?,
+            instance: self.constructor.create(node_id, config)?,
         }))
     }
 }
@@ -162,6 +169,9 @@ impl ForeignNodeAdapter {
         }
         for event in output.events {
             context.publish_event(event)?;
+        }
+        if let Some(delay) = output.next_source_tick {
+            context.schedule_next_tick(delay);
         }
         Ok(())
     }

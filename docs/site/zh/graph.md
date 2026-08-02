@@ -32,14 +32,14 @@ flowchart LR
   "nodes": [
     {
       "id": "asr",
-      "node_type": "provider.qwen.asr_realtime",
+      "node_type": "qwen.asr_realtime",
       "language": "python",
       "factory_version": "1.0.0",
       "node_config": {"model": "qwen3-asr-flash-realtime"}
     },
     {
       "id": "llm",
-      "node_type": "provider.qwen.llm_stream",
+      "node_type": "qwen.llm_stream",
       "language": "python",
       "factory_version": "1.0.0",
       "node_config": {}
@@ -113,7 +113,7 @@ flowchart LR
 ## 安全限制
 
 Graph JSON 不能包含可执行源码、动态脚本、真实凭据或任意远程资源；它只能引用受信任
-Factory 与声明式配置。可执行实现属于 [Node Package](extensibility.md)，厂商连接属于
-[Provider](provider-architecture.md)。
+Factory 与声明式配置。可执行实现属于 [Node Package](extensibility.md)，外部服务凭据通过
+[Node Connection](provider-architecture.md) 配置。
 
 下一步阅读：[实时流控与控制消息](realtime-control.md)。

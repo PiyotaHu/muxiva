@@ -96,13 +96,13 @@ class CascadeNodeTests(unittest.TestCase):
         self.assertEqual(ctx.emissions[0][1].sample_rate_hz, 24000)
         self.assertEqual(ctx.emissions[0][1].data, b"\x01\x02\x03\x04")
 
-    def test_manifests_reference_the_provider_owned_connection_contract(self):
+    def test_manifests_reference_the_shared_connection_contract(self):
         import json
         provider = json.loads((pathlib.Path(__file__).parents[2] / "voxa.provider.json").read_text())
         self.assertEqual(provider["connections"][0]["id"], "dashscope")
         for package in ("qwen_realtime", "qwen_asr_realtime", "qwen_llm_stream", "qwen_tts_realtime"):
             manifest = json.loads((root / package / "voxa.node.json").read_text())
-            self.assertEqual(manifest["provider_id"], "qwen")
+            self.assertNotIn("provider_id", manifest)
             self.assertEqual(manifest["connection_id"], "dashscope")
             self.assertNotIn("connection", manifest)
 

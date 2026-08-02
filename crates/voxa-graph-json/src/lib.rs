@@ -169,7 +169,7 @@ fn builtin_metadata(
     &'static [&'static str],
 ) {
     match node_type {
-        "builtin.audio_resample" => (
+        "builtin.audio_resampler" => (
             "media",
             "audio.resample",
             "Converts PCM audio between sample rates.",
@@ -234,7 +234,7 @@ fn builtin_metadata(
 
 fn builtin_port_schema(node_type: &str, port: &str, frame_type: FrameType) -> serde_json::Value {
     if frame_type == FrameType::Audio {
-        let sample_rate_hz = if node_type == "builtin.audio_resample" && port == "audio_out" {
+        let sample_rate_hz = if node_type == "builtin.audio_resampler" && port == "audio_out" {
             serde_json::Value::String("configured".to_owned())
         } else {
             serde_json::Value::Number(16_000.into())
@@ -261,8 +261,9 @@ pub fn parse(input: &str) -> Result<GraphDocument, Vec<GraphDiagnostic>> {
             "",
         )]);
     }
-    let document: GraphDocument = serde_json::from_str(input)
+    let mut document: GraphDocument = serde_json::from_str(input)
         .map_err(|error| vec![diag("VOXA-GRAPH-JSON", &error.to_string(), "")])?;
+    migrate_legacy_node_names(&mut document);
     if document.version != "voxa.graph/v1" {
         return Err(vec![diag(
             "VOXA-GRAPH-VERSION",
@@ -278,6 +279,49 @@ pub fn parse(input: &str) -> Result<GraphDocument, Vec<GraphDiagnostic>> {
         )]);
     }
     Ok(document)
+}
+
+fn migrate_legacy_node_names(document: &mut GraphDocument) {
+    let mut migrated_agora_sources = Vec::new();
+    for node in &mut document.nodes {
+        match node.node_type.as_str() {
+            "provider.agora.audio_source" => {
+                node.node_type = canonical_node_type(&node.node_type).to_owned();
+                node.factory_version = "1.1.0".to_owned();
+                migrated_agora_sources.push(node.id.clone());
+            }
+            _ => node.node_type = canonical_node_type(&node.node_type).to_owned(),
+        }
+    }
+    if migrated_agora_sources.is_empty() {
+        return;
+    }
+    document.edges.retain(|edge| {
+        !(migrated_agora_sources.contains(&edge.to.node_id) && edge.to.port == "tick_in")
+    });
+    let referenced = document
+        .edges
+        .iter()
+        .flat_map(|edge| [&edge.from.node_id, &edge.to.node_id])
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    document
+        .nodes
+        .retain(|node| node.node_type != "builtin.interval_tick" || referenced.contains(&node.id));
+}
+
+/// Returns the stable Node type for names written by older Voxa releases.
+pub fn canonical_node_type(node_type: &str) -> &str {
+    match node_type {
+        "provider.agora.audio_source" => "agora.audio_source",
+        "provider.agora.audio_sink" => "agora.audio_sink",
+        "provider.qwen.audio_realtime" => "qwen.audio_realtime",
+        "provider.qwen.asr_realtime" => "qwen.asr_realtime",
+        "provider.qwen.llm_stream" => "qwen.llm_stream",
+        "provider.qwen.tts_realtime" => "qwen.tts_realtime",
+        "builtin.audio_resample" => "builtin.audio_resampler",
+        current => current,
+    }
 }
 
 /// Compiles against the trusted built-ins shipped with Voxa.

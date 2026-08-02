@@ -4,7 +4,7 @@ Converts streaming speech to partial and final transcripts for an inspectable ca
 
 | Property | Value |
 | --- | --- |
-| Node type | `provider.qwen.asr_realtime` |
+| Node type | `qwen.asr_realtime` |
 | Layer / kind | `algorithm` / `transform` |
 | Capability | `speech.asr.streaming` |
 

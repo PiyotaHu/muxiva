@@ -2,8 +2,8 @@
 
 Voxa 不是一个 ASR、LLM 或 TTS SDK，也不是一张只能在网页里编辑的流程图。
 它是一套**实时多模态 Agent Runtime**：开发者把音频、视频、文本、字节和控制消息
-交给一张类型安全的 Graph，Voxa 负责调度、并发、背压、打断、关闭与可观测性，
-具体算法和网络服务则由可替换 Node 与 Provider 完成。
+交给一张类型安全的 Graph，Voxa 负责调度、并发、背压、Signal 路由、关闭与可观测性，
+具体算法、打断策略和网络服务都由可替换 Node 完成。
 
 如果把一个语音 Agent 比作一座工厂：
 
@@ -20,9 +20,9 @@ Voxa 不是一个 ASR、LLM 或 TTS SDK，也不是一张只能在网页里编�
 flowchart TB
     DEV["开发者与最终用户"]
     SURFACE["产品与工具层<br/>voxa CLI · Studio · 项目 Web 页面"]
-    DEF["声明与发现层<br/>Graph v1 · Node Manifest · Provider Manifest · Registry"]
+    DEF["声明与发现层<br/>Graph v1 · Node Manifest · Registry · Connection"]
     LANG["Node 扩展层<br/>Rust · C++ · Python · TypeScript"]
-    PROVIDER["Provider 适配层<br/>Transport · Algorithm · Media · Control · Utility"]
+    PACK["Node 分类与分发<br/>内置 · 官方 · 项目自定义"]
     CORE["Rust Runtime Core<br/>Node · Port · Edge · Frame · Graph · Scheduler"]
     EXTERNAL["外部世界<br/>RTC · 模型 API · Codec · 设备 · 数据库"]
 
@@ -31,9 +31,9 @@ flowchart TB
     DEF --> LANG
     DEF --> CORE
     LANG --> CORE
-    PROVIDER --> LANG
-    EXTERNAL <--> PROVIDER
-    CORE --> OBS["有界队列 · 背压 · Turn · Signal · EventBus · 指标"]
+    PACK --> LANG
+    EXTERNAL <--> LANG
+    CORE --> OBS["有界队列 · 背压 · Signal · EventBus · 指标"]
 ```
 
 ### 1. Rust Runtime Core：稳定内核
@@ -59,13 +59,14 @@ Node Factory，并消费同一种 Frame 契约。语言只是实现选择，不�
 
 继续阅读：[多语言执行模型](languages.md)。
 
-### 4. Provider 适配层：厂商能力留在 Core 外面
+### 4. Node 分类：厂商能力留在 Core 外面
 
-Provider 把 Agora、Qwen、FFmpeg 等外部能力包装成 Node Pack。Provider Manifest
-统一描述厂商、SDK、License、凭据和文档；Node Manifest 描述单个能力、配置和
-输入输出 Schema。
+Voxa 对开发者只提供一种扩展概念：Node。`builtin.*` 随 Runtime 发布；Agora、Qwen
+等官方 Node 展示多语言集成方式；项目 Node 放在 `.voxa/nodes/`，可以直接在 Studio
+查看和编辑源码。`voxa.node.json` 描述能力、配置和输入输出 Schema，Connection
+只是多个 Node 共享本地凭据的配置，不是另一种运行实体。
 
-继续阅读：[Provider 分层架构](provider-architecture.md)。
+继续阅读：[Node 分层架构](provider-architecture.md)。
 
 ### 5. 工具与产品层：同一套 Runtime 的不同入口
 
@@ -89,7 +90,7 @@ sequenceDiagram
     Agora->>Core: Audio Frame
     Core->>Qwen: 经过有界 Edge 调度
     Qwen-->>Core: Text Frame + Audio Frame
-    Core-->>Agora: 仅转发当前 Turn 的音频
+    Core-->>Agora: 经有界 Edge 转发音频
     Agora-->>Speaker: RTC 播放
 ```
 
@@ -107,6 +108,6 @@ sequenceDiagram
 3. [Graph 与类型化 Port](graph.md)：看懂 Graph JSON；
 4. [实时流控与控制消息](realtime-control.md)：理解背压、Signal、Event 与打断；
 5. [Node 如何扩展](extensibility.md)和[多语言执行模型](languages.md)；
-6. [Provider 分层架构](provider-architecture.md)；
+6. [Node 分层架构](provider-architecture.md)；
 7. [CLI、Studio 与 Web](developer-surfaces.md)；
 8. [真实语音链路](voice-architecture.md)与[可运行 Demo](voice-demo.md)。

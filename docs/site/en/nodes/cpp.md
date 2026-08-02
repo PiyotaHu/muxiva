@@ -11,9 +11,11 @@ class MyNode final : public voxa::MultimodalGraphNode {
   void on_process(const voxa_frame_view_v1* input,
                   voxa::GraphNodeContext& ctx) override {
     // ctx.emit("text_out", output_frame);
+    // A Source can call ctx.schedule_next_tick(std::chrono::milliseconds(20));
+    // to schedule itself without a clock Node in the Graph.
   }
   void on_signal(const voxa_frame_view_v1& signal) override {
-    // Receive graph control such as voxa.runtime.interrupt.
+    // Receive graph control such as voxa.voice.speech.started.
   }
 };
 ```

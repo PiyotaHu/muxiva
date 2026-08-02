@@ -1,10 +1,10 @@
-# Voxa Stage 6 Signal, EventBus, and Turn-Control Contract
+# Voxa Stage 6 Signal, EventBus, and Resource Contract
 
 Status: **implemented**
 
 Contract version: **0.1.0-draft.1**
 
-Last updated: **2026-08-01**
+Last updated: **2026-08-02**
 
 ## 1. Scope and assumptions
 
@@ -20,9 +20,10 @@ Both remain immutable Stage 3 `Frame` variants. Their `NamespacedName`,
 payload are authoritative. There is no bare JSON, bare `Value`, media-event, or
 implicit parameter channel.
 
-The long-form Stage 6 prompt includes interruption in `TransportControl`; a
-secondary transcription omitted that one word while retaining the interruption
-requirements and tests. This implementation includes interruption.
+The original Stage 6 implementation also placed voice Turn and interruption
+policy in Core. The 2026-08-02 architecture review removed that coupling:
+Signal delivery remains a Core mechanism, while Turn, cancellation, stale
+response handling, and playback clearing are Node-owned policy.
 
 `on_signal` is a control callback, not a lifecycle callback. The lifecycle is
 still exactly `on_prepare`, `on_process`, `on_finish`, and `on_abort`.
@@ -94,40 +95,22 @@ ownership after graph lifecycle cleanup.
 Resource values are Rust-internal graph resources. They do not cross a future
 C ABI as trait objects or Rust allocation pointers.
 
-## 5. TransportControl and turn filtering
+## 5. Business control stays in Nodes
 
-`TurnId` is a strong public identifier. `TransportControl` stores a coherent
-`TransportSnapshot` behind one `RwLock`; every write updates the entire state
-under one exclusive lock and every snapshot clones it under one shared lock.
-The snapshot contains:
+Core treats every valid Signal name and payload as opaque. It validates source,
+bounds queues, preserves per-edge order, and invokes `Node::on_signal`; it does
+not assign `TurnId`, switch conversations, cancel model requests, or filter Sink
+output according to a voice-specific rule.
 
-- current `TurnId` and revision;
-- idempotent interruption and audio-ended flags;
-- joined users; and
-- connection state.
+For the flagship voice Graph, `qwen.audio_realtime` owns its remote response
+state. On detected speech it cancels the active response, discards late chunks,
+and emits `voxa.voice.speech.started`. `agora.audio_sink` receives that Signal
+and clears queued PCM. A cascade may put equivalent policy in VAD, context,
+model, and playback Nodes. Other applications can define different Signal
+schemas without changing Core.
 
-Turn transition atomically replaces the ID and clears turn-local interruption
-and audio-ended state. Repeating an interruption for the current turn returns
-`AlreadyApplied`; an old-turn request returns `StaleTurn`. User and connection
-updates are likewise idempotent.
-
-`apply_signal` and `apply_event` consume the same namespaced schemas:
-
-- `voxa.transport.turn.changed`;
-- `voxa.transport.turn.interrupted`;
-- `voxa.transport.audio.ended`;
-- `voxa.transport.user.joined` / `.left`; and
-- `voxa.transport.connection.changed`.
-
-The methods interpret only the existing `Value::Map` payload. They do not
-create another event hierarchy or transport channel.
-
-`stamp_frame` derives a fresh immutable Frame and attaches a private
-`voxa.transport.turn` v1 extension plus lineage. Before every Sink
-`on_process`, the concurrent runtime compares that extension with one current
-snapshot. A mismatched frame is dropped and counted; an untagged frame remains
-valid for non-turn-scoped graphs. A malformed turn extension aborts rather than
-bypassing the gate.
+This keeps mechanism and policy separate: a generic Runtime cannot infer
+whether a late Frame is invalid merely from a product-level turn model.
 
 ## 6. Thread, memory, and stop model
 

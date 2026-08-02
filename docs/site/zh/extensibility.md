@@ -58,7 +58,7 @@ Event。Node 不直接调用下游 Node，不持有 Edge Queue，也不绕过 Ru
 ## 发现位置
 
 Studio 和 CLI 从受信任的目录发现 Package，包括项目内 `.voxa/nodes/` 和已配置的
-Provider Root。Node Library 展示 Manifest、Port Schema、配置项和源码；开发者可以
+官方 Node Root。Node Library 展示 Manifest、Port Schema、配置项和源码；开发者可以
 在 Studio 创建或编辑项目 Node，再导入 Library 并放到画布中。
 
 ## 推荐开发流程
@@ -69,6 +69,6 @@ Provider Root。Node Library 展示 Manifest、Port Schema、配置项和源码�
 4. 把 Node 连入示例 Graph；
 5. 使用 `voxa validate <project>` 检查身份、类型和拓扑；
 6. 用测试工具覆盖正常、慢下游、取消和错误路径；
-7. 作为项目 Node 或 Provider Node Pack 分发。
+7. 作为项目 Node 或官方 Node Pack 分发。
 
 选择实现语言：[多语言执行模型](languages.md)。具体教程：[开发 Node](nodes/index.md)。

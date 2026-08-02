@@ -4,7 +4,7 @@
 
 | 属性 | 值 |
 | --- | --- |
-| Node Type | `provider.qwen.asr_realtime` |
+| Node Type | `qwen.asr_realtime` |
 | 层级 / 角色 | `algorithm` / `transform` |
 | Capability | `speech.asr.streaming` |
 

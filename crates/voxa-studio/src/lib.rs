@@ -339,40 +339,46 @@ fn route(
             });
             ("200 OK", "application/json", payload.to_string())
         }
-        ("GET", "/api/v1/providers") => (
+        ("GET", "/api/v1/connections" | "/api/v1/providers") => (
             "200 OK",
             "application/json",
             runtime.connections.status_json().to_string(),
         ),
-        ("GET", "/api/v1/provider-catalog") => match node_library::provider_catalog(graph) {
-            Ok(providers) => (
-                "200 OK",
-                "application/json",
-                serde_json::to_string(&providers).unwrap_or_else(|_| "[]".into()),
-            ),
-            Err(error) => (
-                "500 Internal Server Error",
-                "application/json",
-                json_message(&format!("failed to load Provider catalog: {error}")),
-            ),
-        },
+        ("GET", "/api/v1/official-node-collections" | "/api/v1/provider-catalog") => {
+            match node_library::provider_catalog(graph) {
+                Ok(providers) => (
+                    "200 OK",
+                    "application/json",
+                    serde_json::to_string(&providers).unwrap_or_else(|_| "[]".into()),
+                ),
+                Err(error) => (
+                    "500 Internal Server Error",
+                    "application/json",
+                    json_message(&format!(
+                        "failed to load official Node collections: {error}"
+                    )),
+                ),
+            }
+        }
         ("GET", "/api/v1/connections/client") => (
             "200 OK",
             "application/json",
             runtime.connections.client_json().to_string(),
         ),
-        ("PUT", "/api/v1/providers") => match runtime.connections.update_json(&request.body) {
-            Ok(()) => (
-                "200 OK",
-                "application/json",
-                runtime.connections.status_json().to_string(),
-            ),
-            Err(message) => (
-                "400 Bad Request",
-                "application/json",
-                json_message(&message),
-            ),
-        },
+        ("PUT", "/api/v1/connections" | "/api/v1/providers") => {
+            match runtime.connections.update_json(&request.body) {
+                Ok(()) => (
+                    "200 OK",
+                    "application/json",
+                    runtime.connections.status_json().to_string(),
+                ),
+                Err(message) => (
+                    "400 Bad Request",
+                    "application/json",
+                    json_message(&message),
+                ),
+            }
+        }
         ("POST", "/api/v1/graph/validate") => match validate(&request.body, graph, runtime) {
             Ok(_) => ("200 OK", "application/json", "[]".into()),
             Err(errors) => diagnostics_response(errors),

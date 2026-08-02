@@ -1,6 +1,6 @@
 # Agora RTC 传输层
 
-Agora 是 C++ Transport Provider。输入和输出 Node 共享同一个进程级 RTC Engine，将凭据隔离
+Agora 官方传输 Node 使用 C++ 实现。输入和输出 Node 共享同一个进程级 RTC Engine，将凭据隔离
 在 Graph JSON 之外，并与 Voxa 交换类型化 PCM Audio Frame。
 
 - 分类：`transport`

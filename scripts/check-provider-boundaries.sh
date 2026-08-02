@@ -11,10 +11,14 @@ fi
 
 if rg -ni 'qwen|dashscope|agora' \
   Cargo.toml CMakeLists.txt cmake \
-  crates/voxa-core/src crates/voxa-graph-json/src crates/voxa-studio/src; then
-  echo "Vendor-specific code leaked into the framework workspace, build, Core, Graph builtins, or Studio" >&2
+  crates/voxa-core/src crates/voxa-graph-json/src/builtins.rs; then
+  echo "Vendor-specific code leaked into the framework workspace, build, Core, or built-in Nodes" >&2
   exit 1
 fi
+
+# Graph parsing and Studio keep explicit read-only aliases for names released
+# before the official Node namespaces were simplified. These aliases migrate
+# persisted user Graphs; they do not register or implement vendor Nodes.
 
 python3 - <<'PY'
 import json
@@ -25,18 +29,18 @@ manifests = [json.loads(path.read_text()) for path in Path("providers").rglob("v
 for manifest in manifests:
     node_type = manifest["node_type"]
     language = manifest["language"]
-    if node_type.startswith("provider.qwen.") and language != "python":
+    if node_type.startswith("qwen.") and language != "python":
         raise SystemExit(f"{node_type} must be implemented in Python, found {language}")
-    if node_type.startswith("provider.agora.") and language != "cpp":
+    if node_type.startswith("agora.") and language != "cpp":
         raise SystemExit(f"{node_type} must be implemented in C++, found {language}")
 
 for path in root.glob(".voxa/templates/*.json"):
     graph = json.loads(path.read_text())["graph"]
     for node in graph["nodes"]:
         node_type, language = node["node_type"], node["language"]
-        if node_type.startswith("provider.qwen.") and language != "python":
+        if node_type.startswith("qwen.") and language != "python":
             raise SystemExit(f"template {path} couples Qwen to {language}")
-        if node_type.startswith("provider.agora.") and language != "cpp":
+        if node_type.startswith("agora.") and language != "cpp":
             raise SystemExit(f"template {path} couples Agora to {language}")
 PY
 
@@ -46,4 +50,4 @@ if find providers/transport/agora \
   exit 1
 fi
 
-echo "Provider boundary validation passed: framework is vendor-neutral; Qwen=Python; Agora=C++."
+echo "Node boundary validation passed: framework is vendor-neutral; Qwen=Python; Agora=C++."

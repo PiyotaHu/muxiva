@@ -4,7 +4,7 @@ Consumes transcript or context text and emits sentence-sized assistant response 
 
 | Property | Value |
 | --- | --- |
-| Node type | `provider.qwen.llm_stream` |
+| Node type | `qwen.llm_stream` |
 | Layer / kind | `algorithm` / `transform` |
 | Capability | `language.generation.streaming` |
 

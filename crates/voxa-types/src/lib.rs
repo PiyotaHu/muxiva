@@ -22,7 +22,7 @@ pub use frame::{
 pub use frame_buffer::FrameBuffer;
 pub use id::{
     ClockDomainId, EdgeId, FrameId, GraphId, IdentifierError, NodeId, ProducerId, SessionId,
-    StreamId, TraceId, TurnId,
+    StreamId, TraceId,
 };
 pub use lineage::{Lineage, LineageEntry, MediaTimeRange, TransformOrigin};
 pub use schema::{NamespacedName, SchemaVersion};

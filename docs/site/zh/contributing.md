@@ -13,7 +13,7 @@ Voxa 欢迎聚焦的设计反馈、可复现 Bug、文档、测试与 Pull Reque
 ## 文档契约
 
 公开文档过期时，代码变更不算完成。公开 API、Graph/Manifest Schema、Runtime
-语义、Studio、CLI、Provider、安全或架构变化，必须同时更新：
+语义、Studio、CLI、Node 集成、安全或架构变化，必须同时更新：
 
 ```text
 docs/site/en/<page>.md

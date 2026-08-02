@@ -4,7 +4,7 @@
 
 | 属性 | 值 |
 | --- | --- |
-| Node Type | `provider.qwen.tts_realtime` |
+| Node Type | `qwen.tts_realtime` |
 | 层级 / 角色 | `algorithm` / `transform` |
 | Capability | `speech.tts.streaming` |
 

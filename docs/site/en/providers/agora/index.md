@@ -1,7 +1,8 @@
 # Agora RTC transport
 
-Agora is a C++ transport Provider. Ingress and egress Nodes share one process-level RTC Engine,
-keeps credentials outside Graph JSON, and exchanges typed PCM Audio Frames with Voxa.
+The official Agora transport Nodes are implemented in C++. Ingress and egress share one
+process-level RTC Engine, keep credentials outside Graph JSON, and exchange typed PCM Audio
+Frames with Voxa.
 
 - Category: `transport`
 - SDK: Agora RTC Native SDK `4.6.2`

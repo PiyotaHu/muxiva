@@ -25,7 +25,7 @@ flowchart TB
 | `voxa validate my-agent` | 在 CI 或运行前检查身份、配置、Port 与拓扑 | 否 |
 | `voxa run my-agent` | 使用并发 Runtime 执行项目 | 是 |
 | `voxa studio` | 自动发现项目并打开本地可视化环境 | 由用户点击 Run |
-| `voxa doctor --voice` | 检查工具、Provider、动态库和语音凭据就绪度 | 否 |
+| `voxa doctor --voice` | 检查工具、官方 Node、动态库和语音凭据就绪度 | 否 |
 | `voxa simulate --scenario voice` | 运行无网络工程夹具，检查 Runtime 控制流 | 是，合成数据 |
 
 `simulate` 是测试 Runtime 的工程工具，不是真实 ASR/LLM/TTS 产品 Demo。真实语音体验
@@ -36,11 +36,11 @@ flowchart TB
 Studio 随 CLI 发布并默认监听 `127.0.0.1`。它直接读写 Graph v1，主要提供：
 
 - 从 Node Library 拖放 Node，并从输出 Port 拉线到兼容输入 Port；
-- 按 Transport、Algorithm、Media、Control、Utility、Provider 和 Capability 筛选；
+- 按 Transport、Algorithm、Media、Control、Utility 和 Capability 筛选；
 - 选中 Node 查看 Manifest、详细 Port Schema、配置、实现源码与指南；
 - 在 Node Lab 创建和编辑项目 Node，再注册到 Library；
 - 校验和运行当前画布，查看 Node 回调、Edge 队列、丢帧、事件和结果；
-- 在 Connections 中配置本地 Provider 凭据，真实值不写入 Graph。
+- 在 Connections 中配置 Node 所需的本地凭据，真实值不写入 Graph。
 
 Studio 是本地开发工具，不是应暴露到公网的生产控制面。完整操作见
 [Voxa Studio](studio.md)。

@@ -5,7 +5,7 @@ Speech-to-Speech Graph。
 
 | 属性 | 值 |
 | --- | --- |
-| Node Type | `provider.qwen.audio_realtime` |
+| Node Type | `qwen.audio_realtime` |
 | 层级 / 角色 | `algorithm` / `transform` |
 | Capability | `speech.to.speech.realtime` |
 
@@ -23,7 +23,7 @@ Speech-to-Speech Graph。
 `turn_detection` 支持 `server_vad` 或 `smart_turn`。门面 Demo 推荐 `server_vad`，默认阈值为
 `0.35`、静音结束时间为 `1000ms`；它能容纳自然短停顿，避免把一句话误切成两轮。
 
-发生打断时，Voxa 会取消 Provider 生成、发出 `voxa.runtime.interrupt` Signal，并清空 Agora
-Sink 中尚未播放的 PCM。Voice Room 会显示 `YOU ARE SPEAKING` 和
+发生打断时，Qwen Node 会取消自己的生成、发出 `voxa.voice.speech.started` Signal；Agora
+Audio Sink 收到 Signal 后清空尚未播放的 PCM。Voice Room 会显示 `YOU ARE SPEAKING` 和
 `BARGE-IN · INTERRUPTING AGENT`；服务端日志中的 `[VOXA][AGORA][audio.cancelled]` 给出实际
 清除的字节数。

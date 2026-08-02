@@ -15,12 +15,12 @@
 ## 0. 当前支持范围
 
 - 一键安装路径已在 Apple Silicon macOS 上验证；Agora macOS SDK 固定为 `4.6.2`。
-- Qwen Provider 当前使用阿里云百炼**华北 2（北京）**端点，API Key 和 Workspace
+- Qwen Node 当前使用阿里云百炼**华北 2（北京）**端点，API Key 和 Workspace
   必须来自同一区域。
 - Windows/其他平台目前需要从 [Agora SDK 官方页面](https://docs.agora.io/en/api-reference/sdks?product=voice)
   手动下载，并把解压目录传给 `setup.sh`。
 
-## 1. 安装 Voxa 与 Provider
+## 1. 安装 Voxa 与官方 Node
 
 先准备 Git、Rust、Python 3、CMake 3.20+ 与 Xcode Command Line Tools，然后运行：
 
@@ -88,7 +88,7 @@ cargo install --locked --path crates/voxa-cli
 3. 按官方[首次调用 Qwen](https://help.aliyun.com/zh/model-studio/first-api-call-to-qwen)
    指南找到同一 Workspace 的 **Workspace ID**。
 
-这里没有“Qwen SDK 下载”步骤。Voxa 的 Python Provider 直接使用官方 WebSocket/HTTP
+这里没有“Qwen SDK 下载”步骤。Voxa 的 Python Node 直接使用官方 WebSocket/HTTP
 协议，`setup.sh` 已安装唯一的第三方 Python 依赖。Realtime 图默认使用
 `qwen-audio-3.0-realtime-flash`；级联图使用 Qwen ASR、LLM 与 TTS。
 
@@ -151,7 +151,7 @@ Qwen 增量 ASR 使用 `text + stash` 作为实时预览，并在
 
 ## 6. 工程验收
 
-不使用凭据时，可以验证代码、Provider 边界与动态 ABI：
+不使用凭据时，可以验证代码、Node 边界与动态 ABI：
 
 ```bash
 ./scripts/check-provider-boundaries.sh

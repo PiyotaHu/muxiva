@@ -33,14 +33,14 @@ This shortened example omits Nodes and Edges that a production document would in
   "nodes": [
     {
       "id": "asr",
-      "node_type": "provider.qwen.asr_realtime",
+      "node_type": "qwen.asr_realtime",
       "language": "python",
       "factory_version": "1.0.0",
       "node_config": {"model": "qwen3-asr-flash-realtime"}
     },
     {
       "id": "llm",
-      "node_type": "provider.qwen.llm_stream",
+      "node_type": "qwen.llm_stream",
       "language": "python",
       "factory_version": "1.0.0",
       "node_config": {}
@@ -119,7 +119,7 @@ Compiler, so canvas validation does not create a second set of rules.
 
 Graph JSON cannot contain executable source, dynamic scripts, real credentials, or arbitrary
 remote resources. It references trusted Factories and declarative configuration. Executable
-code belongs to a [Node Package](extensibility.md), and vendor connections belong to a
-[Provider](provider-architecture.md).
+code belongs to a [Node Package](extensibility.md), and external-service credentials use a
+[Node Connection](provider-architecture.md).
 
 Next: [real-time flow and control](realtime-control.md).

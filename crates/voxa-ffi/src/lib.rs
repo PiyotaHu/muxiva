@@ -66,6 +66,22 @@ fn pinned_native_node_pack(path: &Path) -> Result<Arc<libloading::Library>, Stri
 /// background callbacks after registration discovery, so unloading a Pack at
 /// Registry scope would leave executable callback addresses dangling.
 pub fn load_cpp_multimodal_node_pack(path: &Path) -> Result<voxa_core::NodeRegistration, String> {
+    load_cpp_multimodal_node_pack_with_alias(path, None)
+}
+
+/// Loads a trusted Node Pack while registering a compatibility alias selected
+/// by the caller after validating the package Manifest.
+pub fn load_cpp_multimodal_node_pack_as(
+    path: &Path,
+    node_type: voxa_core::NodeTypeName,
+) -> Result<voxa_core::NodeRegistration, String> {
+    load_cpp_multimodal_node_pack_with_alias(path, Some(node_type))
+}
+
+fn load_cpp_multimodal_node_pack_with_alias(
+    path: &Path,
+    node_type: Option<voxa_core::NodeTypeName>,
+) -> Result<voxa_core::NodeRegistration, String> {
     type Entrypoint = unsafe extern "C" fn() -> abi::MultimodalNodeFactoryView;
 
     let library = pinned_native_node_pack(path)?;
@@ -77,8 +93,11 @@ pub fn load_cpp_multimodal_node_pack(path: &Path) -> Result<voxa_core::NodeRegis
             .map_err(|error| format!("C++ Node Pack has no v1 factory symbol: {error}"))?;
         entrypoint()
     };
-    let spec = cpp_multimodal_factory_spec(&view)
+    let mut spec = cpp_multimodal_factory_spec(&view)
         .map_err(|error| format!("{}: {}", error.code, error.message))?;
+    if let Some(node_type) = node_type {
+        spec.node_type = node_type;
+    }
     Ok(bridge::cpp_multimodal_registration(spec, Some(library)))
 }
 

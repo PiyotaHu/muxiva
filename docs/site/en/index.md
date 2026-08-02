@@ -8,7 +8,7 @@ control messages, and observability. Applications provide Nodes for speech,
 reasoning, media, transport, and business logic.
 
 !!! warning "Pre-alpha"
-    The runtime foundation is tested, but public packages and provider
+    The runtime foundation is tested, but public packages and official Node
     integrations are still evolving. Do not execute untrusted Node code or
     expose Studio directly to the internet.
 
@@ -46,7 +46,7 @@ state.
 | Build visually | [Voxa Studio](studio.md) |
 | Understand the runtime | [Runtime architecture](concepts.md) |
 | Write a Node | [Node packages](nodes/index.md) |
-| Integrate RTC or media | [Providers](integrations.md) |
+| Integrate RTC or media | [Official and custom Nodes](integrations.md) |
 | Contribute safely | [Contributing](contributing.md) |
 
 [Build a Node](nodes/index.md){ .md-button }

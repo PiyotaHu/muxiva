@@ -14,7 +14,7 @@ documentation, tests, and pull requests.
 ## Documentation contract
 
 A change is incomplete when its public documentation is stale. Public API,
-Graph or Manifest Schema, Runtime semantics, Studio, CLI, provider, security,
+Graph or Manifest Schema, Runtime semantics, Studio, CLI, Node integration, security,
 or architecture changes must update both:
 
 ```text
