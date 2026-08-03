@@ -77,7 +77,12 @@ fn inspect_voice_project(current: &Path, warnings: &mut usize) -> Option<PathBuf
         "[VOXA][DOCTOR][PASS] voice-project root={}",
         project.display()
     );
-    for package in ["agora_audio_source", "agora_audio_sink"] {
+    for package in [
+        "agora_audio_source",
+        "agora_audio_sink",
+        "agora_data_source",
+        "agora_data_sink",
+    ] {
         let package_root = project.join(".voxa/native").join(package);
         let artifact = package_root.join(native_node_pack_filename());
         let mode = fs::read_to_string(package_root.join("provider-mode"))

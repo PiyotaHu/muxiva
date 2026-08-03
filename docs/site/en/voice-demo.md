@@ -41,7 +41,8 @@ The final command:
    [official macOS SDK repository](https://github.com/AgoraIO/AgoraRtcEngine_macOS/tree/4.6.2);
 2. verifies every archive with SHA-256;
 3. creates `examples/voice-agent/.voxa/venv` and installs `websocket-client`;
-4. builds the `agora_audio_source` and `agora_audio_sink` C++ Node Packs.
+4. builds the four C++ Nodes `agora.audio_source`, `agora.audio_sink`,
+   `agora.data_source`, and `agora.data_sink`. They share one RTC Engine and Bot UID.
 
 Installation is complete only after these lines appear:
 
@@ -115,8 +116,9 @@ that is a blocking diagnosis, not an optional hint. In Studio:
 3. Enter the Agora App ID, channel, and tokens for UIDs `1001` and `2001`.
 4. Select **Save connections** and confirm both cards show **Ready**; otherwise the Runtime will not start.
 5. Open **Templates** and choose **Qwen Realtime** for the first run.
-6. Open **Voice Room**, select **Start live conversation**, and allow microphone access.
-7. Speak naturally, then speak again while the assistant is playing to verify full-duplex interruption.
+6. Select **Run** in Studio and confirm the Runtime is live. Studio owns this management action.
+7. Open **Voice Room**, select **Start live conversation**, and allow microphone access.
+8. Speak naturally, then speak again while the assistant is playing to verify full-duplex interruption.
 
 Save connections writes values to `examples/voice-agent/.env` (mode `0600`, Git ignored).
 Future runs load it automatically. You can also create it manually from `.env.example`.
@@ -137,11 +139,17 @@ look connected but there is no response, find the first signal that does not adv
 
 The first missing signal identifies the failing layer. Credential values are never logged.
 
-Voice Room renders each turn as chat history: user ASR on the right and the Agent's streaming
-response on the left. Qwen incremental ASR uses `text + stash` for the live preview and commits
+Voice Room renders each turn from Agora RTC data-stream messages—not the Studio EventBus—as chat
+history: user ASR on the right and the Agent's streaming response on the left. Qwen incremental
+ASR uses `text + stash` for the live preview and commits
 the final text from `conversation.item.input_audio_transcription.completed`. The Agora Bot consumes
 remote PCM without playing the user's voice on the Runtime machine and publishes assistant audio
 as paced 10 ms PCM packets.
+
+Closing Studio after the Runtime has been started does not change the RTC media/message protocol.
+The bundled page currently uses `/api/v1/client/session` only to bootstrap temporary local browser
+credentials. A production web app replaces that one endpoint with its token service and never
+exposes Studio's Graph or Runtime management APIs.
 
 ## 5. Troubleshooting
 

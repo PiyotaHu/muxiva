@@ -137,6 +137,8 @@ public:
         video_track_ = engine_->createCustomVideoTrack();
         if (video_track_ == kInvalidTrack)
           return -1;
+        if ((result = engine_->createDataStream(&data_stream_id_, true, true)) != 0)
+          return result;
         result = engine_->enableVideo();
         if (result == 0) {
           std::fprintf(
@@ -255,6 +257,23 @@ public:
     }
   }
 
+  int push_data(const DataMessageView &value) noexcept override {
+    try {
+      if (value.data == nullptr || value.size == 0 || value.size > 1024 ||
+          data_stream_id_ < 0)
+        return -2;
+      std::string bytes(reinterpret_cast<const char *>(value.data), value.size);
+      return executor_.call([this, bytes = std::move(bytes)] {
+        return engine_ == nullptr
+                   ? -7
+                   : engine_->sendStreamMessage(data_stream_id_, bytes.data(),
+                                                bytes.size());
+      });
+    } catch (...) {
+      return -1;
+    }
+  }
+
   void shutdown() noexcept override {
     if (shutdown_)
       return;
@@ -320,6 +339,16 @@ private:
       }
     }
     return true;
+  }
+  void onStreamMessage(::agora::rtc::uid_t uid, int stream_id,
+                       const char *data, size_t length,
+                       uint64_t sent_ts) override {
+    auto *observer = observer_.load(std::memory_order_acquire);
+    if (observer != nullptr && data != nullptr && length > 0 && length <= 1024) {
+      observer->on_data_message(
+          {reinterpret_cast<const std::uint8_t *>(data), length, uid,
+           stream_id, sent_ts});
+    }
   }
   int getObservedAudioFramePosition() override {
     return AUDIO_FRAME_POSITION_BEFORE_MIXING;
@@ -436,6 +465,7 @@ private:
   ::agora::media::IMediaEngine *media_ = nullptr;
   ::agora::rtc::track_id_t audio_track_ = kInvalidTrack;
   ::agora::rtc::video_track_id_t video_track_ = kInvalidTrack;
+  int data_stream_id_ = -1;
   std::atomic<SdkObserver *> observer_{nullptr};
   std::atomic<std::uint64_t> received_audio_frames_{0};
   bool shutdown_ = false;
@@ -558,6 +588,19 @@ public:
     }
   }
 
+  int push_data(const DataMessageView &message) noexcept {
+    try {
+      std::shared_ptr<NativeSdk> sdk;
+      {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        sdk = sdk_;
+      }
+      return sdk ? sdk->push_data(message) : -7;
+    } catch (...) {
+      return -1;
+    }
+  }
+
   void detach(SdkObserver *observer) noexcept {
     try {
       std::lock_guard<std::mutex> operation(operation_mutex_);
@@ -642,6 +685,9 @@ private:
   void on_video_frame(const I420FrameView &frame) noexcept override {
     broadcast([&](SdkObserver &value) { value.on_video_frame(frame); });
   }
+  void on_data_message(const DataMessageView &message) noexcept override {
+    broadcast([&](SdkObserver &value) { value.on_data_message(message); });
+  }
 
   std::recursive_mutex mutex_;
   std::mutex operation_mutex_;
@@ -689,6 +735,9 @@ public:
   }
   int push_video(const I420FrameView &frame) noexcept override {
     return attached_ ? shared_engine().push_video(frame) : -7;
+  }
+  int push_data(const DataMessageView &message) noexcept override {
+    return attached_ ? shared_engine().push_data(message) : -7;
   }
   void shutdown() noexcept override {
     if (!attached_)

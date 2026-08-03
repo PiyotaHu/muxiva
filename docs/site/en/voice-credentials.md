@@ -105,8 +105,9 @@ cd /path/to/Voxa
 1. Select **Connections** in Studio.
 2. Fill both cards and select **Save connections**.
 3. After both cards show **Ready**, select **Templates → Qwen Realtime**.
-4. Open **Voice Room → Start live conversation** and allow microphone access.
-5. Say a complete sentence and pause for about one second for the first response.
+4. Select **Run** and wait until Studio reports that Runtime is active.
+5. Open **Voice Room → Start live conversation** and allow microphone access.
+6. Say a complete sentence and pause for about one second for the first response.
 
 Studio saves credentials to `examples/voice-agent/.env` with mode `0600`; Git ignores the file
 and later runs load it automatically:
@@ -136,7 +137,8 @@ secret values. Follow a real session in order:
 2. The log reports `[VOXA][AGORA][participant.joined] uid=1001`.
 3. The log reports `[VOXA][AGORA][audio.received]`.
 4. The log reports `[VOXA][QWEN][event] type=input_audio_buffer.speech_started`.
-5. `response.created`, captions, and `Agora Out` begin increasing.
+5. `response.created`, `[VOXA][AGORA][data.published]`, and audio output begin increasing.
+6. Voice Room diagnostics show increasing Client Messages and the chat renders both sides.
 
 | Symptom | Check first |
 | --- | --- |

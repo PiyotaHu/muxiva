@@ -36,15 +36,15 @@ Voxa 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部
 | --- | --- | --- |
 | Frame、图模型、同步/并发 Runtime | 可用 | 静态 DAG，端口与 Frame 类型精确匹配 |
 | 背压与实时流控 | 可用 | 有界队列、音频合帧、Managed Stream |
-| Signal、EventBus、turn 控制 | 可用 | 相邻 Signal 与隔离的全局 Event |
+| Signal 与 EventBus 控制 | 可用 | Signal 沿显式相邻 Edge 路由；Event 仅进程内可观察 |
 | C ABI 与 C++ SDK | 可用 | 版本化 ABI、RAII Wrapper、可安装 CMake 包与宿主注册的 Graph v1 文本 Factory |
-| RTC Adapter | 实验性 | Mock 契约与隔离的 Agora C++ PCM16/I420 Provider；尚需带凭证实房认证 |
+| RTC Node | 实验性 | 共享 Session 的 Agora C++ 音频/数据输入输出；尚需带凭证实房认证 |
 | 媒体归一化 | 实验性 | 可选 FFmpeg 流式音频重采样，以及 RGBA8/I420 缩放和色彩转换 |
 | Python/PyO3 包 | 实验性 | 独立线程/asyncio loop 与宿主 Graph v1 文本 Factory；明确拒绝 `isolated_process` |
 | Node-API 包 | 实验性 | 独立 Worker 与宿主 Graph v1 文本 Factory；明确拒绝返回 Promise 的 Transform |
 | JSON Graph v1 与 CLI | 实验性 | 精确版本 Registry 编译、内置 Factory 并发执行、有界等待、初始化和本地 Studio |
 | 本地 Studio | 可用 | Node Lab、类型化连线、Python Host、C++ ABI Pack、项目体验与本地 Run/Stop |
-| 模型 Provider | 实验性 | 集中放在 `providers/` 的 Qwen Python Node Pack，绝不链接进 Core |
+| 模型 Node | 实验性 | Qwen Python Node Pack 是 Core 外部的厂商适配 Node |
 
 ## 架构
 
@@ -93,8 +93,8 @@ voxa --version
 ./examples/voice-agent/run.sh
 ```
 
-在 Studio 选择图、填写 **Connections**，然后打开 **Voice Room**。完整安装流程、
-三身份 RTC Token 模型、安全边界和离线门禁见
+在 Studio 选择图、填写 **Connections**、点击 **Run**，然后打开 **Voice Room**。完整安装流程、
+双身份共享 RTC Session 模型、安全边界和离线门禁见
 [旗舰语音 Demo 指南](https://piyotahu.github.io/Voxa/zh/voice-demo/)。
 
 ### 创建、校验并运行 Graph

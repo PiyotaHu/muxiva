@@ -17,7 +17,9 @@ flowchart LR
     AI --> QR["Qwen Audio Realtime<br/>Python · Algorithm"]
     QR --> AO["Agora Audio Egress<br/>C++ · Transport"]
     AO --> S["Browser speaker"]
-    QR -."transcript Events".-> UI["Studio / Voice Room"]
+    QR --> CE["Client Event Encoder<br/>Rust · Protocol"]
+    CE --> DO["Agora Data Egress<br/>C++ · Transport"]
+    DO --> UI["Independent Voice Client"]
 ```
 
 Choose it when low latency, natural turns, and fewer components are the priority.
@@ -34,7 +36,7 @@ flowchart LR
     VAD --> FUSION["Context / Policy"]
     ASR --> FUSION
     FUSION --> LLM["Qwen LLM"]
-    LLM --> TEXT["Transcript / Tool"]
+    LLM --> TEXT["Cancellation Gate / Tool"]
     LLM --> TTS["Qwen TTS"]
     TTS --> OUT["Agora Egress"]
 ```
@@ -48,7 +50,7 @@ TTS. Branching and joining are normal Graph capabilities; Voxa is not limited to
 | Layer | Implementation | Owns | Does not own |
 | --- | --- | --- | --- |
 | Project web | HTML/JS + Agora Web SDK | Microphone permission, channel, playback, interaction UI | Model secrets or Runtime scheduling |
-| Official Agora Nodes | C++ Node Pack | RTC ingress/egress and PCM Frame conversion | ASR, LLM, or Graph scheduling |
+| Official Agora Nodes | C++ Node Pack | One shared RTC session, audio ingress/egress, and reliable ordered client messages | ASR, LLM, or Graph scheduling |
 | Runtime Core | Rust | Types, queues, concurrency, opaque Signal routing, shutdown | Vendor requests, voice turns, or product UI |
 | Official Qwen Nodes | Python Node Pack | Realtime or ASR/LLM/TTS streams | RTC channels or Edge queues |
 | Developer tools | CLI + Studio | Create, configure, validate, run, observe | Production end-user UI |
@@ -78,9 +80,30 @@ sequenceDiagram
 ```
 
 Interruption semantics live entirely in Nodes. The Qwen Node cancels the remote response and
-discards late chunks; the Agora Audio Sink stops queued playback. Core understands neither voice,
-turns, nor a particular Signal name—it only broadcasts the opaque Signal reliably. Custom Nodes
-can therefore reuse EventBus without placing application policy in the framework core.
+discards late chunks; the Agora Audio Sink clears queued playback and rejects audio at or below
+the cancellation sequence. The cascade also places a generic text cancellation gate before TTS.
+Core understands neither voice, turns, nor a particular Signal name—it only routes opaque Signals.
+
+## Client data is not Studio telemetry
+
+ASR text, assistant text, and speech state leave the Graph through `agora.data_sink`. The browser
+receives `voxa.client-event/v1` messages from Agora's reliable ordered data stream. It never polls
+`/api/v1/runtime/events`, and it cannot start or stop the Runtime. EventBus remains an in-process
+observability facility for logs and Studio operators; it is not the end-user transport contract.
+
+The local `/api/v1/client/session` endpoint only bootstraps temporary browser RTC credentials.
+A production deployment replaces that endpoint with its own authenticated short-lived token
+service while keeping the same media and message paths.
+
+The first supported isolation model is deliberately strict: one Agora channel equals one Agent
+session and one configured browser UID. The shared C++ session drops media and messages from any
+other UID rather than accidentally mixing participants.
+
+!!! warning "Cascade cancellation boundary"
+    The cancellation gates prevent stale cascade text and audio from reaching TTS, playback, or
+    the client. The current synchronous Python HTTP LLM request itself is not preempted mid-call;
+    cancellable asynchronous transform execution remains required before claiming hard provider-
+    side cancellation for the cascade Graph. Qwen Realtime does cancel provider generation.
 
 ## Credential and deployment boundary
 

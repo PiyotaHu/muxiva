@@ -23,7 +23,8 @@ flowchart LR
     AGORA_IN --> QWEN["Qwen Realtime 或级联智能层"]
     QWEN --> AGORA_OUT["Agora C++ Egress"]
     AGORA_OUT --> WEB
-    QWEN --> LIVE["实时字幕 · EventBus · 打断"]
+    QWEN --> DATA["Agora 有序数据流"]
+    DATA --> LIVE["客户端字幕 · 打断状态"]
 ```
 
 这是带真实凭据运行的门面应用：浏览器采集真实麦克风，Agora 传输真实音频，Qwen

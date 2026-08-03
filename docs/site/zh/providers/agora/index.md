@@ -1,7 +1,9 @@
 # Agora RTC 传输层
 
-Agora 官方传输 Node 使用 C++ 实现。输入和输出 Node 共享同一个进程级 RTC Engine，将凭据隔离
-在 Graph JSON 之外，并与 Voxa 交换类型化 PCM Audio Frame。
+Agora 官方传输 Node 使用 C++ 实现。同一个 RTC 身份的音频与数据输入/输出 Node 共享一个
+Engine，将凭据隔离在 Graph JSON 之外，并与 Voxa 交换类型化 PCM Audio Frame 和有界、
+带版本的客户端消息。当前版本明确限定一个 Runtime 进程承载一个 Agent RTC Session；
+生产环境通过进程或容器隔离横向扩展。
 
 - 分类：`transport`
 - SDK：Agora RTC Native SDK `4.6.2`
@@ -26,3 +28,4 @@ Node：
 
 - [Agora Audio Ingress](audio-ingress.md)
 - [Agora Audio Egress](audio-egress.md)
+- [实时客户端消息](realtime-messages.md)

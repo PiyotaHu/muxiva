@@ -114,11 +114,11 @@ reuse the same Qwen provider without Agora.
 
 Studio owns a first-class **Connections** surface. A developer can paste the
 DashScope API key and two short-lived Agora RTC tokens, set workspace, App ID,
-channel and distinct browser/ingress/egress UID fields, and see readiness without editing an environment
-file. Password fields are cleared immediately after submission. The browser
-does not store secrets and the status API never echoes them. Initial storage is
-process memory and is erased when Studio exits; durable storage may only use an
-OS credential vault, never Graph JSON or browser storage.
+channel, browser UID, and shared Voxa Bot UID, and see readiness without manually editing an
+environment file. Password fields are cleared immediately after submission. The browser receives
+only explicitly `client_exposed` bootstrap fields and never receives DashScope credentials, the
+Bot token, or an App Certificate. Local development values persist in the Git-ignored project
+`.env` with mode `0600`; production uses a secret store and token service, never Graph JSON.
 
 The Voice Graph Gallery exposes two choices:
 
@@ -166,8 +166,9 @@ Implemented after the provider-boundary correction:
   Manifest port shape while retaining the loaded library for Node lifetimes;
 - the full Python Qwen ASR, sentence-streaming LLM, and committed streaming TTS
   cascade plus generic Rust VAD/turn context are executable;
-- the project Voice Room joins through Agora Web SDK, controls the Studio
-  Runtime, renders live metrics and EventBus transcript/response telemetry, and
+- the project Voice Room joins through Agora Web SDK as an independent client;
+  it neither controls the Studio Runtime nor reads its EventBus. Audio and
+  versioned client events cross the Agora media/data transport and the room
   stays active until the developer ends the session;
 - browser-visible connection values require explicit `client_exposed` opt-in;
   DashScope keys, bot tokens, and App Certificates remain unavailable.

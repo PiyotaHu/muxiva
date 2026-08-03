@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace voxa::agora {
 
@@ -51,6 +52,30 @@ struct I420FrameView final {
   std::uint32_t remote_uid = 0;
 };
 
+struct DataMessageView final {
+  const std::uint8_t* data = nullptr;
+  std::size_t size = 0;
+  std::uint32_t remote_uid = 0;
+  int stream_id = 0;
+  std::uint64_t sent_timestamp_ms = 0;
+};
+
+struct OwnedPcm16Frame final {
+  std::vector<std::uint8_t> bytes;
+  std::uint32_t sample_rate_hz = 0;
+  std::uint16_t channels = 0;
+  std::uint64_t samples_per_channel = 0;
+  std::int64_t timestamp_ms = 0;
+  std::uint32_t remote_uid = 0;
+};
+
+struct OwnedDataMessage final {
+  std::vector<std::uint8_t> bytes;
+  std::uint32_t remote_uid = 0;
+  int stream_id = 0;
+  std::uint64_t sent_timestamp_ms = 0;
+};
+
 struct RtcStatsSnapshot final {
   std::uint32_t duration_seconds = 0;
   std::uint64_t tx_bytes = 0;
@@ -75,6 +100,7 @@ class SdkObserver {
   virtual void on_error(int code) noexcept = 0;
   virtual void on_audio_frame(const Pcm16FrameView& frame) noexcept = 0;
   virtual void on_video_frame(const I420FrameView& frame) noexcept = 0;
+  virtual void on_data_message(const DataMessageView&) noexcept {}
 };
 
 // The implementation owns Agora's IRtcEngine and must serialize all calls on
@@ -89,7 +115,55 @@ class Sdk {
   virtual int renew_token(const std::string& token) noexcept = 0;
   virtual int push_audio(const Pcm16FrameView& frame) noexcept = 0;
   virtual int push_video(const I420FrameView& frame) noexcept = 0;
+  virtual int push_data(const DataMessageView&) noexcept { return -7; }
   virtual void shutdown() noexcept = 0;
+};
+
+// All Agora graph Nodes in one Runtime process acquire one shared session.
+// This version intentionally supports one Agent RTC session per process;
+// scale-out isolation uses one process/container per session.
+class SharedSession final : private SdkObserver {
+ public:
+  static std::shared_ptr<SharedSession> acquire(
+      const std::string& app_id, const std::string& token,
+      const std::string& channel, std::uint32_t bot_uid,
+      std::uint32_t allowed_remote_uid);
+  ~SharedSession() noexcept override;
+
+  SharedSession(const SharedSession&) = delete;
+  SharedSession& operator=(const SharedSession&) = delete;
+
+  bool try_pop_audio(OwnedPcm16Frame& frame) noexcept;
+  bool try_pop_data(OwnedDataMessage& message) noexcept;
+  int send_audio(const Pcm16FrameView& frame) noexcept;
+  int send_data(const std::uint8_t* data, std::size_t size) noexcept;
+  const std::string& channel() const noexcept { return channel_; }
+  std::uint32_t bot_uid() const noexcept { return bot_uid_; }
+
+ private:
+  SharedSession(std::string app_id, std::string token, std::string channel,
+                std::uint32_t bot_uid, std::uint32_t allowed_remote_uid);
+  void on_connection_state(ConnectionState, int) noexcept override;
+  void on_rejoined(std::uint32_t, int) noexcept override;
+  void on_connection_lost() noexcept override;
+  void on_token_expiring() noexcept override;
+  void on_token_required() noexcept override;
+  void on_network_quality(std::uint32_t, int, int) noexcept override;
+  void on_rtc_stats(const RtcStatsSnapshot&) noexcept override;
+  void on_participant_joined(std::uint32_t) noexcept override;
+  void on_participant_left(std::uint32_t, int) noexcept override;
+  void on_error(int) noexcept override;
+  void on_audio_frame(const Pcm16FrameView&) noexcept override;
+  void on_video_frame(const I420FrameView&) noexcept override;
+  void on_data_message(const DataMessageView&) noexcept override;
+
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
+  std::string app_id_;
+  std::string token_;
+  std::string channel_;
+  std::uint32_t bot_uid_ = 0;
+  std::uint32_t allowed_remote_uid_ = 0;
 };
 
 struct AdapterConfig final {

@@ -15,7 +15,9 @@ flowchart LR
     AI --> QR["Qwen Audio Realtime<br/>Python · Algorithm"]
     QR --> AO["Agora Audio Egress<br/>C++ · Transport"]
     AO --> S["浏览器扬声器"]
-    QR -."字幕 Event".-> UI["Studio / Voice Room"]
+    QR --> CE["客户端事件编码<br/>Rust · Protocol"]
+    CE --> DO["Agora Data Egress<br/>C++ · Transport"]
+    DO --> UI["独立 Voice Client"]
 ```
 
 适合优先追求低延迟、自然轮次和较少组件的应用。
@@ -31,7 +33,7 @@ flowchart LR
     VAD --> FUSION["Context / Policy"]
     ASR --> FUSION
     FUSION --> LLM["Qwen LLM"]
-    LLM --> TEXT["字幕 / Tool"]
+    LLM --> TEXT["取消水位 / Tool"]
     LLM --> TTS["Qwen TTS"]
     TTS --> OUT["Agora Egress"]
 ```
@@ -44,7 +46,7 @@ flowchart LR
 | 层 | 实现 | 职责 | 不负责 |
 | --- | --- | --- | --- |
 | 项目 Web | HTML/JS + Agora Web SDK | 麦克风权限、频道、播放、交互 UI | 模型密钥与 Runtime 调度 |
-| Agora 官方 Node | C++ Node Pack | RTC 收发与 PCM Frame 转换 | ASR、LLM、Graph 调度 |
+| Agora 官方 Node | C++ Node Pack | 单一共享 RTC Session、音频收发、可靠有序客户端消息 | ASR、LLM、Graph 调度 |
 | Runtime Core | Rust | 类型、队列、并发、透明 Signal 路由、关闭 | 厂商请求、语音 Turn 或产品 UI |
 | Qwen 官方 Node | Python Node Pack | Realtime 或 ASR/LLM/TTS 流 | RTC 频道与 Edge Queue |
 | 开发工具 | CLI + Studio | 创建、配置、校验、运行、观测 | 生产用户界面 |
@@ -73,9 +75,26 @@ sequenceDiagram
     R->>M: 后续音频继续进入同一 Node
 ```
 
-打断语义完全属于 Node：Qwen Node 负责取消远端回答并丢弃晚到片段，Agora Audio Sink
-负责停止旧音频。Core 不理解语音、Turn 或具体 Signal 名称，只负责把这个不透明 Signal
-可靠地广播给 Node。因此自定义 Node 可以复用 EventBus，而不会把业务规则写进框架核心。
+打断语义完全属于 Node：Qwen Node 负责取消远端回答并丢弃晚到片段；Agora Audio Sink
+清空播放队列，并按取消序列水位拒绝迟到音频；级联图还会在 TTS 前通过通用文本取消门
+拒绝旧回复。Core 不理解语音、Turn 或具体 Signal 名称，只负责路由不透明 Signal。
+
+## 客户端数据不是 Studio 遥测
+
+ASR、Agent 文字和说话状态都从 Graph 进入 `agora.data_sink`。浏览器从 Agora 可靠有序
+数据流接收 `voxa.client-event/v1`，不再轮询 `/api/v1/runtime/events`，也不能启停 Runtime。
+EventBus 继续作为进程内日志、指标和 Studio 运维观测设施，但不是终端用户协议。
+
+本地 `/api/v1/client/session` 只负责给浏览器提供临时 RTC 启动配置。生产部署应替换为
+自己的鉴权与短期 Token 服务，媒体和消息链路无需改变。
+
+第一版会话隔离采用严格模型：一个 Agora Channel 对应一个 Agent Session 和一个配置好的
+浏览器 UID。共享 C++ Session 会丢弃其他 UID 的媒体与消息，避免错误混合多名参与者。
+
+!!! warning "级联取消边界"
+    当前取消水位能阻止旧级联文字和音频进入 TTS、播放端或客户端，但同步 Python HTTP
+    LLM 请求本身尚不能在调用中途抢占。完成可取消异步 Transform 前，不能宣称级联图
+    具备模型服务侧硬取消；Qwen Realtime 图已经会取消模型生成。
 
 ## 凭据与部署边界
 

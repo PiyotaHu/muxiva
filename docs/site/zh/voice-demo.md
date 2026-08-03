@@ -37,7 +37,8 @@ cargo install --locked --path crates/voxa-cli
    对应的官方 CDN 下载 RTC Basic 所需 XCFramework；
 2. 对每个压缩包执行 SHA-256 校验；
 3. 创建 `examples/voice-agent/.voxa/venv` 并安装 `websocket-client`；
-4. 编译 `agora_audio_source` 与 `agora_audio_sink` C++ Node Pack。
+4. 编译 `agora.audio_source`、`agora.audio_sink`、`agora.data_source`、
+   `agora.data_sink` 四个 C++ Node；它们共享一个 RTC Engine 和 Bot UID。
 
 出现以下三行才代表安装完成：
 
@@ -108,8 +109,9 @@ voxa doctor --voice
 3. 在 **Agora RTC** 填写 App ID、Channel，以及 `1001`、`2001` 对应的 UID/Token。
 4. 点击 **Save connections**，确认两张卡片都显示 **Ready**；否则 Runtime 不会启动。
 5. 保存后进入 **Templates**，第一次选择 **Qwen Realtime**。
-6. 打开 **Voice Room**，点击 **Start live conversation**，允许麦克风权限。
-7. 自然说话；助手播放时再次开口，验证全双工打断。
+6. 在 Studio 点击 **Run**，确认 Runtime 已启动；这是 Studio 的管理动作。
+7. 打开 **Voice Room**，点击 **Start live conversation**，允许麦克风权限。
+8. 自然说话；助手播放时再次开口，验证全双工打断。
 
 点击 Save connections 后，值会保存到 `examples/voice-agent/.env`（权限 `0600`、Git
 忽略）。以后再次运行无需重复填写。也可以参考 `.env.example` 手动创建该文件。
@@ -130,10 +132,15 @@ Realtime 跑通后，再切换 **Qwen Cascade**，观察 VAD → ASR → LLM →
 
 第一个没有出现的步骤，就是故障所在层。凭据值不会写入日志。
 
-Voice Room 会把每轮对话显示成聊天记录：用户 ASR 在右侧，Agent 流式回复在左侧。
+Voice Room 从 Agora RTC 数据流接收消息，而不是读取 Studio EventBus；页面会把每轮对话
+显示成聊天记录：用户 ASR 在右侧，Agent 流式回复在左侧。
 Qwen 增量 ASR 使用 `text + stash` 作为实时预览，并在
 `conversation.item.input_audio_transcription.completed` 到达后固定最终文本。Agora Bot
 只消费远端 PCM，不在运行机器的扬声器播放用户声音；助手音频以 10 ms PCM 包匀速发布。
+
+Runtime 启动后关闭 Studio，不会改变 RTC 媒体与消息协议。本地页面目前只通过
+`/api/v1/client/session` 获取临时浏览器凭据；生产网页应把这个入口替换为自己的 Token
+服务，绝不能暴露 Studio 的 Graph 或 Runtime 管理接口。
 
 ## 5. 常见错误
 

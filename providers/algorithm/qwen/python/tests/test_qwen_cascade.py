@@ -18,8 +18,14 @@ class TextFrame:
         self.text, self.sequence = text, sequence
 
 
+class EventFrame:
+    def __init__(self, topic, payload="", source="python.node", schema_version=1, sequence=0, **_):
+        self.topic, self.payload, self.source = topic, payload, source
+        self.schema_version, self.sequence = schema_version, sequence
+
+
 shim = types.ModuleType("voxa")
-shim.AudioFrame, shim.TextFrame = AudioFrame, TextFrame
+shim.AudioFrame, shim.TextFrame, shim.EventFrame = AudioFrame, TextFrame, EventFrame
 sys.modules["voxa"] = shim
 root = pathlib.Path(__file__).parents[1] / "nodes"
 
@@ -64,7 +70,9 @@ class CascadeNodeTests(unittest.TestCase):
         ctx = Context()
         node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=9), ctx)
         self.assertEqual(transport.sent[0]["type"], "input_audio_buffer.append")
-        self.assertEqual(ctx.emissions[0][1].text, "你好 Voxa")
+        text = [frame.text for port, frame in ctx.emissions if port == "text_out"]
+        self.assertEqual(text, ["你好 Voxa"])
+        self.assertTrue(any(port == "client_event_out" for port, _ in ctx.emissions))
         self.assertEqual(ctx.events[0][0], "voxa.voice.transcript.completed")
 
     def test_llm_forwards_each_sse_delta_through_ctx(self):
@@ -77,7 +85,10 @@ class CascadeNodeTests(unittest.TestCase):
         ctx = Context()
         with mock.patch.dict(os.environ, self.credentials):
             node.on_process(TextFrame("你是谁？", sequence=3), ctx)
-        self.assertEqual([frame.text for _, frame in ctx.emissions], ["你好，我是 Voxa。"])
+        self.assertEqual(
+            [frame.text for port, frame in ctx.emissions if port == "text_out"],
+            ["你好，我是 Voxa。"],
+        )
         self.assertTrue(client.request[2]["stream"])
         self.assertEqual(ctx.events[0][0], "voxa.voice.response.delta")
         self.assertEqual(ctx.events[-1][0], "voxa.voice.response.completed")

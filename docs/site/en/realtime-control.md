@@ -9,7 +9,7 @@ Voxa separates the data plane from the control plane:
 ```mermaid
 flowchart LR
     N1["Upstream Node"] -->|"Frame over a typed Edge"| N2["Downstream Node"]
-    N1 -.->|"Signal · opaque control"| R["Rust Runtime"]
+    N1 -.->|"Signal · explicit Graph Edge"| R["Rust Runtime"]
     N1 -.->|"Event · global observation"| B["EventBus"]
     R -.->|"on_signal"| N2
     B -.-> UI["Studio · logs · metrics · application"]
@@ -24,8 +24,9 @@ Node's `on_process` callback to run.
 ## Signals change runtime state
 
 Signals express interruption, cancellation, cache flushes, and other cross-Node control. A Node
-calls `ctx.emit_signal(...)`; the Runtime broadcasts it and invokes each receiver's `on_signal`.
-Core does not interpret Signal names or execute voice-product policy.
+calls `ctx.emit_signal(...)`; the Runtime routes it only to receivers connected by outgoing Graph
+Edges and invokes their `on_signal`. Core does not interpret Signal names or execute voice-product
+policy. A Signal is not a process-global broadcast.
 
 A common example is barge-in. Qwen Realtime or a VAD Node emits
 `voxa.voice.speech.started`. The Qwen Node cancels its own generation and discards late chunks;
@@ -42,7 +43,8 @@ replace business data flowing through the Graph.
 | --- | --- |
 | Send audio to ASR | Frame + Edge |
 | Tell relevant Nodes to stop an old answer | Signal |
-| Show a transcript or latency in Studio | EventBus Event |
+| Show local operational telemetry in Studio | EventBus Event |
+| Deliver transcript or speech state to a remote client | Frame + Transport Node |
 | Send LLM text to TTS | Frame + Edge |
 
 ## Bounded queues and backpressure
@@ -68,7 +70,7 @@ On interruption, relevant Nodes normally:
 1. cancel the current remote model request;
 2. discard late chunks from that request;
 3. clear audio that has not played yet;
-4. publish observable UI state through EventBus; and
+4. publish local operational state through EventBus and client state through a Transport Node; and
 5. keep subsequent input flowing through the Graph.
 
 Policy stays in Nodes and mechanism stays in Core. This coordinates model generation, playback,

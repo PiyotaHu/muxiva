@@ -1,11 +1,11 @@
-# D07: Agora RTC provider
+# D07: Agora RTC transport Nodes
 
 ## Outcome
 
-D07 adds an optional Agora boundary without making a proprietary SDK a Voxa
-Core dependency. The C++ provider translates Agora 4.x raw PCM16/I420 callbacks
-into bounded Voxa ingress and egress. Agora has no Rust, Python, or TypeScript
-runtime implementation in this repository.
+D07 adds optional Agora Nodes without making a proprietary SDK a Voxa Core dependency. The C++
+implementation translates Agora 4.x raw PCM16/I420 callbacks into bounded Voxa ingress and egress.
+The product Node Packs also carry bounded reliable-ordered client messages. Agora has no Rust,
+Python, or TypeScript runtime implementation in this repository.
 
 ## Contract
 
@@ -21,6 +21,11 @@ runtime implementation in this repository.
 - Queue-full, invalid, closed, and late callbacks are observable counters; no
   unbounded retry or hidden queue is allowed.
 - Connection, participant, and error callbacks become Voxa Signal/Event frames.
+- Audio source, audio sink, data source, and data sink for one RTC identity share one Engine.
+  This release supports one Agent RTC session per Runtime process; process/container isolation is
+  the scale-out boundary until a future implementation deliberately adopts `joinChannelEx`.
+- Remote media and data are accepted only from the participant UID configured for that session.
+- Data messages are at most 1 KiB and the sender is paced below Agora's 6 KiB/s limit.
 
 ## Packaging boundary
 

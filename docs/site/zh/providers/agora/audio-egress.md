@@ -14,9 +14,11 @@
 | Port | 方向 | Schema |
 | --- | --- | --- |
 | `audio_in` | 输入 Audio | PCM S16LE、48 kHz、单声道、20 ms、流式 |
+| `signal_in` | 输入 Signal | 显式 Graph 控制边 |
 
 配置共享的 `agora` Connection。收到 `voxa.voice.speech.started` 后，这个 Node 会清空
-待播放 PCM 队列。该行为属于播放 Node；Core 不执行任何语音轮次过滤。
+待播放 PCM 队列，并推进取消序列水位。已经排在其他 Graph 队列中、随后迟到且序列不高于
+该水位的音频也会被丢弃。该行为属于播放 Node；Core 不执行语音轮次过滤。
 
 ```text
 tts.audio_out -> agora-egress.audio_in

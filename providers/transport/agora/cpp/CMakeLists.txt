@@ -18,7 +18,7 @@ else()
   set(VOXA_AGORA_PROVIDER_MODE "offline-stub")
 endif()
 
-add_library(voxa_agora STATIC src/agora_rtc_adapter.cc)
+add_library(voxa_agora STATIC src/agora_rtc_adapter.cc src/agora_shared_session.cc)
 add_library(VoxaAgora::agora ALIAS voxa_agora)
 target_compile_features(voxa_agora PUBLIC cxx_std_17)
 target_include_directories(voxa_agora PUBLIC
@@ -61,7 +61,7 @@ else()
   target_sources(voxa_agora PRIVATE src/agora_native_sdk_stub.cc)
 endif()
 
-add_library(voxa_agora_node_runtime SHARED)
+add_library(voxa_agora_node_runtime SHARED src/agora_shared_session.cc)
 target_compile_features(voxa_agora_node_runtime PUBLIC cxx_std_17)
 target_include_directories(voxa_agora_node_runtime PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
@@ -114,6 +114,8 @@ endfunction()
 
 add_agora_node_pack(agora_audio_source)
 add_agora_node_pack(agora_audio_sink)
+add_agora_node_pack(agora_data_source)
+add_agora_node_pack(agora_data_sink)
 
 install(DIRECTORY include/ DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 install(TARGETS voxa_agora

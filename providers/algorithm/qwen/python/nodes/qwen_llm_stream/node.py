@@ -62,10 +62,29 @@ class QwenLlmStreamNode:
             # A sentence-sized chunk keeps captions responsive and gives TTS a
             # stable commit boundary instead of synthesizing token fragments.
             ctx.emit("text_out", voxa.TextFrame(sentence, sequence=frame.sequence))
+            ctx.emit(
+                "client_event_out",
+                voxa.EventFrame(
+                    "voxa.voice.response.delta",
+                    json.dumps({"text": sentence}, separators=(",", ":"), ensure_ascii=False),
+                    source="qwen.llm_stream",
+                    sequence=frame.sequence,
+                ),
+            )
             ctx.publish_event("voxa.voice.response.delta", {"text": sentence})
         if answer:
-            self._history.append({"role": "assistant", "content": "".join(answer)})
-            ctx.publish_event("voxa.voice.response.completed", {"characters": len("".join(answer))})
+            completed = "".join(answer)
+            self._history.append({"role": "assistant", "content": completed})
+            ctx.emit(
+                "client_event_out",
+                voxa.EventFrame(
+                    "voxa.voice.response.completed",
+                    json.dumps({"text": completed}, separators=(",", ":"), ensure_ascii=False),
+                    source="qwen.llm_stream",
+                    sequence=frame.sequence,
+                ),
+            )
+            ctx.publish_event("voxa.voice.response.completed", {"text": completed})
 
 
 def _credentials() -> tuple[str, str]:

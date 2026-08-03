@@ -25,7 +25,8 @@ flowchart LR
     AGORA_IN --> QWEN["Qwen Realtime or cascade intelligence"]
     QWEN --> AGORA_OUT["Agora C++ egress"]
     AGORA_OUT --> WEB
-    QWEN --> LIVE["Live transcript · EventBus · barge-in"]
+    QWEN --> DATA["Agora ordered data stream"]
+    DATA --> LIVE["Client transcript · barge-in state"]
 ```
 
 This credentialed flagship application captures a real microphone in the

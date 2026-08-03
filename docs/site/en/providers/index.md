@@ -11,7 +11,7 @@ reuse the same local credentials.
 
 | Layer | Official Node collection | Capabilities |
 | --- | --- | --- |
-| Transport | [Agora RTC](agora/index.md) | RTC audio ingress and egress |
+| Transport | [Agora RTC](agora/index.md) | RTC audio plus ordered client-message ingress and egress |
 | Algorithm | [Alibaba Cloud Qwen](qwen/index.md) | Realtime speech, ASR, LLM, and TTS |
 | Media, control, utility | [Voxa built-ins](builtin.md) | Resampling, VAD, context, and diagnostics |
 

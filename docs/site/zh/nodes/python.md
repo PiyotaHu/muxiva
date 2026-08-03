@@ -13,6 +13,13 @@ class Uppercase:
             voxa.TextFrame(frame.text.upper(), sequence=frame.sequence),
         )
         ctx.publish_event("example.text.uppercased", {"sequence": frame.sequence})
+
+class ClientEvent:
+    def on_process(self, frame, ctx):
+        ctx.emit("event_out", voxa.EventFrame(
+            "example.client.message", '{"text":"ready"}',
+            source="example.client_event", sequence=frame.sequence,
+        ))
 ```
 
 `ctx.emit(port, frame)` 可以在不结束回调的情况下发送数据；
@@ -36,7 +43,10 @@ class Uppercase:
 
 ## 当前边界
 
-- Studio 项目 Host 支持 text Frame；
+- Studio 项目 Host 支持 Text、Audio 输入和 Signal 回调；
+- 输出 Port 可声明 Text、Audio、Event 和 Signal；Node 通常通过
+  `ctx.emit_signal(...)` 发出 Signal，通过 `ctx.emit(...)` 发出 Event Frame；
+- 该开发 Host 尚未实现 Byte 与 Video 项目 Node Frame；
 - 支持 Source、Transform 与 Sink；
 - 进程隔离和多模态项目 Package 传输仍在规划中；
 - 独立 Python SDK 已为代码开发提供多模态 Frame 与 Hosted Graph Factory API。

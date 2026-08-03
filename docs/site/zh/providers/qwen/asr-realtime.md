@@ -13,7 +13,8 @@
 | Port | 方向 | Schema |
 | --- | --- | --- |
 | `audio_in` | 输入 Audio | PCM S16LE、16 kHz、单声道、流式 |
-| `text_out` | 输出 Text | 临时和最终 Transcript |
+| `text_out` | 输出 Text | 最终 Transcript |
+| `client_event_out` | 输出 Event | 面向客户端的最终转写事件 |
 
 ## 配置
 

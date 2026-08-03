@@ -1,8 +1,9 @@
 # Agora RTC transport
 
-The official Agora transport Nodes are implemented in C++. Ingress and egress share one
-process-level RTC Engine, keep credentials outside Graph JSON, and exchange typed PCM Audio
-Frames with Voxa.
+The official Agora transport Nodes are implemented in C++. Audio and data ingress/egress Nodes
+for one RTC identity share one Engine, keep credentials outside Graph JSON, and exchange typed
+PCM Audio Frames plus bounded, versioned client messages with Voxa. This version deliberately runs
+one Agent RTC session per Runtime process; production scales with process/container isolation.
 
 - Category: `transport`
 - SDK: Agora RTC Native SDK `4.6.2`
@@ -27,3 +28,4 @@ Nodes:
 
 - [Agora Audio Ingress](audio-ingress.md)
 - [Agora Audio Egress](audio-egress.md)
+- [Realtime client messages](realtime-messages.md)

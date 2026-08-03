@@ -25,7 +25,8 @@
         "frame_duration_ms": 20,
         "streaming": true
       }
-    }
+    },
+    { "name": "signal_in", "direction": "input", "frame_type": "signal", "schema": { "semantics": ["graph_control"] } }
   ],
   "config_schema": { "type": "object", "properties": {}, "additionalProperties": false }
 }

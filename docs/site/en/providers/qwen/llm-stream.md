@@ -14,8 +14,12 @@ Consumes transcript or context text and emits sentence-sized assistant response 
 | --- | --- | --- |
 | `text_in` | Input Text | Prompt or turn context, streaming |
 | `text_out` | Output Text | Assistant response deltas, streaming |
+| `client_event_out` | Output Event | Response delta and completion client events |
 
 ## Configuration
 
 `model` defaults to `qwen-flash`; `system_prompt` defines behavior; `temperature` defaults to
-`0.6`. Sentence-sized output allows TTS to start before the full response is complete.
+`0.6`. Sentence-sized output allows TTS to start before the full response is complete. This Node's
+current HTTP stream is synchronous: an interruption gate drops stale text immediately, but the
+in-flight vendor request itself completes before this Node accepts the next input. Do not describe
+the cascade Graph as provider-side hard cancellation.

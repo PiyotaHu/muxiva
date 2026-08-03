@@ -20,7 +20,7 @@ fi
 python3 -m unittest discover \
   -s "$repository_root/providers/algorithm/qwen/python/tests" -v
 
-for package in agora_audio_source agora_audio_sink; do
+for package in agora_audio_source agora_audio_sink agora_data_source agora_data_sink; do
   "$cxx" -std=c++17 -Wall -Wextra -Wpedantic -Werror \
     "${cxx_system[@]}" \
     -I"$repository_root/cpp/include" \
@@ -41,7 +41,7 @@ cmake -S "$repository_root/providers/transport/agora/cpp" \
   -DVOXA_SOURCE_ROOT="$repository_root" \
   -DVOXA_NODE_PACK_OUTPUT_ROOT="$build_directory/voice-node-packs"
 cmake --build "$build_directory/agora-node-packs"
-for package in agora_audio_source agora_audio_sink; do
+for package in agora_audio_source agora_audio_sink agora_data_source agora_data_sink; do
   test "$(cat "$build_directory/voice-node-packs/$package/provider-mode")" = "offline-stub"
 done
 

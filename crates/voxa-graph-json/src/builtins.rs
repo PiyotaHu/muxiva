@@ -7,17 +7,19 @@ use std::{
     time::Duration,
 };
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+
 use voxa_core::{
     ConfigMap, ConfigSchema, LifecycleCapabilities, Node, NodeContext, NodeDescriptor, NodeFactory,
     NodeFactoryError, NodeFactoryVersion, NodeKind, NodeLanguage, NodeRegistration, NodeRegistry,
     NodeTypeName, PortDescriptor, PortDirection, PortName,
 };
 use voxa_types::{
-    AudioData, AudioLayout, ClockDomain, ClockDomainId, ClockKind, ErrorCategory, EventData,
-    Extensions, Frame, FrameBuffer, FrameDerivation, FrameHeader, FrameId, FramePayload, FrameType,
-    Lineage, Metadata, NamespacedName, NodeId, PcmSampleFormat, SchemaVersion, SequenceId,
-    SignalData, StreamId, TextData, Timestamp, TraceId, TransformOrigin, Value, ValueMap,
-    VoxaError,
+    AudioData, AudioLayout, ByteData, ClockDomain, ClockDomainId, ClockKind, ErrorCategory,
+    EventData, Extensions, Frame, FrameBuffer, FrameDerivation, FrameHeader, FrameId, FramePayload,
+    FrameType, Lineage, MediaType, Metadata, NamespacedName, NodeId, PcmSampleFormat,
+    SchemaVersion, SequenceId, SignalData, StreamId, TextData, Timestamp, TraceId, TransformOrigin,
+    Value, ValueMap, VoxaError,
 };
 
 pub const BUILTIN_FACTORY_VERSION: &str = "1.0.0";
@@ -29,6 +31,8 @@ pub const AUDIO_RESAMPLER: &str = "builtin.audio_resampler";
 pub const INTERVAL_TICK: &str = "builtin.interval_tick";
 pub const AUDIO_VAD: &str = "builtin.audio_vad";
 pub const VOICE_TURN_CONTEXT: &str = "builtin.voice_turn_context";
+pub const CLIENT_EVENT_ENCODER: &str = "builtin.client_event_encoder";
+pub const TEXT_CANCELLATION_GATE: &str = "builtin.text_cancellation_gate";
 pub const DEMO_MICROPHONE: &str = "builtin.demo.microphone";
 pub const DEMO_STREAMING_ASR: &str = "builtin.demo.streaming_asr";
 pub const DEMO_VOICE_ACTIVITY: &str = "builtin.demo.voice_activity";
@@ -95,6 +99,34 @@ fn register_audio_nodes(registry: &mut NodeRegistry) {
     register(
         registry,
         typed_descriptor(
+            CLIENT_EVENT_ENCODER,
+            NodeKind::Transform,
+            &[
+                ("event_in", PortDirection::Input, FrameType::Event),
+                ("signal_in", PortDirection::Input, FrameType::Signal),
+                ("message_out", PortDirection::Output, FrameType::Byte),
+            ],
+            empty_schema(),
+        ),
+        Arc::new(ClientEventEncoderFactory),
+    );
+    register(
+        registry,
+        typed_descriptor(
+            TEXT_CANCELLATION_GATE,
+            NodeKind::Transform,
+            &[
+                ("text_in", PortDirection::Input, FrameType::Text),
+                ("signal_in", PortDirection::Input, FrameType::Signal),
+                ("text_out", PortDirection::Output, FrameType::Text),
+            ],
+            empty_schema(),
+        ),
+        Arc::new(TextCancellationGateFactory),
+    );
+    register(
+        registry,
+        typed_descriptor(
             INTERVAL_TICK,
             NodeKind::Source,
             &[("tick_out", PortDirection::Output, FrameType::Event)],
@@ -123,6 +155,7 @@ fn register_audio_nodes(registry: &mut NodeRegistry) {
             &[
                 ("audio_in", PortDirection::Input, FrameType::Audio),
                 ("speech_out", PortDirection::Output, FrameType::Event),
+                ("signal_out", PortDirection::Output, FrameType::Signal),
             ],
             audio_vad_schema(),
         ),
@@ -142,6 +175,223 @@ fn register_audio_nodes(registry: &mut NodeRegistry) {
         ),
         Arc::new(VoiceTurnContextFactory),
     );
+}
+
+struct ClientEventEncoderFactory;
+
+impl NodeFactory for ClientEventEncoderFactory {
+    fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
+        if config.is_empty() {
+            Ok(())
+        } else {
+            Err(config_error(
+                "client event encoder does not accept configuration",
+            ))
+        }
+    }
+
+    fn create(
+        &self,
+        _node_id: &NodeId,
+        _config: &ConfigMap,
+    ) -> Result<Box<dyn Node>, NodeFactoryError> {
+        Ok(Box::new(ClientEventEncoder {
+            cancelled_through_sequence: 0,
+        }))
+    }
+}
+
+struct ClientEventEncoder {
+    cancelled_through_sequence: u64,
+}
+
+impl Node for ClientEventEncoder {
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> voxa_types::Result<()> {
+        let input = input.ok_or_else(|| {
+            node_error(
+                "VOXA-CLIENT-EVENT-INPUT",
+                "client event encoder requires an Event Frame",
+            )
+        })?;
+        let event = input.as_event().ok_or_else(|| {
+            node_error(
+                "VOXA-CLIENT-EVENT-TYPE",
+                "client event encoder accepts Event Frames only",
+            )
+        })?;
+        let data = event.data();
+        if data.topic().as_str().starts_with("voxa.voice.response.")
+            && input.header().sequence_id().get() <= self.cancelled_through_sequence
+        {
+            return Ok(());
+        }
+        let mut payload = crate::value_to_json(data.payload());
+        if let Some(encoded) = payload.as_str() {
+            if let Ok(decoded) = serde_json::from_str(encoded) {
+                payload = decoded;
+            }
+        }
+        let envelope = serde_json::json!({
+            "version": "voxa.client-event/v1",
+            "type": data.topic().as_str(),
+            "source": data.source().as_str(),
+            "stream_id": input.header().stream_id().as_str(),
+            "trace_id": input.header().trace_id().as_str(),
+            "sequence": input.header().sequence_id().get(),
+            "timestamp_ns": input.header().timestamp().as_nanos(),
+            "payload": payload,
+        });
+        let encoded = serde_json::to_vec(&envelope).map_err(|_| {
+            node_error(
+                "VOXA-CLIENT-EVENT-ENCODE",
+                "client event JSON serialization failed",
+            )
+        })?;
+        emit_client_message(&input, context, &encoded)
+    }
+
+    fn on_signal(
+        &mut self,
+        signal: voxa_types::SignalFrame,
+        _context: &mut NodeContext,
+    ) -> voxa_types::Result<()> {
+        self.cancelled_through_sequence = self
+            .cancelled_through_sequence
+            .max(signal.header().sequence_id().get());
+        Ok(())
+    }
+}
+
+struct TextCancellationGateFactory;
+
+impl NodeFactory for TextCancellationGateFactory {
+    fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
+        if config.is_empty() {
+            Ok(())
+        } else {
+            Err(config_error(
+                "text cancellation gate does not accept configuration",
+            ))
+        }
+    }
+
+    fn create(
+        &self,
+        _node_id: &NodeId,
+        _config: &ConfigMap,
+    ) -> Result<Box<dyn Node>, NodeFactoryError> {
+        Ok(Box::new(TextCancellationGate {
+            cancelled_through_sequence: 0,
+        }))
+    }
+}
+
+struct TextCancellationGate {
+    cancelled_through_sequence: u64,
+}
+
+impl Node for TextCancellationGate {
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> voxa_types::Result<()> {
+        let input = required_type(
+            input,
+            FrameType::Text,
+            "text cancellation gate requires text",
+        )?;
+        if input.header().sequence_id().get() > self.cancelled_through_sequence {
+            context.emit(PortName::new("text_out").unwrap(), input)?;
+        }
+        Ok(())
+    }
+
+    fn on_signal(
+        &mut self,
+        signal: voxa_types::SignalFrame,
+        _context: &mut NodeContext,
+    ) -> voxa_types::Result<()> {
+        self.cancelled_through_sequence = self
+            .cancelled_through_sequence
+            .max(signal.header().sequence_id().get());
+        Ok(())
+    }
+}
+
+fn emit_client_message(
+    parent: &Frame,
+    context: &mut NodeContext,
+    encoded: &[u8],
+) -> voxa_types::Result<()> {
+    for payload in client_message_payloads(parent.header().frame_id().as_str(), encoded)? {
+        let serial = NEXT_FRAME.fetch_add(1, Ordering::Relaxed);
+        let output = parent.derive(
+            FrameDerivation::new(
+                FrameId::new(format!("client-event-{serial}"))
+                    .expect("bounded client event frame ID"),
+                parent.header().timestamp(),
+                parent.header().sequence_id(),
+                TransformOrigin::new(Some(context.node_id().clone()), None)?,
+                "client_event_encode",
+            )?
+            .with_payload(FramePayload::Byte(ByteData::new(
+                FrameBuffer::from_vec(payload),
+                Some(
+                    MediaType::new("application/vnd.voxa.client-event+json")
+                        .expect("valid client event media type"),
+                ),
+            ))),
+        )?;
+        context.emit(PortName::new("message_out").unwrap(), output)?;
+    }
+    Ok(())
+}
+
+fn client_message_payloads(message_id: &str, encoded: &[u8]) -> voxa_types::Result<Vec<Vec<u8>>> {
+    const TRANSPORT_MESSAGE_LIMIT: usize = 1_024;
+    const FRAGMENT_BYTES: usize = 512;
+    const MAXIMUM_FRAGMENTS: usize = 64;
+    let fragments = encoded.len().div_ceil(FRAGMENT_BYTES).max(1);
+    if fragments > MAXIMUM_FRAGMENTS {
+        return Err(node_error(
+            "VOXA-CLIENT-EVENT-LIMIT",
+            "encoded client event exceeds the 32 KiB transport limit",
+        ));
+    }
+    let mut messages = Vec::with_capacity(fragments);
+    for (index, bytes) in encoded.chunks(FRAGMENT_BYTES).enumerate() {
+        let payload = if fragments == 1 && encoded.len() <= TRANSPORT_MESSAGE_LIMIT {
+            encoded.to_vec()
+        } else {
+            serde_json::to_vec(&serde_json::json!({
+                "version": "voxa.transport-fragment/v1",
+                "message_id": message_id,
+                "fragment_index": index,
+                "fragment_count": fragments,
+                "encoding": "base64",
+                "data": BASE64.encode(bytes),
+            }))
+            .map_err(|_| {
+                node_error(
+                    "VOXA-CLIENT-EVENT-FRAGMENT",
+                    "client event fragment serialization failed",
+                )
+            })?
+        };
+        if payload.len() > TRANSPORT_MESSAGE_LIMIT {
+            return Err(node_error(
+                "VOXA-CLIENT-EVENT-LIMIT",
+                "encoded client event fragment exceeds the transport message limit",
+            ));
+        }
+        messages.push(payload);
+    }
+    Ok(messages)
 }
 
 fn interval_tick_schema() -> ConfigSchema {
@@ -1275,37 +1525,6 @@ impl Node for AudioResample {
         context.emit(PortName::new("audio_out").unwrap(), output)?;
         Ok(())
     }
-
-    fn on_signal(
-        &mut self,
-        signal: voxa_types::SignalFrame,
-        context: &mut NodeContext,
-    ) -> voxa_types::Result<()> {
-        let payload = SignalData::new(
-            signal.data().name().clone(),
-            signal.data().schema_version(),
-            context.node_id().clone(),
-            signal.data().payload().clone(),
-        );
-        let parent = Frame::Signal(signal);
-        let serial = NEXT_FRAME.fetch_add(1, Ordering::Relaxed);
-        let forwarded = parent.derive(
-            FrameDerivation::new(
-                FrameId::new(format!("builtin-audio-resample-signal-{serial}"))
-                    .expect("bounded frame ID"),
-                parent.header().timestamp(),
-                parent.header().sequence_id(),
-                TransformOrigin::new(Some(context.node_id().clone()), None)?,
-                "builtin_audio_resample_signal",
-            )?
-            .with_payload(FramePayload::Signal(payload)),
-        )?;
-        let Frame::Signal(forwarded) = forwarded else {
-            unreachable!("signal payload creates signal frame");
-        };
-        context.emit_signal(forwarded)?;
-        Ok(())
-    }
 }
 
 fn resample_pcm16(source: &AudioData, target_rate_hz: u32) -> voxa_types::Result<AudioData> {
@@ -1673,6 +1892,26 @@ fn derive_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn client_messages_respect_transport_limits_and_round_trip_fragments() {
+        let source = vec![b'x'; 2_000];
+        let messages = client_message_payloads("frame-1", &source).unwrap();
+        assert_eq!(messages.len(), 4);
+        assert!(messages.iter().all(|message| message.len() <= 1_024));
+
+        let mut restored = Vec::new();
+        for (expected_index, message) in messages.iter().enumerate() {
+            let envelope: serde_json::Value = serde_json::from_slice(message).unwrap();
+            assert_eq!(envelope["version"], "voxa.transport-fragment/v1");
+            assert_eq!(envelope["message_id"], "frame-1");
+            assert_eq!(envelope["fragment_index"], expected_index);
+            restored.extend(BASE64.decode(envelope["data"].as_str().unwrap()).unwrap());
+        }
+        assert_eq!(restored, source);
+
+        assert!(client_message_payloads("frame-2", &vec![0; 32 * 1_024 + 1]).is_err());
+    }
 
     #[test]
     fn pcm16_resampler_preserves_duration_in_both_demo_directions() {

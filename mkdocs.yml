@@ -142,6 +142,7 @@ nav:
               - Overview: providers/agora/index.md
               - Audio ingress: providers/agora/audio-ingress.md
               - Audio egress: providers/agora/audio-egress.md
+              - Realtime messages: providers/agora/realtime-messages.md
           - Qwen algorithms:
               - Overview: providers/qwen/index.md
               - Audio Realtime: providers/qwen/audio-realtime.md

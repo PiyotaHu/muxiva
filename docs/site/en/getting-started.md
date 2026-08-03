@@ -43,7 +43,7 @@ explains every command:
 Voxa's primary developer experience is the credentialed Qwen + Agora Voice
 Room, not synthetic ASR, LLM, or TTS output. On macOS the setup command
 downloads and verifies Agora automatically; Qwen requires no SDK download.
-Follow the [from-scratch flagship guide](voice-demo.md) to create the three RTC
+Follow the [from-scratch flagship guide](voice-demo.md) to create the browser and Bot RTC
 tokens, Model Studio API Key, and Workspace ID.
 
 ```bash

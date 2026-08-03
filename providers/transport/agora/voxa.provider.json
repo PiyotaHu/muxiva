@@ -3,7 +3,7 @@
   "provider_id": "agora",
   "display_name": "Agora RTC",
   "category": "transport",
-  "summary": "Bidirectional real-time audio transport between an Agora channel and a Voxa graph.",
+  "summary": "Bidirectional real-time audio and reliable ordered client-message transport between an Agora channel and a Voxa graph.",
   "vendor": "Agora",
   "homepage": "https://www.agora.io/",
   "documentation": "https://piyotahu.github.io/Voxa/providers/agora/",
@@ -20,7 +20,7 @@
       "fields": [
         { "name": "app_id", "label": "App ID", "environment": "VOXA_AGORA_APP_ID", "secret": false, "required": true, "client_exposed": true, "default": "", "help": "Paste the App ID from the same Agora project used to generate both tokens.", "acquire_url": "https://console.agora.io/" },
         { "name": "channel", "label": "Channel", "environment": "VOXA_AGORA_CHANNEL", "secret": false, "required": true, "client_exposed": true, "default": "voxa-demo", "help": "Keep voxa-demo for the first run. Enter this exact Channel when generating every token.", "acquire_url": "https://docs.agora.io/en/realtime-media/voice/manage-agora-account" },
-        { "name": "bot_uid", "label": "Voxa Bot UID", "environment": "VOXA_AGORA_BOT_UID", "secret": false, "required": true, "default": "2001", "help": "Keep 2001. One C++ participant receives microphone audio and publishes assistant audio.", "acquire_url": "" },
+        { "name": "bot_uid", "label": "Voxa Bot UID", "environment": "VOXA_AGORA_BOT_UID", "secret": false, "required": true, "client_exposed": true, "default": "2001", "help": "Keep 2001. One shared C++ RTC session receives microphone audio and publishes assistant audio plus client events.", "acquire_url": "" },
         { "name": "bot_token", "label": "Voxa Bot Token", "environment": "VOXA_AGORA_BOT_TOKEN", "secret": true, "required": true, "default": "", "help": "Generate an RTC token for this App ID, the exact Channel, and numeric UID 2001.", "acquire_url": "https://agora-token-generator-demo.vercel.app/" },
         { "name": "web_uid", "label": "Browser UID", "environment": "VOXA_AGORA_WEB_UID", "secret": false, "required": true, "client_exposed": true, "default": "1001", "help": "Keep 1001. The Voice Room uses this identity for the browser microphone.", "acquire_url": "" },
         { "name": "web_token", "label": "Browser Token", "environment": "VOXA_AGORA_WEB_TOKEN", "secret": true, "required": true, "client_exposed": true, "default": "", "help": "Generate an RTC token for the same App ID and Channel, with numeric UID 1001.", "acquire_url": "https://agora-token-generator-demo.vercel.app/" }

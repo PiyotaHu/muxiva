@@ -15,7 +15,8 @@
   "tags": ["llm", "generation", "streaming"],
   "ports": [
     { "name": "text_in", "direction": "input", "frame_type": "text", "schema": { "semantics": "prompt_or_context", "streaming": true } },
-    { "name": "text_out", "direction": "output", "frame_type": "text", "schema": { "semantics": "assistant_delta", "streaming": true } }
+    { "name": "text_out", "direction": "output", "frame_type": "text", "schema": { "semantics": "assistant_delta", "streaming": true } },
+    { "name": "client_event_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["client_realtime_event"], "streaming": true } }
   ],
   "config_schema": {
     "type": "object",

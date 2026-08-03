@@ -54,9 +54,10 @@ Studio 是本地开发工具，不是应暴露到公网的生产控制面。完�
 3. 发布用户音频并播放 Agent 音频；
 4. 展示会话状态、字幕、打断和错误。
 
-网页不执行 Python 模型代码，也不持有 Qwen API Key。它只通过经过授权的本地接口和
-Transport 与 Runtime 协作；连接配置只有明确标为 `client_exposed` 的非敏感短期字段
-可以到达浏览器。
+网页不执行 Python 模型代码，也不持有 Qwen API Key。媒体和实时交互事件都通过
+Transport Node 传输；页面不轮询 EventBus，也不控制 Runtime 生命周期。本地 Studio
+接口只负责引导明确标为 `client_exposed` 的连接字段；生产部署必须替换为应用后端和
+短期 Token 服务。
 
 ## 三个入口如何协同
 

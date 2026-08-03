@@ -37,15 +37,15 @@ Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but
 | --- | --- | --- |
 | Frames, graph model, sync/concurrent runtime | Available | Static DAGs; exact port and frame types |
 | Backpressure and real-time flow control | Available | Bounded queues, audio merge, managed streams |
-| Signal, EventBus, turn control | Available | Adjacent signals and isolated global events |
+| Signal and EventBus control | Available | Explicit adjacent Signal routing; process-local observable Events |
 | C ABI and C++ SDK | Available | Versioned ABI, RAII wrappers, installable CMake package, and hosted Graph v1 text factories |
-| RTC adapters | Experimental | Mock contract plus isolated Agora C++ PCM16/I420 provider; live credential certification remains |
+| RTC Nodes | Experimental | Shared-session Agora C++ audio/data ingress and egress; live credential certification remains |
 | Media normalization | Experimental | Optional FFmpeg streaming audio resampling plus RGBA8/I420 scale and color conversion |
 | Python/PyO3 package | Experimental | Dedicated thread/asyncio loop and hosted Graph v1 text factories; `isolated_process` is rejected |
 | Node-API package | Experimental | Dedicated Worker and hosted Graph v1 text factories; Promise-returning transforms are rejected |
 | JSON Graph v1 and CLI | Experimental | Exact-version Registry compilation, concurrent execution of compiled-in factories, bounded waits, initialization, and local Studio |
 | Local Studio | Available | Node Lab, typed wiring, Python Host, C++ ABI packs, project experiences, local Run/Stop |
-| Model providers | Experimental | Centralized Qwen Python packs under `providers/`; never linked into Core |
+| Model Nodes | Experimental | Qwen Python Node Packs are vendor adapters outside Core |
 
 ## Architecture
 
@@ -95,8 +95,8 @@ VAD → ASR → LLM → TTS graph, with Agora C++ transport and a browser microp
 ./examples/voice-agent/run.sh
 ```
 
-Choose a graph in Studio, fill **Connections**, then open **Voice Room**. The
-full setup, three-identity RTC token model, security boundary, and offline gates
+Choose a graph in Studio, fill **Connections**, click **Run**, then open **Voice Room**. The
+full setup, two-identity shared-session RTC model, security boundary, and offline gates
 are documented in the [flagship voice demo guide](https://piyotahu.github.io/Voxa/voice-demo/).
 
 ### Create, validate, and run a graph

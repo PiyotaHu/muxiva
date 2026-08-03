@@ -19,8 +19,14 @@ class TextFrame:
         self.text, self.sequence = text, sequence
 
 
+class EventFrame:
+    def __init__(self, topic, payload="", source="python.node", schema_version=1, sequence=0, **_):
+        self.topic, self.payload, self.source = topic, payload, source
+        self.schema_version, self.sequence = schema_version, sequence
+
+
 shim = types.ModuleType("voxa")
-shim.AudioFrame, shim.TextFrame = AudioFrame, TextFrame
+shim.AudioFrame, shim.TextFrame, shim.EventFrame = AudioFrame, TextFrame, EventFrame
 sys.modules["voxa"] = shim
 path = pathlib.Path(__file__).parents[1] / "nodes/qwen_realtime/node.py"
 spec = importlib.util.spec_from_file_location("qwen_node", path)
@@ -78,7 +84,11 @@ class QwenNodeTests(unittest.TestCase):
             ("voxa.voice.barge_in", {"node": "qwen.audio_realtime", "response_cancelled": True}),
             ctx.events,
         )
-        self.assertEqual(ctx.emissions, [], "late output from the cancelled response is discarded")
+        ports = [port for port, _ in ctx.emissions]
+        self.assertNotIn("response_text_out", ports)
+        self.assertNotIn("audio_out", ports, "late output from the cancelled response is discarded")
+        self.assertIn("transcript_out", ports)
+        self.assertIn("client_event_out", ports)
         self.assertIn(("voxa.voice.transcript.preview", {"text": "用户说"}), ctx.events)
         self.assertIn(("voxa.voice.transcript.completed", {"text": "用户说"}), ctx.events)
 
@@ -96,7 +106,10 @@ class QwenNodeTests(unittest.TestCase):
             node.on_prepare()
         ctx = Context()
         node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=8), ctx)
-        self.assertEqual([port for port, _ in ctx.emissions], ["text_out", "audio_out"])
+        ports = [port for port, _ in ctx.emissions]
+        self.assertIn("response_text_out", ports)
+        self.assertIn("audio_out", ports)
+        self.assertIn("client_event_out", ports)
         self.assertIn(
             ("voxa.voice.response.completed", {"text": "你好", "audio_bytes": 4}),
             ctx.events,

@@ -1,6 +1,7 @@
 # Qwen Streaming ASR
 
-Converts streaming speech to partial and final transcripts for an inspectable cascade graph.
+Converts streaming speech to a final transcript for an inspectable cascade graph and emits a
+versioned final event for remote clients.
 
 | Property | Value |
 | --- | --- |
@@ -13,7 +14,8 @@ Converts streaming speech to partial and final transcripts for an inspectable ca
 | Port | Direction | Schema |
 | --- | --- | --- |
 | `audio_in` | Input Audio | PCM S16LE, 16 kHz, mono, streaming |
-| `text_out` | Output Text | Partial and final transcripts |
+| `text_out` | Output Text | Final transcript |
+| `client_event_out` | Output Event | Final transcript client event |
 
 ## Configuration
 

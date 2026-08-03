@@ -15,7 +15,8 @@
   "tags": ["asr", "speech-to-text", "streaming"],
   "ports": [
     { "name": "audio_in", "direction": "input", "frame_type": "audio", "schema": { "encoding": "pcm_s16le", "sample_rate_hz": 16000, "channels": 1, "streaming": true } },
-    { "name": "text_out", "direction": "output", "frame_type": "text", "schema": { "semantics": ["partial_transcript", "final_transcript"], "streaming": true } }
+    { "name": "text_out", "direction": "output", "frame_type": "text", "schema": { "semantics": ["final_transcript"], "streaming": false } },
+    { "name": "client_event_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["client_realtime_event"], "streaming": true } }
   ],
   "config_schema": {
     "type": "object",

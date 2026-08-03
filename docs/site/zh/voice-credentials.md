@@ -107,8 +107,9 @@ cd /你的路径/Voxa
 1. Studio 打开后，点击顶部 **Connections**。
 2. 填完两张卡片，点击 **Save connections**。
 3. 两张卡片都显示 **Ready** 后，点击 **Templates → Qwen Realtime**。
-4. 点击 **Voice Room → Start live conversation**，允许麦克风权限。
-5. 说一句完整的话，然后停顿约一秒，等待首次回复。
+4. 点击 **Run**，等待 Studio 显示 Runtime 已运行。
+5. 点击 **Voice Room → Start live conversation**，允许麦克风权限。
+6. 说一句完整的话，然后停顿约一秒，等待首次回复。
 
 保存后，凭据写入 `examples/voice-agent/.env`，权限为 `0600`，并已被 Git 忽略；下次
 启动会自动读取，不需要重复填写。文件形状如下，值不要提交：
@@ -138,7 +139,8 @@ tail -f examples/voice-agent/.voxa/runtime.log
 2. 日志：`[VOXA][AGORA][participant.joined] uid=1001`；
 3. 日志：`[VOXA][AGORA][audio.received]`；
 4. 日志：`[VOXA][QWEN][event] type=input_audio_buffer.speech_started`；
-5. 日志：`response.created`、字幕和 `Agora Out` 开始增长。
+5. 日志：`response.created`、`[VOXA][AGORA][data.published]` 和音频输出开始增长；
+6. Voice Room 的 Client Messages 持续增长，左右两侧聊天消息正常显示。
 
 | 现象 | 优先检查 |
 | --- | --- |

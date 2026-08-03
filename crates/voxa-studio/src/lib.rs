@@ -365,6 +365,15 @@ fn route(
             "application/json",
             runtime.connections.client_json().to_string(),
         ),
+        // Development bootstrap for the separately deployable conversation
+        // client. It intentionally exposes neither Graph management nor the
+        // Runtime EventBus; production deployments replace it with a short-lived
+        // token service using the same response shape.
+        ("GET", "/api/v1/client/session") => (
+            "200 OK",
+            "application/json",
+            runtime.connections.client_json().to_string(),
+        ),
         ("PUT", "/api/v1/connections" | "/api/v1/providers") => {
             match runtime.connections.update_json(&request.body) {
                 Ok(()) => (

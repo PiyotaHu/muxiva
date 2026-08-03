@@ -12,13 +12,15 @@ let microphone = null
 let remoteAudioTrack = null
 let remoteAudioObserved = false
 let meterTimer = null
-let runtimeTimer = null
-let lastEventSignature = ''
 let sessionStartedAt = 0
-let lastPipelineState = ''
 let lastErrorMessage = ''
 let currentUserMessage = null
 let currentAgentMessage = null
+let botUid = null
+let clientMessageCount = 0
+const fragments = new Map()
+const maximumFragmentMessages = 64
+const maximumFragmentsPerMessage = 64
 
 function showBargeState(mode, label) {
   const status = $('#barge-status')
@@ -67,7 +69,7 @@ function createChatMessage(role) {
   const body = document.createElement('div')
   body.className = 'message-body'
   const label = document.createElement('small')
-  label.textContent = role === 'user' ? 'YOU · LIVE ASR' : 'VOXA · STREAMING RESPONSE'
+  label.textContent = role === 'user' ? 'YOU · ASR' : 'VOXA · STREAMING RESPONSE'
   const copy = document.createElement('p')
   body.append(label, copy)
   article.append(body)
@@ -133,36 +135,29 @@ function showError(error) {
   }
 }
 
-async function startRuntime() {
-  const graph = await api('/api/v1/graph')
-  const status = await api('/api/v1/runtime')
-  if (status.status !== 'running') {
-    await api('/api/v1/runtime/start', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(graph),
-    })
-  }
-}
-
 async function join() {
     $('#launch').disabled = true
     $('#error').hidden = true
     lastErrorMessage = ''
     $('#diagnostic-log').replaceChildren()
-    lastPipelineState = ''
     resetConversation()
     showBargeState('', 'VOICE CONTROL READY')
   try {
     if (!token) throw new Error('Studio access token is missing. Open Voice Room from Studio.')
     if (!window.AgoraRTC) throw new Error('Agora Web SDK could not be loaded.')
-    const connection = (await api('/api/v1/connections/client')).agora || {}
-    for (const field of ['app_id', 'channel', 'web_uid', 'web_token']) {
+    const connection = (await api('/api/v1/client/session')).agora || {}
+    for (const field of ['app_id', 'channel', 'bot_uid', 'web_uid', 'web_token']) {
       if (!connection[field]) throw new Error(`Agora browser field ${field} is not configured.`)
     }
-    message('Starting Voxa graph…', 'Loading native and Python Node Packs')
-    diagnostic('Starting Voxa Runtime and loading official Nodes')
-    await startRuntime()
+    botUid = String(connection.bot_uid)
+    message('Joining the voice session…', 'The Voxa Runtime must already be running')
+    diagnostic('Joining the production RTC media and message transports')
     client = window.AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' })
     client.on('user-published', async (user, mediaType) => {
+      if (String(user.uid) !== botUid) {
+        diagnostic(`Ignoring media from unexpected participant · uid=${user.uid}`)
+        return
+      }
       diagnostic(`Agora remote media published · uid=${user.uid} type=${mediaType}`)
       await client.subscribe(user, mediaType)
       if (mediaType === 'audio') {
@@ -179,6 +174,10 @@ async function join() {
     client.on('user-joined', user => diagnostic(`Agora participant joined · uid=${user.uid}`))
     client.on('user-left', user => diagnostic(`Agora participant left · uid=${user.uid}`))
     client.on('user-unpublished', user => { remoteAudioTrack = null; $('#orb').classList.remove('speaking'); diagnostic(`Agora remote media unpublished · uid=${user.uid}`) })
+    client.on('stream-message', (uid, payload) => {
+      if (String(uid) !== botUid) return
+      handleTransportMessage(payload)
+    })
     await client.join(connection.app_id, connection.channel, connection.web_token, Number(connection.web_uid))
     diagnostic(`Browser joined Agora · channel=${connection.channel} uid=${connection.web_uid}`)
     microphone = await window.AgoraRTC.createMicrophoneAudioTrack({
@@ -191,13 +190,16 @@ async function join() {
     await client.publish([microphone])
     diagnostic('Browser microphone published to Agora')
     sessionStartedAt = Date.now()
+    clientMessageCount = 0
     $('#orb').classList.add('live')
     $('#orb span').textContent = 'LIVE'
     $('#launch').hidden = true
     $('#leave').hidden = false
     message('Listening — say something', 'This session stays open. You can speak over the assistant at any time.')
+    $('#runtime-pill').classList.add('live')
+    $('#runtime-pill b').textContent = 'RTC session live'
+    $('#graph-name').textContent = connection.channel
     startMeter()
-    pollRuntime()
   } catch (error) {
     $('#launch').disabled = false
     showError(error)
@@ -217,105 +219,96 @@ function startMeter() {
   }, 80)
 }
 
-async function pollRuntime() {
-  clearTimeout(runtimeTimer)
-  try {
-    const runtime = await api('/api/v1/runtime')
-    const live = runtime.status === 'running'
-    $('#runtime-pill').classList.toggle('live', live)
-    $('#runtime-pill b').textContent = live ? 'Runtime live' : runtime.status
-    $('#graph-name').textContent = runtime.graph_id || '—'
-    const nodeCalls = node => (node.prepare_total || 0) + (node.process_total || 0) + (node.signal_total || 0) + (node.finish_total || 0) + (node.abort_total || 0)
-    $('#calls').textContent = (runtime.nodes || []).reduce((sum, node) => sum + nodeCalls(node), 0)
-    $('#frames').textContent = (runtime.edges || []).reduce((sum, edge) => sum + (edge.enqueue_total || 0), 0)
-    for (const stage of document.querySelectorAll('.pipeline div')) {
-      const hint = stage.dataset.node
-      stage.classList.toggle('active', live && (runtime.nodes || []).some(node => node.node_id.includes(hint) && nodeCalls(node) > 0))
-    }
-    const edge = id => (runtime.edges || []).find(value => value.edge_id === id)?.enqueue_total || 0
-    const milestone = count => count === 0 ? 0 : 1 + Math.floor(count / 500)
-    const pipelineState = `${milestone(edge('agora-input'))}/${milestone(edge('audio-to-qwen'))}/${milestone(edge('qwen-audio'))}/${milestone(edge('audio-to-room'))}`
-    if (pipelineState !== lastPipelineState) {
-      diagnostic(`Frames · Agora In=${edge('agora-input')} · Qwen In=${edge('audio-to-qwen')} · Qwen Out=${edge('qwen-audio')} · Agora Out=${edge('audio-to-room')}`)
-      lastPipelineState = pipelineState
-    }
-    if (live && microphone && Date.now() - sessionStartedAt > 5000 && edge('agora-input') === 0) {
-      message('Microphone published, but no native audio frames', 'Open .voxa/runtime.log and look for [VOXA][AGORA][audio.received]')
-    }
-    if (edge('audio-to-room') > 0) {
-      if (!remoteAudioTrack) {
-        message('Assistant audio published, but browser has no remote track', 'Look for Agora remote media published in Live Diagnostics')
-      } else if (!remoteAudioObserved && (remoteAudioTrack.getVolumeLevel?.() || 0) > .001) {
-        remoteAudioObserved = true
-        diagnostic('Assistant audio is audible in the browser remote track')
-      }
-    }
-    if (runtime.terminal?.kind && !['success', 'cancelled'].includes(runtime.terminal.kind)) {
-      showError(new Error(`${runtime.terminal.code || 'VOXA-RUNTIME'} · ${runtime.terminal.message || runtime.terminal.kind}`))
-    }
-    await renderVoiceEvents()
-  } catch (error) { showError(error) }
-  runtimeTimer = setTimeout(pollRuntime, 700)
+function decodeBase64(value) {
+  const binary = atob(value)
+  return Uint8Array.from(binary, character => character.charCodeAt(0))
 }
 
-async function renderVoiceEvents() {
-  const events = await api('/api/v1/runtime/events')
-  let start = 0
-  if (lastEventSignature) {
-    const found = events.findIndex(event => JSON.stringify(event) === lastEventSignature)
-    if (found >= 0) start = found + 1
+function handleTransportMessage(payload) {
+  try {
+    const bytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload)
+    const message = JSON.parse(new TextDecoder().decode(bytes))
+    if (message.version === 'voxa.transport-fragment/v1') {
+      if (typeof message.message_id !== 'string' || message.message_id.length > 128 ||
+          !Number.isInteger(message.fragment_count) || message.fragment_count < 1 ||
+          message.fragment_count > maximumFragmentsPerMessage ||
+          !Number.isInteger(message.fragment_index) || message.fragment_index < 0 ||
+          message.fragment_index >= message.fragment_count || typeof message.data !== 'string') {
+        throw new Error('fragment envelope is outside protocol limits')
+      }
+      if (!fragments.has(message.message_id) && fragments.size >= maximumFragmentMessages) {
+        fragments.delete(fragments.keys().next().value)
+      }
+      const state = fragments.get(message.message_id) || { count: message.fragment_count, chunks: [] }
+      if (state.count !== message.fragment_count) throw new Error('fragment count changed')
+      state.chunks[message.fragment_index] = decodeBase64(message.data)
+      fragments.set(message.message_id, state)
+      if (state.chunks.filter(Boolean).length !== state.count) return
+      const size = state.chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+      const joined = new Uint8Array(size)
+      let offset = 0
+      for (const chunk of state.chunks) { joined.set(chunk, offset); offset += chunk.length }
+      fragments.delete(message.message_id)
+      handleClientEvent(JSON.parse(new TextDecoder().decode(joined)))
+      return
+    }
+    handleClientEvent(message)
+  } catch (error) {
+    diagnostic(`Invalid Voxa RTC message · ${error.message}`, true)
   }
-  for (const event of events.slice(start)) {
+}
+
+function handleClientEvent(event) {
+    if (event.version !== 'voxa.client-event/v1' || typeof event.type !== 'string') return
+    clientMessageCount += 1
+    $('#calls').textContent = clientMessageCount
+    $('#frames').textContent = event.sequence || clientMessageCount
     const text = typeof event.payload?.text === 'string' ? event.payload.text : ''
-    if (event.topic === 'voxa.voice.speech.started') {
+    if (event.type === 'voxa.voice.speech.started') {
       beginUserMessage()
       showBargeState('listening', 'YOU ARE SPEAKING')
       message('Listening — speak naturally', 'Speech-start signal entered the Voxa control plane')
-    } else if (event.topic === 'voxa.voice.barge_in') {
+    } else if (event.type === 'voxa.voice.barge_in') {
       showBargeState('interrupting', 'BARGE-IN · INTERRUPTING AGENT')
       diagnostic('Barge-in · Qwen generation cancelled; Agora output queue clearing')
-    } else if (event.topic === 'voxa.voice.speech.stopped') {
+    } else if (event.type === 'voxa.voice.speech.stopped') {
       showBargeState('', 'UTTERANCE CAPTURED')
-    } else if (event.topic === 'voxa.voice.transcript.preview') {
+    } else if (event.type === 'voxa.voice.transcript.preview') {
       previewUserMessage(text)
-    } else if (event.topic === 'voxa.voice.transcript.delta') {
+    } else if (event.type === 'voxa.voice.transcript.delta') {
       previewUserMessage(`${currentUserMessage?.copy.textContent || ''}${text}`)
-    } else if (event.topic === 'voxa.voice.transcript.completed') {
+    } else if (event.type === 'voxa.voice.transcript.completed') {
       completeUserMessage(text)
       showBargeState('', 'VOICE CONTROL READY')
       message('Thinking…', 'Transcript committed to the typed Graph')
-    } else if (event.topic === 'voxa.voice.response.delta') {
+    } else if (event.type === 'voxa.voice.response.delta') {
       appendAgentMessage(text)
       message('Voxa is responding', 'Text and audio are streaming through separate typed branches')
-    } else if (event.topic === 'voxa.voice.response.completed') {
+    } else if (event.type === 'voxa.voice.response.completed') {
       completeAgentMessage(text)
-    } else if (event.topic === 'voxa.voice.transcript.failed') {
+    } else if (event.type === 'voxa.voice.transcript.failed') {
       diagnostic(`ASR failed · ${event.payload?.message || 'unknown error'}`, true)
     }
-  }
-  if (events.length) lastEventSignature = JSON.stringify(events[events.length - 1])
 }
 
 async function leave() {
   clearInterval(meterTimer)
-  clearTimeout(runtimeTimer)
   if (microphone) { microphone.stop(); microphone.close(); microphone = null }
   if (client) { await client.leave(); client = null }
   remoteAudioTrack = null
   remoteAudioObserved = false
-  try { await api('/api/v1/runtime/stop', { method: 'POST' }) } catch (_) {}
   $('#orb').className = 'orb'
   $('#orb span').textContent = 'READY'
-  lastEventSignature = ''
   sessionStartedAt = 0
-  lastPipelineState = ''
+  fragments.clear()
   showBargeState('', 'VOICE CONTROL READY')
   $('#launch').hidden = false
   $('#launch').disabled = false
   $('#leave').hidden = true
   $('#error').hidden = true
   message('Session ended', 'Start again whenever you are ready.')
-  await pollRuntime()
+  $('#runtime-pill').classList.remove('live')
+  $('#runtime-pill b').textContent = 'RTC session idle'
 }
 
 $('#launch').addEventListener('click', join)
@@ -328,4 +321,3 @@ $('#copy-log').addEventListener('click', async () => {
   } catch (error) { showError(error) }
 })
 window.addEventListener('beforeunload', () => { microphone?.close(); client?.leave() })
-pollRuntime()

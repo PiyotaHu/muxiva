@@ -1,0 +1,19 @@
+{
+  "format": "voxa.node/v1",
+  "package_id": "agora_data_sink",
+  "display_name": "Agora Realtime Message Egress",
+  "node_type": "agora.data_sink",
+  "language": "cpp",
+  "factory_version": "1.0.0",
+  "kind": "sink",
+  "entrypoint": "AgoraDataSinkNode",
+  "category": "transport",
+  "capability": "rtc.data.egress",
+  "summary": "Publishes versioned client messages through the shared Agora RTC data stream.",
+  "connection_id": "agora",
+  "tags": ["rtc", "data", "events", "egress"],
+  "ports": [
+    { "name": "message_in", "direction": "input", "frame_type": "byte", "schema": { "media_type": "application/vnd.voxa.client-event+json", "maximum_bytes": 1024, "streaming": true } }
+  ],
+  "config_schema": { "type": "object", "properties": {}, "additionalProperties": false }
+}

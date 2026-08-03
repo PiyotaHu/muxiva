@@ -15,7 +15,11 @@ Speech-to-Speech Graph。
 | --- | --- | --- |
 | `audio_in` | 输入 Audio | PCM S16LE、16 kHz、单声道、流式 |
 | `audio_out` | 输出 Audio | PCM S16LE、24 kHz、单声道、流式 |
-| `text_out` | 输出 Text | 用户和助手的增量文本 |
+| `transcript_preview_out` | 输出 Text | 供 Graph 内部消费的用户临时转写 |
+| `transcript_out` | 输出 Text | 用户最终转写 |
+| `response_text_out` | 输出 Text | 助手回答增量 |
+| `client_event_out` | 输出 Event | 带版本的转写、回答和说话状态事件 |
+| `signal_out` | 输出 Signal | 通过显式 Edge 路由的打断/取消控制 |
 
 ## 配置
 
@@ -24,6 +28,7 @@ Speech-to-Speech Graph。
 `0.35`、静音结束时间为 `1000ms`；它能容纳自然短停顿，避免把一句话误切成两轮。
 
 发生打断时，Qwen Node 会取消自己的生成、发出 `voxa.voice.speech.started` Signal；Agora
-Audio Sink 收到 Signal 后清空尚未播放的 PCM。Voice Room 会显示 `YOU ARE SPEAKING` 和
+Audio Sink 收到 Signal 后清空尚未播放的 PCM。`client_event_out` 经编码后由 Transport Node
+发送给远程客户端，EventBus 仅用于本地观测。Voice Room 会显示 `YOU ARE SPEAKING` 和
 `BARGE-IN · INTERRUPTING AGENT`；服务端日志中的 `[VOXA][AGORA][audio.cancelled]` 给出实际
 清除的字节数。

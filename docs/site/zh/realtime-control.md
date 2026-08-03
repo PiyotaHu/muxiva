@@ -8,7 +8,7 @@ Voxa 把通信分成数据面和控制面：
 ```mermaid
 flowchart LR
     N1["上游 Node"] -->|"Frame · 经过类型化 Edge"| N2["下游 Node"]
-    N1 -.->|"Signal · 不透明控制消息"| R["Rust Runtime"]
+    N1 -.->|"Signal · 显式 Graph Edge"| R["Rust Runtime"]
     N1 -.->|"Event · 全局观察"| B["EventBus"]
     R -.->|"on_signal"| N2
     B -.-> UI["Studio · 日志 · 指标 · 应用"]
@@ -22,8 +22,8 @@ Overflow Policy 和拓扑约束。下游 Node 收到 Frame 后，才执行 `on_p
 ## Signal：改变运行状态的控制消息
 
 Signal 用于打断、取消、刷新缓存或其他跨 Node 控制。Node 通过
-`ctx.emit_signal(...)` 发出，Runtime 只负责广播，并调用接收 Node 的 `on_signal`；
-Core 不解释 Signal 名称，也不执行语音业务规则。
+`ctx.emit_signal(...)` 发出，Runtime 只沿当前 Node 的显式出 Edge 投递，并调用目标 Node
+的 `on_signal`；Core 不解释 Signal 名称，也不执行语音业务规则。Signal 不是进程级广播。
 
 典型场景是 Barge-in：用户在 Agent 播放回答时重新说话，Qwen Realtime 或 VAD Node
 发出 `voxa.voice.speech.started`。Qwen Node 取消自己的生成并丢弃晚到片段，Agora
@@ -39,7 +39,8 @@ Node 用 `ctx.publish_event(...)` 发布；Studio、日志、指标系统或应�
 | --- | --- |
 | 把音频交给 ASR | Frame + Edge |
 | 通知相关 Node 停止旧回答 | Signal |
-| 在 Studio 展示转写或延迟 | EventBus Event |
+| 在 Studio 展示本地运维信息 | EventBus Event |
+| 把转写或说话状态送到远程客户端 | Frame + Transport Node |
 | 把 LLM 文本交给 TTS | Frame + Edge |
 
 ## 有界队列与背压
@@ -64,7 +65,7 @@ Node 用 `ctx.publish_event(...)` 发布；Studio、日志、指标系统或应�
 1. 模型 Node 取消当前远端请求；
 2. 模型 Node 丢弃该请求晚到的片段；
 3. 播放 Node 清理尚未播放的音频；
-4. EventBus 发布可供 UI 展示的状态；
+4. EventBus 发布本地运维状态，Transport Node 向客户端发送交互状态；
 5. 后续输入继续沿 Graph 流动。
 
 策略留在 Node，机制留在 Core：既能协调模型、播放和观测，也不会让通用 Runtime

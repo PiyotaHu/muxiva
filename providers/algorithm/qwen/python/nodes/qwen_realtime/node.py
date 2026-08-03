@@ -140,9 +140,11 @@ class QwenAudioRealtimeNode:
             elif kind == "response.done":
                 self._response_active = False
                 if not self._discard_response_output:
-                    ctx.publish_event(
+                    self._emit_client_event(
+                        ctx,
                         "voxa.voice.response.completed",
                         {"text": self._response_text, "audio_bytes": self._response_audio_bytes},
+                        frame.sequence,
                     )
             elif kind == "input_audio_buffer.speech_started":
                 response_cancelled = self._response_active
@@ -152,14 +154,20 @@ class QwenAudioRealtimeNode:
                     self._cancel_pending = True
                     self._discard_response_output = True
                 ctx.emit_signal("voxa.voice.speech.started", {"node": "qwen.audio_realtime"})
-                ctx.publish_event("voxa.voice.speech.started", {"node": "qwen.audio_realtime"})
+                self._emit_client_event(
+                    ctx, "voxa.voice.speech.started", {"node": "qwen.audio_realtime"}, frame.sequence
+                )
                 if response_cancelled:
-                    ctx.publish_event(
+                    self._emit_client_event(
+                        ctx,
                         "voxa.voice.barge_in",
                         {"node": "qwen.audio_realtime", "response_cancelled": True},
+                        frame.sequence,
                     )
             elif kind == "input_audio_buffer.speech_stopped":
-                ctx.publish_event("voxa.voice.speech.stopped", {"node": "qwen.audio_realtime"})
+                self._emit_client_event(
+                    ctx, "voxa.voice.speech.stopped", {"node": "qwen.audio_realtime"}, frame.sequence
+                )
             elif kind == "response.audio.delta":
                 if self._discard_response_output:
                     continue
@@ -177,21 +185,31 @@ class QwenAudioRealtimeNode:
                 text = event.get("delta", "")
                 if text:
                     self._response_text += text
-                    ctx.emit("text_out", voxa.TextFrame(text, sequence=frame.sequence))
-                    ctx.publish_event("voxa.voice.response.delta", {"text": text})
+                    ctx.emit("response_text_out", voxa.TextFrame(text, sequence=frame.sequence))
+                    self._emit_client_event(
+                        ctx, "voxa.voice.response.delta", {"text": text}, frame.sequence
+                    )
             elif kind == "conversation.item.input_audio_transcription.delta":
                 text = f"{event.get('text', '')}{event.get('stash', '')}"
                 if text:
-                    ctx.publish_event("voxa.voice.transcript.preview", {"text": text})
+                    ctx.emit("transcript_preview_out", voxa.TextFrame(text, sequence=frame.sequence))
+                    self._emit_client_event(
+                        ctx, "voxa.voice.transcript.preview", {"text": text}, frame.sequence
+                    )
             elif kind == "conversation.item.input_audio_transcription.completed":
                 text = event.get("transcript", "")
                 if text:
-                    ctx.publish_event("voxa.voice.transcript.completed", {"text": text})
+                    ctx.emit("transcript_out", voxa.TextFrame(text, sequence=frame.sequence))
+                    self._emit_client_event(
+                        ctx, "voxa.voice.transcript.completed", {"text": text}, frame.sequence
+                    )
             elif kind == "conversation.item.input_audio_transcription.failed":
                 error = event.get("error", {})
-                ctx.publish_event(
+                self._emit_client_event(
+                    ctx,
                     "voxa.voice.transcript.failed",
                     {"message": str(error.get("message", "ASR transcription failed"))[:512]},
+                    frame.sequence,
                 )
             elif kind == "error":
                 error = event.get("error", {})
@@ -205,6 +223,19 @@ class QwenAudioRealtimeNode:
                 raise QwenProtocolError(
                     f"Qwen Node error {code}: {message}"
                 )
+
+    @staticmethod
+    def _emit_client_event(ctx: Any, topic: str, payload: dict[str, Any], sequence: int) -> None:
+        ctx.emit(
+            "client_event_out",
+            voxa.EventFrame(
+                topic,
+                json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
+                source="qwen.audio_realtime",
+                sequence=sequence,
+            ),
+        )
+        ctx.publish_event(topic, payload)
 
     def on_finish(self, _ctx: Any = None) -> None:
         if self._transport is not None:

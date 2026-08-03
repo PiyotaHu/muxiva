@@ -15,7 +15,11 @@ realtime session. Use it for the lowest-latency speech-to-speech graph.
 | --- | --- | --- |
 | `audio_in` | Input Audio | PCM S16LE, 16 kHz, mono, streaming |
 | `audio_out` | Output Audio | PCM S16LE, 24 kHz, mono, streaming |
-| `text_out` | Output Text | User and assistant transcript deltas |
+| `transcript_preview_out` | Output Text | Partial user transcript for local Graph consumers |
+| `transcript_out` | Output Text | Final user transcript |
+| `response_text_out` | Output Text | Assistant response deltas |
+| `client_event_out` | Output Event | Versioned transcript, response, and speech-state events |
+| `signal_out` | Output Signal | Barge-in/cancellation control routed by explicit Edges |
 
 ## Configuration
 
@@ -26,6 +30,7 @@ silence boundary so natural pauses do not split one utterance into two turns.
 
 On interruption, the Qwen Node cancels its own generation and emits a
 `voxa.voice.speech.started` Signal; the Agora Audio Sink receives it and clears queued PCM.
-Voice Room renders `YOU ARE SPEAKING` and
+`client_event_out` is encoded and sent by Transport Nodes to a remote client; EventBus remains
+local observability. Voice Room renders `YOU ARE SPEAKING` and
 `BARGE-IN · INTERRUPTING AGENT`; `[VOXA][AGORA][audio.cancelled]` reports the exact number of
 bytes removed from pending playback.

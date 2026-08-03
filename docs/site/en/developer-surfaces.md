@@ -56,9 +56,10 @@ A project can provide a page under `.voxa/web/`. The Voice Room, for example:
 3. publishes user audio and plays agent audio;
 4. displays session state, transcripts, interruptions, and errors.
 
-The page does not execute Python model code or hold a Qwen API key. It communicates with the
-Runtime through an authorized local interface and Transport. Only non-secret, short-lived fields
-explicitly marked `client_exposed` may reach the browser.
+The page does not execute Python model code or hold a Qwen API key. Media and live interaction
+events travel through Transport Nodes; the page neither polls EventBus nor controls Runtime
+lifecycle. The local Studio endpoint only bootstraps explicitly `client_exposed` connection fields.
+Production deployments replace it with an application backend and short-lived token service.
 
 ## How the entry points work together
 

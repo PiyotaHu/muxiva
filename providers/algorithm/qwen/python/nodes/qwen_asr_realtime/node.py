@@ -85,6 +85,15 @@ class QwenAsrRealtimeNode:
                 text = event.get("transcript", event.get("text", "")).strip()
                 if text:
                     ctx.emit("text_out", voxa.TextFrame(text, sequence=frame.sequence))
+                    ctx.emit(
+                        "client_event_out",
+                        voxa.EventFrame(
+                            "voxa.voice.transcript.completed",
+                            json.dumps({"text": text}, separators=(",", ":"), ensure_ascii=False),
+                            source="qwen.asr_realtime",
+                            sequence=frame.sequence,
+                        ),
+                    )
                     ctx.publish_event("voxa.voice.transcript.completed", {"text": text})
             elif kind == "error":
                 error = event.get("error", {})

@@ -41,9 +41,21 @@ class AudioFrame:
         self.data, self.sample_rate_hz = bytes(data), sample_rate_hz
         self.channels, self.sequence = channels, sequence
 
+class EventFrame:
+    def __init__(self, topic, payload="", source="python.node", schema_version=1, sequence=0, **_):
+        self.topic, self.payload, self.source = topic, payload, source
+        self.schema_version, self.sequence = schema_version, sequence
+
+class SignalFrame:
+    def __init__(self, name, payload="", source="runtime.node", schema_version=1, sequence=0, **_):
+        self.name, self.payload, self.source = name, payload, source
+        self.schema_version, self.sequence = schema_version, sequence
+
 shim = types.ModuleType("voxa")
 shim.TextFrame = TextFrame
 shim.AudioFrame = AudioFrame
+shim.EventFrame = EventFrame
+shim.SignalFrame = SignalFrame
 
 class NodeContext:
     def __init__(self, node_id, input_port, config, streaming=False):
@@ -92,11 +104,13 @@ def decode_frame(value):
     if value is None: return None
     if value.get("kind") == "text": return TextFrame(value["text"], value.get("sequence", 0))
     if value.get("kind") == "audio": return AudioFrame(bytes.fromhex(value["pcm_hex"]), value["sample_rate_hz"], value["channels"], value.get("sequence", 0))
+    if value.get("kind") == "signal": return SignalFrame(value["name"], value.get("payload", ""), value.get("source", "runtime.node"), value.get("schema_version", 1), value.get("sequence", 0))
     raise ValueError("Studio Python Host received an unsupported Frame")
 
 def encode_frame(value):
     if isinstance(value, TextFrame): return {"kind":"text", "text":value.text, "sequence":value.sequence}
     if isinstance(value, AudioFrame): return {"kind":"audio", "pcm_hex":value.data.hex(), "sample_rate_hz":value.sample_rate_hz, "channels":value.channels, "sequence":value.sequence}
+    if isinstance(value, EventFrame): return {"kind":"event", "topic":value.topic, "payload":value.payload, "source":value.source, "schema_version":value.schema_version, "sequence":value.sequence}
     if isinstance(value, dict) and value.get("kind") == "text": return value
     raise ValueError("Python Node emitted an unsupported Frame")
 
@@ -114,6 +128,11 @@ for line in sys.stdin:
                 for port, frames in values.items():
                     if not isinstance(frames, list): frames = [frames]
                     for item in frames: ctx.emit(port, item)
+            response = {"ok": True, "signals":ctx.signals, "events":ctx.events}
+        elif op == "signal":
+            signal = decode_frame(command["signal"])
+            ctx = NodeContext(command["node_id"], command.get("input_port"), config, streaming=False)
+            invoke("on_signal", signal, ctx)
             response = {"ok": True, "signals":ctx.signals, "events":ctx.events}
         elif op == "prepare": invoke("on_prepare", NodeContext(command["node_id"], None, config)); response = {"ok": True}
         elif op == "finish": invoke("on_finish", NodeContext(command["node_id"], None, config)); response = {"ok": True}
@@ -1371,7 +1390,14 @@ fn python_host_supported_manifest(graph: &Path, manifest: &NodePackageManifest) 
         && manifest
             .ports
             .iter()
-            .all(|port| matches!(port.frame_type.as_str(), "text" | "audio"))
+            .all(|port| match port.direction.as_str() {
+                "input" => matches!(port.frame_type.as_str(), "text" | "audio" | "signal"),
+                "output" => matches!(
+                    port.frame_type.as_str(),
+                    "text" | "audio" | "event" | "signal"
+                ),
+                _ => false,
+            })
         && python_available(graph)
 }
 
@@ -1573,6 +1599,26 @@ impl Node for PythonDevNode {
     fn on_finish(&mut self, _context: &mut NodeContext) -> voxa_types::Result<()> {
         self.call(serde_json::json!({"op":"finish", "node_id":self.node_id.as_str()}))
             .map(|_| ())
+    }
+
+    fn on_signal(
+        &mut self,
+        signal: voxa_types::SignalFrame,
+        context: &mut NodeContext,
+    ) -> voxa_types::Result<()> {
+        self.call(serde_json::json!({
+            "op":"signal",
+            "node_id":self.node_id.as_str(),
+            "input_port":context.input_port().map(PortName::as_str),
+            "signal":{
+                "kind":"signal",
+                "name":signal.data().name().as_str(),
+                "source":signal.data().source().as_str(),
+                "schema_version":signal.data().schema_version().get(),
+                "sequence":signal.header().sequence_id().get(),
+            }
+        }))
+        .map(|_| ())
     }
 
     fn on_abort(&mut self, reason: &voxa_core::AbortReason, _context: &mut NodeContext) {
@@ -1792,6 +1838,31 @@ fn wire_to_frame(
                 samples,
             )?)
         }
+        "event" => FramePayload::Event(EventData::new(
+            NamespacedName::new(
+                wire.get("topic")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| python_error("Python Event Frame is missing its topic"))?,
+            )?,
+            SchemaVersion::new(
+                wire.get("schema_version")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|value| u32::try_from(value).ok())
+                    .unwrap_or(1),
+            )?,
+            NodeId::new(
+                wire.get("source")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or(node_id.as_str()),
+            )
+            .map_err(|_| python_error("Python Event Frame has an invalid source"))?,
+            voxa_types::Value::String(
+                wire.get("payload")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .into(),
+            ),
+        )),
         _ => return Err(python_error("Python Host emitted an unsupported Frame")),
     };
     let serial = NEXT_FRAME.fetch_add(1, Ordering::Relaxed);

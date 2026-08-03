@@ -13,6 +13,13 @@ class Uppercase:
             voxa.TextFrame(frame.text.upper(), sequence=frame.sequence),
         )
         ctx.publish_event("example.text.uppercased", {"sequence": frame.sequence})
+
+class ClientEvent:
+    def on_process(self, frame, ctx):
+        ctx.emit("event_out", voxa.EventFrame(
+            "example.client.message", '{"text":"ready"}',
+            source="example.client_event", sequence=frame.sequence,
+        ))
 ```
 
 `ctx.emit(port, frame)` sends data without ending the callback.
@@ -38,7 +45,10 @@ trusted local user selects **Run**.
 
 ## Current boundary
 
-- text Frames are supported by the Studio project Host;
+- Text and Audio inputs plus Signal callbacks are supported by the Studio project Host;
+- Text, Audio, Event, and Signal output Port declarations are supported; Nodes normally emit
+  Signal control with `ctx.emit_signal(...)` and Event Frames with `ctx.emit(...)`;
+- Byte and Video project-Node frames are not yet implemented by this development Host;
 - Source, Transform, and Sink roles are supported;
 - process isolation and multimodal project-package transport remain planned;
 - the standalone Python SDK already exposes multimodal Frames and hosted Graph

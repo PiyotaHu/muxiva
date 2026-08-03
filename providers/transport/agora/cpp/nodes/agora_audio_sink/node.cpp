@@ -23,40 +23,18 @@ std::string required_env(const char *name) {
   return value;
 }
 
-class Observer final : public voxa::agora::SdkObserver {
-public:
-  void on_connection_state(voxa::agora::ConnectionState,
-                           int) noexcept override {}
-  void on_rejoined(std::uint32_t, int) noexcept override {}
-  void on_connection_lost() noexcept override {}
-  void on_token_expiring() noexcept override {}
-  void on_token_required() noexcept override {}
-  void on_network_quality(std::uint32_t, int, int) noexcept override {}
-  void on_rtc_stats(const voxa::agora::RtcStatsSnapshot &) noexcept override {}
-  void on_participant_joined(std::uint32_t) noexcept override {}
-  void on_participant_left(std::uint32_t, int) noexcept override {}
-  void on_error(int) noexcept override {}
-  void on_audio_frame(const voxa::agora::Pcm16FrameView &) noexcept override {}
-  void on_video_frame(const voxa::agora::I420FrameView &) noexcept override {}
-};
-
 class AgoraAudioSinkNode final : public voxa::MultimodalGraphNode {
 public:
   void on_prepare() override {
-    sdk_ = voxa::agora::make_native_sdk();
-    if (!sdk_)
-      throw std::runtime_error("Agora Native SDK is not enabled in this build");
     const auto app_id = required_env("VOXA_AGORA_APP_ID");
     const auto token = required_env("VOXA_AGORA_BOT_TOKEN");
     const auto channel = required_env("VOXA_AGORA_CHANNEL");
     const auto uid = static_cast<std::uint32_t>(
         std::stoul(required_env("VOXA_AGORA_BOT_UID")));
-    if (sdk_->initialize(app_id, &observer_) != 0 ||
-        sdk_->join(token, channel, uid) != 0) {
-      sdk_->shutdown();
-      throw std::runtime_error(
-          "Agora C++ SDK failed to join the configured room");
-    }
+    const auto participant = static_cast<std::uint32_t>(
+        std::stoul(required_env("VOXA_AGORA_WEB_UID")));
+    session_ = voxa::agora::SharedSession::acquire(
+        app_id, token, channel, uid, participant);
     sender_ = std::thread([this] { send_loop(); });
   }
 
@@ -74,6 +52,10 @@ public:
     }
     {
       std::lock_guard<std::mutex> lock(mutex_);
+      if (input->header.sequence_id <= cancelled_through_sequence_) {
+        dropped_bytes_.fetch_add(audio.bytes.len, std::memory_order_relaxed);
+        return;
+      }
       if (pcm_.size() + audio.bytes.len > kMaximumQueuedBytes)
         throw std::runtime_error(
             "Agora audio Sink exceeded its 120 second safety buffer");
@@ -96,17 +78,20 @@ public:
       std::lock_guard<std::mutex> lock(mutex_);
       cancelled = pcm_.size();
       pcm_.clear();
+      cancelled_through_sequence_ =
+          std::max(cancelled_through_sequence_, signal.header.sequence_id);
       ++interruptions_;
     }
     std::fprintf(stderr,
                  "[VOXA][AGORA][audio.cancelled] signal=voxa.voice.speech.started "
-                 "bytes=%zu interruptions=%llu\n",
+                 "bytes=%zu through_sequence=%llu interruptions=%llu\n",
                  cancelled,
+                 static_cast<unsigned long long>(signal.header.sequence_id),
                  static_cast<unsigned long long>(interruptions_.load()));
   }
 
   void on_finish() override {
-    if (sdk_) {
+    if (session_) {
       {
         std::lock_guard<std::mutex> lock(mutex_);
         stopping_ = true;
@@ -114,9 +99,7 @@ public:
       cv_.notify_all();
       if (sender_.joinable())
         sender_.join();
-      sdk_->leave();
-      sdk_->shutdown();
-      sdk_.reset();
+      session_.reset();
     }
   }
 
@@ -154,7 +137,7 @@ private:
                                               kSamplesPerPacket,
                                               0,
                                               0};
-      const int result = sdk_->push_audio(frame);
+      const int result = session_ ? session_->send_audio(frame) : -7;
       const auto count = ++published_packets_;
       if (count == 1 || count % 100 == 0 || result != 0) {
         std::fprintf(stderr,
@@ -181,14 +164,14 @@ private:
   static constexpr std::uint64_t kSamplesPerPacket = 480;
   static constexpr std::size_t kPacketBytes = kSamplesPerPacket * 2;
   static constexpr std::size_t kMaximumQueuedBytes = kSampleRate * 2 * 120;
-  Observer observer_;
-  std::unique_ptr<voxa::agora::Sdk> sdk_;
+  std::shared_ptr<voxa::agora::SharedSession> session_;
   mutable std::mutex mutex_;
   std::condition_variable cv_;
   std::deque<std::uint8_t> pcm_;
   std::thread sender_;
   bool stopping_ = false;
   std::uint64_t published_packets_ = 0;
+  std::uint64_t cancelled_through_sequence_ = 0;
   std::atomic<std::uint64_t> dropped_bytes_{0};
   std::atomic<std::uint64_t> interruptions_{0};
 };
@@ -198,6 +181,6 @@ extern "C" voxa_multimodal_node_factory_v1 voxa_node_pack_factory() {
   static const auto factory = voxa::MultimodalGraphNodeFactory::make<
       AgoraAudioSinkNode>(
       "agora.audio_sink", VOXA_NODE_SINK,
-      R"json([{"name":"audio_in","direction":"input","frameType":"audio"}])json");
+      R"json([{"name":"audio_in","direction":"input","frameType":"audio"},{"name":"signal_in","direction":"input","frameType":"signal"}])json");
   return factory.view();
 }

@@ -16,7 +16,11 @@
   "ports": [
     { "name": "audio_in", "direction": "input", "frame_type": "audio", "schema": { "encoding": "pcm_s16le", "sample_rate_hz": 16000, "channels": 1, "streaming": true } },
     { "name": "audio_out", "direction": "output", "frame_type": "audio", "schema": { "encoding": "pcm_s16le", "sample_rate_hz": 24000, "channels": 1, "streaming": true } },
-    { "name": "text_out", "direction": "output", "frame_type": "text", "schema": { "semantics": ["user_transcript", "assistant_transcript"], "streaming": true } }
+    { "name": "transcript_preview_out", "direction": "output", "frame_type": "text", "schema": { "semantics": ["user_transcript_partial"], "streaming": true } },
+    { "name": "transcript_out", "direction": "output", "frame_type": "text", "schema": { "semantics": ["user_transcript_final"], "streaming": false } },
+    { "name": "response_text_out", "direction": "output", "frame_type": "text", "schema": { "semantics": ["assistant_transcript"], "streaming": true } },
+    { "name": "client_event_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["client_realtime_event"], "streaming": true } },
+    { "name": "signal_out", "direction": "output", "frame_type": "signal", "schema": { "semantics": ["graph_control"], "streaming": true } }
   ],
   "config_schema": {
     "type": "object",
