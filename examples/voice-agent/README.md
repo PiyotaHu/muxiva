@@ -11,8 +11,9 @@ Agora Native C++ Node Pack 负责 RTC，Qwen Python Node Pack 负责智能层，
 Studio 内置两张可选择的图：
 
 - **Qwen Realtime（推荐）**：Qwen Audio Realtime 端到端语音模型，链路短、延迟低；
-- **Qwen Cascade（可检查）**：VAD → ASR → LLM → TTS，每个阶段可替换，用户开口时
-  `builtin.audio_vad` 会发出 `muxiva.runtime.interrupt`。
+- **Qwen Full-Duplex Cascade（Demo 2）**：阿里云 Qwen Server VAD + Streaming ASR →
+  可取消 Qwen LLM → 可取消 Qwen TTS。用户插话时，`muxiva.voice.speech.started`
+  Signal 会取消旧 LLM/TTS 请求、清除过期文本和客户端事件，并清空 Agora 播放队列。
 
 ### 准备
 
@@ -62,9 +63,11 @@ This is Muxiva's credentialed flagship application, not a mock. The browser uses
 Agora Web SDK for capture and playback, native C++ Node Packs own RTC, Python
 Node Packs own Qwen intelligence, and the Rust Runtime remains vendor-neutral.
 
-Studio offers two graphs: low-latency **Qwen Realtime**, and an inspectable
-**VAD → ASR → LLM → TTS** cascade. In the cascade, the generic VAD emits
-`muxiva.runtime.interrupt` when the user barges in.
+Studio offers two graphs: low-latency **Qwen Realtime**, and **Qwen Full-Duplex
+Cascade (Demo 2)**: Alibaba Cloud Qwen Server VAD + Streaming ASR → cancellable
+Qwen LLM → cancellable Qwen TTS. On barge-in, the
+`muxiva.voice.speech.started` Signal cancels the old LLM/TTS work, stale text
+and client events, and Agora playback.
 
 Prepare an Agora Native C++ SDK, DashScope API Key and Workspace ID, plus three
 short-lived RTC tokens for browser, ingress bot, and egress bot identities.

@@ -21,6 +21,6 @@ muxiva doctor --voice
 Node：
 
 - [Qwen Audio Realtime](audio-realtime.md)
-- [Qwen Streaming ASR](asr-realtime.md)
-- [Qwen Streaming LLM](llm-stream.md)
-- [Qwen Streaming TTS](tts-realtime.md)
+- [Qwen Server VAD + Streaming ASR](asr-realtime.md)
+- [Qwen 可取消 Streaming LLM](llm-stream.md)
+- [Qwen 可取消 Streaming TTS](tts-realtime.md)

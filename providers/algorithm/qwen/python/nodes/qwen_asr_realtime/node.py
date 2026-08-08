@@ -7,6 +7,7 @@ import json
 import os
 import re
 import ssl
+import sys
 import uuid
 from typing import Any, Callable, Iterable
 from urllib.parse import quote
@@ -27,7 +28,10 @@ class _WebSocketTransport:
         self._websocket = websocket
         self._socket = websocket.create_connection(
             endpoint,
-            header=[f"Authorization: Bearer {api_key}"],
+            header=[
+                f"Authorization: Bearer {api_key}",
+                "OpenAI-Beta: realtime=v1",
+            ],
             timeout=10,
             enable_multithread=False,
         )
@@ -63,6 +67,12 @@ class QwenAsrRealtimeNode:
         self.config = config or {}
         self._transport_factory = transport_factory
         self._transport: Any | None = None
+        self._speech_active = False
+
+    @staticmethod
+    def _log(event: str, **fields: Any) -> None:
+        detail = " ".join(f"{key}={value}" for key, value in fields.items())
+        print(f"[MUXIVA][QWEN-ASR][{event}] {detail}".rstrip(), file=sys.stderr, flush=True)
 
     def on_prepare(self, _ctx: Any = None) -> None:
         key, workspace = _credentials()
@@ -72,6 +82,12 @@ class QwenAsrRealtimeNode:
             f"?model={quote(model, safe='-._')}"
         )
         self._transport = self._transport_factory(endpoint, key, session_update(self.config))
+        self._log(
+            "session.connect",
+            model=model,
+            vad="server_vad",
+            audio="pcm_s16le/16000/mono",
+        )
 
     def on_process(self, frame: Any, ctx: Any) -> None:
         if self._transport is None:
@@ -81,26 +97,86 @@ class QwenAsrRealtimeNode:
         self._transport.send(audio_append(frame.data))
         for event in self._transport.poll():
             kind = event["type"]
-            if kind.endswith("input_audio_transcription.completed"):
+            if kind == "input_audio_buffer.speech_started":
+                if self._speech_active:
+                    continue
+                self._speech_active = True
+                self._emit_speech_state(ctx, frame.sequence, True)
+                ctx.emit_signal(
+                    "muxiva.voice.speech.started",
+                    {"node": "qwen.asr_realtime", "detector": "qwen_server_vad"},
+                )
+                self._log("speech.started", sequence=frame.sequence, action="interrupt")
+            elif kind == "input_audio_buffer.speech_stopped":
+                if not self._speech_active:
+                    continue
+                self._speech_active = False
+                self._emit_speech_state(ctx, frame.sequence, False)
+                self._log("speech.stopped", sequence=frame.sequence)
+            elif kind in {
+                "conversation.item.input_audio_transcription.delta",
+                "conversation.item.input_audio_transcription.text",
+            }:
+                text = f"{event.get('text', '')}{event.get('stash', '')}"
+                if text:
+                    self._emit_client_event(
+                        ctx,
+                        "muxiva.voice.transcript.preview",
+                        {"text": text},
+                        frame.sequence,
+                    )
+            elif kind.endswith("input_audio_transcription.completed"):
                 text = event.get("transcript", event.get("text", "")).strip()
                 if text:
                     ctx.emit("text_out", muxiva.TextFrame(text, sequence=frame.sequence))
-                    ctx.emit(
-                        "client_event_out",
-                        muxiva.EventFrame(
-                            "muxiva.voice.transcript.completed",
-                            json.dumps({"text": text}, separators=(",", ":"), ensure_ascii=False),
-                            source="qwen.asr_realtime",
-                            sequence=frame.sequence,
-                        ),
+                    self._emit_client_event(
+                        ctx,
+                        "muxiva.voice.transcript.completed",
+                        {"text": text},
+                        frame.sequence,
                     )
-                    ctx.publish_event("muxiva.voice.transcript.completed", {"text": text})
+                    self._log("transcript.completed", sequence=frame.sequence, chars=len(text))
+            elif kind.endswith("input_audio_transcription.failed"):
+                error = event.get("error", {})
+                self._emit_client_event(
+                    ctx,
+                    "muxiva.voice.transcript.failed",
+                    {"message": str(error.get("message", "ASR transcription failed"))[:512]},
+                    frame.sequence,
+                )
             elif kind == "error":
                 error = event.get("error", {})
                 raise QwenAsrProtocolError(
                     f"Qwen ASR {str(error.get('code', 'unknown'))[:128]}: "
                     f"{str(error.get('message', 'request failed'))[:512]}"
                 )
+
+    def _emit_speech_state(self, ctx: Any, sequence: int, active: bool) -> None:
+        topic = "muxiva.voice.speech.started" if active else "muxiva.voice.speech.stopped"
+        payload = {"active": active, "detector": "qwen_server_vad"}
+        ctx.emit(
+            "speech_out",
+            muxiva.EventFrame(
+                topic,
+                json.dumps(payload, separators=(",", ":")),
+                source="qwen.asr_realtime",
+                sequence=sequence,
+            ),
+        )
+        self._emit_client_event(ctx, topic, payload, sequence)
+
+    @staticmethod
+    def _emit_client_event(ctx: Any, topic: str, payload: dict[str, Any], sequence: int) -> None:
+        ctx.emit(
+            "client_event_out",
+            muxiva.EventFrame(
+                topic,
+                json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
+                source="qwen.asr_realtime",
+                sequence=sequence,
+            ),
+        )
+        ctx.publish_event(topic, payload)
 
     def on_finish(self, _ctx: Any = None) -> None:
         if self._transport is not None:

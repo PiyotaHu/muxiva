@@ -265,9 +265,16 @@ function handleClientEvent(event) {
     $('#frames').textContent = event.sequence || clientMessageCount
     const text = typeof event.payload?.text === 'string' ? event.payload.text : ''
     if (event.type === 'muxiva.voice.speech.started') {
+      const interruptedPlayback = Boolean(currentAgentMessage) || $('#orb').classList.contains('speaking')
       beginUserMessage()
-      showBargeState('listening', 'YOU ARE SPEAKING')
-      message('Listening — speak naturally', 'Speech-start signal entered the Muxiva control plane')
+      if (interruptedPlayback) {
+        showBargeState('interrupting', 'BARGE-IN · INTERRUPTING AGENT')
+        message('Listening — old response cancelled', 'Speech-start Signal cancelled LLM, TTS, and playback')
+        diagnostic('Barge-in · cascade generation, synthesis, and Agora output are cancelling')
+      } else {
+        showBargeState('listening', 'YOU ARE SPEAKING')
+        message('Listening — speak naturally', 'Speech-start Signal entered the Muxiva control plane')
+      }
     } else if (event.type === 'muxiva.voice.barge_in') {
       showBargeState('interrupting', 'BARGE-IN · INTERRUPTING AGENT')
       diagnostic('Barge-in · Qwen generation cancelled; Agora output queue clearing')

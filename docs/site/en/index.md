@@ -32,8 +32,8 @@ flowchart LR
 This credentialed flagship application captures a real microphone in the
 browser, transports real audio through Agora, and uses Qwen for speech
 understanding and generation. Studio offers a low-latency Realtime graph and an
-inspectable VAD → ASR → LLM → TTS graph with live Node, Frame, and conversation
-state.
+inspectable full-duplex Qwen Server VAD + ASR → cancellable LLM → cancellable
+TTS graph with live Node, Frame, and conversation state.
 
 [Run the flagship voice demo](voice-demo.md){ .md-button .md-button--primary }
 [Open the Studio guide](studio.md){ .md-button }

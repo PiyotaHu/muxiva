@@ -86,8 +86,9 @@ knowledge of the Rust workspace.
 
 ### Run the real voice assistant
 
-The flagship application offers both Qwen Audio Realtime and an inspectable
-VAD → ASR → LLM → TTS graph, with Agora C++ transport and a browser microphone:
+The flagship application offers Qwen Audio Realtime plus **Demo 2**, an
+inspectable full-duplex Alibaba Cloud Server VAD + ASR → cancellable Qwen LLM →
+cancellable Qwen TTS graph, with Agora C++ transport and a browser microphone:
 
 ```bash
 ./examples/voice-agent/setup.sh       # macOS: downloads and verifies Agora SDK

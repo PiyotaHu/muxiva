@@ -31,19 +31,25 @@ results or business logic can be inserted:
 
 ```mermaid
 flowchart LR
-    IN["Agora Ingress"] --> VAD["VAD"]
-    IN --> ASR["Qwen ASR"]
-    VAD --> FUSION["Context / Policy"]
-    ASR --> FUSION
-    FUSION --> LLM["Qwen LLM"]
-    LLM --> TEXT["Cancellation Gate / Tool"]
-    LLM --> TTS["Qwen TTS"]
+    IN["Agora Ingress"] --> ASR["Qwen Server VAD + Streaming ASR"]
+    ASR --> FUSION["Turn Context / Policy"]
+    FUSION --> LLM["Cancellable Qwen LLM Worker"]
+    CLOCK["20 ms Async Tick"] --> LLM
+    LLM --> GATE["Text Cancellation Watermark / Tool"]
+    GATE --> TTS["Cancellable Qwen TTS Worker"]
+    CLOCK --> TTS
     TTS --> OUT["Agora Egress"]
+    ASR -. "speech.started Signal" .-> LLM
+    ASR -. "speech.started Signal" .-> TTS
+    ASR -. "speech.started Signal" .-> GATE
+    ASR -. "speech.started Signal" .-> OUT
 ```
 
-Choose it when the application needs custom VAD, prompts, tools, moderation, transcripts, or
-TTS. Branching and joining are normal Graph capabilities; Muxiva is not limited to a linear
-`A → B → C` pipeline.
+Demo 2 uses Alibaba Cloud throughout: Qwen ASR owns both Server VAD and streaming
+transcription. Qwen LLM and Qwen TTS run vendor I/O on background workers; a generic
+`interval_tick` lets each Node drain a bounded result queue in short callbacks, keeping
+`on_signal` responsive during long network calls. Every stage remains replaceable, and
+branching and joining remain normal Graph capabilities.
 
 ## What each layer owns
 
@@ -79,10 +85,12 @@ sequenceDiagram
     R->>M: subsequent audio continues into the same Node
 ```
 
-Interruption semantics live entirely in Nodes. The Qwen Node cancels the remote response and
-discards late chunks; the Agora Audio Sink clears queued playback and rejects audio at or below
-the cancellation sequence. The cascade also places a generic text cancellation gate before TTS.
-Core understands neither voice, turns, nor a particular Signal name—it only routes opaque Signals.
+Interruption semantics live entirely in Nodes. In the Realtime Graph, Qwen Audio cancels its
+remote response. In Demo 2, Qwen ASR Server VAD emits the same Signal; Qwen LLM closes its HTTP
+SSE response, Qwen TTS closes the active WebSocket and clears pending text and PCM, text/client
+gates advance cancellation watermarks, and Agora Audio Sink clears queued playback and rejects
+late audio. Core understands neither voice, turns, nor a particular Signal name—it routes opaque
+Signals only.
 
 ## Client data is not Studio telemetry
 
@@ -99,11 +107,12 @@ The first supported isolation model is deliberately strict: one Agora channel eq
 session and one configured browser UID. The shared C++ session drops media and messages from any
 other UID rather than accidentally mixing participants.
 
-!!! warning "Cascade cancellation boundary"
-    The cancellation gates prevent stale cascade text and audio from reaching TTS, playback, or
-    the client. The current synchronous Python HTTP LLM request itself is not preempted mid-call;
-    cancellable asynchronous transform execution remains required before claiming hard provider-
-    side cancellation for the cascade Graph. Qwen Realtime does cancel provider generation.
+!!! note "Cascade cancellation boundary"
+    Demo 2 actively closes the in-flight LLM HTTP SSE response and TTS WebSocket, then applies
+    three cancellation watermarks to late results. PCM already inside Agora or the browser's
+    playback buffer cannot be recalled, so Audio Sink still uses short packets and bounded queues.
+    “Hard interruption” means cancelling vendor connections and the local pipeline, not reversing
+    media that has already been transmitted.
 
 ## Credential and deployment boundary
 

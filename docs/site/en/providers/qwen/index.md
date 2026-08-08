@@ -22,6 +22,6 @@ vendor SDK download.
 Nodes:
 
 - [Qwen Audio Realtime](audio-realtime.md)
-- [Qwen Streaming ASR](asr-realtime.md)
-- [Qwen Streaming LLM](llm-stream.md)
-- [Qwen Streaming TTS](tts-realtime.md)
+- [Qwen Server VAD + Streaming ASR](asr-realtime.md)
+- [Qwen Cancellable Streaming LLM](llm-stream.md)
+- [Qwen Cancellable Streaming TTS](tts-realtime.md)

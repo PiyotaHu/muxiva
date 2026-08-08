@@ -28,18 +28,24 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    IN["Agora Ingress"] --> VAD["VAD"]
-    IN --> ASR["Qwen ASR"]
-    VAD --> FUSION["Context / Policy"]
-    ASR --> FUSION
-    FUSION --> LLM["Qwen LLM"]
-    LLM --> TEXT["取消水位 / Tool"]
-    LLM --> TTS["Qwen TTS"]
+    IN["Agora Ingress"] --> ASR["Qwen Server VAD + Streaming ASR"]
+    ASR --> FUSION["Turn Context / Policy"]
+    FUSION --> LLM["可取消 Qwen LLM Worker"]
+    CLOCK["20 ms Async Tick"] --> LLM
+    LLM --> GATE["文本取消水位 / Tool"]
+    GATE --> TTS["可取消 Qwen TTS Worker"]
+    CLOCK --> TTS
     TTS --> OUT["Agora Egress"]
+    ASR -. "speech.started Signal" .-> LLM
+    ASR -. "speech.started Signal" .-> TTS
+    ASR -. "speech.started Signal" .-> GATE
+    ASR -. "speech.started Signal" .-> OUT
 ```
 
-适合需要自定义 VAD、提示词、工具、审核、字幕或 TTS 的应用。分支与汇合是 Graph 的
-正常能力，不是只能运行 `A → B → C` 的线性 Pipeline。
+Demo 2 默认全部使用阿里云模型：Qwen ASR 会同时执行 Server VAD 和流式转写；Qwen LLM
+与 Qwen TTS 的厂商 I/O 在各自后台 Worker 中运行，通用 `interval_tick` 只负责让 Node
+以短回调排空有界结果队列，使 `on_signal` 不会被长网络请求堵住。各阶段仍可替换，分支
+与汇合是 Graph 的正常能力，不是只能运行 `A → B → C` 的线性 Pipeline。
 
 ## 每一层到底做什么
 
@@ -75,9 +81,11 @@ sequenceDiagram
     R->>M: 后续音频继续进入同一 Node
 ```
 
-打断语义完全属于 Node：Qwen Node 负责取消远端回答并丢弃晚到片段；Agora Audio Sink
-清空播放队列，并按取消序列水位拒绝迟到音频；级联图还会在 TTS 前通过通用文本取消门
-拒绝旧回复。Core 不理解语音、Turn 或具体 Signal 名称，只负责路由不透明 Signal。
+打断语义完全属于 Node。Realtime 图由 Qwen Audio Node 取消远端回答；级联图由 Qwen
+ASR Server VAD 发出同名 Signal，Qwen LLM 关闭 HTTP SSE、Qwen TTS 关闭当前 WebSocket
+并清空待合成文本与 PCM，文本门和客户端事件编码器推进取消水位，Agora Audio Sink
+清空播放队列并拒绝迟到音频。Core 不理解语音、Turn 或具体 Signal 名称，只负责路由
+不透明 Signal。
 
 ## 客户端数据不是 Studio 遥测
 
@@ -91,10 +99,10 @@ EventBus 继续作为进程内日志、指标和 Studio 运维观测设施，但
 第一版会话隔离采用严格模型：一个 Agora Channel 对应一个 Agent Session 和一个配置好的
 浏览器 UID。共享 C++ Session 会丢弃其他 UID 的媒体与消息，避免错误混合多名参与者。
 
-!!! warning "级联取消边界"
-    当前取消水位能阻止旧级联文字和音频进入 TTS、播放端或客户端，但同步 Python HTTP
-    LLM 请求本身尚不能在调用中途抢占。完成可取消异步 Transform 前，不能宣称级联图
-    具备模型服务侧硬取消；Qwen Realtime 图已经会取消模型生成。
+!!! note "级联取消边界"
+    Demo 2 已能主动关闭进行中的 LLM HTTP SSE 与 TTS WebSocket，并通过三层水位过滤
+    晚到结果。已经发进 Agora 网络或浏览器播放缓冲区的 PCM 无法撤回，因此 Audio Sink
+    仍使用短包和有界队列；“硬打断”指取消服务端连接与本地流水线，不代表逆转已发送媒体。
 
 ## 凭据与部署边界
 

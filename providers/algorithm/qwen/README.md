@@ -3,9 +3,9 @@
 The Qwen provider is implemented entirely in Python under `python/nodes`:
 
 - `qwen_realtime`: end-to-end audio realtime model.
-- `qwen_asr_realtime`: streaming speech recognition.
-- `qwen_llm_stream`: streaming language model.
-- `qwen_tts_realtime`: streaming speech synthesis.
+- `qwen_asr_realtime`: Qwen Server VAD plus streaming speech recognition and interruption Signals.
+- `qwen_llm_stream`: cancellable background SSE generation drained by Runtime ticks.
+- `qwen_tts_realtime`: cancellable streaming synthesis with a reusable WebSocket session.
 
 Install dependencies with `python3 -m pip install -r python/requirements.txt`
 and run protocol tests with

@@ -82,8 +82,9 @@ muxiva --version
 
 ### 运行真实语音助手
 
-门面应用同时提供 Qwen Audio Realtime 与可检查的 VAD → ASR → LLM → TTS 图，
-使用 Agora C++ Transport 和浏览器麦克风：
+门面应用同时提供 Qwen Audio Realtime 与 **Demo 2**：可检查的全双工阿里云 Server
+VAD + ASR → 可取消 Qwen LLM → 可取消 Qwen TTS 图，使用 Agora C++ Transport 和
+浏览器麦克风：
 
 ```bash
 ./examples/voice-agent/setup.sh       # macOS：自动下载并校验 Agora SDK

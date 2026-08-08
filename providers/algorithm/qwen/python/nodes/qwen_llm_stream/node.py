@@ -1,10 +1,18 @@
-"""Qwen OpenAI-compatible streaming LLM application Node Pack."""
+"""Cancellable Qwen streaming LLM application Node Pack for Muxiva.
+
+Provider I/O runs on a background worker. ``on_process`` only starts work or
+drains bounded results on a Runtime tick, so ``on_signal`` remains responsive
+while an HTTP SSE response is in flight.
+"""
 
 from __future__ import annotations
 
 import json
 import os
+import queue
 import re
+import sys
+import threading
 import urllib.request
 from typing import Any, Callable, Iterable
 
@@ -12,24 +20,50 @@ import muxiva
 
 
 class _SseClient:
-    def stream(self, endpoint: str, api_key: str, payload: dict[str, Any]) -> Iterable[str]:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._response: Any | None = None
+
+    def stream(
+        self,
+        endpoint: str,
+        api_key: str,
+        payload: dict[str, Any],
+        cancelled: threading.Event,
+    ) -> Iterable[str]:
         request = urllib.request.Request(
             endpoint,
             data=json.dumps(payload, separators=(",", ":")).encode(),
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=60) as response:
-            for raw_line in response:
-                line = raw_line.decode("utf-8").strip()
-                if not line.startswith("data: ") or line == "data: [DONE]":
-                    continue
-                event = json.loads(line[6:])
-                choices = event.get("choices", [])
-                if choices:
-                    text = choices[0].get("delta", {}).get("content", "")
-                    if text:
-                        yield text
+        response = urllib.request.urlopen(request, timeout=60)
+        with self._lock:
+            self._response = response
+        try:
+            with response:
+                for raw_line in response:
+                    if cancelled.is_set():
+                        return
+                    line = raw_line.decode("utf-8").strip()
+                    if not line.startswith("data: ") or line == "data: [DONE]":
+                        continue
+                    event = json.loads(line[6:])
+                    choices = event.get("choices", [])
+                    if choices:
+                        text = choices[0].get("delta", {}).get("content", "")
+                        if text:
+                            yield text
+        finally:
+            with self._lock:
+                if self._response is response:
+                    self._response = None
+
+    def cancel(self) -> None:
+        with self._lock:
+            response = self._response
+        if response is not None:
+            response.close()
 
 
 class QwenLlmStreamNode:
@@ -39,52 +73,207 @@ class QwenLlmStreamNode:
         client_factory: Callable[[], Any] = _SseClient,
     ) -> None:
         self.config = config or {}
-        self._client = client_factory()
+        self._client_factory = client_factory
+        self._lock = threading.Lock()
+        self._results: queue.Queue[tuple[int, str, Any, int]] = queue.Queue(maxsize=512)
+        self._generation = 0
+        self._cancelled: threading.Event | None = None
+        self._active_client: Any | None = None
+        self._worker: threading.Thread | None = None
         self._history: list[dict[str, str]] = []
+        self._closed = False
+
+    @staticmethod
+    def _log(event: str, **fields: Any) -> None:
+        detail = " ".join(f"{key}={value}" for key, value in fields.items())
+        print(f"[MUXIVA][QWEN-LLM][{event}] {detail}".rstrip(), file=sys.stderr, flush=True)
 
     def on_process(self, frame: Any, ctx: Any) -> None:
+        input_port = getattr(ctx, "input_port", None)
+        if input_port in (None, "text_in") and hasattr(frame, "text"):
+            self._start_generation(frame.text, frame.sequence)
+            return
+        if input_port == "tick_in":
+            self._drain(ctx)
+            return
+        raise ValueError(f"Qwen LLM received unsupported input port: {input_port}")
+
+    def on_signal(self, signal: Any, _ctx: Any = None) -> None:
+        if getattr(signal, "name", "") != "muxiva.voice.speech.started":
+            return
+        self._cancel_current()
+        self._log("generation.cancelled", sequence=getattr(signal, "sequence", 0))
+
+    def on_finish(self, _ctx: Any = None) -> None:
+        self._closed = True
+        self._cancel_current()
+        worker = self._worker
+        if worker is not None and worker.is_alive():
+            worker.join(timeout=2)
+
+    def on_abort(self, _reason: str, ctx: Any = None) -> None:
+        self.on_finish(ctx)
+
+    def _start_generation(self, text: str, sequence: int) -> None:
+        text = text.strip()
+        if not text:
+            return
+        if self._closed:
+            raise RuntimeError("Qwen LLM Node is closed")
+        self._cancel_current()
         api_key, workspace = _credentials()
-        self._history.append({"role": "user", "content": frame.text})
-        messages = [{"role": "system", "content": self.config.get(
+        with self._lock:
+            self._generation += 1
+            generation = self._generation
+            cancelled = threading.Event()
+            self._cancelled = cancelled
+            history = list(self._history[-12:])
+        system_prompt = self.config.get(
             "system_prompt",
             "You are Muxiva, a warm, concise real-time voice assistant. Respond in the user's language.",
-        )}, *self._history[-12:]]
+        )
         payload = {
             "model": self.config.get("model", "qwen-flash"),
-            "messages": messages,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                *history,
+                {"role": "user", "content": text},
+            ],
             "temperature": float(self.config.get("temperature", 0.6)),
             "stream": True,
         }
-        endpoint = f"https://{workspace}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions"
+        endpoint = (
+            f"https://{workspace}.cn-beijing.maas.aliyuncs.com/"
+            "compatible-mode/v1/chat/completions"
+        )
+        worker = threading.Thread(
+            target=self._run_generation,
+            args=(generation, cancelled, endpoint, api_key, payload, text, sequence),
+            name=f"muxiva-qwen-llm-{generation}",
+            daemon=True,
+        )
+        self._worker = worker
+        worker.start()
+        self._log("generation.started", generation=generation, sequence=sequence)
+
+    def _run_generation(
+        self,
+        generation: int,
+        cancelled: threading.Event,
+        endpoint: str,
+        api_key: str,
+        payload: dict[str, Any],
+        user_text: str,
+        sequence: int,
+    ) -> None:
+        client = self._client_factory()
+        with self._lock:
+            if generation != self._generation or cancelled.is_set():
+                return
+            self._active_client = client
         answer: list[str] = []
-        for sentence in sentence_chunks(self._client.stream(endpoint, api_key, payload)):
-            answer.append(sentence)
-            # A sentence-sized chunk keeps captions responsive and gives TTS a
-            # stable commit boundary instead of synthesizing token fragments.
-            ctx.emit("text_out", muxiva.TextFrame(sentence, sequence=frame.sequence))
-            ctx.emit(
-                "client_event_out",
-                muxiva.EventFrame(
-                    "muxiva.voice.response.delta",
-                    json.dumps({"text": sentence}, separators=(",", ":"), ensure_ascii=False),
-                    source="qwen.llm_stream",
-                    sequence=frame.sequence,
-                ),
-            )
-            ctx.publish_event("muxiva.voice.response.delta", {"text": sentence})
-        if answer:
-            completed = "".join(answer)
-            self._history.append({"role": "assistant", "content": completed})
-            ctx.emit(
-                "client_event_out",
-                muxiva.EventFrame(
-                    "muxiva.voice.response.completed",
-                    json.dumps({"text": completed}, separators=(",", ":"), ensure_ascii=False),
-                    source="qwen.llm_stream",
-                    sequence=frame.sequence,
-                ),
-            )
-            ctx.publish_event("muxiva.voice.response.completed", {"text": completed})
+        try:
+            deltas = client.stream(endpoint, api_key, payload, cancelled)
+            for sentence in sentence_chunks(deltas, cancelled):
+                if cancelled.is_set() or generation != self._current_generation():
+                    return
+                answer.append(sentence)
+                self._put_result((generation, "delta", sentence, sequence), cancelled)
+            if not cancelled.is_set() and generation == self._current_generation():
+                self._put_result(
+                    (generation, "done", {"user": user_text, "answer": "".join(answer)}, sequence),
+                    cancelled,
+                )
+        except Exception as error:
+            if not cancelled.is_set() and generation == self._current_generation():
+                self._put_result((generation, "error", str(error)[:512], sequence), cancelled)
+        finally:
+            with self._lock:
+                if self._active_client is client:
+                    self._active_client = None
+
+    def _drain(self, ctx: Any) -> None:
+        maximum = int(self.config.get("max_results_per_tick", 32))
+        for _ in range(maximum):
+            try:
+                generation, kind, value, sequence = self._results.get_nowait()
+            except queue.Empty:
+                return
+            if generation != self._current_generation():
+                continue
+            if kind == "delta":
+                ctx.emit("text_out", muxiva.TextFrame(value, sequence=sequence))
+                self._emit_client_event(
+                    ctx, "muxiva.voice.response.delta", {"text": value}, sequence
+                )
+            elif kind == "done":
+                answer = value["answer"]
+                if answer:
+                    with self._lock:
+                        self._history.extend([
+                            {"role": "user", "content": value["user"]},
+                            {"role": "assistant", "content": answer},
+                        ])
+                        self._history = self._history[-12:]
+                    self._emit_client_event(
+                        ctx, "muxiva.voice.response.completed", {"text": answer}, sequence
+                    )
+                self._log("generation.completed", generation=generation, chars=len(answer))
+            elif kind == "error":
+                raise RuntimeError(f"Qwen LLM stream failed: {value}")
+
+    @staticmethod
+    def _emit_client_event(ctx: Any, topic: str, payload: dict[str, Any], sequence: int) -> None:
+        ctx.emit(
+            "client_event_out",
+            muxiva.EventFrame(
+                topic,
+                json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
+                source="qwen.llm_stream",
+                sequence=sequence,
+            ),
+        )
+        ctx.publish_event(topic, payload)
+
+    def _cancel_current(self) -> None:
+        with self._lock:
+            self._generation += 1
+            cancelled = self._cancelled
+            client = self._active_client
+            self._cancelled = None
+            self._active_client = None
+        if cancelled is not None:
+            cancelled.set()
+        cancel = getattr(client, "cancel", None)
+        if cancel is not None:
+            try:
+                cancel()
+            except Exception:
+                pass
+        self._clear_results()
+
+    def _current_generation(self) -> int:
+        with self._lock:
+            return self._generation
+
+    def _put_result(
+        self,
+        value: tuple[int, str, Any, int],
+        cancelled: threading.Event,
+    ) -> None:
+        while not cancelled.is_set():
+            try:
+                self._results.put(value, timeout=0.05)
+                return
+            except queue.Full:
+                continue
+
+    def _clear_results(self) -> None:
+        while True:
+            try:
+                self._results.get_nowait()
+            except queue.Empty:
+                return
 
 
 def _credentials() -> tuple[str, str]:
@@ -97,10 +286,14 @@ def _credentials() -> tuple[str, str]:
     return api_key, workspace
 
 
-def sentence_chunks(deltas: Iterable[str]) -> Iterable[str]:
+def sentence_chunks(
+    deltas: Iterable[str], cancelled: threading.Event | None = None
+) -> Iterable[str]:
     buffer = ""
     boundaries = "。！？.!?\n"
     for delta in deltas:
+        if cancelled is not None and cancelled.is_set():
+            return
         buffer += delta
         while True:
             positions = [buffer.find(mark) for mark in boundaries if mark in buffer]
@@ -109,5 +302,5 @@ def sentence_chunks(deltas: Iterable[str]) -> Iterable[str]:
             end = min(positions) + 1 if positions else 80
             yield buffer[:end]
             buffer = buffer[end:]
-    if buffer:
+    if buffer and (cancelled is None or not cancelled.is_set()):
         yield buffer

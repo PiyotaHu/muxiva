@@ -29,7 +29,8 @@ flowchart LR
 
 这是带真实凭据运行的门面应用：浏览器采集真实麦克风，Agora 传输真实音频，Qwen
 完成语音理解与生成。Studio 可选择低延迟 Realtime 图或可检查的
-VAD → ASR → LLM → TTS 图，并持续展示 Node、Frame 和对话状态。
+全双工 Qwen Server VAD + ASR → 可取消 LLM → 可取消 TTS 图，并持续展示 Node、Frame
+和对话状态。
 
 [运行旗舰语音 Demo](voice-demo.md){ .md-button .md-button--primary }
 [打开 Studio 指南](studio.md){ .md-button }

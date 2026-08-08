@@ -11,3 +11,6 @@ muxiva-core = { path = "../muxiva-core" }
 muxiva-graph-json = { path = "../muxiva-graph-json" }
 muxiva-ffi = { path = "../muxiva-ffi" }
 muxiva-types.workspace = true
+
+[dev-dependencies]
+muxiva-testkit = { path = "../muxiva-testkit" }

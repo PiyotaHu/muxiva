@@ -104,6 +104,7 @@ def decode_frame(value):
     if value is None: return None
     if value.get("kind") == "text": return TextFrame(value["text"], value.get("sequence", 0))
     if value.get("kind") == "audio": return AudioFrame(bytes.fromhex(value["pcm_hex"]), value["sample_rate_hz"], value["channels"], value.get("sequence", 0))
+    if value.get("kind") == "event": return EventFrame(value["topic"], value.get("payload", ""), value.get("source", "runtime.node"), value.get("schema_version", 1), value.get("sequence", 0))
     if value.get("kind") == "signal": return SignalFrame(value["name"], value.get("payload", ""), value.get("source", "runtime.node"), value.get("schema_version", 1), value.get("sequence", 0))
     raise ValueError("Studio Python Host received an unsupported Frame")
 
@@ -1394,7 +1395,10 @@ fn python_host_supported_manifest(graph: &Path, manifest: &NodePackageManifest) 
             .ports
             .iter()
             .all(|port| match port.direction.as_str() {
-                "input" => matches!(port.frame_type.as_str(), "text" | "audio" | "signal"),
+                "input" => matches!(
+                    port.frame_type.as_str(),
+                    "text" | "audio" | "event" | "signal"
+                ),
                 "output" => matches!(
                     port.frame_type.as_str(),
                     "text" | "audio" | "event" | "signal"
@@ -1758,6 +1762,16 @@ fn frame_to_wire(frame: &Frame) -> muxiva_types::Result<serde_json::Value> {
             "sequence":frame.header().sequence_id().get(),
         }));
     }
+    if let Some(event) = frame.as_event() {
+        return Ok(serde_json::json!({
+            "kind":"event",
+            "topic":event.data().topic().as_str(),
+            "payload":muxiva_graph_json::value_to_json(event.data().payload()),
+            "source":event.data().source().as_str(),
+            "schema_version":event.data().schema_version().get(),
+            "sequence":frame.header().sequence_id().get(),
+        }));
+    }
     Err(python_error(
         "Studio Python Host received an unsupported Frame",
     ))
@@ -1870,11 +1884,16 @@ fn wire_to_frame(
     };
     let serial = NEXT_FRAME.fetch_add(1, Ordering::Relaxed);
     if let Some(parent) = parent {
+        let sequence = wire
+            .get("sequence")
+            .and_then(serde_json::Value::as_u64)
+            .map(SequenceId::new)
+            .unwrap_or_else(|| parent.header().sequence_id());
         return parent.derive(
             FrameDerivation::new(
                 FrameId::new(format!("studio-python-{serial}")).expect("bounded Studio Frame ID"),
                 parent.header().timestamp(),
-                parent.header().sequence_id(),
+                sequence,
                 TransformOrigin::new(Some(node_id.clone()), None)?,
                 "studio_python_node",
             )?
@@ -1930,8 +1949,12 @@ fn atomic_write(path: &Path, payload: &[u8]) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{list, register_project_nodes_with_connections, save, ConnectionStore, SaveError};
+    use super::{
+        frame_to_wire, list, register_project_nodes_with_connections, save, wire_to_frame,
+        ConnectionStore, SaveError,
+    };
     use muxiva_core::{start_registered_runtime, EdgePolicies, RuntimeOptions};
+    use muxiva_types::NodeId;
     use std::{
         fs,
         path::PathBuf,
@@ -2021,6 +2044,25 @@ mod tests {
         let input = r#"{"format":"muxiva.node/v1","package_id":"../escape","display_name":"Escape","node_type":"example.escape","language":"ruby","factory_version":"1.0.0","kind":"source","entrypoint":"x","ports":[],"config_schema":{},"code":"x","runtime_available":false}"#;
         assert!(matches!(save(&graph, input), Err(SaveError::Invalid(_))));
         fs::remove_dir_all(graph.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn python_host_event_ticks_and_async_output_sequences_round_trip() {
+        let event = muxiva_testkit::event_frame(41, "muxiva.runtime.tick", "clock");
+        let wire = frame_to_wire(&event).unwrap();
+        assert_eq!(wire["kind"], "event");
+        assert_eq!(wire["topic"], "muxiva.runtime.tick");
+        assert_eq!(wire["sequence"], 41);
+
+        let parent = muxiva_testkit::event_frame(42, "muxiva.runtime.tick", "clock");
+        let emitted = wire_to_frame(
+            &serde_json::json!({"kind":"text", "text":"async", "sequence":700}),
+            Some(&parent),
+            &NodeId::new("python-async").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(emitted.header().sequence_id().get(), 700);
+        assert_eq!(emitted.as_text().unwrap().data().as_str(), "async");
     }
 
     #[test]

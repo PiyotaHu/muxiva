@@ -116,8 +116,10 @@ muxiva doctor --voice
 点击 Save connections 后，值会保存到 `examples/voice-agent/.env`（权限 `0600`、Git
 忽略）。以后再次运行无需重复填写。也可以参考 `.env.example` 手动创建该文件。
 
-Realtime 跑通后，再切换 **Qwen Cascade**，观察 VAD → ASR → LLM → TTS 的各阶段。
-会话会持续运行，直到点击 **End session**。
+Realtime 跑通后，再切换 **Qwen Full-Duplex Cascade（Demo 2）**，观察阿里云 Qwen
+Server VAD + Streaming ASR → 可取消 LLM → 可取消 TTS 的各阶段。助手播放时重新开口：
+Voice Room 应立即显示打断状态，旧文字停止增长、旧语音停止播放，新一句转写和回答随后
+进入同一会话。会话会持续运行，直到点击 **End session**。
 
 ## 运行日志与链路定位
 

@@ -123,8 +123,11 @@ that is a blocking diagnosis, not an optional hint. In Studio:
 Save connections writes values to `examples/voice-agent/.env` (mode `0600`, Git ignored).
 Future runs load it automatically. You can also create it manually from `.env.example`.
 
-After Realtime works, switch to **Qwen Cascade** to inspect VAD → ASR → LLM →
-TTS. The session remains live until you select **End session**.
+After Realtime works, switch to **Qwen Full-Duplex Cascade (Demo 2)** to inspect
+Alibaba Cloud Qwen Server VAD + Streaming ASR → cancellable LLM → cancellable
+TTS. Speak again during playback: Voice Room should enter interruption state,
+old text and audio should stop, and the next transcript and answer should remain
+in the same session. The session stays live until you select **End session**.
 
 ## Runtime logs and pipeline diagnosis
 

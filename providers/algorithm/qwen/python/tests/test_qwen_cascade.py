@@ -1,7 +1,10 @@
 import importlib.util
+import json
 import os
 import pathlib
 import sys
+import threading
+import time
 import types
 import unittest
 from unittest import mock
@@ -22,6 +25,11 @@ class EventFrame:
     def __init__(self, topic, payload="", source="python.node", schema_version=1, sequence=0, **_):
         self.topic, self.payload, self.source = topic, payload, source
         self.schema_version, self.sequence = schema_version, sequence
+
+
+class SignalFrame:
+    def __init__(self, name, sequence=0):
+        self.name, self.sequence = name, sequence
 
 
 shim = types.ModuleType("muxiva")
@@ -46,69 +54,194 @@ class FakeTransport:
     def __init__(self, events=()):
         self.events, self.sent, self.closed = list(events), [], False
 
-    def send(self, event): self.sent.append(event)
-    def poll(self): return iter(self.events)
-    def close(self): self.closed = True
+    def send(self, event):
+        self.sent.append(event)
+
+    def poll(self):
+        return iter(self.events)
+
+    def close(self):
+        self.closed = True
 
 
 class Context:
-    def __init__(self): self.emissions, self.events = [], []
-    def emit(self, port, frame): self.emissions.append((port, frame))
-    def publish_event(self, topic, payload): self.events.append((topic, payload))
+    def __init__(self, input_port=None):
+        self.input_port = input_port
+        self.emissions, self.signals, self.events = [], [], []
+
+    def emit(self, port, frame):
+        self.emissions.append((port, frame))
+
+    def emit_signal(self, name, payload):
+        self.signals.append((name, payload))
+
+    def publish_event(self, topic, payload):
+        self.events.append((topic, payload))
+
+
+def wait_until(predicate, timeout=1.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.005)
+    return predicate()
 
 
 class CascadeNodeTests(unittest.TestCase):
     credentials = {"DASHSCOPE_API_KEY": "secret", "DASHSCOPE_WORKSPACE_ID": "workspace-1"}
 
-    def test_asr_emits_only_completed_transcript(self):
+    def test_asr_server_vad_emits_speech_signal_state_and_completed_transcript(self):
         transport = FakeTransport([
-            {"type": "conversation.item.input_audio_transcription.delta", "text": "你"},
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "conversation.item.input_audio_transcription.text", "text": "你", "stash": "好"},
+            {"type": "input_audio_buffer.speech_stopped"},
             {"type": "conversation.item.input_audio_transcription.completed", "transcript": "你好 Muxiva"},
         ])
         node = asr.QwenAsrRealtimeNode({}, lambda *_: transport)
-        with mock.patch.dict(os.environ, self.credentials): node.on_prepare()
-        ctx = Context()
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        ctx = Context("audio_in")
         node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=9), ctx)
         self.assertEqual(transport.sent[0]["type"], "input_audio_buffer.append")
-        text = [frame.text for port, frame in ctx.emissions if port == "text_out"]
-        self.assertEqual(text, ["你好 Muxiva"])
-        self.assertTrue(any(port == "client_event_out" for port, _ in ctx.emissions))
-        self.assertEqual(ctx.events[0][0], "muxiva.voice.transcript.completed")
+        self.assertEqual(ctx.signals[0][0], "muxiva.voice.speech.started")
+        self.assertEqual(
+            [frame.topic for port, frame in ctx.emissions if port == "speech_out"],
+            ["muxiva.voice.speech.started", "muxiva.voice.speech.stopped"],
+        )
+        self.assertEqual(
+            [frame.text for port, frame in ctx.emissions if port == "text_out"],
+            ["你好 Muxiva"],
+        )
+        client_topics = [
+            frame.topic for port, frame in ctx.emissions if port == "client_event_out"
+        ]
+        self.assertIn("muxiva.voice.transcript.preview", client_topics)
+        self.assertIn("muxiva.voice.transcript.completed", client_topics)
+        self.assertIn("muxiva.voice.speech.started", client_topics)
+        self.assertIn("muxiva.voice.speech.stopped", client_topics)
 
-    def test_llm_forwards_each_sse_delta_through_ctx(self):
+    def test_llm_background_stream_drains_sentence_and_preserves_sequence(self):
         class Client:
-            def stream(self, endpoint, key, payload):
+            def stream(self, endpoint, key, payload, cancelled):
                 self.request = endpoint, key, payload
                 return iter(["你好", "，", "我是 Muxiva。"])
+
+            def cancel(self):
+                self.cancelled = True
+
         client = Client()
         node = llm.QwenLlmStreamNode({}, lambda: client)
-        ctx = Context()
         with mock.patch.dict(os.environ, self.credentials):
-            node.on_process(TextFrame("你是谁？", sequence=3), ctx)
+            node.on_process(TextFrame("你是谁？", sequence=301), Context("text_in"))
+        self.assertTrue(wait_until(lambda: node._worker is not None and not node._worker.is_alive()))
+        ctx = Context("tick_in")
+        node.on_process(EventFrame("muxiva.runtime.tick"), ctx)
         self.assertEqual(
             [frame.text for port, frame in ctx.emissions if port == "text_out"],
             ["你好，我是 Muxiva。"],
         )
+        self.assertEqual(ctx.emissions[0][1].sequence, 301)
         self.assertTrue(client.request[2]["stream"])
         self.assertEqual(ctx.events[0][0], "muxiva.voice.response.delta")
         self.assertEqual(ctx.events[-1][0], "muxiva.voice.response.completed")
+        node.on_finish()
 
-    def test_tts_converts_audio_delta_to_24k_pcm(self):
+    def test_llm_signal_cancels_provider_and_discards_queued_old_output(self):
+        started = threading.Event()
+
+        class Client:
+            def __init__(self):
+                self.cancelled = threading.Event()
+
+            def stream(self, _endpoint, _key, _payload, cancelled):
+                started.set()
+                yield "old sentence。"
+                while not cancelled.wait(0.01):
+                    pass
+
+            def cancel(self):
+                self.cancelled.set()
+
+        client = Client()
+        node = llm.QwenLlmStreamNode({}, lambda: client)
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_process(TextFrame("old", sequence=100), Context("text_in"))
+        self.assertTrue(started.wait(1))
+        self.assertTrue(wait_until(lambda: not node._results.empty()))
+        node.on_signal(SignalFrame("muxiva.voice.speech.started", sequence=200))
+        self.assertTrue(client.cancelled.is_set())
+        ctx = Context("tick_in")
+        node.on_process(EventFrame("muxiva.runtime.tick"), ctx)
+        self.assertEqual(ctx.emissions, [])
+        node.on_finish()
+
+    def test_tts_worker_drains_24k_pcm_and_preserves_sequence(self):
         transport = FakeTransport([
             {"type": "response.audio.delta", "delta": "AQIDBA=="},
             {"type": "response.done"},
         ])
-        node = tts.QwenTtsRealtimeNode({}, lambda *_: transport)
-        with mock.patch.dict(os.environ, self.credentials): node.on_prepare()
-        ctx = Context()
-        node.on_process(TextFrame("你好", sequence=4), ctx)
+        opened = []
+
+        def factory(*_):
+            opened.append(transport)
+            return transport
+
+        node = tts.QwenTtsRealtimeNode({}, factory)
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        node.on_process(TextFrame("你好", sequence=404), Context("text_in"))
+        node.on_process(TextFrame("世界", sequence=405), Context("text_in"))
+        self.assertTrue(wait_until(lambda: len(transport.sent) == 4 and node._results.qsize() >= 4))
+        ctx = Context("tick_in")
+        node.on_process(EventFrame("muxiva.runtime.tick"), ctx)
         self.assertEqual(transport.sent[0]["type"], "input_text_buffer.append")
         self.assertEqual(transport.sent[1]["type"], "input_text_buffer.commit")
         self.assertEqual(ctx.emissions[0][1].sample_rate_hz, 24000)
+        self.assertEqual(ctx.emissions[0][1].sequence, 404)
         self.assertEqual(ctx.emissions[0][1].data, b"\x01\x02\x03\x04")
+        self.assertEqual(ctx.emissions[1][1].sequence, 405)
+        self.assertEqual(len(opened), 1, "sentence chunks reuse one live TTS session")
+        node.on_finish()
 
-    def test_manifests_reference_the_shared_connection_contract(self):
-        import json
+    def test_tts_signal_closes_active_session_and_clears_audio(self):
+        active = threading.Event()
+
+        class BlockingTransport(FakeTransport):
+            def poll(self):
+                active.set()
+                yield {"type": "response.audio.delta", "delta": "AQIDBA=="}
+                while not self.closed:
+                    time.sleep(0.005)
+
+        transport = BlockingTransport()
+        node = tts.QwenTtsRealtimeNode({}, lambda *_: transport)
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        node.on_process(TextFrame("old", sequence=10), Context("text_in"))
+        self.assertTrue(active.wait(1))
+        self.assertTrue(wait_until(lambda: not node._results.empty()))
+        node.on_signal(SignalFrame("muxiva.voice.speech.started", sequence=20))
+        self.assertTrue(transport.closed)
+        ctx = Context("tick_in")
+        node.on_process(EventFrame("muxiva.runtime.tick"), ctx)
+        self.assertEqual(ctx.emissions, [])
+        node.on_finish()
+
+    def test_tts_connection_failure_is_reported_on_runtime_tick(self):
+        def fail_to_connect(*_):
+            raise OSError("connection refused")
+
+        node = tts.QwenTtsRealtimeNode({}, fail_to_connect)
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        node.on_process(TextFrame("你好", sequence=500), Context("text_in"))
+        self.assertTrue(wait_until(lambda: not node._results.empty()))
+        with self.assertRaisesRegex(RuntimeError, "connection refused"):
+            node.on_process(EventFrame("muxiva.runtime.tick"), Context("tick_in"))
+        node.on_finish()
+
+    def test_manifests_declare_cancellable_cascade_contracts(self):
         provider = json.loads((pathlib.Path(__file__).parents[2] / "muxiva.provider.json").read_text())
         self.assertEqual(provider["connections"][0]["id"], "dashscope")
         for package in ("qwen_realtime", "qwen_asr_realtime", "qwen_llm_stream", "qwen_tts_realtime"):
@@ -116,6 +249,15 @@ class CascadeNodeTests(unittest.TestCase):
             self.assertNotIn("provider_id", manifest)
             self.assertEqual(manifest["connection_id"], "dashscope")
             self.assertNotIn("connection", manifest)
+        asr_ports = {port["name"] for port in json.loads(
+            (root / "qwen_asr_realtime" / "muxiva.node.json").read_text()
+        )["ports"]}
+        self.assertTrue({"speech_out", "signal_out", "text_out"}.issubset(asr_ports))
+        for package in ("qwen_llm_stream", "qwen_tts_realtime"):
+            ports = {port["name"] for port in json.loads(
+                (root / package / "muxiva.node.json").read_text()
+            )["ports"]}
+            self.assertTrue({"tick_in", "signal_in"}.issubset(ports))
 
 
 if __name__ == "__main__":

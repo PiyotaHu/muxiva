@@ -89,11 +89,14 @@ the App Certificate never reaches the browser or Graph document.
 
 ## Interruption contract
 
-When Qwen reports `input_audio_buffer.speech_started`, its Node cancels the
-active remote response, marks subsequent chunks from that response for discard,
-and emits `muxiva.voice.speech.started`. Core broadcasts the opaque Signal. The
-Agora Audio Sink clears pending PCM when it receives it. No voice Turn identity
-or vendor cancellation logic exists in Core.
+When Qwen reports `input_audio_buffer.speech_started`, the owning Node emits
+`muxiva.voice.speech.started`. Core routes the opaque Signal only through
+explicit Graph Edges. In the Realtime profile, the Qwen Audio Node cancels its
+active remote response and rejects late chunks. In Demo 2, Qwen ASR Server VAD
+is the Signal source; cancellable background Qwen LLM/TTS workers close their
+active HTTP SSE/WebSocket connections, generic gates advance sequence
+watermarks, and Agora Audio Sink clears pending PCM. No voice Turn identity or
+vendor cancellation logic exists in Core.
 
 An EventBus notification may mirror the result for UI and telemetry, but the
 EventBus is not the real-time interruption path.
@@ -125,10 +128,12 @@ The Voice Graph Gallery exposes two choices:
 1. **Qwen Realtime**: Agora ingress, input resampler, one Qwen Audio Realtime
    Node, captions, output resampler, and Agora Sink. This is the recommended
    lowest-latency product path.
-2. **Qwen Cascade**: Agora ingress, input resampler, local VAD, Qwen realtime
-   ASR, turn/context fusion, Qwen streaming text LLM, Qwen realtime TTS,
-   captions, output resampler, and Agora Sink. This makes each stage observable
-   and replaceable.
+2. **Qwen Full-Duplex Cascade (Demo 2)**: Agora ingress, input resampler, Qwen
+   Server VAD + realtime ASR, turn/context fusion, cancellable background Qwen
+   streaming LLM, text cancellation gate, cancellable background Qwen realtime
+   TTS, captions, output resampler, and Agora Sink. A generic interval Node
+   drives short result-drain callbacks without placing vendor scheduling in
+   Core. Every intelligence stage uses Alibaba Cloud but remains replaceable.
 
 A template is visible before its optional Provider is installed. It can be
 inspected and applied, while validation and Run require every exact Factory
@@ -164,8 +169,14 @@ Implemented after the provider-boundary correction:
   audio append, transcript decode, cancellation, bounds, and secret redaction.
 - a generic C++ dynamic Node Pack loader validates ABI identity and exact
   Manifest port shape while retaining the loaded library for Node lifetimes;
-- the full Python Qwen ASR, sentence-streaming LLM, and committed streaming TTS
-  cascade plus generic Rust VAD/turn context are executable;
+- Qwen ASR Server VAD emits speech Events, final transcripts, client Events,
+  and the explicit interruption Signal;
+- Qwen LLM HTTP SSE and Qwen TTS WebSocket I/O run on cancellable background
+  workers; 20 ms Runtime ticks drain bounded result queues while leaving
+  `on_signal` responsive;
+- the Demo 2 Signal fans out to LLM, TTS, text/client gates, and Agora playback;
+  late outputs retain the originating audio sequence so every watermark rejects
+  the same cancelled response;
 - the project Voice Room joins through Agora Web SDK as an independent client;
   it neither controls the Studio Runtime nor reads its EventBus. Audio and
   versioned client events cross the Agora media/data transport and the room
