@@ -22,7 +22,7 @@ class MyNode final : public muxiva::MultimodalGraphNode {
 
 旧的 `std::vector<GraphEmission>` 返回 Hook 继续保持源码兼容，新 Node 应通过
 Context 显式发送。V1 C ABI 已支持通过 `on_signal` 接收 Signal；从 C++ 主动发送
-Signal 或 EventBus 事件仍需要后续控制动作 Context 扩展。
+Signal 或 NotificationBus 事件仍需要后续控制动作 Context 扩展。
 
 仓库已经提供可安装 Header、CMake Package 配置与独立 Consumer Example。
 

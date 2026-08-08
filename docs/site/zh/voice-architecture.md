@@ -91,7 +91,7 @@ ASR Server VAD 发出同名 Signal，Qwen LLM 关闭 HTTP SSE、Qwen TTS 关闭�
 
 ASR、Agent 文字和说话状态都从 Graph 进入 `agora.data_sink`。浏览器从 Agora 可靠有序
 数据流接收 `muxiva.client-event/v1`，不再轮询 `/api/v1/runtime/events`，也不能启停 Runtime。
-EventBus 继续作为进程内日志、指标和 Studio 运维观测设施，但不是终端用户协议。
+NotificationBus 继续作为进程内日志、指标和 Studio 运维观测设施，但不是终端用户协议。
 
 本地 `/api/v1/client/session` 只负责给浏览器提供临时 RTC 启动配置。生产部署应替换为
 自己的鉴权与短期 Token 服务，媒体和消息链路无需改变。

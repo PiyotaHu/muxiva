@@ -30,7 +30,7 @@ function dispatch(command) {
       actions: [],
       emit(port, frame) { this.actions.push({ kind: 'emit', port, frame }) },
       emitSignal(name, payload = null) { this.actions.push({ kind: 'signal', name, payload }) },
-      publishEvent(topic, payload = null) { this.actions.push({ kind: 'event', topic, payload }) },
+      publishNotification(topic, payload = null) { this.actions.push({ kind: 'event', topic, payload }) },
     }
     let value = implementation[method](payload, context)
     if (value && (typeof value === 'object' || typeof value === 'function') && typeof value.then === 'function') {

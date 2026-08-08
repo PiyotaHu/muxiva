@@ -9,7 +9,7 @@ Muxiva 把通信分成数据面和控制面：
 flowchart LR
     N1["上游 Node"] -->|"Frame · 经过类型化 Edge"| N2["下游 Node"]
     N1 -.->|"Signal · 显式 Graph Edge"| R["Rust Runtime"]
-    N1 -.->|"Event · 全局观察"| B["EventBus"]
+    N1 -.->|"Notification · 进程内观察"| B["NotificationBus"]
     R -.->|"on_signal"| N2
     B -.-> UI["Studio · 日志 · 指标 · 应用"]
 ```
@@ -29,17 +29,17 @@ Signal 用于打断、取消、刷新缓存或其他跨 Node 控制。Node 通�
 发出 `muxiva.voice.speech.started`。Qwen Node 取消自己的生成并丢弃晚到片段，Agora
 Audio Sink 收到同一 Signal 后清空播放队列。Runtime 只负责投递。
 
-## EventBus：让旁观者知道发生了什么
+## NotificationBus：让旁观者知道发生了什么
 
-Event 是全局可观察通知，例如转写完成、首 Token 到达、Node 重连或延迟超限。
-Node 用 `ctx.publish_event(...)` 发布；Studio、日志、指标系统或应用订阅者可以观察，
-但 Event 不替代 Graph 的业务数据流。
+Notification 是进程内观察通知，例如转写完成、首 Token 到达、Node 重连或延迟超限。
+Node 用 `ctx.publish_notification(...)` 发布；Studio、日志、指标系统或应用订阅者可以观察，
+但 NotificationBus 通知不替代沿 Graph 传播的 `EventFrame` 或其他业务数据。
 
 | 需求 | 应使用 |
 | --- | --- |
 | 把音频交给 ASR | Frame + Edge |
 | 通知相关 Node 停止旧回答 | Signal |
-| 在 Studio 展示本地运维信息 | EventBus Event |
+| 在 Studio 展示本地运维信息 | NotificationBus 通知 |
 | 把转写或说话状态送到远程客户端 | Frame + Transport Node |
 | 把 LLM 文本交给 TTS | Frame + Edge |
 
@@ -65,7 +65,7 @@ Node 用 `ctx.publish_event(...)` 发布；Studio、日志、指标系统或应�
 1. 模型 Node 取消当前远端请求；
 2. 模型 Node 丢弃该请求晚到的片段；
 3. 播放 Node 清理尚未播放的音频；
-4. EventBus 发布本地运维状态，Transport Node 向客户端发送交互状态；
+4. NotificationBus 发布本地运维状态，Transport Node 向客户端发送交互状态；
 5. 后续输入继续沿 Graph 流动。
 
 策略留在 Node，机制留在 Core：既能协调模型、播放和观测，也不会让通用 Runtime

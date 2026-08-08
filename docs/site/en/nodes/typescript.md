@@ -8,12 +8,12 @@ import type { GraphNodeImplementation } from '@muxiva/core'
 export const node: GraphNodeImplementation = {
   onProcess(frame, ctx) {
     ctx.emit('text_out', { ...frame, text: frame.text.toUpperCase() })
-    ctx.publishEvent('example.text.uppercased', { sequence: frame.sequence })
+    ctx.publishNotification('example.text.uppercased', { sequence: frame.sequence })
   },
 }
 ```
 
-The Worker context exposes `emit`, `emitSignal`, and `publishEvent`. Return
+The Worker context exposes `emit`, `emitSignal`, and `publishNotification`. Return
 values are retained as compatibility sugar, but explicit emission supports
 multiple actions during one lifecycle callback.
 

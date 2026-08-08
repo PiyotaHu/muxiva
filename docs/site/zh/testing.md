@@ -15,7 +15,7 @@ Sanitizer、Benchmark、Fuzz、Miri 与 Studio 浏览器测试。
 
 `muxiva simulate` 和 `examples/graphs/mock-realtime-voice.v1.json` 是无网络、无凭据的
 Runtime 测试夹具。它们使用合成 PCM 和预制文本验证分叉/汇合、背压、Signal、
-EventBus、Turn 与生命周期，不提供真实 ASR、LLM 或 TTS，也不作为产品 Demo。
+NotificationBus、Turn 与生命周期，不提供真实 ASR、LLM 或 TTS，也不作为产品 Demo。
 
 ```bash
 muxiva simulate --turns 4

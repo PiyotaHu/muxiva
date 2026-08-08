@@ -1,4 +1,4 @@
-# Stage 6 pre-release report: Signal, EventBus, and resources
+# Stage 6 pre-release report: Signal, NotificationBus, and resources
 
 Date: 2026-08-01
 Architecture revision: 2026-08-02
@@ -9,7 +9,7 @@ Architecture revision: 2026-08-02
   non-lifecycle `Node::on_signal` callback.
 - One bounded FIFO Signal queue per enabled edge, cross-thread Node delivery,
   EdgePolicy observation, metrics, and coordinated close/Stop handling.
-- Global bounded `EventBus` with exact-topic publish, subscription,
+- Global bounded `NotificationBus` with exact-topic publish, subscription,
   unsubscription, slow-subscriber isolation, handler error/panic metrics, and
   bounded cleanup.
 - Graph-level typed `ResourceStore` using `TypeId` and `Arc<dyn Any + Send +
@@ -34,20 +34,20 @@ response, and discards late chunks; `agora.audio_sink` clears queued PCM.
 
 - `NodeContext::emit_signal`, `Node::on_signal`;
 - `RuntimeOptions::with_signal_queue_capacity`;
-- `GraphRuntime::{signal_metrics,event_bus,resources}`;
-- `EventBus::{publish,subscribe,unsubscribe,request_stop,stop}`; and
+- `GraphRuntime::{signal_metrics,notification_bus,resources}`;
+- `NotificationBus::{publish,subscribe,unsubscribe,request_stop,stop}`; and
 - `ResourceStore::{insert,get,seal,stop}`.
 
 ## Verification
 
 Coverage includes adjacent/no-edge Signal behavior, cross-thread FIFO order,
-EventBus subscribe/unsubscribe/slow/error/panic handling, resource type errors,
+NotificationBus subscribe/unsubscribe/slow/error/panic handling, resource type errors,
 opaque Signal delivery, bounded queues, and concurrent stop races.
 
 ## Deferred, non-blocking debt
 
 - Per-edge declarative Signal capacity and CLI/Studio visibility.
-- Unified metrics export for EventBus counters.
+- Unified metrics export for NotificationBus counters.
 - Synchronous-runner Signal delivery.
-- A hard-stuck EventBus handler remains an unfinished bounded-stop diagnostic;
+- A hard-stuck NotificationBus handler remains an unfinished bounded-stop diagnostic;
   safe Rust cannot forcibly terminate arbitrary user code.

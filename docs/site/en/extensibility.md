@@ -50,7 +50,7 @@ class TranscriptNode:
         if not frame.text.strip():
             return                    # no more work in this callback
         ctx.emit("text_out", frame)    # data plane; may be called repeatedly
-        ctx.publish_event(
+        ctx.publish_notification(
             "app.transcript.ready", {"text": frame.text}
         )
 ```

@@ -534,7 +534,7 @@ impl ForeignNodeDriver {
     /// Takes a completion which Core may route through the normal Edge path.
     ///
     /// This method is intentionally separate from try_complete, so a foreign
-    /// domain cannot synchronously call downstream Nodes or EventBus handlers.
+    /// domain cannot synchronously call downstream Nodes or NotificationBus handlers.
     pub fn try_take_completion(&self) -> Option<ForeignCompletion> {
         let mut state = lock(&self.shared.state);
         let queued = state.ready.pop_front()?;

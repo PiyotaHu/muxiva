@@ -34,7 +34,7 @@ The MVP provides:
    video, text, byte, signal, and event variants.
 5. Multithreaded data flow, bounded queues, basic and adaptive backpressure,
    cancellation, deterministic shutdown, error propagation, and observability.
-6. Adjacent-node signals and a global event bus with deliberately separate
+6. Adjacent-node signals and a process-local notification bus with deliberately separate
    routing semantics.
 7. Node development surfaces for C++, Python, and TypeScript that preserve the
    Rust lifecycle and frame semantics.
@@ -89,7 +89,8 @@ an explicit worker or native implementation and must not masquerade as async.
 | Port | A named, directed, exactly typed node endpoint. |
 | Edge | A declared connection between one output port and one input port. |
 | Signal | A `SignalFrame` routed only across actual adjacent graph edges. |
-| Event | An `EventFrame` published through the global EventBus. |
+| Event | An `EventFrame` carried through an explicit typed Graph port and Edge. |
+| Notification | A process-local observation published through `NotificationBus` without a Graph port. |
 | Adapter | Native integration code that converts an external SDK contract to the Muxiva C ABI. |
 | Studio | The local web graph editor that reads and writes `GraphDefinition`. |
 
@@ -102,14 +103,14 @@ processor, pipeline step, and handler are not synonyms for Node in public APIs.
 Python Node ---- PyO3 -----+
 TypeScript Node - N-API ---+--> Rust Muxiva Core
 C++ Node ------- C ABI ----+    graph, scheduling, queues, backpressure,
-C++ SDK -> C++ Adapter ----+    lifecycle, Signal, EventBus, stop, metrics
+C++ SDK -> C++ Adapter ----+    lifecycle, Signal, NotificationBus, stop, metrics
 ```
 
 ### 4.1 Rust Muxiva Core
 
 The core exclusively owns graph validation and execution, scheduling, queues,
 admission and backpressure, cancellation, lifecycle coordination, Signal
-routing, EventBus operation, graph resources, shutdown, and metrics. It must
+routing, NotificationBus operation, graph resources, shutdown, and metrics. It must
 not depend on a real RTC, FFmpeg, Python, Node.js, or proprietary SDK.
 
 ### 4.2 C++ nodes
@@ -205,7 +206,7 @@ derived. Runtime scheduling uses monotonic time; wall-clock time is diagnostic.
   cross-language `Value` payload.
 
 Signal and Event frames do not create an untyped side channel. Media payloads
-must not be sent through EventBus. `Value` is restricted to null, boolean,
+must not be sent through NotificationBus. `Value` is restricted to null, boolean,
 number, string, bytes, list, and string-keyed map.
 
 ### 6.3 Immutability and extensions
@@ -304,16 +305,18 @@ free callback-visible state before in-flight callbacks have exited. Queue
 closure wakes producers and consumers; shutdown cannot rely on busy waiting or
 an unbounded silent join.
 
-## 11. Signal and EventBus boundaries
+## 11. Signal and NotificationBus boundaries
 
 A `SignalFrame` travels only to connected adjacent nodes and is delivered by a
 queue, never by a direct cross-thread call. It is appropriate for pressure,
 resume, and local control semantics.
 
-An `EventFrame` travels through the global EventBus using publish, subscribe,
-and unsubscribe operations. Slow subscribers cannot block Frame or Signal data
-flow. EventBus is appropriate for graph-wide state and observability, not media
-transport or hidden mutable configuration.
+An `EventFrame` emitted on an Event port remains normal Graph data. A process-local
+notification is published through `NotificationBus` using publish, subscribe, and
+unsubscribe operations; its typed envelope currently reuses `EventFrame`, but it does
+not enter an Event output port or Edge queue. Slow subscribers cannot block Frame or
+Signal data flow. NotificationBus is appropriate for graph-wide state and
+observability, not media transport or hidden mutable configuration.
 
 Topics and signal names use namespaces and versioned payload schemas.
 
@@ -427,11 +430,11 @@ Exit: slow consumers, pressure prediction, overflow policies, zero-loss tests,
 session isolation, network isolation, and shutdown tests pass without busy wait,
 silent loss, or unbounded queues.
 
-### Stage 6: Signal, EventBus, and resources
+### Stage 6: Signal, NotificationBus, and resources
 
 Input: Stage 5 queue, worker, and cancellation boundaries.
 
-Output: queued Signal routing, non-blocking global EventBus, typed ResourceStore,
+Output: queued Signal routing, non-blocking process-local NotificationBus, typed ResourceStore,
 opaque control delivery, and tests. Business Turn and interruption policy belongs
 to Nodes, not Core.
 

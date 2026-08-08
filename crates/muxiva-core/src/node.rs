@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, error::Error, fmt, time::Duration};
 
 use muxiva_types::{EventFrame, Frame, FrameType, NodeId, Result, SignalFrame, Value};
 
-use crate::{EventBus, PublishReport, ResourceStore};
+use crate::{NotificationBus, PublishReport, ResourceStore};
 
 /// The role a node has in a graph.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -431,7 +431,7 @@ pub struct NodeContext {
     emission_limit: usize,
     emission_overflowed: bool,
     has_signal_routes: bool,
-    event_bus: EventBus,
+    notification_bus: NotificationBus,
     resources: ResourceStore,
     next_source_tick: Option<Duration>,
 }
@@ -546,7 +546,7 @@ impl NodeContext {
             input_port,
             emission_limit,
             false,
-            EventBus::default(),
+            NotificationBus::default(),
             ResourceStore::new(),
         )
     }
@@ -557,7 +557,7 @@ impl NodeContext {
         input_port: Option<PortName>,
         emission_limit: usize,
         has_signal_routes: bool,
-        event_bus: EventBus,
+        notification_bus: NotificationBus,
         resources: ResourceStore,
     ) -> Self {
         Self {
@@ -569,7 +569,7 @@ impl NodeContext {
             emission_limit,
             emission_overflowed: false,
             has_signal_routes,
-            event_bus,
+            notification_bus,
             resources,
             next_source_tick: None,
         }
@@ -579,11 +579,17 @@ impl NodeContext {
         node_id: NodeId,
         config: ConfigMap,
         input_port: Option<PortName>,
-        event_bus: EventBus,
+        notification_bus: NotificationBus,
         resources: ResourceStore,
     ) -> Self {
         Self::with_routing_limits(
-            node_id, config, input_port, 16_384, false, event_bus, resources,
+            node_id,
+            config,
+            input_port,
+            16_384,
+            false,
+            notification_bus,
+            resources,
         )
     }
 
@@ -672,23 +678,25 @@ impl NodeContext {
         std::mem::take(&mut self.signals)
     }
 
-    /// Returns the runtime-wide low-frequency EventBus.
-    pub const fn event_bus(&self) -> &EventBus {
-        &self.event_bus
+    /// Returns the runtime-wide low-frequency NotificationBus.
+    pub const fn notification_bus(&self) -> &NotificationBus {
+        &self.notification_bus
     }
 
-    /// Publishes a low-frequency global event without using a graph output port.
-    pub fn publish_event(
+    /// Publishes a low-frequency process-local notification without a Graph port.
+    pub fn publish_notification(
         &self,
-        event: EventFrame,
+        notification: EventFrame,
     ) -> std::result::Result<PublishReport, muxiva_types::MuxivaError> {
-        self.event_bus.publish(event).map_err(|error| {
-            muxiva_types::MuxivaError::new(
-                muxiva_types::ErrorCategory::Internal,
-                "MUXIVA-EVENTBUS-PUBLISH",
-                error.to_string(),
-            )
-        })
+        self.notification_bus
+            .publish(notification)
+            .map_err(|error| {
+                muxiva_types::MuxivaError::new(
+                    muxiva_types::ErrorCategory::Internal,
+                    "MUXIVA-NOTIFICATION-BUS-PUBLISH",
+                    error.to_string(),
+                )
+            })
     }
 
     /// Requests another source callback after `delay`.

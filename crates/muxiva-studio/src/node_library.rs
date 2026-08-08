@@ -72,7 +72,7 @@ class NodeContext:
         value = {"name":name, "payload":payload}
         if self.streaming: print(json.dumps({"kind":"signal", **value}), flush=True)
         else: self.signals.append(value)
-    def publish_event(self, topic, payload=None):
+    def publish_notification(self, topic, payload=None):
         value = {"topic":topic, "payload":payload}
         if self.streaming: print(json.dumps({"kind":"event", **value}), flush=True)
         else: self.events.append(value)
@@ -1664,7 +1664,7 @@ fn publish_python_event(
     let topic = event
         .get("topic")
         .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| python_error("Python EventBus publication is missing its topic"))?;
+        .ok_or_else(|| python_error("Python NotificationBus publication is missing its topic"))?;
     let derived = control_frame(
         parent,
         context.node_id(),
@@ -1678,7 +1678,7 @@ fn publish_python_event(
             .map_err(python_error)?,
         )),
     )?;
-    context.publish_event(derived.as_event().expect("event payload").clone())?;
+    context.publish_notification(derived.as_event().expect("event payload").clone())?;
     Ok(())
 }
 
@@ -2068,7 +2068,7 @@ mod tests {
     #[test]
     fn saved_python_node_registers_and_executes_in_the_real_runtime() {
         let graph_path = graph();
-        let package = r#"{"format":"muxiva.node/v1","package_id":"uppercase_python","display_name":"Uppercase Python","node_type":"example.studio.uppercase","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:MyNode","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"import muxiva\nclass MyNode:\n    def on_process(self, frame, ctx):\n        ctx.emit(\"text_out\", muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence))\n        ctx.publish_event(\"example.text.uppercased\", {\"sequence\": frame.sequence})\n","runtime_available":false}"#;
+        let package = r#"{"format":"muxiva.node/v1","package_id":"uppercase_python","display_name":"Uppercase Python","node_type":"example.studio.uppercase","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:MyNode","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"import muxiva\nclass MyNode:\n    def on_process(self, frame, ctx):\n        ctx.emit(\"text_out\", muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence))\n        ctx.publish_notification(\"example.text.uppercased\", {\"sequence\": frame.sequence})\n","runtime_available":false}"#;
         save(&graph_path, package).unwrap();
         let mut registry = muxiva_graph_json::builtin_registry();
         let connections = ConnectionStore::load(&graph_path).unwrap();

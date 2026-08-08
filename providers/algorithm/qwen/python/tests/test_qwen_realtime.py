@@ -47,7 +47,7 @@ class Context:
     def __init__(self): self.emissions, self.signals, self.events = [], [], []
     def emit(self, port, frame): self.emissions.append((port, frame))
     def emit_signal(self, name, payload): self.signals.append((name, payload))
-    def publish_event(self, topic, payload): self.events.append((topic, payload))
+    def publish_notification(self, topic, payload): self.events.append((topic, payload))
 
 
 class QwenNodeTests(unittest.TestCase):

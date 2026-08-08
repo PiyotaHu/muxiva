@@ -15,7 +15,7 @@ contract appear to differ, the narrower Stage 3 rule applies only to the
 surfaces named here; all other Stage 1 requirements remain normative.
 
 Stage 3 makes a `Frame` the only value that a later Node, Edge, Signal route,
-or EventBus may transport. It defines immutable Rust ownership, exact media
+or NotificationBus may transport. It defines immutable Rust ownership, exact media
 layouts, validation, privacy-aware diagnostic views, and the future FFI
 ownership modes. It does not provide a Runtime that transports a Frame.
 
@@ -541,7 +541,7 @@ and prints only its log-safe summary. The example asserts that the parent is
 unchanged and the unknown extension exists in the child.
 
 The example does not define a Node, Edge, graph, queue, worker, signal route,
-EventBus, SDK callback, FFI handle, or JSON representation.
+NotificationBus, SDK callback, FFI handle, or JSON representation.
 
 ## 15. Stage 2 debt carried forward
 

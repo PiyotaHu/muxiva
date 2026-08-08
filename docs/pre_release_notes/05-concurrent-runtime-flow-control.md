@@ -131,7 +131,7 @@ completed MVP behavior.
    and controller snapshots are inspectable in Rust only.
 4. **No Stage 6 signal routing.** Pressure/resume values are bounded
    observations; they are not adjacent `SignalFrame` delivery and there is no
-   global EventBus implementation.
+   process-local NotificationBus implementation.
 5. **Drain is not full-pipeline drain.** Stop closes all Edges to wake waiters;
    therefore Stage 5A only drains Frames already queued per Edge. A transform
    cannot reliably enqueue its drained output into an already-closed downstream

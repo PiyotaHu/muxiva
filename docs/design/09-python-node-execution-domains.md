@@ -12,13 +12,13 @@ completions contain owned Muxiva values only; no interpreter object or borrowed
 language memory enters Core.
 
 Foreign threads may accept commands and post completions, but they cannot call
-an Edge, Node, EventBus subscriber, or runtime worker inline. Core consumes the
+an Edge, Node, NotificationBus subscriber, or runtime worker inline. Core consumes the
 completion mailbox and remains the routing authority.
 
 ## Python domain
 
 The `muxiva` PyO3 module exposes owned immutable frame wrappers, minimal
-Runtime/Session/EventBus resource owners, and `PythonNodeExecutionDomain`.
+Runtime/Session/NotificationBus resource owners, and `PythonNodeExecutionDomain`.
 Each node domain owns a bounded driver, a named OS thread, a fresh asyncio loop
 created and destroyed on that thread, and its Python implementation reference.
 Normal `def` and `async def` lifecycle hooks are normalized on that loop;
@@ -55,7 +55,7 @@ blocking a Rust worker.
 The six language frame types are immutable owners. Constructors validate
 their stable tag and required scalar/layout bounds and copy bytes/text before
 return. Language views return immutable values or copies, never a
-`FrameBuffer` pointer. Signal and EventBus delivery use the same per-node
+`FrameBuffer` pointer. Signal and NotificationBus delivery use the same per-node
 bounded inbox as process work; slow subscribers cannot block publishers.
 
 Python audio entry is limited to low-frequency/merged audio. The Rust

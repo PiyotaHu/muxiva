@@ -6,7 +6,7 @@
 
 这是 Muxiva 的真实门面应用，不是 Mock：浏览器通过 Agora Web SDK 采集和播放语音，
 Agora Native C++ Node Pack 负责 RTC，Qwen Python Node Pack 负责智能层，Rust Runtime
-只处理厂商无关的 Frame、Graph、Signal、EventBus、Turn 与调度。
+只处理厂商无关的 Frame、Graph、Signal、NotificationBus、Turn 与调度。
 
 Studio 内置两张可选择的图：
 

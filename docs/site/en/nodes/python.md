@@ -12,7 +12,7 @@ class Uppercase:
             "text_out",
             muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence),
         )
-        ctx.publish_event("example.text.uppercased", {"sequence": frame.sequence})
+        ctx.publish_notification("example.text.uppercased", {"sequence": frame.sequence})
 
 class ClientEvent:
     def on_process(self, frame, ctx):
@@ -24,8 +24,8 @@ class ClientEvent:
 
 `ctx.emit(port, frame)` sends data without ending the callback.
 `ctx.emit_signal(name, payload)` sends adjacent graph control, while
-`ctx.publish_event(topic, payload)` publishes a low-frequency notification to
-the runtime EventBus. Returning a Frame or port mapping remains compatibility
+`ctx.publish_notification(topic, payload)` publishes a low-frequency notification to
+the runtime NotificationBus. Returning a Frame or port mapping remains compatibility
 sugar; new Nodes should prefer explicit context actions.
 
 Declare matching ports:

@@ -30,7 +30,7 @@ silence boundary so natural pauses do not split one utterance into two turns.
 
 On interruption, the Qwen Node cancels its own generation and emits a
 `muxiva.voice.speech.started` Signal; the Agora Audio Sink receives it and clears queued PCM.
-`client_event_out` is encoded and sent by Transport Nodes to a remote client; EventBus remains
+`client_event_out` is encoded and sent by Transport Nodes to a remote client; NotificationBus remains
 local observability. Voice Room renders `YOU ARE SPEAKING` and
 `BARGE-IN · INTERRUPTING AGENT`; `[MUXIVA][AGORA][audio.cancelled]` reports the exact number of
 bytes removed from pending playback.

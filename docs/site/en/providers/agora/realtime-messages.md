@@ -17,4 +17,4 @@ All Agora Nodes acquire one process-wide shared session with the configured Bot 
 first isolation model, only the configured Browser UID is accepted. Audio and data from other
 participants are ignored.
 
-EventBus is not involved in this path. It remains local observability only.
+NotificationBus is not involved in this path. It remains local observability only.

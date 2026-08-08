@@ -168,7 +168,7 @@ impl ForeignNodeAdapter {
             context.emit_signal(signal)?;
         }
         for event in output.events {
-            context.publish_event(event)?;
+            context.publish_notification(event)?;
         }
         if let Some(delay) = output.next_source_tick {
             context.schedule_next_tick(delay);

@@ -1,6 +1,6 @@
 use std::{num::NonZeroUsize, sync::mpsc, time::Duration};
 
-use muxiva_core::EventBus;
+use muxiva_core::NotificationBus;
 use muxiva_types::{
     ClockDomain, ClockDomainId, ClockKind, EventData, Extensions, Frame, FrameHeader, FrameId,
     FramePayload, FrameType, Lineage, Metadata, NamespacedName, NodeId, SchemaVersion, SequenceId,
@@ -8,7 +8,7 @@ use muxiva_types::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let bus = EventBus::new(NonZeroUsize::new(8).expect("non-zero constant"));
+    let bus = NotificationBus::new(NonZeroUsize::new(8).expect("non-zero constant"));
     let topic = NamespacedName::new("muxiva.voice.speech.started")?;
     let (observed_tx, observed_rx) = mpsc::channel();
     bus.subscribe(topic.clone(), move |event| {

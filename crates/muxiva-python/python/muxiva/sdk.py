@@ -86,7 +86,7 @@ class NodeRunner:
 
     @property
     def domain(self) -> PythonNodeExecutionDomain:
-        """Low-level domain, useful for EventBus subscriptions."""
+        """Low-level domain, useful for NotificationBus subscriptions."""
         return self._domain
 
     @property

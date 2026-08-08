@@ -18,7 +18,7 @@ impl Node for MyNode {
         if let Some(frame) = input {
             context.emit(PortName::new("text_out").expect("valid Port"), frame)?;
             // context.emit_signal(signal)?;       // adjacent graph control
-            // context.publish_event(event)?;      // runtime-wide EventBus
+            // context.publish_notification(event)?;      // runtime-wide NotificationBus
         }
         Ok(()) // callback status, not the message transport
     }

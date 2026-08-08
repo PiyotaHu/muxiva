@@ -37,7 +37,7 @@ Muxiva is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, b
 | --- | --- | --- |
 | Frames, graph model, sync/concurrent runtime | Available | Static DAGs; exact port and frame types |
 | Backpressure and real-time flow control | Available | Bounded queues, audio merge, managed streams |
-| Signal and EventBus control | Available | Explicit adjacent Signal routing; process-local observable Events |
+| Signal and NotificationBus control | Available | Explicit adjacent Signal routing; process-local observable Events |
 | C ABI and C++ SDK | Available | Versioned ABI, RAII wrappers, installable CMake package, and hosted Graph v1 text factories |
 | RTC Nodes | Experimental | Shared-session Agora C++ audio/data ingress and egress; live credential certification remains |
 | Media normalization | Experimental | Optional FFmpeg streaming audio resampling plus RGBA8/I420 scale and color conversion |
@@ -55,7 +55,7 @@ Read the diagram from top to bottom: product surfaces declare a Graph and discov
 Node Factories; the vendor-neutral Rust Core compiles and executes it; Rust, C++,
 Python, and TypeScript Nodes provide replaceable capabilities; RTC, model APIs, and
 token services remain outside Core. Solid lines are data or calls, dashed magenta
-lines are Signal control, and dotted gray lines are process-local EventBus telemetry.
+lines are Signal control, and dotted gray lines are process-local NotificationBus telemetry.
 
 The runtime never treats ASR, LLM, TTS, transport, codec behavior, or a vendor
 “provider” as Core responsibilities. See the

@@ -75,18 +75,18 @@ impl Session {
 }
 
 #[napi]
-pub struct EventBus {
+pub struct NotificationBus {
     subscriptions: SubscriptionSet,
 }
 
-impl Default for EventBus {
+impl Default for NotificationBus {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[napi]
-impl EventBus {
+impl NotificationBus {
     #[napi(constructor)]
     pub fn new() -> Self {
         Self {

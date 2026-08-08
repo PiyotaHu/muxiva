@@ -57,7 +57,7 @@ A project can provide a page under `.muxiva/web/`. The Voice Room, for example:
 4. displays session state, transcripts, interruptions, and errors.
 
 The page does not execute Python model code or hold a Qwen API key. Media and live interaction
-events travel through Transport Nodes; the page neither polls EventBus nor controls Runtime
+events travel through Transport Nodes; the page neither polls NotificationBus nor controls Runtime
 lifecycle. The local Studio endpoint only bootstraps explicitly `client_exposed` connection fields.
 Production deployments replace it with an application backend and short-lived token service.
 

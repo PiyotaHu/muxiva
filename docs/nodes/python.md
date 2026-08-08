@@ -20,7 +20,7 @@ class Uppercase:
             muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence),
         )
         ctx.emit_signal("example.text.ready", {"sequence": frame.sequence})
-        ctx.publish_event("example.text.uppercased", {"sequence": frame.sequence})
+        ctx.publish_notification("example.text.uppercased", {"sequence": frame.sequence})
 ```
 
 `ctx.emit` may be called repeatedly for different ports or Frames. Return
@@ -37,5 +37,5 @@ configuration, and Agora boundaries.
 项目 Node Library。当前文本类型的 Python Source、Transform、Sink 可直接加入
 Graph 并在本地开发 Host 中运行；保存和浏览不会导入代码，只有点击 **Run** 才会
 加载。`on_process(frame, ctx)` 可通过 `ctx.emit`、`ctx.emit_signal` 和
-`ctx.publish_event` 分别发送数据、图内控制信号和全局事件，不需要用 `return`
+`ctx.publish_notification` 分别发送数据、图内控制信号和进程内通知，不需要用 `return`
 结束回调。Graph JSON 只引用 Factory 身份，不保存 Python 源码。

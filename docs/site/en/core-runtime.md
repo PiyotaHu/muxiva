@@ -82,7 +82,7 @@ each action explicit:
 def on_process(self, frame, ctx):
     ctx.emit("text_out", output_frame)
     ctx.emit_signal("muxiva.turn.interrupt", {"reason": "barge-in"})
-    ctx.publish_event("app.transcript.ready", {"text": frame.text})
+    ctx.publish_notification("app.transcript.ready", {"text": frame.text})
 ```
 
 One callback can emit zero, one, or many Frames, or only publish control data.

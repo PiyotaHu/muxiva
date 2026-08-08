@@ -165,7 +165,7 @@ pub struct GraphRunner<'graph> {
     aborted: BTreeSet<NodeId>,
     observed_signals: Vec<ObservedEdgeSignal>,
     abort_diagnostics: Vec<AbortHookDiagnostic>,
-    event_bus: crate::EventBus,
+    notification_bus: crate::NotificationBus,
     resources: crate::ResourceStore,
 }
 
@@ -222,14 +222,14 @@ impl<'graph> GraphRunner<'graph> {
             aborted: BTreeSet::new(),
             observed_signals: Vec::new(),
             abort_diagnostics: Vec::new(),
-            event_bus: crate::EventBus::default(),
+            notification_bus: crate::NotificationBus::default(),
             resources: crate::ResourceStore::new(),
         })
     }
 
-    /// Replaces the runtime-wide EventBus exposed through every NodeContext.
-    pub fn with_event_bus(mut self, event_bus: crate::EventBus) -> Self {
-        self.event_bus = event_bus;
+    /// Replaces the runtime-wide NotificationBus exposed through every NodeContext.
+    pub fn with_notification_bus(mut self, notification_bus: crate::NotificationBus) -> Self {
+        self.notification_bus = notification_bus;
         self
     }
 
@@ -333,7 +333,7 @@ impl<'graph> GraphRunner<'graph> {
             node_id.clone(),
             config,
             None,
-            self.event_bus.clone(),
+            self.notification_bus.clone(),
             self.resources.clone(),
         );
         let node = self.nodes.get_mut(node_id).expect("validated instance");
@@ -365,7 +365,7 @@ impl<'graph> GraphRunner<'graph> {
             node_id.clone(),
             config,
             input_port,
-            self.event_bus.clone(),
+            self.notification_bus.clone(),
             self.resources.clone(),
         );
         let node = self.nodes.get_mut(node_id).expect("validated instance");
@@ -392,7 +392,7 @@ impl<'graph> GraphRunner<'graph> {
             node_id.clone(),
             config,
             None,
-            self.event_bus.clone(),
+            self.notification_bus.clone(),
             self.resources.clone(),
         );
         let node = self.nodes.get_mut(node_id).expect("validated instance");
@@ -728,7 +728,7 @@ impl<'graph> GraphRunner<'graph> {
                 node_id.clone(),
                 config,
                 None,
-                self.event_bus.clone(),
+                self.notification_bus.clone(),
                 self.resources.clone(),
             );
             let node = self.nodes.get_mut(node_id).expect("prepared instance");
@@ -746,7 +746,7 @@ impl<'graph> GraphRunner<'graph> {
     fn release_runtime_resources(&mut self) {
         self.nodes.clear();
         self.policies.clear();
-        let _ = self.event_bus.stop(Duration::from_millis(100));
+        let _ = self.notification_bus.stop(Duration::from_millis(100));
         self.resources.stop();
     }
 }

@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use muxiva_core::EventBus;
+use muxiva_core::NotificationBus;
 use muxiva_types::{Frame, NamespacedName};
 use pyo3::prelude::*;
 
@@ -97,21 +97,21 @@ impl PySession {
     }
 }
 
-#[pyclass(name = "EventBus")]
-pub struct PyEventBus {
-    pub(crate) inner: EventBus,
+#[pyclass(name = "NotificationBus")]
+pub struct PyNotificationBus {
+    pub(crate) inner: NotificationBus,
     closed: AtomicBool,
 }
 
 #[pymethods]
-impl PyEventBus {
+impl PyNotificationBus {
     #[new]
     #[pyo3(signature = (capacity=64))]
     fn new(capacity: usize) -> PyResult<Self> {
         let capacity = NonZeroUsize::new(capacity)
             .ok_or_else(|| binding_error("MUXIVA-PY-CAPACITY", "capacity must be non-zero"))?;
         Ok(Self {
-            inner: EventBus::new(capacity),
+            inner: NotificationBus::new(capacity),
             closed: AtomicBool::new(false),
         })
     }
@@ -122,7 +122,7 @@ impl PyEventBus {
         let report = self
             .inner
             .publish(event)
-            .map_err(|e| binding_error("MUXIVA-PY-EVENT-BUS", e.to_string()))?;
+            .map_err(|e| binding_error("MUXIVA-PY-NOTIFICATION-BUS", e.to_string()))?;
         Ok((report.matched, report.enqueued, report.dropped_full))
     }
     fn subscribe(
@@ -141,7 +141,7 @@ impl PyEventBus {
                 let _ = try_enqueue_event(&driver, &sequence, event, timeout);
                 Ok(())
             })
-            .map_err(|e| binding_error("MUXIVA-PY-EVENT-BUS", e.to_string()))?;
+            .map_err(|e| binding_error("MUXIVA-PY-NOTIFICATION-BUS", e.to_string()))?;
         Ok(subscription.get())
     }
     fn close(&self) -> bool {

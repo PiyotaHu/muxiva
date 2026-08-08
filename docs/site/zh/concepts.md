@@ -14,7 +14,7 @@ Graph 把两者组合成可执行系统。**
 [下载可编辑的 Draw.io 源文件](assets/architecture/muxiva-system-overview.drawio)
 
 图从上到下分为五层。阅读时先看层与层之间的边界，再看连线：蓝色实线表示数据或
-调用关系，品红虚线表示 Signal 控制，灰色点线表示进程内 EventBus 可观测信息。
+调用关系，品红虚线表示 Signal 控制，灰色点线表示进程内 NotificationBus 可观测信息。
 
 ### 1. 产品与开发者入口
 
@@ -25,7 +25,7 @@ Graph 把两者组合成可执行系统。**
 - **项目 Web / Voice Room** 面向最终用户，负责麦克风、扬声器、聊天和 Barge-in 展示。
 
 项目 Web 是独立客户端，不是 Studio 的一部分。它通过 RTC 或应用 Transport 与 Agent
-通信，不调用 Runtime 生命周期接口，也不轮询进程内 EventBus。
+通信，不调用 Runtime 生命周期接口，也不轮询进程内 NotificationBus。
 
 ### 2. 定义、发现与配置
 
@@ -119,12 +119,12 @@ Manifest + Factory → Registry → Graph Compiler → Runtime
 | --- | --- | --- | --- |
 | **Frame + Edge** | 沿显式 Graph 拓扑和有界队列 | 音频、视频、ASR 文本、LLM 输出、客户端交互消息 | 全局广播 |
 | **Signal** | 由 Runtime 沿当前 Node 的相邻 Edge 投递 | 打断、取消、清空旧播放等需要改变相关 Node 状态的控制 | 远程客户端传输 |
-| **EventBus Event** | 发布给进程内观察者 | 日志、指标、Studio 诊断、转写完成等可观测信息 | 浏览器协议或业务数据流 |
+| **NotificationBus 通知** | 发布给进程内观察者 | 日志、指标、Studio 诊断、转写完成等可观测信息 | 浏览器协议或业务数据流 |
 
 以 Barge-in 为例：VAD 或 Realtime Node 识别到用户重新说话，业务 Node 发出 Signal；
 Runtime 将它投递给相关模型与播放 Node；模型取消旧生成并丢弃晚到片段，播放 Node 清空
 陈旧音频。若需要把“用户正在说话”展示到远程 Voice Room，应由 Transport Node 把
-客户端事件作为 Frame / 字节协议发送，而不是让浏览器访问 EventBus。
+客户端事件作为 Frame / 字节协议发送，而不是让浏览器访问 NotificationBus。
 
 ## 当前语音打断机制
 
@@ -143,7 +143,7 @@ Runtime 将它投递给相关模型与播放 Node；模型取消旧生成并丢�
 4. Audio Sink 清空尚未发出的 PCM 队列、推进 sequence 取消水位，并拒绝不高于该水位的
    旧音频 Frame。这与 Qwen Node 的晚到分片过滤形成双保险。
 5. `speech.started` / `barge_in` 同时作为客户端 Event Frame，经 Encoder 和 Agora Data
-   Sink 发到远程 Voice Room；`publish_event` 只进入进程内 EventBus，供日志、指标和
+   Sink 发到远程 Voice Room；`publish_notification` 只进入进程内 NotificationBus，供日志、指标和
    Studio 诊断使用。
 
 需要注意物理边界：已经进入 Agora 网络或浏览器播放器缓冲区的音频无法撤回。因此真正
@@ -170,7 +170,7 @@ Edge、Signal 和生命周期契约协作。
 
 1. **Graph 是声明，Runtime 才是运行实例。** JSON 中不能放可执行代码或密钥。
 2. **业务能力都是 Node。** “Provider”可以是文档分类，但不是新的运行时抽象。
-3. **EventBus 是进程内观测面。** 跨机器消息必须经过 Transport Node 或应用协议。
+3. **NotificationBus 是进程内观测面。** 跨机器消息必须经过 Transport Node 或应用协议。
 4. **Core 不理解厂商与语音业务。** Turn、Barge-in、ASR、TTS 策略留在 Node。
 5. **Studio 是本地开发面，不是生产客户端。** 项目 Web 与 Runtime 可以部署在不同机器。
 6. **队列与关闭必须有界。** 实时系统不能靠无限缓存或无限等待隐藏故障。
@@ -179,7 +179,7 @@ Edge、Signal 和生命周期契约协作。
 
 1. [Rust Core 与核心对象](core-runtime.md)：深入 Frame、Node、Port、Edge、Graph；
 2. [Graph 与类型化 Port](graph.md)：读写 Graph v1；
-3. [实时流控与控制消息](realtime-control.md)：理解背压、Signal、EventBus 与打断；
+3. [实时流控与控制消息](realtime-control.md)：理解背压、Signal、NotificationBus 与打断；
 4. [Node 扩展机制](extensibility.md)与[多语言执行](languages.md)；
 5. [统一 Node 架构](provider-architecture.md)；
 6. [CLI、Studio 与项目 Web](developer-surfaces.md)；

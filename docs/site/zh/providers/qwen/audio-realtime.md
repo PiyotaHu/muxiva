@@ -29,6 +29,6 @@ Speech-to-Speech Graph。
 
 发生打断时，Qwen Node 会取消自己的生成、发出 `muxiva.voice.speech.started` Signal；Agora
 Audio Sink 收到 Signal 后清空尚未播放的 PCM。`client_event_out` 经编码后由 Transport Node
-发送给远程客户端，EventBus 仅用于本地观测。Voice Room 会显示 `YOU ARE SPEAKING` 和
+发送给远程客户端，NotificationBus 仅用于本地观测。Voice Room 会显示 `YOU ARE SPEAKING` 和
 `BARGE-IN · INTERRUPTING AGENT`；服务端日志中的 `[MUXIVA][AGORA][audio.cancelled]` 给出实际
 清除的字节数。

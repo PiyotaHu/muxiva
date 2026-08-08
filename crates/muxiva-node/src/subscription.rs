@@ -39,7 +39,7 @@ impl SubscriptionSet {
         capacity: u32,
     ) -> Result<u32> {
         if self.closed {
-            return Err(Error::new(Status::Closing, "EventBus is closed"));
+            return Err(Error::new(Status::Closing, "NotificationBus is closed"));
         }
         if !(1..=65_536).contains(&capacity) || !topic.contains('.') {
             return Err(Error::new(Status::InvalidArg, "invalid topic or capacity"));
@@ -69,7 +69,7 @@ impl SubscriptionSet {
     }
     pub fn publish(&self, topic: &str, payload: String) -> Result<u32> {
         if self.closed {
-            return Err(Error::new(Status::Closing, "EventBus is closed"));
+            return Err(Error::new(Status::Closing, "NotificationBus is closed"));
         }
         let mut accepted = 0;
         for subscriber in self

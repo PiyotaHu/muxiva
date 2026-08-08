@@ -36,7 +36,7 @@ Muxiva 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但�
 | --- | --- | --- |
 | Frame、图模型、同步/并发 Runtime | 可用 | 静态 DAG，端口与 Frame 类型精确匹配 |
 | 背压与实时流控 | 可用 | 有界队列、音频合帧、Managed Stream |
-| Signal 与 EventBus 控制 | 可用 | Signal 沿显式相邻 Edge 路由；Event 仅进程内可观察 |
+| Signal 与 NotificationBus 控制 | 可用 | Signal 沿显式相邻 Edge 路由；Event 仅进程内可观察 |
 | C ABI 与 C++ SDK | 可用 | 版本化 ABI、RAII Wrapper、可安装 CMake 包与宿主注册的 Graph v1 文本 Factory |
 | RTC Node | 实验性 | 共享 Session 的 Agora C++ 音频/数据输入输出；尚需带凭证实房认证 |
 | 媒体归一化 | 实验性 | 可选 FFmpeg 流式音频重采样，以及 RGBA8/I420 缩放和色彩转换 |
@@ -53,7 +53,7 @@ Muxiva 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但�
 这张图从上到下描述完整系统：产品入口声明 Graph 并发现 Node Factory；厂商无关的
 Rust Core 编译和执行 Graph；Rust、C++、Python 与 TypeScript Node 提供可替换能力；
 RTC、模型 API 与 Token 服务留在 Core 之外。蓝色实线表示数据或调用，品红虚线表示
-Signal 控制，灰色点线表示进程内 EventBus 可观测信息。
+Signal 控制，灰色点线表示进程内 NotificationBus 可观测信息。
 
 ASR、LLM、TTS、Transport、Codec 和厂商“Provider”都不是 Runtime Core 的职责。
 请继续阅读[系统全景与核心概念串讲](https://piyotahu.github.io/muxiva/zh/concepts/)，

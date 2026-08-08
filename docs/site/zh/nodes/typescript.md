@@ -8,12 +8,12 @@ import type { GraphNodeImplementation } from '@muxiva/core'
 export const node: GraphNodeImplementation = {
   onProcess(frame, ctx) {
     ctx.emit('text_out', { ...frame, text: frame.text.toUpperCase() })
-    ctx.publishEvent('example.text.uppercased', { sequence: frame.sequence })
+    ctx.publishNotification('example.text.uppercased', { sequence: frame.sequence })
   },
 }
 ```
 
-Worker Context 提供 `emit`、`emitSignal` 与 `publishEvent`。返回值仍作为兼容
+Worker Context 提供 `emit`、`emitSignal` 与 `publishNotification`。返回值仍作为兼容
 写法保留；显式发送允许一次生命周期回调执行多个互不排斥的动作。
 
 独立 `@muxiva/core` SDK 会在专用 Worker 中执行 Hosted TypeScript Node。跨边界

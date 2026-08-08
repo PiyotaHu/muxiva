@@ -233,7 +233,7 @@ class QwenLlmStreamNode:
                 sequence=sequence,
             ),
         )
-        ctx.publish_event(topic, payload)
+        ctx.publish_notification(topic, payload)
 
     def _cancel_current(self) -> None:
         with self._lock:

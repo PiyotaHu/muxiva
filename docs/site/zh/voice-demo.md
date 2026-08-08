@@ -134,7 +134,7 @@ Voice Room 应立即显示打断状态，旧文字停止增长、旧语音停止
 
 第一个没有出现的步骤，就是故障所在层。凭据值不会写入日志。
 
-Voice Room 从 Agora RTC 数据流接收消息，而不是读取 Studio EventBus；页面会把每轮对话
+Voice Room 从 Agora RTC 数据流接收消息，而不是读取 Studio NotificationBus；页面会把每轮对话
 显示成聊天记录：用户 ASR 在右侧，Agent 流式回复在左侧。
 Qwen 增量 ASR 使用 `text + stash` 作为实时预览，并在
 `conversation.item.input_audio_transcription.completed` 到达后固定最终文本。Agora Bot

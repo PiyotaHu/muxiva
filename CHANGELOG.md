@@ -20,6 +20,13 @@ but must be called out explicitly with migration guidance.
 
 ### Changed
 
+- **Breaking:** renamed the process-local observability `EventBus` to
+  `NotificationBus` so it cannot be confused with Graph `EventFrame` output
+  ports. Rust now uses `NotificationBus`, `with_notification_bus`,
+  `notification_bus`, and `publish_notification`; Python uses
+  `muxiva.NotificationBus` and `ctx.publish_notification`; TypeScript uses
+  `NotificationBus` and `ctx.publishNotification`. Graph `event_out` ports and
+  `EventFrame` remain unchanged.
 - **Breaking:** unified the project under the Muxiva name across the `muxiva` CLI,
   Rust crates, `muxiva` Python package, `@muxiva/core` TypeScript package,
   `Muxiva::` CMake targets, `muxiva_*` C ABI, `.muxiva` project metadata,

@@ -104,7 +104,7 @@
         <mxCell id="m23" value="client_event_out：speech.started / barge_in" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.7104;entryX=0.5;entryY=0.7104;" edge="1" parent="1" source="qwen" target="runtime">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="m24" value="publish_event：仅进程内日志/指标" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.7377;entryX=0.5;entryY=0.7377;" edge="1" parent="1" source="qwen" target="runtime">
+        <mxCell id="m24" value="publish_notification：仅进程内日志/指标" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.7377;entryX=0.5;entryY=0.7377;" edge="1" parent="1" source="qwen" target="runtime">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="m25" value="EventFrame → Encoder → ByteFrame" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.765;entryX=0.5;entryY=0.765;" edge="1" parent="1" source="runtime" target="data_sink">
@@ -127,7 +127,7 @@
         <mxCell id="note30" value="双保险：Node 拒收晚到模型分片；Audio Sink 清队列并丢弃不高于水位的旧帧。已经发到 RTC 网络/终端播放器的音频无法撤回，因此仍需控制缓冲。" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
           <mxGeometry x="1810" y="1680" width="300" height="90" as="geometry"/>
         </mxCell>
-        <mxCell id="note31" value="边界：Runtime 只透明路由 Signal；不识别语音、不切换业务 Turn，也不把 EventBus 暴露给远程客户端。" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+        <mxCell id="note31" value="边界：Runtime 只透明路由 Signal；不识别语音、不切换业务 Turn，也不把 NotificationBus 暴露给远程客户端。" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
           <mxGeometry x="930" y="1750" width="330" height="70" as="geometry"/>
         </mxCell>
       </root>

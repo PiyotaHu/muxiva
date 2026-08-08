@@ -15,4 +15,4 @@
 所有 Agora Node 获取同一个进程级共享 Session，并使用配置的 Bot UID。第一版隔离模型
 只接受配置好的 Browser UID，其他参与者的音频和消息会被忽略。
 
-这条链路不经过 EventBus；EventBus 只保留为服务端本地可观测设施。
+这条链路不经过 NotificationBus；NotificationBus 只保留为服务端本地可观测设施。

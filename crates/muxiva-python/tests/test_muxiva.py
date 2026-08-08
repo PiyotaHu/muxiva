@@ -57,7 +57,7 @@ def test_exception_deadline_and_isolated_process_rejection():
         muxiva.PythonNodeExecutionDomain(object(), isolation="isolated_process")
 
 
-def test_event_bus_only_enqueues_into_the_domain():
+def test_notification_bus_only_enqueues_into_the_domain():
     class Subscriber:
         def __init__(self):
             self.thread = None
@@ -68,7 +68,7 @@ def test_event_bus_only_enqueues_into_the_domain():
 
     node = Subscriber()
     domain = muxiva.PythonNodeExecutionDomain(node)
-    bus = muxiva.EventBus()
+    bus = muxiva.NotificationBus()
     bus.subscribe("muxiva.test.event", domain)
     assert bus.publish(muxiva.EventFrame("muxiva.test.event", "hello")) == (1, 1, 0)
     deadline = time.monotonic() + 1

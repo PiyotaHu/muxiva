@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { EventBus, Runtime, TextFrame } from '../index.js'
+import { NotificationBus, Runtime, TextFrame } from '../index.js'
 
 test('Runtime and Session close exactly once', () => {
   const runtime = new Runtime()
@@ -20,8 +20,8 @@ test('text frames own their input and expose immutable values', () => {
   assert.throws(() => { frame.text = 'changed' })
 })
 
-test('EventBus schedules subscribers without inline invocation', async () => {
-  const bus = new EventBus()
+test('NotificationBus schedules subscribers without inline invocation', async () => {
+  const bus = new NotificationBus()
   let seen
   bus.subscribe('test.topic', (payload) => { seen = payload }, 1)
   assert.equal(bus.publish('test.topic', '{"ok":true}'), 1)

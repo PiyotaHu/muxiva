@@ -28,7 +28,7 @@ Implementation remains intentionally layered:
   supplies `ManagedAsyncStream`, per-session mailboxes, and in-flight windows.
   Binding these components into every Stage 5A Edge remains staged debt.
 
-Signal delivery and a global EventBus are Stage 6. Stage 5 may produce only
+Signal delivery and a process-local NotificationBus are Stage 6. Stage 5 may produce only
 adjacent flow-pressure observations in the future; it does not introduce a
 global control bus.
 

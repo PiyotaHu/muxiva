@@ -47,7 +47,7 @@ class TranscriptNode:
         if not frame.text.strip():
             return                    # 只表示本次没有更多逻辑
         ctx.emit("text_out", frame)    # 数据面，可调用多次
-        ctx.publish_event(
+        ctx.publish_notification(
             "app.transcript.ready", {"text": frame.text}
         )
 ```

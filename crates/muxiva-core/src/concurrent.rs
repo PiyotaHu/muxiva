@@ -25,7 +25,7 @@ use crate::{
     PortName, QueuePushError, ResourceStore, SignalQueuePushError, StopToken, TransformPolicy,
     ValidationDecision, ValidationFailureAction, ValidationPolicy,
 };
-use crate::{EventBus, SignalQueueSnapshot};
+use crate::{NotificationBus, SignalQueueSnapshot};
 
 /// Stage 5A scheduler options. Admission is deliberately fixed at one active
 /// callback per node; later profiles may lower or raise the declared ceiling.
@@ -328,7 +328,7 @@ pub struct ConcurrentRuntime {
     policies: EdgePolicies,
     enabled_edges: BTreeSet<EdgeId>,
     options: RuntimeOptions,
-    event_bus: EventBus,
+    notification_bus: NotificationBus,
     resources: ResourceStore,
 }
 
@@ -355,13 +355,13 @@ impl ConcurrentRuntime {
             policies,
             enabled_edges,
             options,
-            event_bus: EventBus::default(),
+            notification_bus: NotificationBus::default(),
             resources: ResourceStore::new(),
         })
     }
 
-    pub fn with_event_bus(mut self, event_bus: EventBus) -> Self {
-        self.event_bus = event_bus;
+    pub fn with_notification_bus(mut self, notification_bus: NotificationBus) -> Self {
+        self.notification_bus = notification_bus;
         self
     }
 
@@ -437,7 +437,7 @@ impl ConcurrentRuntime {
             launch: launch.clone(),
             options: self.options,
             abort_diagnostics: abort_diagnostics.clone(),
-            event_bus: self.event_bus.clone(),
+            notification_bus: self.notification_bus.clone(),
             resources: self.resources.clone(),
             node_metrics: node_metrics.clone(),
         });
@@ -588,7 +588,7 @@ impl ConcurrentRuntime {
             control,
             options: self.options,
             abort_diagnostics,
-            event_bus: self.event_bus,
+            notification_bus: self.notification_bus,
             resources: self.resources,
             node_metrics,
         })
@@ -604,7 +604,7 @@ pub struct GraphRuntime {
     control: Arc<RuntimeControl>,
     options: RuntimeOptions,
     abort_diagnostics: Arc<Mutex<Vec<AbortHookDiagnostic>>>,
-    event_bus: EventBus,
+    notification_bus: NotificationBus,
     resources: ResourceStore,
     node_metrics: Arc<BTreeMap<NodeId, NodeMetrics>>,
 }
@@ -617,7 +617,7 @@ impl GraphRuntime {
         let first = self.control.request_abort(reason);
         if first {
             self.stop.cancel();
-            self.event_bus.request_stop();
+            self.notification_bus.request_stop();
             self.resources.seal();
             close_all(&self.queues, self.options.shutdown_mode);
             close_all_signals(&self.signal_queues, self.options.shutdown_mode);
@@ -643,8 +643,8 @@ impl GraphRuntime {
             .map(crate::signal::SignalQueue::snapshot)
     }
 
-    pub const fn event_bus(&self) -> &EventBus {
-        &self.event_bus
+    pub const fn notification_bus(&self) -> &NotificationBus {
+        &self.notification_bus
     }
 
     pub const fn resources(&self) -> &ResourceStore {
@@ -896,7 +896,7 @@ struct WorkerShared {
     launch: Arc<LaunchGate>,
     options: RuntimeOptions,
     abort_diagnostics: Arc<Mutex<Vec<AbortHookDiagnostic>>>,
-    event_bus: EventBus,
+    notification_bus: NotificationBus,
     resources: ResourceStore,
     node_metrics: Arc<BTreeMap<NodeId, NodeMetrics>>,
 }
@@ -965,7 +965,7 @@ impl NodeWorker {
             &self.node_id,
             &self.shared.graph,
             self.shared.options.emission_budget(),
-            &self.shared.event_bus,
+            &self.shared.notification_bus,
             &self.shared.resources,
             self.shared
                 .node_metrics
@@ -1021,7 +1021,7 @@ impl NodeWorker {
                 &self.shared.graph,
                 self.shared.options.emission_budget(),
                 !self.outgoing.is_empty(),
-                &self.shared.event_bus,
+                &self.shared.notification_bus,
                 &self.shared.resources,
                 self.shared
                     .node_metrics
@@ -1062,7 +1062,7 @@ impl NodeWorker {
                     &self.shared.graph,
                     self.shared.options.emission_budget(),
                     !self.outgoing.is_empty(),
-                    &self.shared.event_bus,
+                    &self.shared.notification_bus,
                     &self.shared.resources,
                     self.shared
                         .node_metrics
@@ -1091,7 +1091,7 @@ impl NodeWorker {
                     &self.shared.graph,
                     self.shared.options.emission_budget(),
                     !self.outgoing.is_empty(),
-                    &self.shared.event_bus,
+                    &self.shared.notification_bus,
                     &self.shared.resources,
                     self.shared
                         .node_metrics
@@ -1315,7 +1315,7 @@ fn coordinate(
                     node_id,
                     &shared.graph,
                     shared.options.emission_budget(),
-                    &shared.event_bus,
+                    &shared.notification_bus,
                     &shared.resources,
                     shared.node_metrics.get(node_id).expect("node metrics"),
                 ) {
@@ -1329,7 +1329,7 @@ fn coordinate(
         if shared.control.seal_success() {
             drop(nodes);
             drop(resources);
-            let _ = shared.event_bus.stop(Duration::from_millis(100));
+            let _ = shared.notification_bus.stop(Duration::from_millis(100));
             shared.resources.stop();
             shared
                 .control
@@ -1351,7 +1351,7 @@ fn coordinate(
             None,
             shared.options.emission_budget(),
             false,
-            shared.event_bus.clone(),
+            shared.notification_bus.clone(),
             shared.resources.clone(),
         );
         if let Some(node) = nodes.get_mut(node_id) {
@@ -1379,7 +1379,7 @@ fn coordinate(
 
     drop(nodes);
     drop(resources);
-    let _ = shared.event_bus.stop(Duration::from_millis(100));
+    let _ = shared.notification_bus.stop(Duration::from_millis(100));
     shared.resources.stop();
     shared.control.publish_abort(reason);
 }
@@ -1389,7 +1389,7 @@ fn call_prepare(
     node_id: &NodeId,
     graph: &GraphDefinition,
     emission_budget: usize,
-    event_bus: &EventBus,
+    notification_bus: &NotificationBus,
     resources: &ResourceStore,
     metrics: &NodeMetrics,
 ) -> Result<(), AbortReason> {
@@ -1400,7 +1400,7 @@ fn call_prepare(
         None,
         emission_budget,
         false,
-        event_bus.clone(),
+        notification_bus.clone(),
         resources.clone(),
     );
     let started = Instant::now();
@@ -1436,7 +1436,7 @@ fn call_process(
     graph: &GraphDefinition,
     emission_budget: usize,
     has_signal_routes: bool,
-    event_bus: &EventBus,
+    notification_bus: &NotificationBus,
     resources: &ResourceStore,
     metrics: &NodeMetrics,
 ) -> Result<NodeCallOutput, AbortReason> {
@@ -1447,7 +1447,7 @@ fn call_process(
         input_port,
         emission_budget,
         has_signal_routes,
-        event_bus.clone(),
+        notification_bus.clone(),
         resources.clone(),
     );
     let started = Instant::now();
@@ -1487,7 +1487,7 @@ fn call_signal(
     graph: &GraphDefinition,
     emission_budget: usize,
     has_signal_routes: bool,
-    event_bus: &EventBus,
+    notification_bus: &NotificationBus,
     resources: &ResourceStore,
     metrics: &NodeMetrics,
 ) -> Result<NodeCallOutput, AbortReason> {
@@ -1498,7 +1498,7 @@ fn call_signal(
         input_port,
         emission_budget,
         has_signal_routes,
-        event_bus.clone(),
+        notification_bus.clone(),
         resources.clone(),
     );
     let started = Instant::now();
@@ -1534,7 +1534,7 @@ fn call_finish(
     node_id: &NodeId,
     graph: &GraphDefinition,
     emission_budget: usize,
-    event_bus: &EventBus,
+    notification_bus: &NotificationBus,
     resources: &ResourceStore,
     metrics: &NodeMetrics,
 ) -> Result<(), AbortReason> {
@@ -1545,7 +1545,7 @@ fn call_finish(
         None,
         emission_budget,
         false,
-        event_bus.clone(),
+        notification_bus.clone(),
         resources.clone(),
     );
     let started = Instant::now();
@@ -1771,7 +1771,7 @@ fn record_policy_drop(
 fn fail_graph(shared: &WorkerShared, reason: AbortReason) {
     if shared.control.request_abort(reason) {
         shared.stop.cancel();
-        shared.event_bus.request_stop();
+        shared.notification_bus.request_stop();
         shared.resources.seal();
         close_all(&shared.queues, shared.options.failure_mode);
         close_all_signals(&shared.signal_queues, shared.options.failure_mode);

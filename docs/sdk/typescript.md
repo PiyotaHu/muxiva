@@ -41,7 +41,7 @@ const factory = new GraphNodeFactory('example.typescript.uppercase', {
   onProcess(frame, ctx) {
     ctx.emit('text_out', { ...frame, text: frame.text.toUpperCase() })
     ctx.emitSignal('example.text.ready', { sequence: frame.sequence })
-    ctx.publishEvent('example.text.uppercased', { sequence: frame.sequence })
+    ctx.publishNotification('example.text.uppercased', { sequence: frame.sequence })
   },
 })
 const workerTotal = await runGraph(graphJson, [factory])

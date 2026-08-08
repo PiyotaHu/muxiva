@@ -287,8 +287,8 @@ function bindPaletteEvents() {
 }
 
 const nodeTemplates = {
-  python: `import muxiva\n\nclass MyNode:\n    def on_process(self, frame, ctx):\n        # Data stays on typed graph ports; no return value is required.\n        ctx.emit("text_out", muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence))\n        # Low-frequency observers receive this outside the data path.\n        ctx.publish_event("example.node.processed", {"sequence": frame.sequence})\n`,
-  typescript: `import type { GraphNodeImplementation } from '@muxiva/core'\n\nexport const node: GraphNodeImplementation = {\n  onProcess(frame, ctx) {\n    ctx.emit('text_out', { ...frame, text: frame.text.toUpperCase() })\n    ctx.publishEvent('example.node.processed', { sequence: frame.sequence })\n  },\n}\n`,
+  python: `import muxiva\n\nclass MyNode:\n    def on_process(self, frame, ctx):\n        # Data stays on typed graph ports; no return value is required.\n        ctx.emit("text_out", muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence))\n        # Low-frequency observers receive this outside the data path.\n        ctx.publish_notification("example.node.processed", {"sequence": frame.sequence})\n`,
+  typescript: `import type { GraphNodeImplementation } from '@muxiva/core'\n\nexport const node: GraphNodeImplementation = {\n  onProcess(frame, ctx) {\n    ctx.emit('text_out', { ...frame, text: frame.text.toUpperCase() })\n    ctx.publishNotification('example.node.processed', { sequence: frame.sequence })\n  },\n}\n`,
   rust: `use muxiva_core::{Node, NodeContext};\nuse muxiva_types::Frame;\n\npub struct MyNode;\n\nimpl Node for MyNode {\n    fn on_process(&mut self, input: Option<Frame>, context: &mut NodeContext) -> muxiva_types::Result<()> {\n        // Emit a derived Frame through text_out.\n        Ok(())\n    }\n}\n`,
   cpp: `#include <muxiva/muxiva.hpp>\n\nclass MyNode final : public muxiva::MultimodalGraphNode {\n public:\n  void on_process(const muxiva_frame_view_v1* input,\n                  muxiva::GraphNodeContext& ctx) override {\n    // ctx.emit("text_out", output_frame);\n  }\n};\n`,
 }

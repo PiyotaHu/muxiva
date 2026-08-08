@@ -17,7 +17,7 @@ replaceable capabilities, and a Graph composes both into an executable system.**
 
 The diagram has five layers. Read the boundaries first, then the connections.
 Solid blue lines represent data or calls, dashed magenta lines represent Signal
-control, and dotted gray lines represent process-local EventBus telemetry.
+control, and dotted gray lines represent process-local NotificationBus telemetry.
 
 ### 1. Product and developer surfaces
 
@@ -32,7 +32,7 @@ control, and dotted gray lines represent process-local EventBus telemetry.
 
 The project web app is an independent client, not part of Studio. It communicates
 with the Agent through RTC or an application Transport. It does not call Runtime
-lifecycle APIs or poll the process-local EventBus.
+lifecycle APIs or poll the process-local NotificationBus.
 
 ### 2. Definition, discovery, and configuration
 
@@ -62,7 +62,7 @@ vendor.
   worker scheduling, cancellation, and bounded shutdown.
 - The **data plane** uses immutable Frames, typed Ports, and bounded Edge queues for
   audio, video, text, and bytes, with backpressure controlling latency and memory.
-- The **control and observability plane** routes adjacent Signals and publishes Events
+- The **control and observability plane** routes adjacent Signals and publishes Notifications
   to process-local observers. Core supplies mechanisms but does not hard-code
   interruption, turn, or vendor policy.
 
@@ -138,13 +138,13 @@ single universal message bus:
 | --- | --- | --- | --- |
 | **Frame + Edge** | Explicit Graph topology and bounded queues | Audio, video, ASR text, LLM output, and client interaction messages | A global broadcast |
 | **Signal** | Runtime delivery along the current Node's adjacent Edges | Interruption, cancellation, and stale-playback clearing that changes related Node state | Remote client transport |
-| **EventBus Event** | Process-local observers | Logs, metrics, Studio diagnostics, transcript-ready telemetry | A browser protocol or business data path |
+| **NotificationBus notification** | Process-local observers | Logs, metrics, Studio diagnostics, transcript-ready telemetry | A browser protocol or business data path |
 
 For barge-in, a VAD or Realtime Node detects that the user has started speaking and
 emits a Signal. The Runtime delivers it to related model and playback Nodes. The model
 cancels the old generation and rejects late fragments; the playback Node clears stale
 audio. If a remote Voice Room must display “user is speaking,” a Transport Node sends
-a client event as a Frame or byte protocol—the browser never reaches into EventBus.
+a client event as a Frame or byte protocol—the browser never reaches into NotificationBus.
 
 ## Current voice interruption mechanism
 
@@ -166,8 +166,8 @@ The diagram follows the actual `Qwen Realtime + Agora RTC` Graph:
    old Audio Frames at or below that watermark. This is a second guard after the Qwen
    Node's late-chunk filter.
 5. `speech.started` and `barge_in` also travel as client Event Frames through the Encoder
-   and Agora Data Sink to the remote Voice Room. `publish_event` only reaches the
-   process-local EventBus for logs, metrics, and Studio diagnostics.
+   and Agora Data Sink to the remote Voice Room. `publish_notification` only reaches the
+   process-local NotificationBus for logs, metrics, and Studio diagnostics.
 
 There is a physical boundary: audio already inside the Agora network or browser playback
 buffer cannot be recalled. Low-latency interruption therefore also depends on short PCM
@@ -197,7 +197,7 @@ Signal, and lifecycle contracts.
    executable code or secrets.
 2. **Every application capability is a Node.** “Provider” may organize documentation,
    but it is not a new Runtime abstraction.
-3. **EventBus is process-local observability.** Cross-machine messages use Transport
+3. **NotificationBus is process-local observability.** Cross-machine messages use Transport
    Nodes or an application protocol.
 4. **Core does not understand vendors or voice business rules.** Turn, barge-in, ASR,
    and TTS policy live in Nodes.
@@ -210,7 +210,7 @@ Signal, and lifecycle contracts.
 
 1. [Rust Core and core objects](core-runtime.md) for Frame, Node, Port, Edge, and Graph;
 2. [Graph and typed Ports](graph.md) for Graph v1;
-3. [Real-time flow and control](realtime-control.md) for backpressure, Signal, EventBus,
+3. [Real-time flow and control](realtime-control.md) for backpressure, Signal, NotificationBus,
    and interruption;
 4. [Node extensibility](extensibility.md) and [multi-language execution](languages.md);
 5. [the unified Node architecture](provider-architecture.md);

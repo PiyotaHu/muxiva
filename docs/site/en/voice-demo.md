@@ -142,7 +142,7 @@ look connected but there is no response, find the first signal that does not adv
 
 The first missing signal identifies the failing layer. Credential values are never logged.
 
-Voice Room renders each turn from Agora RTC data-stream messages—not the Studio EventBus—as chat
+Voice Room renders each turn from Agora RTC data-stream messages—not the Studio NotificationBus—as chat
 history: user ASR on the right and the Agent's streaming response on the left. Qwen incremental
 ASR uses `text + stash` for the live preview and commits
 the final text from `conversation.item.input_audio_transcription.completed`. The Agora Bot consumes

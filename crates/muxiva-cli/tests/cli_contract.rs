@@ -192,7 +192,9 @@ fn installed_binary_labels_synthetic_simulation_and_reports_version() {
     assert!(stdout.contains("└─microphone.audio_out [audio] -> voice-activity.audio_in"));
     assert!(stdout.contains("[MUXIVA][TURN][started] turn=1 of=4"));
     assert!(stdout.contains("[MUXIVA][TURN][started] turn=4 of=4"));
-    assert!(stdout.contains("[MUXIVA][EVENTBUS][publish] topic=muxiva.demo.speech.detected"));
+    assert!(
+        stdout.contains("[MUXIVA][NOTIFICATION-BUS][publish] topic=muxiva.demo.speech.detected")
+    );
     assert!(stdout.contains("[MUXIVA][SIGNAL][received] node=context-fusion"));
     assert!(stdout.contains(
         "[MUXIVA][JOIN][context-fusion] turn=4 inputs=transcript+speech_event status=ready"

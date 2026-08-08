@@ -10,7 +10,7 @@ Muxiva separates the data plane from the control plane:
 flowchart LR
     N1["Upstream Node"] -->|"Frame over a typed Edge"| N2["Downstream Node"]
     N1 -.->|"Signal · explicit Graph Edge"| R["Rust Runtime"]
-    N1 -.->|"Event · global observation"| B["EventBus"]
+    N1 -.->|"Notification · process-local observation"| B["NotificationBus"]
     R -.->|"on_signal"| N2
     B -.-> UI["Studio · logs · metrics · application"]
 ```
@@ -32,18 +32,18 @@ A common example is barge-in. Qwen Realtime or a VAD Node emits
 `muxiva.voice.speech.started`. The Qwen Node cancels its own generation and discards late chunks;
 the Agora Audio Sink clears playback when it receives the same Signal. Runtime only delivers it.
 
-## EventBus lets observers see what happened
+## NotificationBus lets observers see what happened
 
-Events are globally observable notifications such as a completed transcript, first-token
-arrival, Node reconnection, or excessive latency. A Node calls `ctx.publish_event(...)`.
-Studio, logs, metrics, or application subscribers can observe the event, but an Event does not
-replace business data flowing through the Graph.
+Notifications are process-local observations such as a completed transcript, first-token
+arrival, Node reconnection, or excessive latency. A Node calls `ctx.publish_notification(...)`.
+Studio, logs, metrics, or application subscribers can observe them, but a NotificationBus
+notification does not replace an `EventFrame` or other business data flowing through the Graph.
 
 | Requirement | Use |
 | --- | --- |
 | Send audio to ASR | Frame + Edge |
 | Tell relevant Nodes to stop an old answer | Signal |
-| Show local operational telemetry in Studio | EventBus Event |
+| Show local operational telemetry in Studio | NotificationBus notification |
 | Deliver transcript or speech state to a remote client | Frame + Transport Node |
 | Send LLM text to TTS | Frame + Edge |
 
@@ -70,7 +70,7 @@ On interruption, relevant Nodes normally:
 1. cancel the current remote model request;
 2. discard late chunks from that request;
 3. clear audio that has not played yet;
-4. publish local operational state through EventBus and client state through a Transport Node; and
+4. publish local operational state through NotificationBus and client state through a Transport Node; and
 5. keep subsequent input flowing through the Graph.
 
 Policy stays in Nodes and mechanism stays in Core. This coordinates model generation, playback,

@@ -6,10 +6,10 @@
 | Graph/Node | lifecycle error or panic | one abort and reverse cleanup |
 | Edge/Queue | full, closed, stalled consumer | bounded and policy-visible outcome |
 | Managed stream | timeout, reconnect, late result | admission released; late output discarded |
-| Signal/EventBus | slow or failing subscriber | publisher and other subscribers remain isolated |
+| Signal/NotificationBus | slow or failing subscriber | publisher and other subscribers remain isolated |
 | C/C++ ABI | short struct, stale handle, exception | no unwind; stable error; owned copy |
 | Mock RTC | `mock_rtc_adapter_test`: ingress full, fixed loss/reorder window, held callback, concurrent/repeated leave | callback uses nonblocking ingress; copied payload survives caller mutation; context lives through eventual drain |
-| Python domain | `test_muxiva.py`: exception, unsupported isolation, private loop, EventBus handoff | structured failure; Python executes only on its owned loop thread; publication only enqueues |
+| Python domain | `test_muxiva.py`: exception, unsupported isolation, private loop, NotificationBus handoff | structured failure; Python executes only on its owned loop thread; publication only enqueues |
 | Node domain | `domain.test.mjs`: throw, Promise return, full inbox, close then submit | structured failure; JS executes on its Worker; capacity remains bounded; late submission is rejected |
 | CLI / Graph v1 | `cli_contract.rs`: existing init target and malformed graph passed to validate/run | no overwrite; validate and run use the same parser/compiler diagnostic |
 | Studio HTTP | `muxiva-studio` unit contract: missing/forged bearer token and invalid authenticated graph | graph bytes never leak to unauthorized callers; validation uses Graph v1 compiler |

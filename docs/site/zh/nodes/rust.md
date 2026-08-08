@@ -18,7 +18,7 @@ impl Node for MyNode {
         if let Some(frame) = input {
             context.emit(PortName::new("text_out").expect("valid Port"), frame)?;
             // context.emit_signal(signal)?;       // 相邻图控制
-            // context.publish_event(event)?;      // Runtime 全局 EventBus
+            // context.publish_notification(event)?;      // Runtime 进程内 NotificationBus
         }
         Ok(()) // 回调状态，不承担消息传输
     }

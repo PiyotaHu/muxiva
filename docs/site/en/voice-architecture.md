@@ -96,7 +96,7 @@ Signals only.
 
 ASR text, assistant text, and speech state leave the Graph through `agora.data_sink`. The browser
 receives `muxiva.client-event/v1` messages from Agora's reliable ordered data stream. It never polls
-`/api/v1/runtime/events`, and it cannot start or stop the Runtime. EventBus remains an in-process
+`/api/v1/runtime/events`, and it cannot start or stop the Runtime. NotificationBus remains an in-process
 observability facility for logs and Studio operators; it is not the end-user transport contract.
 
 The local `/api/v1/client/session` endpoint only bootstraps temporary browser RTC credentials.

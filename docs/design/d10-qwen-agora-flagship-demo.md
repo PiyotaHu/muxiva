@@ -48,7 +48,7 @@ browser microphone
 No browser request may contain a DashScope API key or Agora App Certificate.
 The browser receives only an App ID, channel, UID, and short-lived user token.
 The Muxiva process reads secrets from its environment or a future secret-provider
-interface and must redact them from logs, errors, metrics, EventBus payloads,
+interface and must redact them from logs, errors, metrics, NotificationBus payloads,
 Graph JSON, Studio state, and recordings.
 
 ## Dependency boundary
@@ -98,8 +98,8 @@ active HTTP SSE/WebSocket connections, generic gates advance sequence
 watermarks, and Agora Audio Sink clears pending PCM. No voice Turn identity or
 vendor cancellation logic exists in Core.
 
-An EventBus notification may mirror the result for UI and telemetry, but the
-EventBus is not the real-time interruption path.
+A NotificationBus notification may mirror the result for UI and telemetry, but the
+NotificationBus is not the real-time interruption path.
 
 ## Product command and modes
 
@@ -178,7 +178,7 @@ Implemented after the provider-boundary correction:
   late outputs retain the originating audio sequence so every watermark rejects
   the same cancelled response;
 - the project Voice Room joins through Agora Web SDK as an independent client;
-  it neither controls the Studio Runtime nor reads its EventBus. Audio and
+  it neither controls the Studio Runtime nor reads its NotificationBus. Audio and
   versioned client events cross the Agora media/data transport and the room
   stays active until the developer ends the session;
 - browser-visible connection values require explicit `client_exposed` opt-in;

@@ -235,7 +235,7 @@ class QwenAudioRealtimeNode:
                 sequence=sequence,
             ),
         )
-        ctx.publish_event(topic, payload)
+        ctx.publish_notification(topic, payload)
 
     def on_finish(self, _ctx: Any = None) -> None:
         if self._transport is not None:

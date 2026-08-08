@@ -16,8 +16,8 @@ use std::{
 };
 
 use muxiva_core::{
-    start_registered_runtime_with_context, EdgePolicies, EventBus, GraphRuntime, ResourceStore,
-    RuntimeOptions, RuntimeWaitError,
+    start_registered_runtime_with_context, EdgePolicies, GraphRuntime, NotificationBus,
+    ResourceStore, RuntimeOptions, RuntimeWaitError,
 };
 use muxiva_graph_json::{GraphDiagnostic, GraphDocument, MAX_DOCUMENT_BYTES};
 use muxiva_types::{EdgeId, NamespacedName, NodeId};
@@ -367,7 +367,7 @@ fn route(
         ),
         // Development bootstrap for the separately deployable conversation
         // client. It intentionally exposes neither Graph management nor the
-        // Runtime EventBus; production deployments replace it with a short-lived
+        // Runtime NotificationBus; production deployments replace it with a short-lived
         // token service using the same response shape.
         ("GET", "/api/v1/client/session") => (
             "200 OK",
@@ -626,7 +626,7 @@ fn start_runtime(
             json_message("a Studio runtime session is already active"),
         );
     }
-    let event_bus = match studio_event_bus(&state.events) {
+    let notification_bus = match studio_notification_bus(&state.events) {
         Ok(bus) => bus,
         Err(error) => {
             return (
@@ -653,7 +653,7 @@ fn start_runtime(
         EdgePolicies::new(),
         RuntimeOptions::default(),
         ResourceStore::new(),
-        event_bus,
+        notification_bus,
     ) {
         Ok(runtime) => runtime,
         Err(error) => {
@@ -681,12 +681,14 @@ fn start_runtime(
     )
 }
 
-fn studio_event_bus(events: &Arc<Mutex<VecDeque<serde_json::Value>>>) -> Result<EventBus, String> {
+fn studio_notification_bus(
+    events: &Arc<Mutex<VecDeque<serde_json::Value>>>,
+) -> Result<NotificationBus, String> {
     events
         .lock()
         .unwrap_or_else(|error| error.into_inner())
         .clear();
-    let bus = EventBus::default();
+    let bus = NotificationBus::default();
     for topic in [
         "muxiva.voice.speech.started",
         "muxiva.voice.speech.stopped",

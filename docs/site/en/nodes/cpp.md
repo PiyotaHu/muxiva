@@ -22,7 +22,7 @@ class MyNode final : public muxiva::MultimodalGraphNode {
 
 The older `std::vector<GraphEmission>` return hook remains source-compatible,
 but new Nodes should emit explicitly through the context. The V1 C ABI receives
-Signals through `on_signal`; emitting new Signals or EventBus events from C++
+Signals through `on_signal`; emitting new Signals or NotificationBus events from C++
 still requires a future control-action context extension.
 
 The repository includes installable headers, CMake package configuration, and

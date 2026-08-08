@@ -14,7 +14,7 @@ const candidates = [
 const binary = candidates.find((url) => existsSync(fileURLToPath(url)))
 if (!binary) throw new Error(`@muxiva/core has no native binary for ${platform}; run npm run build`)
 const native = require(fileURLToPath(binary))
-export const { Runtime, Session, EventBus, Frame, AudioFrame, VideoFrame, TextFrame, ByteFrame, SignalFrame, EventFrame, NodeExecutionDomain } = native
+export const { Runtime, Session, NotificationBus, Frame, AudioFrame, VideoFrame, TextFrame, ByteFrame, SignalFrame, EventFrame, NodeExecutionDomain } = native
 
 const methodNames = ['onPrepare', 'onProcess', 'onSignal', 'onEvent', 'onFinish', 'onAbort']
 

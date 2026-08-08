@@ -3,7 +3,7 @@
 from ._native import (  # noqa: F401
     AudioFrame,
     ByteFrame,
-    EventBus,
+    NotificationBus,
     EventFrame,
     Frame,
     GraphNodeFactory,
@@ -21,7 +21,7 @@ from .sdk import NodeOptions, NodeRunner, TransformNode
 __all__ = [
     "AudioFrame",
     "ByteFrame",
-    "EventBus",
+    "NotificationBus",
     "EventFrame",
     "Frame",
     "GraphNodeFactory",

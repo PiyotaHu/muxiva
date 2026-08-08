@@ -10,7 +10,7 @@ export class SignalFrame { constructor(name:string,source:string,schemaVersion:n
 export class EventFrame { constructor(topic:string,source:string,schemaVersion:number,payloadJson:string,sequence:number); readonly topic:string; readonly payloadJson:string; readonly kind:'event'; asFrame():Frame }
 export class Runtime { constructor(); readonly isClosed:boolean; createSession():Session; close():boolean }
 export class Session { readonly id:number; readonly isClosed:boolean; close():boolean }
-export class EventBus { constructor(); subscribe(topic:string,callback:(payload:string)=>void,capacity?:number):number; publish(topic:string,payload:string):number; unsubscribe(id:number):boolean; close():boolean }
+export class NotificationBus { constructor(); subscribe(topic:string,callback:(payload:string)=>void,capacity?:number):number; publish(topic:string,payload:string):number; unsubscribe(id:number):boolean; close():boolean }
 export interface DomainCommand { sequence:number; kind:string; payloadJson?:string }
 export class NodeExecutionDomain { constructor(callback:(command:DomainCommand)=>void,capacity:number); submit(sequence:number,kind:string,payloadJson?:string):'accepted'|'full'|'closed'; complete(sequence:number,value:string):boolean; fail(sequence:number,code:string,message:string,value:string):boolean; drainCompletions():string[]; readonly outstanding:number; close():boolean }
 
@@ -66,7 +66,7 @@ export interface GraphNodeContext {
   config:Record<string,unknown>
   emit(port:string,frame:GraphFrame):void
   emitSignal(name:string,payload?:unknown):void
-  publishEvent(topic:string,payload?:unknown):void
+  publishNotification(topic:string,payload?:unknown):void
 }
 export type GraphTextFrame = { kind:'text'; sequence:number; text:string }
 export type GraphByteFrame = { kind:'byte'; sequence:number; bytes:number[]; mediaType?:string }

@@ -15,7 +15,7 @@ sanitizers, benchmarks, fuzzing, Miri, and Studio browser tests.
 
 `muxiva simulate` and `examples/graphs/mock-realtime-voice.v1.json` are network-free,
 credential-free Runtime fixtures. They use synthetic PCM and scripted text to
-test fork/join routing, backpressure, Signals, EventBus, turns, and lifecycle.
+test fork/join routing, backpressure, Signals, NotificationBus, turns, and lifecycle.
 They provide no real ASR, LLM, or TTS and are not a product demo.
 
 ```bash

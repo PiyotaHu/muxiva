@@ -6,7 +6,7 @@
   strict and unordered release, deadlines, cancellation, late-result discard,
   and one abort owner.
 - Buildable PyO3/maturin distribution named `muxiva` with owned Runtime,
-  Session, six immutable Frame variants, EventBus, and per-node Python
+  Session, six immutable Frame variants, NotificationBus, and per-node Python
   thread/asyncio execution domains.
 - Buildable napi-rs package named `@muxiva/core` with the matching owned API,
   bounded TSFN scheduling onto the JS event loop, synchronous node lifecycle,

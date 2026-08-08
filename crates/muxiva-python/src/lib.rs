@@ -10,7 +10,7 @@ mod subscription;
 
 use pyo3::{create_exception, exceptions::PyException, prelude::*};
 
-pub use api::{PyEventBus, PyRuntime, PySession};
+pub use api::{PyNotificationBus, PyRuntime, PySession};
 pub use domain::PythonNodeExecutionDomain;
 pub use frame::{
     PyAudioFrame, PyByteFrame, PyEventFrame, PyFrame, PySignalFrame, PyTextFrame, PyVideoFrame,
@@ -31,7 +31,7 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyEventFrame>()?;
     module.add_class::<PyRuntime>()?;
     module.add_class::<PySession>()?;
-    module.add_class::<PyEventBus>()?;
+    module.add_class::<PyNotificationBus>()?;
     module.add_class::<PythonNodeExecutionDomain>()?;
     module.add_class::<PyGraphNodeFactory>()?;
     module.add_function(wrap_pyfunction!(graph::run_graph, module)?)?;

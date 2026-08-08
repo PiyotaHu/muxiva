@@ -75,7 +75,7 @@ on_abort    ← 错误、取消或强制停止
 def on_process(self, frame, ctx):
     ctx.emit("text_out", output_frame)
     ctx.emit_signal("muxiva.turn.interrupt", {"reason": "barge-in"})
-    ctx.publish_event("app.transcript.ready", {"text": frame.text})
+    ctx.publish_notification("app.transcript.ready", {"text": frame.text})
 ```
 
 这样一份处理逻辑可以产生零个、一个或多个输出，也可以只发布控制消息。

@@ -75,7 +75,7 @@ class Context:
     def emit_signal(self, name, payload):
         self.signals.append((name, payload))
 
-    def publish_event(self, topic, payload):
+    def publish_notification(self, topic, payload):
         self.events.append((topic, payload))
 
 

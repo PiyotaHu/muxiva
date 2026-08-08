@@ -9,7 +9,7 @@ Studio owns at most one active `GraphRuntime`. `POST /api/v1/runtime/start`
 compiles the submitted Graph v1 document against the trusted built-in Registry
 and starts a fresh runtime. It returns `409` while another run is active.
 `POST /api/v1/runtime/stop` calls the existing idempotent Runtime Stop handle.
-The browser never receives a queue, Node, EventBus, or resource handle.
+The browser never receives a queue, Node, NotificationBus, or resource handle.
 
 All runtime endpoints require the same bearer token as graph read/write APIs.
 The run request is bounded by the Graph v1 one-megabyte document limit. A run

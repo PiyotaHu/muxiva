@@ -1,4 +1,4 @@
-//! EventBus subscribers enqueue owned events into a domain; they never call Python.
+//! NotificationBus subscribers enqueue owned events into a domain; they never call Python.
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};

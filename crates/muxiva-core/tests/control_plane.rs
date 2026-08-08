@@ -8,8 +8,8 @@ use std::{
 
 use muxiva_core::{
     ConcurrentRuntime, ConfigMap, ConfigSchema, EdgeDescriptor, EdgePolicies, EnabledCondition,
-    EventBus, GraphBuilder, LifecycleCapabilities, Node, NodeContext, NodeDescriptor,
-    NodeInstances, NodeKind, NodeTypeName, PortDescriptor, PortDirection, PortName,
+    GraphBuilder, LifecycleCapabilities, Node, NodeContext, NodeDescriptor, NodeInstances,
+    NodeKind, NodeTypeName, NotificationBus, PortDescriptor, PortDirection, PortName,
     QueueOverflowPolicy, QueuePolicy, ResourceKey, ResourceStore, ResourceStoreError,
     RuntimeOptions, RuntimeWaitError, SignalEmissionError, TransformPolicy, ValidationPolicy,
     VisibilityDescriptor,
@@ -231,8 +231,8 @@ fn emitting_without_an_actual_edge_returns_a_structured_error() {
 }
 
 #[test]
-fn event_bus_subscribe_unsubscribe_slow_and_faulty_handlers_are_isolated() {
-    let bus = EventBus::new(NonZeroUsize::new(1).unwrap());
+fn notification_bus_subscribe_unsubscribe_slow_and_faulty_handlers_are_isolated() {
+    let bus = NotificationBus::new(NonZeroUsize::new(1).unwrap());
     let topic = NamespacedName::new("muxiva.test.events").unwrap();
     let (fast_tx, fast_rx) = mpsc::channel();
     let fast = bus
@@ -310,8 +310,8 @@ fn resource_store_reports_missing_and_wrong_types_and_cleans_up() {
 }
 
 #[test]
-fn event_bus_stop_races_publish_without_panics_or_blocking() {
-    let bus = EventBus::default();
+fn notification_bus_stop_races_publish_without_panics_or_blocking() {
+    let bus = NotificationBus::default();
     bus.subscribe(NamespacedName::new("muxiva.test.race").unwrap(), |_| Ok(()))
         .unwrap();
     let publisher_bus = bus.clone();

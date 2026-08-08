@@ -14,7 +14,7 @@ use std::{
 
 use muxiva_types::{EventFrame, NamespacedName, Result as MuxivaResult};
 
-/// Opaque identity returned by [`EventBus::subscribe`].
+/// Opaque identity returned by [`NotificationBus::subscribe`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Subscription(u64);
 
@@ -33,26 +33,26 @@ pub struct SubscriberSnapshot {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum EventBusError {
+pub enum NotificationBusError {
     Stopped,
     Spawn { thread_name: Box<str> },
 }
 
-impl fmt::Display for EventBusError {
+impl fmt::Display for NotificationBusError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Stopped => formatter.write_str("event bus is stopped"),
+            Self::Stopped => formatter.write_str("notification bus is stopped"),
             Self::Spawn { thread_name } => {
                 write!(
                     formatter,
-                    "failed to start EventBus subscriber `{thread_name}`"
+                    "failed to start NotificationBus subscriber `{thread_name}`"
                 )
             }
         }
     }
 }
 
-impl Error for EventBusError {}
+impl Error for NotificationBusError {}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PublishReport {
@@ -62,7 +62,7 @@ pub struct PublishReport {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct EventBusStopReport {
+pub struct NotificationBusStopReport {
     pub stopped_first: bool,
     pub worker_total: usize,
     pub unfinished: Box<[Subscription]>,
@@ -104,22 +104,25 @@ struct BusState {
     observations: BTreeMap<Subscription, Arc<Mutex<MutableMetrics>>>,
 }
 
-struct EventBusInner {
+struct NotificationBusInner {
     next_id: AtomicU64,
     state: Mutex<BusState>,
 }
 
-/// Global, low-frequency EventFrame fanout with one bounded worker per subscriber.
+/// Process-local, low-frequency notification fanout with one bounded worker per subscriber.
+///
+/// Notifications currently use `EventFrame` as their typed envelope, but they do
+/// not travel over Graph ports or Edge queues.
 #[derive(Clone)]
-pub struct EventBus {
-    inner: Arc<EventBusInner>,
+pub struct NotificationBus {
+    inner: Arc<NotificationBusInner>,
     capacity: NonZeroUsize,
 }
 
-impl EventBus {
+impl NotificationBus {
     pub fn new(capacity: NonZeroUsize) -> Self {
         Self {
-            inner: Arc::new(EventBusInner {
+            inner: Arc::new(NotificationBusInner {
                 next_id: AtomicU64::new(1),
                 state: Mutex::new(BusState::default()),
             }),
@@ -131,7 +134,7 @@ impl EventBus {
         &self,
         topic: NamespacedName,
         handler: F,
-    ) -> Result<Subscription, EventBusError>
+    ) -> Result<Subscription, NotificationBusError>
     where
         F: Fn(EventFrame) -> MuxivaResult<()> + Send + 'static,
     {
@@ -140,7 +143,7 @@ impl EventBus {
         let (done_tx, done) = mpsc::channel();
         let metrics = Arc::new(Mutex::new(MutableMetrics::default()));
         let worker_metrics = metrics.clone();
-        let thread_name = format!("muxiva-event-subscriber-{}", id.get());
+        let thread_name = format!("muxiva-notification-subscriber-{}", id.get());
         let handle = thread::Builder::new()
             .name(thread_name.clone())
             .spawn(move || {
@@ -157,7 +160,7 @@ impl EventBus {
                 }
                 let _ = done_tx.send(());
             })
-            .map_err(|_| EventBusError::Spawn {
+            .map_err(|_| NotificationBusError::Spawn {
                 thread_name: thread_name.into(),
             })?;
 
@@ -173,7 +176,7 @@ impl EventBus {
         if state.stopped {
             drop(state);
             drop(worker);
-            return Err(EventBusError::Stopped);
+            return Err(NotificationBusError::Stopped);
         }
         state.observations.insert(id, metrics);
         state.active.insert(id, worker);
@@ -181,11 +184,11 @@ impl EventBus {
     }
 
     /// Enqueues without waiting for any subscriber or handler.
-    pub fn publish(&self, event: EventFrame) -> Result<PublishReport, EventBusError> {
+    pub fn publish(&self, event: EventFrame) -> Result<PublishReport, NotificationBusError> {
         let topic = event.data().topic();
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.stopped {
-            return Err(EventBusError::Stopped);
+            return Err(NotificationBusError::Stopped);
         }
         let mut report = PublishReport::default();
         for worker in state
@@ -248,7 +251,7 @@ impl EventBus {
     }
 
     /// Stops admission, disconnects all mailboxes, and reaps workers until the deadline.
-    pub fn stop(&self, timeout: Duration) -> EventBusStopReport {
+    pub fn stop(&self, timeout: Duration) -> NotificationBusStopReport {
         let stopped_first = self.request_stop();
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
         let mut workers = std::mem::take(&mut state.retired);
@@ -270,7 +273,7 @@ impl EventBus {
                 unfinished.push(worker.id);
             }
         }
-        EventBusStopReport {
+        NotificationBusStopReport {
             stopped_first,
             worker_total,
             unfinished: unfinished.into_boxed_slice(),
@@ -278,7 +281,7 @@ impl EventBus {
     }
 }
 
-impl Default for EventBus {
+impl Default for NotificationBus {
     fn default() -> Self {
         Self::new(NonZeroUsize::new(64).expect("non-zero constant"))
     }

@@ -788,8 +788,8 @@ impl Node for DemoVad {
         let event_frame =
             derive_payload(&input, context.node_id(), "vad", FramePayload::Event(event))?;
         let published =
-            context.publish_event(event_frame.as_event().expect("event payload").clone())?;
-        println!("[MUXIVA][EVENTBUS][publish] topic=muxiva.demo.speech.detected turn={} subscribers={} enqueued={}", input.header().sequence_id().get(), published.matched, published.enqueued);
+            context.publish_notification(event_frame.as_event().expect("event payload").clone())?;
+        println!("[MUXIVA][NOTIFICATION-BUS][publish] topic=muxiva.demo.speech.detected turn={} subscribers={} enqueued={}", input.header().sequence_id().get(), published.matched, published.enqueued);
         let signal_frame = derive_payload(
             &input,
             context.node_id(),
@@ -1216,7 +1216,7 @@ impl AudioVad {
                 Value::Bool(active),
             )),
         )?;
-        context.publish_event(event.as_event().expect("event payload").clone())?;
+        context.publish_notification(event.as_event().expect("event payload").clone())?;
         context.emit(PortName::new("speech_out").unwrap(), event)?;
         if active {
             let signal = derive_payload(
@@ -1870,7 +1870,7 @@ fn demo_response(turn: usize) -> &'static str {
     const RESPONSES: &[&str] = &[
         "I run audio, ASR, VAD, reasoning, and TTS as one typed concurrent graph.",
         "Yes. Signals travel on the graph control plane so a new turn can interrupt downstream work.",
-        "Use ctx.emit for data, ctx.emit_signal for graph control, and ctx.publish_event for the global EventBus.",
+        "Use ctx.emit for Graph data, ctx.emit_signal for adjacent control, and ctx.publish_notification for the process-local NotificationBus.",
         "This session completed four voice turns while preserving typed routing, control, and observable events.",
     ];
     RESPONSES[(turn.saturating_sub(1)) % RESPONSES.len()]

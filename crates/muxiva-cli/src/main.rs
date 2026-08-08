@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use muxiva_core::{
     materialize_registered_nodes, start_registered_runtime, ConcurrentRuntime, EdgePolicies,
-    EventBus, NodeRegistry, RuntimeOptions, RuntimeWaitError,
+    NodeRegistry, NotificationBus, RuntimeOptions, RuntimeWaitError,
 };
 use muxiva_types::NamespacedName;
 use std::{
@@ -338,14 +338,14 @@ fn simulate(scenario: SimulationScenario, turns: u16, interval_ms: u64) -> Resul
     if matches!(scenario, SimulationScenario::Voice) {
         println!("[MUXIVA][WARN][simulation.synthetic] real_audio=false real_ai=false network=disabled turns={turns} interval_ms={interval_ms} purpose=runtime-contract-test");
     }
-    let event_bus = if matches!(scenario, SimulationScenario::Voice) {
-        let bus = EventBus::default();
+    let notification_bus = if matches!(scenario, SimulationScenario::Voice) {
+        let bus = NotificationBus::default();
         bus.subscribe(
             NamespacedName::new("muxiva.demo.speech.detected")
                 .map_err(|error| error.to_string())?,
             |event| {
                 println!(
-                    "[MUXIVA][EVENTBUS][subscriber] topic={} turn={} handler=session-observer",
+                    "[MUXIVA][NOTIFICATION-BUS][subscriber] topic={} turn={} handler=session-observer",
                     event.data().topic(),
                     event.header().sequence_id().get()
                 );
@@ -365,7 +365,7 @@ fn simulate(scenario: SimulationScenario, turns: u16, interval_ms: u64) -> Resul
         ),
         Duration::from_millis(DEFAULT_SHUTDOWN_TIMEOUT_MS),
         DEFAULT_RUN_TIMEOUT_MS.max(interval_ms.saturating_mul(u64::from(turns)) + 10_000),
-        event_bus,
+        notification_bus,
     )
 }
 
@@ -375,7 +375,7 @@ fn run_graph(
     timeout: Duration,
     shutdown_timeout: Duration,
     timeout_ms: u64,
-    event_bus: Option<EventBus>,
+    notification_bus: Option<NotificationBus>,
 ) -> Result<(), String> {
     let graph_id = graph.graph_id().as_str().to_owned();
     let node_total = graph.nodes().len();
@@ -384,12 +384,12 @@ fn run_graph(
     println!("[MUXIVA][GRAPH] human-readable DSL");
     print!("{}", graph.render_human_dsl());
     println!("[MUXIVA][INFO][runtime.started] mode=concurrent");
-    let runtime = if let Some(event_bus) = event_bus {
+    let runtime = if let Some(notification_bus) = notification_bus {
         let nodes = materialize_registered_nodes(&graph, registry)
             .map_err(|error| format!("cannot materialize graph `{graph_id}`: {error}"))?;
         ConcurrentRuntime::new(graph, nodes, EdgePolicies::new(), RuntimeOptions::default())
             .map_err(|error| format!("cannot attach graph `{graph_id}`: {error}"))?
-            .with_event_bus(event_bus)
+            .with_notification_bus(notification_bus)
             .start()
             .map_err(|error| format!("cannot start graph `{graph_id}`: {error}"))?
     } else {
