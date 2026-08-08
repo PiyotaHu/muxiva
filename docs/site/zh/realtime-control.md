@@ -3,7 +3,7 @@
 实时 Agent 不只是把 A 的输出交给 B。它还必须回答：下游变慢怎么办、用户插话时
 如何停止旧回答、哪些消息需要进入数据链路、哪些信息只供界面和监控观察。
 
-Voxa 把通信分成数据面和控制面：
+Muxiva 把通信分成数据面和控制面：
 
 ```mermaid
 flowchart LR
@@ -26,7 +26,7 @@ Signal 用于打断、取消、刷新缓存或其他跨 Node 控制。Node 通�
 的 `on_signal`；Core 不解释 Signal 名称，也不执行语音业务规则。Signal 不是进程级广播。
 
 典型场景是 Barge-in：用户在 Agent 播放回答时重新说话，Qwen Realtime 或 VAD Node
-发出 `voxa.voice.speech.started`。Qwen Node 取消自己的生成并丢弃晚到片段，Agora
+发出 `muxiva.voice.speech.started`。Qwen Node 取消自己的生成并丢弃晚到片段，Agora
 Audio Sink 收到同一 Signal 后清空播放队列。Runtime 只负责投递。
 
 ## EventBus：让旁观者知道发生了什么
@@ -54,7 +54,7 @@ Node 用 `ctx.publish_event(...)` 发布；Studio、日志、指标系统或应�
 | `drop_newest` | 保留已排队数据 | 不希望新数据打乱批次 |
 | `abort` | 立即失败并进入关闭流程 | 丢帧不可接受的协议 |
 
-无限队列看似“不丢数据”，实际上会把短暂拥塞变成长延迟和内存失控。Voxa 强制开发者
+无限队列看似“不丢数据”，实际上会把短暂拥塞变成长延迟和内存失控。Muxiva 强制开发者
 明确选择容量和策略，使延迟、完整性和故障行为可预测。
 
 ## 业务会话与打断

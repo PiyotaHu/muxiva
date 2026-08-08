@@ -1,4 +1,4 @@
-import { GraphNodeFactory, runGraph, type GraphFrameType } from '@voxa/core'
+import { GraphNodeFactory, runGraph, type GraphFrameType } from '@muxiva/core'
 
 const types: GraphFrameType[] = ['audio', 'video', 'byte', 'text']
 const source = new GraphNodeFactory('example.typescript.multimodal-source', {
@@ -24,5 +24,5 @@ for (const frameType of types) {
   nodes.push({ id: `${frameType}-sink`, node_type: `example.typescript.${frameType}-sink`, language: 'typescript', factory_version: '1.0.0', node_config: {} })
   edges.push({ id: frameType, from: { node_id: 'source', port: `${frameType}_out` }, to: { node_id: `${frameType}-sink`, port: 'in' }, frame_type: frameType, queue_policy: { capacity: 8, overflow: 'block' } })
 }
-const graph = JSON.stringify({ version: 'voxa.graph/v1', graph_id: 'typescript-multimodal', nodes, edges })
+const graph = JSON.stringify({ version: 'muxiva.graph/v1', graph_id: 'typescript-multimodal', nodes, edges })
 console.log(`completed with ${await runGraph(graph, [source, ...sinks])} workers`)

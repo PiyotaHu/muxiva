@@ -2,9 +2,9 @@
 
 ## Decision
 
-The first live Voxa voice demo uses two official Node collections:
+The first live Muxiva voice demo uses two official Node collections:
 
-- Agora RTC transports user media between a browser and the Voxa Bot.
+- Agora RTC transports user media between a browser and the Muxiva Bot.
 - Alibaba Cloud Model Studio Qwen Audio Realtime provides acoustic turn
   detection, transcription, reasoning, and streaming speech generation over
   one server-side WebSocket.
@@ -25,7 +25,7 @@ transcripts, streaming response audio, response completion, and cancellation.
 It therefore provides the shortest path to an honest full-duplex demo with one
 Model Studio account and API key.
 
-Voxa Core owns only generic runtime semantics. The Qwen Node owns acoustic or
+Muxiva Core owns only generic runtime semantics. The Qwen Node owns acoustic or
 semantic turn boundaries, remote cancellation, and rejection of late response
 chunks. It emits typed Signal/Event Frames; the Agora Sink owns playback queue
 clearing. Core routes those opaque messages and records queue/runtime metrics.
@@ -36,31 +36,31 @@ clearing. Core routes those opaque messages and records queue/runtime metrics.
 browser microphone
   -> Agora Web SDK microphone track
   -> Agora room
-  -> Voxa Agora per-user PCM ingress (48 kHz PCM16 mono)
+  -> Muxiva Agora per-user PCM ingress (48 kHz PCM16 mono)
   -> bounded resampler (48 kHz -> 16 kHz)
   -> Qwen Realtime WebSocket
   -> streaming transcript + response audio (24 kHz PCM16 mono)
   -> bounded resampler (24 kHz -> 48 kHz)
-  -> Voxa Agora custom audio track
+  -> Muxiva Agora custom audio track
   -> browser remote-track playback
 ```
 
 No browser request may contain a DashScope API key or Agora App Certificate.
 The browser receives only an App ID, channel, UID, and short-lived user token.
-The Voxa process reads secrets from its environment or a future secret-provider
+The Muxiva process reads secrets from its environment or a future secret-provider
 interface and must redact them from logs, errors, metrics, EventBus payloads,
 Graph JSON, Studio state, and recordings.
 
 ## Dependency boundary
 
 ```text
-Voxa public Node/Frame ABI <- Python Qwen Node Pack
-Voxa public C++ ABI        <- C++ Agora Nodes
+Muxiva public Node/Frame ABI <- Python Qwen Node Pack
+Muxiva public C++ ABI        <- C++ Agora Nodes
 
 Core / Graph / Studio -X-> Qwen, DashScope, or Agora SDK
 ```
 
-Official and project Node packages may depend one-way on stable Voxa contracts. The framework
+Official and project Node packages may depend one-way on stable Muxiva contracts. The framework
 workspace, root build, Registry, and Studio UI may not import, link, register,
 or name a vendor. Discovery and configuration flow only through generic Node
 Pack Manifests.
@@ -72,10 +72,10 @@ The current application Node Packs declare these connection fields:
 ```text
 DASHSCOPE_API_KEY
 DASHSCOPE_WORKSPACE_ID
-VOXA_AGORA_APP_ID
-VOXA_AGORA_CHANNEL
-VOXA_AGORA_BOT_UID
-VOXA_AGORA_BOT_TOKEN
+MUXIVA_AGORA_APP_ID
+MUXIVA_AGORA_CHANNEL
+MUXIVA_AGORA_BOT_UID
+MUXIVA_AGORA_BOT_TOKEN
 ```
 
 Qwen model, voice, instructions, and turn mode are non-secret Node
@@ -91,7 +91,7 @@ the App Certificate never reaches the browser or Graph document.
 
 When Qwen reports `input_audio_buffer.speech_started`, its Node cancels the
 active remote response, marks subsequent chunks from that response for discard,
-and emits `voxa.voice.speech.started`. Core broadcasts the opaque Signal. The
+and emits `muxiva.voice.speech.started`. Core broadcasts the opaque Signal. The
 Agora Audio Sink clears pending PCM when it receives it. No voice Turn identity
 or vendor cancellation logic exists in Core.
 
@@ -100,13 +100,13 @@ EventBus is not the real-time interruption path.
 
 ## Product command and modes
 
-`voxa studio` is the product entry point. With no argument it discovers the
-current project, and from the Voxa source root it opens the flagship Voice Agent
-workspace. `voxa doctor --voice` reports native-pack and credential readiness
+`muxiva studio` is the product entry point. With no argument it discovers the
+current project, and from the Muxiva source root it opens the flagship Voice Agent
+workspace. `muxiva doctor --voice` reports native-pack and credential readiness
 without printing secrets. Missing credentials remain actionable in Studio and
 never trigger a silent fallback to scripted output.
 
-The deterministic, network-free path is named `voxa simulate` and is documented
+The deterministic, network-free path is named `muxiva simulate` and is documented
 only as a Runtime engineering fixture. A future local-device transport can
 reuse the same Qwen provider without Agora.
 
@@ -114,7 +114,7 @@ reuse the same Qwen provider without Agora.
 
 Studio owns a first-class **Connections** surface. A developer can paste the
 DashScope API key and two short-lived Agora RTC tokens, set workspace, App ID,
-channel, browser UID, and shared Voxa Bot UID, and see readiness without manually editing an
+channel, browser UID, and shared Muxiva Bot UID, and see readiness without manually editing an
 environment file. Password fields are cleared immediately after submission. The browser receives
 only explicitly `client_exposed` bootstrap fields and never receives DashScope credentials, the
 Bot token, or an App Certificate. Local development values persist in the Git-ignored project

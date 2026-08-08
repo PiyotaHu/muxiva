@@ -1,13 +1,13 @@
-# Voxa Studio
+# Muxiva Studio
 
-Voxa Studio is a dependency-free local visual editor bundled into `voxa-cli`.
-It edits the same strict Graph v1 JSON document used by `voxa validate` and the
+Muxiva Studio is a dependency-free local visual editor bundled into `muxiva-cli`.
+It edits the same strict Graph v1 JSON document used by `muxiva validate` and the
 runtime compiler—there is no separate browser-only graph format.
 
 ## Launch
 
 ```bash
-voxa studio examples/graphs/text-uppercase.v1.json
+muxiva studio examples/graphs/text-uppercase.v1.json
 ```
 
 The CLI validates the graph, binds an ephemeral loopback port, prints a
@@ -15,7 +15,7 @@ tokenized URL, and opens the default browser. Use `--no-open` when running over
 SSH or when you want to open the printed URL yourself:
 
 ```bash
-voxa studio graph.json --port 4173 --no-open
+muxiva studio graph.json --port 4173 --no-open
 ```
 
 ## Visual workflow
@@ -45,8 +45,8 @@ starter code, declare named typed ports and configuration JSON Schema, then
 press **Save & Register**. Studio writes a package beside the Graph:
 
 ```text
-.voxa/nodes/my_python_node/
-├── voxa.node.json
+.muxiva/nodes/my_python_node/
+├── muxiva.node.json
 └── node.py
 ```
 

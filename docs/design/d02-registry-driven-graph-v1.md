@@ -25,7 +25,7 @@ compilation always sets it.
 ## Configuration boundary
 
 JSON null, booleans, signed integers, finite floats, strings, arrays, and
-objects convert into Voxa `Value`. Unsigned integers beyond `i64` are rejected
+objects convert into Muxiva `Value`. Unsigned integers beyond `i64` are rejected
 instead of silently losing precision. Graph documents and built-in text input
 remain bounded.
 

@@ -1,0 +1,21 @@
+[package]
+name = "muxiva-node"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+napi = { version = "3.12", features = ["napi8", "dyn-symbols"] }
+napi-derive = "3.6"
+serde.workspace = true
+serde_json.workspace = true
+muxiva-types = { path = "../muxiva-types" }
+muxiva-core = { path = "../muxiva-core" }
+muxiva-graph-json = { path = "../muxiva-graph-json" }
+
+[build-dependencies]
+napi-build = "2.1"

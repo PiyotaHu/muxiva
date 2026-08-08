@@ -1,6 +1,6 @@
-# Contributing to Voxa
+# Contributing to Muxiva
 
-Thank you for helping build a safe, real-time multimodal agent runtime. Voxa is
+Thank you for helping build a safe, real-time multimodal agent runtime. Muxiva is
 pre-alpha: focused bug reports, design reviews, tests, documentation, and small
 well-scoped pull requests are especially valuable.
 
@@ -35,8 +35,8 @@ Optional language environments:
 - MkDocs dependencies from `requirements-docs.txt` for the documentation site.
 
 ```bash
-git clone https://github.com/PiyotaHu/Voxa.git
-cd Voxa
+git clone https://github.com/PiyotaHu/muxiva.git
+cd Muxiva
 ./scripts/check-rust.sh
 ```
 
@@ -89,7 +89,7 @@ mkdocs build --strict
 ```
 
 Changes under `docs/**` are published automatically to
-<https://piyotahu.github.io/Voxa/> after they merge to `main`.
+<https://piyotahu.github.io/muxiva/> after they merge to `main`.
 
 ## Pull requests
 

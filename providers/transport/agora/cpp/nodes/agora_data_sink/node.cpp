@@ -1,5 +1,5 @@
-#include <voxa/agora_rtc.hpp>
-#include <voxa/voxa.hpp>
+#include <muxiva/agora_rtc.hpp>
+#include <muxiva/muxiva.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -17,23 +17,23 @@ std::string required_env(const char* name) {
   return value;
 }
 
-class AgoraDataSinkNode final : public voxa::MultimodalGraphNode {
+class AgoraDataSinkNode final : public muxiva::MultimodalGraphNode {
  public:
   void on_prepare() override {
     const auto uid = static_cast<std::uint32_t>(
-        std::stoul(required_env("VOXA_AGORA_BOT_UID")));
+        std::stoul(required_env("MUXIVA_AGORA_BOT_UID")));
     const auto participant = static_cast<std::uint32_t>(
-        std::stoul(required_env("VOXA_AGORA_WEB_UID")));
-    session_ = voxa::agora::SharedSession::acquire(
-        required_env("VOXA_AGORA_APP_ID"),
-        required_env("VOXA_AGORA_BOT_TOKEN"),
-        required_env("VOXA_AGORA_CHANNEL"), uid, participant);
+        std::stoul(required_env("MUXIVA_AGORA_WEB_UID")));
+    session_ = muxiva::agora::SharedSession::acquire(
+        required_env("MUXIVA_AGORA_APP_ID"),
+        required_env("MUXIVA_AGORA_BOT_TOKEN"),
+        required_env("MUXIVA_AGORA_CHANNEL"), uid, participant);
     next_send_ = std::chrono::steady_clock::now();
   }
 
-  void on_process(const voxa_frame_view_v1* input,
-                  voxa::GraphNodeContext&) override {
-    if (input == nullptr || input->header.frame_type != VOXA_FRAME_BYTE)
+  void on_process(const muxiva_frame_view_v1* input,
+                  muxiva::GraphNodeContext&) override {
+    if (input == nullptr || input->header.frame_type != MUXIVA_FRAME_BYTE)
       throw std::invalid_argument("Agora data Sink requires a Byte Frame");
     const auto& payload = input->payload.bytes.bytes;
     if (payload.data == nullptr || payload.len == 0 || payload.len > 1024)
@@ -45,7 +45,7 @@ class AgoraDataSinkNode final : public voxa::MultimodalGraphNode {
     const auto count = ++published_;
     if (count == 1 || count % 25 == 0 || result != 0) {
       std::fprintf(stderr,
-                   "[VOXA][AGORA][data.published] messages=%llu bytes=%zu result=%d\n",
+                   "[MUXIVA][AGORA][data.published] messages=%llu bytes=%zu result=%d\n",
                    static_cast<unsigned long long>(count), payload.len, result);
     }
     if (result != 0)
@@ -67,21 +67,21 @@ class AgoraDataSinkNode final : public voxa::MultimodalGraphNode {
 
   void on_finish() override { session_.reset(); }
 
-  void on_abort(const voxa_abort_reason_v1&) noexcept override {
+  void on_abort(const muxiva_abort_reason_v1&) noexcept override {
     try { on_finish(); } catch (...) {}
   }
 
  private:
-  std::shared_ptr<voxa::agora::SharedSession> session_;
+  std::shared_ptr<muxiva::agora::SharedSession> session_;
   std::chrono::steady_clock::time_point next_send_{};
   std::uint64_t published_ = 0;
 };
 }  // namespace
 
-extern "C" voxa_multimodal_node_factory_v1 voxa_node_pack_factory() {
+extern "C" muxiva_multimodal_node_factory_v1 muxiva_node_pack_factory() {
   static const auto factory =
-      voxa::MultimodalGraphNodeFactory::make<AgoraDataSinkNode>(
-          "agora.data_sink", VOXA_NODE_SINK,
+      muxiva::MultimodalGraphNodeFactory::make<AgoraDataSinkNode>(
+          "agora.data_sink", MUXIVA_NODE_SINK,
           R"json([{"name":"message_in","direction":"input","frameType":"byte"}])json",
           "{}", "1.0.0");
   return factory.view();

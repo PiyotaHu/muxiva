@@ -1,10 +1,10 @@
-#include "voxa/media.hpp"
+#include "muxiva/media.hpp"
 
 #include <atomic>
 #include <limits>
 #include <utility>
 
-namespace voxa::media {
+namespace muxiva::media {
 namespace {
 
 constexpr int kInvalidArgument = -2001;
@@ -380,10 +380,10 @@ PipelineStats Pipeline::stats() const noexcept {
           impl_->timestamp_discontinuities.load(std::memory_order_relaxed)};
 }
 
-} // namespace voxa::media
+} // namespace muxiva::media
 
-#if !defined(VOXA_ENABLE_FFMPEG)
-namespace voxa::media {
+#if !defined(MUXIVA_ENABLE_FFMPEG)
+namespace muxiva::media {
 std::unique_ptr<Backend> make_ffmpeg_backend() noexcept { return {}; }
-} // namespace voxa::media
+} // namespace muxiva::media
 #endif

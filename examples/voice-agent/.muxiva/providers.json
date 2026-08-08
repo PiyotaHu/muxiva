@@ -1,0 +1,7 @@
+{
+  "format": "muxiva.providers/v1",
+  "roots": [
+    "../../../providers/algorithm/qwen",
+    "../../../providers/transport/agora"
+  ]
+}

@@ -1,17 +1,17 @@
 # Support
 
-Voxa is pre-alpha and maintained on a best-effort basis.
+Muxiva is pre-alpha and maintained on a best-effort basis.
 
 Before asking for help:
 
-1. read the [documentation](https://piyotahu.github.io/Voxa/);
-2. search existing [Issues](https://github.com/PiyotaHu/Voxa/issues) and
-   [Discussions](https://github.com/PiyotaHu/Voxa/discussions);
+1. read the [documentation](https://piyotahu.github.io/muxiva/);
+2. search existing [Issues](https://github.com/PiyotaHu/muxiva/issues) and
+   [Discussions](https://github.com/PiyotaHu/muxiva/discussions);
 3. reduce the problem to a small Graph or Node example;
-4. run the relevant check script and capture the exact Voxa diagnostic.
+4. run the relevant check script and capture the exact Muxiva diagnostic.
 
 Use GitHub Discussions for usage questions, architecture questions, and ideas.
-Use Issues for reproducible bugs and accepted feature work. Include the Voxa
+Use Issues for reproducible bugs and accepted feature work. Include the Muxiva
 commit/version, OS, architecture, language/runtime versions, configuration
 without secrets, expected behavior, actual behavior, and reproduction steps.
 

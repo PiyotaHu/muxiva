@@ -1,4 +1,4 @@
-# Voxa Pre-release Notes: Stage 2 Rust Foundation
+# Muxiva Pre-release Notes: Stage 2 Rust Foundation
 
 Date: **2026-08-01**
 
@@ -23,17 +23,17 @@ explicitly approved stage.
 - Workspace and quality baseline: `Cargo.toml`, `Cargo.lock`,
   `rust-toolchain.toml`, `.rustfmt.toml`, `.gitignore`, and
   `.github/workflows/ci.yml`.
-- `crates/voxa-types`: `Cargo.toml`, `src/lib.rs`, `src/id.rs`, `src/time.rs`,
+- `crates/muxiva-types`: `Cargo.toml`, `src/lib.rs`, `src/id.rs`, `src/time.rs`,
   and `src/error.rs`.
-- `crates/voxa-core`: `Cargo.toml`, `src/lib.rs`, and `src/logging.rs`.
-- `crates/voxa-examples`: `Cargo.toml`, `src/lib.rs`, and
+- `crates/muxiva-core`: `Cargo.toml`, `src/lib.rs`, and `src/logging.rs`.
+- `crates/muxiva-examples`: `Cargo.toml`, `src/lib.rs`, and
   `src/bin/hello.rs`.
 - Documentation: this report, the Stage 2 implementation plan, and the README
   status link.
 
 ## Public API contract
 
-`voxa-types` is the dependency-light owner of immutable, owned foundation
+`muxiva-types` is the dependency-light owner of immutable, owned foundation
 values:
 
 - Distinct `NodeId`, `SessionId`, `StreamId`, and `TraceId` newtypes, each with
@@ -45,26 +45,26 @@ values:
   `SequenceId::checked_next`.
 - `ErrorCategory` variants `Configuration`, `Validation`, `Lifecycle`,
   `Cancelled`, `External`, and `Internal`; `ErrorContext` variants `Session`,
-  `Node`, `Stream`, `Phase`, and `Detail`; plus `ErrorCodeError`, `VoxaError`,
-  and `Result<T>`. `VoxaError::new` validates its error code and panics for an
-  invalid code; `VoxaError::try_new` is the fallible constructor. Builders are
+  `Node`, `Stream`, `Phase`, and `Detail`; plus `ErrorCodeError`, `MuxivaError`,
+  and `Result<T>`. `MuxivaError::new` validates its error code and panics for an
+  invalid code; `MuxivaError::try_new` is the fallible constructor. Builders are
   `with_node`, `with_phase`, `with_context`, and `with_source`; accessors are
   `category`, `code`, `message`, and `contexts`.
 
-`voxa-core::logging` owns runtime-facing logging services:
+`muxiva-core::logging` owns runtime-facing logging services:
 
 - `LogLevel` variants `Error`, `Warn`, `Info`, `Debug`, and `Trace`;
   `LogRecord::new` is fallible and validates a stable lowercase ASCII dotted
-  event name, returning `VOXA-LOG-002` on rejection.
+  event name, returning `MUXIVA-LOG-002` on rejection.
 - `LogRecord::with_session`, `with_node`, `level`, `event_name`, `session`,
   `node`, and `fields`.
 - `LogRecord::with_field` is fallible and rejects reserved field names with
-  `VOXA-LOG-001`.
+  `MUXIVA-LOG-001`.
 - Object-safe `LogSink: Send + Sync` with required method
   `fn emit(&self, record: &LogRecord)`, `TracingLogSink`, and idempotent
-  `init_default_logging() -> voxa_types::Result<()>`.
+  `init_default_logging() -> muxiva_types::Result<()>`.
 
-`voxa-examples` exposes `hello_message(&SessionId) -> String`; its `hello`
+`muxiva-examples` exposes `hello_message(&SessionId) -> String`; its `hello`
 binary initializes default logging twice, emits a structured readiness record,
 and prints the typed-session readiness message.
 
@@ -83,16 +83,16 @@ make tracing setup idempotent, not to create threads.
 
 ## Boundary and dependency audit
 
-The workspace contains exactly `voxa-types`, `voxa-core`, and
-`voxa-examples`. Dependency direction is one-way:
+The workspace contains exactly `muxiva-types`, `muxiva-core`, and
+`muxiva-examples`. Dependency direction is one-way:
 
 ```text
-voxa-examples -> voxa-core -> voxa-types
-                  └--------> voxa-types
+muxiva-examples -> muxiva-core -> muxiva-types
+                  └--------> muxiva-types
 ```
 
-`voxa-types` depends only on `thiserror`; `voxa-core` adds `tracing` and
-`tracing-subscriber`; `voxa-examples` depends on the two local public crates.
+`muxiva-types` depends only on `thiserror`; `muxiva-core` adds `tracing` and
+`tracing-subscriber`; `muxiva-examples` depends on the two local public crates.
 The fresh `cargo tree --workspace` output below shows the complete resolved
 tree. It contains no Tokio, async runtime, graph runtime, media, RTC, or FFmpeg
 dependency.
@@ -126,7 +126,7 @@ $ cargo clippy --workspace --all-targets -- -D warnings
 ```text
 $ cargo test --workspace --all-targets
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
-     Running unittests src/lib.rs (target/debug/deps/voxa_core-fbde4fafb6d7c07a)
+     Running unittests src/lib.rs (target/debug/deps/muxiva_core-fbde4fafb6d7c07a)
 
 running 7 tests
 test logging::tests::rejects_unstable_event_names ... ok
@@ -139,7 +139,7 @@ test logging::tests::default_logging_initialization_is_idempotent ... ok
 
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/lib.rs (target/debug/deps/voxa_examples-005393afdccd6d74)
+     Running unittests src/lib.rs (target/debug/deps/muxiva_examples-005393afdccd6d74)
 
 running 1 test
 test tests::hello_message_contains_typed_session_id ... ok
@@ -152,7 +152,7 @@ running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/lib.rs (target/debug/deps/voxa_types-018e73d09abc7686)
+     Running unittests src/lib.rs (target/debug/deps/muxiva_types-018e73d09abc7686)
 
 running 7 tests
 test id::tests::identifiers_validate_and_round_trip ... ok
@@ -170,16 +170,16 @@ Observed total: **15 passed, 0 failed** across three library test binaries and
 one zero-test example binary.
 
 ```text
-$ cargo run -p voxa-examples --bin hello
+$ cargo run -p muxiva-examples --bin hello
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
      Running `target/debug/hello`
-Voxa runtime ready: hello-session
-2026-07-31T16:24:31.915174Z  INFO voxa_core::logging: Voxa event event=runtime.ready session=Some(SessionId("hello-session")) node=None fields=[("example", "hello")]
+Muxiva runtime ready: hello-session
+2026-07-31T16:24:31.915174Z  INFO muxiva_core::logging: Muxiva event event=runtime.ready session=Some(SessionId("hello-session")) node=None fields=[("example", "hello")]
 ```
 
 ```text
 $ cargo tree --workspace
-voxa-core v0.1.0 (<repo>/crates/voxa-core)
+muxiva-core v0.1.0 (<repo>/crates/muxiva-core)
 ├── tracing v0.1.44
 │   ├── pin-project-lite v0.2.17
 │   ├── tracing-attributes v0.1.31 (proc-macro)
@@ -205,7 +205,7 @@ voxa-core v0.1.0 (<repo>/crates/voxa-core)
 │       ├── log v0.4.33
 │       ├── once_cell v1.21.4
 │       └── tracing-core v0.1.36 (*)
-└── voxa-types v0.1.0 (<repo>/crates/voxa-types)
+└── muxiva-types v0.1.0 (<repo>/crates/muxiva-types)
     └── thiserror v2.0.19
         └── thiserror-impl v2.0.19 (proc-macro)
             ├── proc-macro2 v1.0.107 (*)
@@ -215,11 +215,11 @@ voxa-core v0.1.0 (<repo>/crates/voxa-core)
                 ├── quote v1.0.47 (*)
                 └── unicode-ident v1.0.24
 
-voxa-examples v0.1.0 (<repo>/crates/voxa-examples)
-├── voxa-core v0.1.0 (<repo>/crates/voxa-core) (*)
-└── voxa-types v0.1.0 (<repo>/crates/voxa-types) (*)
+muxiva-examples v0.1.0 (<repo>/crates/muxiva-examples)
+├── muxiva-core v0.1.0 (<repo>/crates/muxiva-core) (*)
+└── muxiva-types v0.1.0 (<repo>/crates/muxiva-types) (*)
 
-voxa-types v0.1.0 (<repo>/crates/voxa-types) (*)
+muxiva-types v0.1.0 (<repo>/crates/muxiva-types) (*)
 ```
 
 ### Fresh document and repository checks
@@ -240,10 +240,10 @@ $ cargo clippy --workspace --all-targets -- -D warnings
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.13s
 
 $ cargo test --workspace --all-targets
-voxa-core: 7 passed; 0 failed
-voxa-examples library: 1 passed; 0 failed
+muxiva-core: 7 passed; 0 failed
+muxiva-examples library: 1 passed; 0 failed
 hello binary: 0 passed; 0 failed
-voxa-types: 7 passed; 0 failed
+muxiva-types: 7 passed; 0 failed
 observed total: 15 passed; 0 failed
 ```
 
@@ -302,7 +302,7 @@ The deferred contract findings are:
 - the default `TracingLogSink` can emit arbitrary field values and therefore
   does not yet enforce the Stage 1 default-log privacy boundary; and
 - `ErrorContext::Session` and `ErrorContext::Stream` cannot yet be attached
-  through public `VoxaError` builder methods.
+  through public `MuxivaError` builder methods.
 
 The deferred verification and documentation findings cover tracing-output
 capture, concurrent and pre-installed subscriber initialization, identifier
@@ -311,4 +311,4 @@ the stale fallible logging example in the implementation plan, and labeling a
 summarized test-result block as summarized rather than literal output.
 
 These findings must remain visible in later reviews and must be resolved before
-Voxa claims the Stage 2 foundation is quality-clean or publishes a release.
+Muxiva claims the Stage 2 foundation is quality-clean or publishes a release.

@@ -1,4 +1,4 @@
-# Voxa Pre-release Notes: Stage 1 Foundation
+# Muxiva Pre-release Notes: Stage 1 Foundation
 
 Date: **2026-07-31**
 
@@ -6,7 +6,7 @@ Contract version: **0.1.0-draft.1**
 
 ## Summary
 
-Stage 1 establishes Voxa's product scope, terminology, system boundaries, and
+Stage 1 establishes Muxiva's product scope, terminology, system boundaries, and
 technical contract. It intentionally contains no runtime implementation.
 
 The first v0.1 validation target is a mock real-time voice-agent graph, while
@@ -29,7 +29,7 @@ Byte frames.
 
 ## Decisions
 
-1. Voxa validates a real-time voice-agent vertical first, using mock ASR, LLM,
+1. Muxiva validates a real-time voice-agent vertical first, using mock ASR, LLM,
    TTS, transport, and sink nodes.
 2. ASR, LLM, TTS, conversation state, and prompts are Node concerns and do not
    become special Rust Core APIs.

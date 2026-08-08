@@ -1,11 +1,11 @@
-site_name: Voxa Documentation
+site_name: Muxiva Documentation
 site_description: Real-time multimodal agent runtime for Rust, C++, Python, and TypeScript
-site_url: https://piyotahu.github.io/Voxa/
-repo_url: https://github.com/PiyotaHu/Voxa
-repo_name: PiyotaHu/Voxa
+site_url: https://piyotahu.github.io/muxiva/
+repo_url: https://github.com/PiyotaHu/muxiva
+repo_name: PiyotaHu/muxiva
 docs_dir: docs/site
 edit_uri: edit/main/docs/site/
-copyright: Copyright &copy; 2026 Voxa contributors
+copyright: Copyright &copy; 2026 Muxiva contributors
 
 theme:
   name: material
@@ -44,12 +44,12 @@ plugins:
           default: true
           name: English
           build: true
-          site_name: Voxa Documentation
+          site_name: Muxiva Documentation
           site_description: Real-time multimodal agent runtime for Rust, C++, Python, and TypeScript
         - locale: zh
           name: 简体中文
           build: true
-          site_name: Voxa 文档
+          site_name: Muxiva 文档
           site_description: 面向 Rust、C++、Python 与 TypeScript 的实时多模态 Agent Runtime
           nav_translations:
             Home: 首页
@@ -158,5 +158,5 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/PiyotaHu/Voxa
+      link: https://github.com/PiyotaHu/muxiva
   generator: true

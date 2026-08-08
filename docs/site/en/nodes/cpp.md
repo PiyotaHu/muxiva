@@ -1,21 +1,21 @@
 # C++ Nodes
 
-The C++ SDK provides RAII wrappers over Voxa's versioned C ABI. Multimodal
+The C++ SDK provides RAII wrappers over Muxiva's versioned C ABI. Multimodal
 implementations emit named Frames through declared ports.
 
 ```cpp
-#include <voxa/voxa.hpp>
+#include <muxiva/muxiva.hpp>
 
-class MyNode final : public voxa::MultimodalGraphNode {
+class MyNode final : public muxiva::MultimodalGraphNode {
  public:
-  void on_process(const voxa_frame_view_v1* input,
-                  voxa::GraphNodeContext& ctx) override {
+  void on_process(const muxiva_frame_view_v1* input,
+                  muxiva::GraphNodeContext& ctx) override {
     // ctx.emit("text_out", output_frame);
     // A Source can call ctx.schedule_next_tick(std::chrono::milliseconds(20));
     // to schedule itself without a clock Node in the Graph.
   }
-  void on_signal(const voxa_frame_view_v1& signal) override {
-    // Receive graph control such as voxa.voice.speech.started.
+  void on_signal(const muxiva_frame_view_v1& signal) override {
+    // Receive graph control such as muxiva.voice.speech.started.
   }
 };
 ```

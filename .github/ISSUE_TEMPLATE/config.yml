@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions and architecture discussions
-    url: https://github.com/PiyotaHu/Voxa/discussions
+    url: https://github.com/PiyotaHu/muxiva/discussions
     about: Ask for help, share an idea, or discuss architecture before opening an Issue.
   - name: Security vulnerability
-    url: https://github.com/PiyotaHu/Voxa/security/advisories/new
+    url: https://github.com/PiyotaHu/muxiva/security/advisories/new
     about: Report vulnerabilities privately. Never disclose a vulnerability in a public Issue.
   - name: Documentation
-    url: https://piyotahu.github.io/Voxa/
+    url: https://piyotahu.github.io/muxiva/
     about: Read the installation, Studio, Node, SDK, integration, and testing guides.

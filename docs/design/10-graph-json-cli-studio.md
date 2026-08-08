@@ -7,7 +7,7 @@ bounded queue policies.  The parser rejects unknown fields/types and documents
 above 1 MiB.  JSON describes configuration only: no frames, credentials,
 URLs, scripts, paths, or code are accepted.
 
-`voxa init`, `validate`, and `run` all use the same parser/compiler. `init`
+`muxiva init`, `validate`, and `run` all use the same parser/compiler. `init`
 creates a project directory by default, while a `.json` path retains the
 single-file compatibility form. `validate`, `run`, and `studio` accept either a
 project directory or Graph file. With no argument, `studio` discovers the

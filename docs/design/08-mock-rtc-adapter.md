@@ -5,9 +5,9 @@ Status: implemented pre-release contract.
 ## Boundary and ABI
 
 `rtc_adapter_v1.h` is a C-compatible, versioned companion to the Stage 7
-`voxa.h`. Every extensible structure begins with `abi_version` and
+`muxiva.h`. Every extensible structure begins with `abi_version` and
 `struct_size`; all packets are borrowed for the dynamic call only. The raw C
-handle has single-owner destroy semantics, while `voxa::MockRtc` makes reset
+handle has single-owner destroy semantics, while `muxiva::MockRtc` makes reset
 and destruction idempotent for C++ callers. Every exported C++ entry catches
 all exceptions.
 
@@ -17,7 +17,7 @@ owned copy before returning. V1 deliberately has no zero-copy SDK mode.
 
 ## Rust-owned external ingress
 
-Stage 8 adds the narrow `voxa_session_ingress_v1` contract to `voxa-ffi`.
+Stage 8 adds the narrow `muxiva_session_ingress_v1` contract to `muxiva-ffi`.
 Ingress handles are generation-checked, cloneable heap-owned references. They
 have fixed item and byte budgets, non-blocking `try_submit`, explicit close,
 stats, and a focused `try_pop` consumer hook. A busy queue mutex is treated as

@@ -1,21 +1,21 @@
-# Voxa Studio
+# Muxiva Studio
 
-Studio 是随 `voxa` CLI 发布的本地可视化开发环境。它编辑的就是校验器与
+Studio 是随 `muxiva` CLI 发布的本地可视化开发环境。它编辑的就是校验器与
 Runtime Compiler 使用的严格 Graph v1 文档，不存在浏览器专用图格式。
 
 ## 启动
 
 ```bash
-voxa studio
+muxiva studio
 ```
 
 无参数启动时，CLI 按顺序发现当前项目的 `graph.json`、独立的
-`voxa.graph.json`，以及 Voxa 源码仓库内的旗舰 Voice Agent。都不存在时会创建一份
-新的 `voxa.graph.json`，不会覆盖已有文件。也可以显式传入项目目录或 Graph：
+`muxiva.graph.json`，以及 Muxiva 源码仓库内的旗舰 Voice Agent。都不存在时会创建一份
+新的 `muxiva.graph.json`，不会覆盖已有文件。也可以显式传入项目目录或 Graph：
 
 ```bash
-voxa studio my-agent
-voxa studio path/to/graph.json
+muxiva studio my-agent
+muxiva studio path/to/graph.json
 ```
 
 Studio 允许打开尚未通过校验的 Graph，以便在画布和诊断面板中修复错误。
@@ -41,19 +41,19 @@ byte、signal 与 event Port 之间不允许错误连接。
 然后点击 **Save & Register**。
 
 ```text
-.voxa/nodes/my_python_node/
-├── voxa.node.json
+.muxiva/nodes/my_python_node/
+├── muxiva.node.json
 └── node.py
 ```
 
 Package 会立即进入当前项目的 Palette。Python Node 通过可信本地 Host 运行；
-符合 Voxa ABI v1、放在 `.voxa/native/<package_id>/` 的 C++ 动态库也会被严格核对
+符合 Muxiva ABI v1、放在 `.muxiva/native/<package_id>/` 的 C++ 动态库也会被严格核对
 Manifest 身份、版本、角色与 Port 后加载。TypeScript 与 Rust 项目源码目前仍需
 在 Studio 外构建为受支持的运行产物。
 
-选中项目 Node 后，Inspector 会展示 `.voxa/nodes/` 中保存的完整源码，并提供
-**Edit in Node Lab**。通过兼容配置 `.voxa/providers.json` 加载的官方 Node 会展示精确源码，
-但保持只读；项目自己的 `.voxa/nodes` 仍可编辑。选中编译内置 Node 时会展示精确 Factory 身份，并链接到
+选中项目 Node 后，Inspector 会展示 `.muxiva/nodes/` 中保存的完整源码，并提供
+**Edit in Node Lab**。通过兼容配置 `.muxiva/providers.json` 加载的官方 Node 会展示精确源码，
+但保持只读；项目自己的 `.muxiva/nodes` 仍可编辑。选中编译内置 Node 时会展示精确 Factory 身份，并链接到
 权威 Rust 实现。
 
 ## Runtime 可观测性
@@ -61,7 +61,7 @@ Manifest 身份、版本、角色与 Port 后加载。TypeScript 与 Rust 项目
 Runtime 面板展示回调次数与耗时、活跃或失败 Node、Edge 吞吐、队列占用、丢帧
 以及最终结果。Run 使用当前画布快照，不要求预先保存。
 
-若项目提供 `.voxa/web/index.html`，工具栏会出现 **Voice Room** 等项目体验入口。
+若项目提供 `.muxiva/web/index.html`，工具栏会出现 **Voice Room** 等项目体验入口。
 Studio 会先保存当前有效图，再打开项目页面。项目页面只能通过本地 Bearer Token
 访问；连接 Manifest 只有显式声明 `client_exposed: true` 的短期字段才能被读取，
 其余 API Key、Bot Token 和服务端凭据不会返回浏览器。

@@ -1,4 +1,4 @@
-# Voxa Stage 3 Frame and Ownership Contract
+# Muxiva Stage 3 Frame and Ownership Contract
 
 Status: **Approved implementation contract; production code not yet written**
 
@@ -21,8 +21,8 @@ ownership modes. It does not provide a Runtime that transports a Frame.
 
 ## 2. Scope boundary
 
-Stage 3 adds only dependency-light types in `voxa-types`, a construction and
-derivation example in `voxa-examples`, tests, and the Stage 3 report. It adds:
+Stage 3 adds only dependency-light types in `muxiva-types`, a construction and
+derivation example in `muxiva-examples`, tests, and the Stage 3 report. It adds:
 
 - strong `FrameId`, `EdgeId`, `ClockDomainId`, and `ProducerId` types without
   making any existing ID interchangeable;
@@ -51,7 +51,7 @@ deriving it on live Frames.
 The implementation is split by concern:
 
 ```text
-crates/voxa-types/src/
+crates/muxiva-types/src/
   id.rs                 Existing IDs plus FrameId, EdgeId, ClockDomainId, ProducerId
   time.rs               Timestamp ordering correction; checked scalar arithmetic
   schema.rs             SchemaVersion and namespaced-name validation
@@ -67,7 +67,7 @@ crates/voxa-types/src/
     message.rs          Text, byte, signal, and event payloads
 ```
 
-`voxa-types/src/lib.rs` is an export surface, not an implementation module.
+`muxiva-types/src/lib.rs` is an export surface, not an implementation module.
 The crate remains `#![forbid(unsafe_code)]` and gains no dependency beyond the
 Stage 2 dependency set.
 
@@ -84,14 +84,14 @@ They are distinct nominal types. In particular, a `FrameId` cannot satisfy an
 generic conversion to or from `String` because that would weaken separation.
 
 `SchemaVersion` is a private `u32` newtype. `SchemaVersion::new` rejects zero
-with `VOXA-FRM-SCHEMA-VERSION`; `get` returns the non-zero value. Stage 3 does
+with `MUXIVA-FRM-SCHEMA-VERSION`; `get` returns the non-zero value. Stage 3 does
 not parse semantic-version text for per-payload schemas.
 
 `NamespacedName` owns a `Box<str>` and accepts 3 through 255 ASCII bytes. It
 must have at least two non-empty dot-separated segments. Each segment starts
 with an ASCII letter or digit and thereafter contains only ASCII letters,
 digits, `_`, or `-`. It cannot end in `_` or `-`. This grammar accepts
-`com.example.trace`, `team.flow_pressure`, and `voxa.turn.interrupted`, while
+`com.example.trace`, `team.flow_pressure`, and `muxiva.turn.interrupted`, while
 rejecting hidden unqualified names. Extension keys, signal names, and event
 topics use this one type.
 
@@ -113,13 +113,13 @@ pub enum Value {
 ```
 
 `FiniteF64` has a private `f64` field. `FiniteF64::new(value)` rejects NaN and
-positive or negative infinity with `VOXA-FRM-VALUE-NUMBER`; `get` returns the
+positive or negative infinity with `MUXIVA-FRM-VALUE-NUMBER`; `get` returns the
 finite number. This keeps equality reflexive and avoids language-dependent
 non-finite number behavior. `ValueMap` privately wraps
 `BTreeMap<Box<str>, Value>` and exposes `empty`, `try_from_iter`, `get`, `iter`,
 `len`, and `is_empty`. Keys may be any non-empty string of at most 255 UTF-8
 bytes without ASCII controls; `try_from_iter` validates every key with
-`VOXA-FRM-VALUE-KEY`. Duplicate input keys return the same code rather than
+`MUXIVA-FRM-VALUE-KEY`. Duplicate input keys return the same code rather than
 silently replacing an earlier value. `Value::Map(ValueMap)` is therefore not
 an unchecked construction path. The ordered map makes diagnostics
 deterministic; it does not imply JSON support.
@@ -158,7 +158,7 @@ pub struct Extension {
 
 All fields have borrowed accessors. `Extensions` stores `Box<[Extension]>` in
 input order. `Extensions::try_from_iter` rejects a duplicate `(key,
-schema_version)` pair with `VOXA-FRM-EXTENSION-DUPLICATE`; multiple schema
+schema_version)` pair with `MUXIVA-FRM-EXTENSION-DUPLICATE`; multiple schema
 versions of one key may coexist during migration. `get` therefore takes both
 the key and schema version. `iter` exposes all records to a receiving Node,
 while `public_iter` exposes only records marked `Public`.
@@ -201,17 +201,17 @@ pub struct Lineage(Box<[LineageEntry]>);
 ```
 
 `TransformOrigin::new` requires at least one of Node or Edge and otherwise
-returns `VOXA-FRM-LINEAGE-ORIGIN`. This supports Node transformations, future
+returns `MUXIVA-FRM-LINEAGE-ORIGIN`. This supports Node transformations, future
 Edge policy replacements, and a replacement attributed to both.
 `LineageEntry::new` accepts a non-empty reason of at most 256 UTF-8 bytes and
-rejects ASCII controls with `VOXA-FRM-LINEAGE-REASON`. Reasons identify an
+rejects ASCII controls with `MUXIVA-FRM-LINEAGE-REASON`. Reasons identify an
 operation such as `normalize-volume`; they must not contain transcripts,
 credentials, media bytes, extension values, or other private payload data.
 
 `Lineage::empty`, `iter`, `len`, and `is_empty` are public. Only the crate's
 derivation path appends an entry. A new source Frame may have empty lineage.
 `FrameHeader::new` rejects a lineage entry whose parent equals the new
-`frame_id` with `VOXA-FRM-LINEAGE-CYCLE`. This local check does not claim to
+`frame_id` with `MUXIVA-FRM-LINEAGE-CYCLE`. This local check does not claim to
 prove ancestry across a distributed system.
 
 ## 8. Clock domains and common header
@@ -263,7 +263,7 @@ pub fn compare_timestamp(
 ```
 
 `FrameHeader::compare_timestamp` first compares complete `ClockDomain`
-values for equality. Different domains return `VOXA-FRM-CLOCK-DOMAIN`, even
+values for equality. Different domains return `MUXIVA-FRM-CLOCK-DOMAIN`, even
 when their `ClockKind` values match; equal domains compare the two signed
 nanosecond scalars and return `Ordering`. This method provides ordering only,
 not clock conversion or synchronization.
@@ -345,7 +345,7 @@ pub enum Frame {
 
 Each concrete wrapper exposes `header()` and its typed payload accessor.
 `Frame::new(header, payload)` returns the matching variant and rejects a
-header/payload mismatch with `VOXA-FRM-TYPE-MISMATCH`. `frame_type`, `header`,
+header/payload mismatch with `MUXIVA-FRM-TYPE-MISMATCH`. `frame_type`, `header`,
 and typed `as_*` borrowed accessors are available on `Frame`.
 `Frame::ensure_type(expected)` is the only Stage 3 type-gate helper. It returns
 the same mismatch code and is intended for a future Edge; it performs no graph
@@ -381,9 +381,9 @@ rejected. Every multiply and duration operation uses checked integer
 arithmetic before conversion to `usize`. Planar and interleaved layouts use
 the same total-length rule and immutable buffer. `AudioData::plane_bytes(0)`
 returns the entire interleaved buffer, and any other interleaved plane index
-returns `VOXA-FRM-AUDIO-PLANE`. For planar layout, the valid indices are
+returns `MUXIVA-FRM-AUDIO-PLANE`. For planar layout, the valid indices are
 `0..channels`, each returning its checked contiguous channel plane; an index
-outside that range returns `VOXA-FRM-AUDIO-PLANE`.
+outside that range returns `MUXIVA-FRM-AUDIO-PLANE`.
 
 ### 10.2 Video
 
@@ -425,20 +425,20 @@ the actual descriptor instances borrowed from that `VideoData` value's
 `layout()`. Membership uses safe reference identity, not equality of offset,
 stride, row-byte, and row scalars. Passing a descriptor borrowed from another
 Video Frame, even when its scalar fields describe the same range, returns
-`VOXA-FRM-VIDEO-PLANE`. A valid own-layout reference returns its full
+`MUXIVA-FRM-VIDEO-PLANE`. A valid own-layout reference returns its full
 stride-including immutable range after checked offset arithmetic.
 
 ### 10.3 Text, byte, signal, and event
 
 `TextData` owns `Box<str>`. `TextData::new` accepts a Rust string, and
 `TextData::from_utf8(FrameBuffer)` validates bytes and returns
-`VOXA-FRM-TEXT-UTF8` on failure. It does not retain the input buffer after
+`MUXIVA-FRM-TEXT-UTF8` on failure. It does not retain the input buffer after
 successful conversion.
 
 `MediaType` is an optional owned type/subtype value. Its constructor accepts
 1 through 127 ASCII bytes with one `/`, non-empty type and subtype, and only
 ASCII alphanumeric characters plus `!#$&^_.+-`; invalid values return
-`VOXA-FRM-MEDIA-TYPE`. `ByteData` is a `FrameBuffer` plus
+`MUXIVA-FRM-MEDIA-TYPE`. `ByteData` is a `FrameBuffer` plus
 `Option<MediaType>`; an empty opaque buffer is allowed.
 
 `SignalData` owns `name: NamespacedName`, `schema_version: SchemaVersion`,
@@ -451,33 +451,33 @@ subscription, bare-Value side channel, or JSON payload path.
 ## 11. Validation and stable errors
 
 All construction, access, comparison, and derivation validation failures use
-`ErrorCategory::Validation`, an existing `VoxaError`, and these stable codes:
+`ErrorCategory::Validation`, an existing `MuxivaError`, and these stable codes:
 
 | Code | Rejected condition |
 | --- | --- |
-| `VOXA-FRM-SCHEMA-VERSION` | zero schema version |
-| `VOXA-FRM-NAMESPACE` | invalid extension/signal/topic namespace |
-| `VOXA-FRM-VALUE-NUMBER` | non-finite floating point value |
-| `VOXA-FRM-VALUE-KEY` | invalid Value-map or Metadata key |
-| `VOXA-FRM-EXTENSION-DUPLICATE` | duplicate extension key and schema version |
-| `VOXA-FRM-LINEAGE-ORIGIN` | lineage has neither Node nor Edge source |
-| `VOXA-FRM-LINEAGE-REASON` | invalid lineage reason |
-| `VOXA-FRM-LINEAGE-CYCLE` | new header names itself as a parent |
-| `VOXA-FRM-CLOCK-DOMAIN` | timestamp comparison crosses clock domains |
-| `VOXA-FRM-TYPE-MISMATCH` | header, payload, or expected FrameType differs |
-| `VOXA-FRM-AUDIO-RATE` | sample rate outside 1..=768,000 |
-| `VOXA-FRM-AUDIO-CHANNELS` | channel count outside 1..=1,024 |
-| `VOXA-FRM-AUDIO-SAMPLES` | zero samples per channel |
-| `VOXA-FRM-AUDIO-LENGTH` | payload length differs from checked expected length |
-| `VOXA-FRM-AUDIO-PLANE` | audio plane index is not part of the layout |
-| `VOXA-FRM-VIDEO-DIMENSIONS` | zero dimensions or odd YUV420P dimensions |
-| `VOXA-FRM-VIDEO-STRIDE` | a stride is smaller than its row bytes |
-| `VOXA-FRM-VIDEO-LENGTH` | payload length differs from checked plane total |
-| `VOXA-FRM-VIDEO-PLANE` | plane descriptor does not belong to the VideoData layout |
-| `VOXA-FRM-ARITHMETIC` | checked size, offset, or duration arithmetic overflow |
-| `VOXA-FRM-TEXT-UTF8` | invalid UTF-8 text bytes |
-| `VOXA-FRM-MEDIA-TYPE` | invalid optional media type |
-| `VOXA-FRM-DERIVATION-ID` | a derivation reuses its direct parent's FrameId |
+| `MUXIVA-FRM-SCHEMA-VERSION` | zero schema version |
+| `MUXIVA-FRM-NAMESPACE` | invalid extension/signal/topic namespace |
+| `MUXIVA-FRM-VALUE-NUMBER` | non-finite floating point value |
+| `MUXIVA-FRM-VALUE-KEY` | invalid Value-map or Metadata key |
+| `MUXIVA-FRM-EXTENSION-DUPLICATE` | duplicate extension key and schema version |
+| `MUXIVA-FRM-LINEAGE-ORIGIN` | lineage has neither Node nor Edge source |
+| `MUXIVA-FRM-LINEAGE-REASON` | invalid lineage reason |
+| `MUXIVA-FRM-LINEAGE-CYCLE` | new header names itself as a parent |
+| `MUXIVA-FRM-CLOCK-DOMAIN` | timestamp comparison crosses clock domains |
+| `MUXIVA-FRM-TYPE-MISMATCH` | header, payload, or expected FrameType differs |
+| `MUXIVA-FRM-AUDIO-RATE` | sample rate outside 1..=768,000 |
+| `MUXIVA-FRM-AUDIO-CHANNELS` | channel count outside 1..=1,024 |
+| `MUXIVA-FRM-AUDIO-SAMPLES` | zero samples per channel |
+| `MUXIVA-FRM-AUDIO-LENGTH` | payload length differs from checked expected length |
+| `MUXIVA-FRM-AUDIO-PLANE` | audio plane index is not part of the layout |
+| `MUXIVA-FRM-VIDEO-DIMENSIONS` | zero dimensions or odd YUV420P dimensions |
+| `MUXIVA-FRM-VIDEO-STRIDE` | a stride is smaller than its row bytes |
+| `MUXIVA-FRM-VIDEO-LENGTH` | payload length differs from checked plane total |
+| `MUXIVA-FRM-VIDEO-PLANE` | plane descriptor does not belong to the VideoData layout |
+| `MUXIVA-FRM-ARITHMETIC` | checked size, offset, or duration arithmetic overflow |
+| `MUXIVA-FRM-TEXT-UTF8` | invalid UTF-8 text bytes |
+| `MUXIVA-FRM-MEDIA-TYPE` | invalid optional media type |
+| `MUXIVA-FRM-DERIVATION-ID` | a derivation reuses its direct parent's FrameId |
 
 Errors attach non-sensitive dimensions such as expected/actual length through
 `with_context`; they do not attach payload bytes, text, Value contents, or
@@ -534,7 +534,7 @@ must begin from `public_view` or a separately reviewed DTO.
 
 ## 14. Minimal Stage 3 example
 
-`cargo run -p voxa-examples --bin frames` constructs one interleaved mono
+`cargo run -p muxiva-examples --bin frames` constructs one interleaved mono
 `I16Le` Audio Frame, attaches one unknown public extension and one private
 extension, derives a second Audio Frame with a replacement buffer and lineage,
 and prints only its log-safe summary. The example asserts that the parent is
@@ -552,7 +552,7 @@ timestamp correction required by the Frame clock-domain contract:
   broad default-log privacy boundary is not quality-clean. The Frame example
   avoids this surface and prints only `LogSafeFrameView`.
 - `ErrorContext::Session` and `ErrorContext::Stream` still lack public
-  `VoxaError` builder methods.
+  `MuxivaError` builder methods.
 - tracing-output capture, concurrent and pre-installed subscriber behavior,
   identifier boundary coverage, event-name grammar wording, stale
   implementation-plan logging syntax, and literal-versus-summarized
@@ -577,7 +577,7 @@ Stage 3 is accepted only when:
 - invalid sample rates, channel counts, sample counts, payload lengths,
   audio/video plane requests, dimensions, strides, UTF-8, namespaces, media
   types, and every reachable arithmetic overflow return the tabled
-  `VoxaError` code;
+  `MuxivaError` code;
 - bare `Timestamp` ordering does not compile, same-domain header comparison
   orders signed nanoseconds, and different clock-domain IDs reject comparison;
 - clone/move, Arc sharing, last-clone release, and concurrent read tests pass;

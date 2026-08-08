@@ -4,7 +4,7 @@ A real-time agent does more than pass A's output to B. It must decide what happe
 consumer slows down, how an interruption stops an old answer, and which messages belong to
 the business pipeline versus observability.
 
-Voxa separates the data plane from the control plane:
+Muxiva separates the data plane from the control plane:
 
 ```mermaid
 flowchart LR
@@ -29,7 +29,7 @@ Edges and invokes their `on_signal`. Core does not interpret Signal names or exe
 policy. A Signal is not a process-global broadcast.
 
 A common example is barge-in. Qwen Realtime or a VAD Node emits
-`voxa.voice.speech.started`. The Qwen Node cancels its own generation and discards late chunks;
+`muxiva.voice.speech.started`. The Qwen Node cancels its own generation and discards late chunks;
 the Agora Audio Sink clears playback when it receives the same Signal. Runtime only delivers it.
 
 ## EventBus lets observers see what happened
@@ -59,7 +59,7 @@ Every Edge queue has a fixed capacity. A full queue follows an explicit policy:
 | `abort` | Fail and begin shutdown | Protocols where loss is unacceptable |
 
 An unlimited queue appears lossless but turns a short slowdown into high latency and unbounded
-memory use. Voxa makes capacity and policy explicit so latency, completeness, and failure
+memory use. Muxiva makes capacity and policy explicit so latency, completeness, and failure
 behavior remain predictable.
 
 ## Application turns and interruption

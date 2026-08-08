@@ -323,44 +323,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
-name = "voxa-core"
+name = "muxiva-core"
 version = "0.1.0"
 dependencies = [
  "tracing",
  "tracing-subscriber",
- "voxa-types",
+ "muxiva-types",
 ]
 
 [[package]]
-name = "voxa-ffi"
+name = "muxiva-ffi"
 version = "0.1.0"
 dependencies = [
- "voxa-core",
- "voxa-types",
+ "muxiva-core",
+ "muxiva-types",
 ]
 
 [[package]]
-name = "voxa-fuzz"
+name = "muxiva-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
- "voxa-ffi",
- "voxa-graph-json",
- "voxa-types",
+ "muxiva-ffi",
+ "muxiva-graph-json",
+ "muxiva-types",
 ]
 
 [[package]]
-name = "voxa-graph-json"
+name = "muxiva-graph-json"
 version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "voxa-core",
- "voxa-types",
+ "muxiva-core",
+ "muxiva-types",
 ]
 
 [[package]]
-name = "voxa-types"
+name = "muxiva-types"
 version = "0.1.0"
 dependencies = [
  "thiserror",

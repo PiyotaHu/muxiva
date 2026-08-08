@@ -1,7 +1,7 @@
-# 语音 Demo 凭据：从申请到填入 Voxa
+# 语音 Demo 凭据：从申请到填入 Muxiva
 
 这是一份可以逐项照做的首次运行清单。最终你需要自己取得 **5 个值**：Agora App ID、
-两个 RTC Token、百炼 API Key、百炼 Workspace ID。Channel 和两个 UID 使用 Voxa 的
+两个 RTC Token、百炼 API Key、百炼 Workspace ID。Channel 和两个 UID 使用 Muxiva 的
 预设值即可。
 
 !!! warning "先别点击 Run"
@@ -10,18 +10,18 @@
 
 ## 一眼看懂：什么填到哪里
 
-| 服务 | Voxa 字段 | 首次运行填什么 |
+| 服务 | Muxiva 字段 | 首次运行填什么 |
 | --- | --- | --- |
 | Agora | App ID | Agora 项目的 32 位 App ID |
-| Agora | Channel | `voxa-demo` |
+| Agora | Channel | `muxiva-demo` |
 | Agora | Browser UID | `1001` |
-| Agora | Browser Token | 为 Channel `voxa-demo`、UID `1001` 生成的 RTC Token |
-| Agora | Voxa Bot UID | `2001` |
-| Agora | Voxa Bot Token | 为 Channel `voxa-demo`、UID `2001` 生成的 RTC Token |
+| Agora | Browser Token | 为 Channel `muxiva-demo`、UID `1001` 生成的 RTC Token |
+| Agora | Muxiva Bot UID | `2001` |
+| Agora | Muxiva Bot Token | 为 Channel `muxiva-demo`、UID `2001` 生成的 RTC Token |
 | 百炼 | API Key | 华北 2（北京）业务空间创建的按量付费 API Key |
 | 百炼 | Workspace ID | 上述 API Key 所属业务空间的 ID |
 
-Agora **App Certificate 不填入 Voxa**。它只在 Token Builder 中生成 Token 时使用。
+Agora **App Certificate 不填入 Muxiva**。它只在 Token Builder 中生成 Token 时使用。
 
 ## A. 申请 Agora App ID 与两个 Token
 
@@ -54,14 +54,14 @@ Agora 官方的[账号和项目指南](https://docs.agora.io/en/realtime-media/v
 | App Certificate | Primary Certificate | 同一个 Certificate |
 | User ID / UID | `1001` | `2001` |
 | Token expiration time | `3600`（首次测试一小时） | `3600` |
-| Channel name | `voxa-demo` | `voxa-demo` |
-| 生成结果填入 Studio | Browser Token | Voxa Bot Token |
+| Channel name | `muxiva-demo` | `muxiva-demo` |
+| 生成结果填入 Studio | Browser Token | Muxiva Bot Token |
 
 !!! important "Channel 不需要提前创建"
-    `voxa-demo` 只是双方约定的房间名。它区分大小写；Token Builder、Studio 和所有客户端
+    `muxiva-demo` 只是双方约定的房间名。它区分大小写；Token Builder、Studio 和所有客户端
     必须逐字符一致。两个 Token 与 UID 绑定，不能交换使用。
 
-Agora Console 也提供 **Generate Temp Token**。为了让 Voxa 的浏览器与 Bot 使用明确且
+Agora Console 也提供 **Generate Temp Token**。为了让 Muxiva 的浏览器与 Bot 使用明确且
 不同的数字 UID，首次运行推荐使用上面的 Token Builder 分别生成两个 UID Token。
 
 ## B. 申请阿里云百炼 API Key 与 Workspace ID
@@ -70,7 +70,7 @@ Agora Console 也提供 **Generate Temp Token**。为了让 Voxa 的浏览器与
 
 1. 登录[阿里云百炼控制台](https://bailian.console.aliyun.com/)。
 2. 如果提示未开通或未实名认证，先按页面提示完成。
-3. 在页面右上角将地域切换为 **华北 2（北京）**。Voxa 当前 Qwen Node 使用北京
+3. 在页面右上角将地域切换为 **华北 2（北京）**。Muxiva 当前 Qwen Node 使用北京
    Workspace 专属端点，之后不要切换地域。
 
 ### B2. 创建 API Key
@@ -80,7 +80,7 @@ Agora Console 也提供 **Generate Temp Token**。为了让 Voxa 的浏览器与
 3. 创建后立即复制完整 Key。关闭弹窗后通常不能再次查看明文；丢失时应重置或新建。
 4. 将它填入 Studio 的 **Alibaba Cloud Model Studio → API Key**。
 
-官方步骤：[如何获取 API Key](https://help.aliyun.com/zh/model-studio/get-api-key/)。Voxa
+官方步骤：[如何获取 API Key](https://help.aliyun.com/zh/model-studio/get-api-key/)。Muxiva
 需要的是百炼按量付费 API Key，不是 Coding Plan 或 Token Plan 的专用 Key。
 
 ### B3. 复制同一业务空间的 Workspace ID
@@ -94,13 +94,13 @@ Agora Console 也提供 **Generate Temp Token**。为了让 Voxa 的浏览器与
 官方步骤：[获取 Workspace ID](https://help.aliyun.com/zh/model-studio/obtain-the-app-id-and-workspace-id)。
 API Key 和 Workspace ID 若跨地域或跨业务空间组合，WebSocket 会鉴权失败。
 
-这里没有“下载 Qwen SDK”步骤。Voxa 的 Python Node 直接调用百炼官方 WebSocket/HTTP
+这里没有“下载 Qwen SDK”步骤。Muxiva 的 Python Node 直接调用百炼官方 WebSocket/HTTP
 协议，`setup.sh` 会安装所需 Python 依赖。
 
-## C. 在 Voxa 中只填写一次
+## C. 在 Muxiva 中只填写一次
 
 ```bash
-cd /你的路径/Voxa
+cd /你的路径/Muxiva
 ./examples/voice-agent/run.sh
 ```
 
@@ -115,12 +115,12 @@ cd /你的路径/Voxa
 启动会自动读取，不需要重复填写。文件形状如下，值不要提交：
 
 ```dotenv
-VOXA_AGORA_APP_ID="..."
-VOXA_AGORA_CHANNEL="voxa-demo"
-VOXA_AGORA_WEB_UID="1001"
-VOXA_AGORA_WEB_TOKEN="..."
-VOXA_AGORA_BOT_UID="2001"
-VOXA_AGORA_BOT_TOKEN="..."
+MUXIVA_AGORA_APP_ID="..."
+MUXIVA_AGORA_CHANNEL="muxiva-demo"
+MUXIVA_AGORA_WEB_UID="1001"
+MUXIVA_AGORA_WEB_TOKEN="..."
+MUXIVA_AGORA_BOT_UID="2001"
+MUXIVA_AGORA_BOT_TOKEN="..."
 DASHSCOPE_API_KEY="..."
 DASHSCOPE_WORKSPACE_ID="..."
 ```
@@ -128,18 +128,18 @@ DASHSCOPE_WORKSPACE_ID="..."
 ## D. 如何确认配置和定位失败
 
 ```bash
-voxa doctor --voice
-tail -f examples/voice-agent/.voxa/runtime.log
+muxiva doctor --voice
+tail -f examples/voice-agent/.muxiva/runtime.log
 ```
 
 `doctor` 只检查工具链、官方 Node 和凭据是否存在，不会替你创建 Token，也不会输出密钥。
 真实会话按以下顺序定位：
 
 1. Voice Room：`Browser joined Agora`、`microphone published`；
-2. 日志：`[VOXA][AGORA][participant.joined] uid=1001`；
-3. 日志：`[VOXA][AGORA][audio.received]`；
-4. 日志：`[VOXA][QWEN][event] type=input_audio_buffer.speech_started`；
-5. 日志：`response.created`、`[VOXA][AGORA][data.published]` 和音频输出开始增长；
+2. 日志：`[MUXIVA][AGORA][participant.joined] uid=1001`；
+3. 日志：`[MUXIVA][AGORA][audio.received]`；
+4. 日志：`[MUXIVA][QWEN][event] type=input_audio_buffer.speech_started`；
+5. 日志：`response.created`、`[MUXIVA][AGORA][data.published]` 和音频输出开始增长；
 6. Voice Room 的 Client Messages 持续增长，左右两侧聊天消息正常显示。
 
 | 现象 | 优先检查 |

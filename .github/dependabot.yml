@@ -56,7 +56,7 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: pip
-    directory: "/crates/voxa-python"
+    directory: "/crates/muxiva-python"
     schedule:
       interval: weekly
       day: monday

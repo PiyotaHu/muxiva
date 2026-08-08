@@ -24,9 +24,9 @@ class EventFrame:
         self.schema_version, self.sequence = schema_version, sequence
 
 
-shim = types.ModuleType("voxa")
+shim = types.ModuleType("muxiva")
 shim.AudioFrame, shim.TextFrame, shim.EventFrame = AudioFrame, TextFrame, EventFrame
-sys.modules["voxa"] = shim
+sys.modules["muxiva"] = shim
 root = pathlib.Path(__file__).parents[1] / "nodes"
 
 
@@ -63,7 +63,7 @@ class CascadeNodeTests(unittest.TestCase):
     def test_asr_emits_only_completed_transcript(self):
         transport = FakeTransport([
             {"type": "conversation.item.input_audio_transcription.delta", "text": "你"},
-            {"type": "conversation.item.input_audio_transcription.completed", "transcript": "你好 Voxa"},
+            {"type": "conversation.item.input_audio_transcription.completed", "transcript": "你好 Muxiva"},
         ])
         node = asr.QwenAsrRealtimeNode({}, lambda *_: transport)
         with mock.patch.dict(os.environ, self.credentials): node.on_prepare()
@@ -71,15 +71,15 @@ class CascadeNodeTests(unittest.TestCase):
         node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=9), ctx)
         self.assertEqual(transport.sent[0]["type"], "input_audio_buffer.append")
         text = [frame.text for port, frame in ctx.emissions if port == "text_out"]
-        self.assertEqual(text, ["你好 Voxa"])
+        self.assertEqual(text, ["你好 Muxiva"])
         self.assertTrue(any(port == "client_event_out" for port, _ in ctx.emissions))
-        self.assertEqual(ctx.events[0][0], "voxa.voice.transcript.completed")
+        self.assertEqual(ctx.events[0][0], "muxiva.voice.transcript.completed")
 
     def test_llm_forwards_each_sse_delta_through_ctx(self):
         class Client:
             def stream(self, endpoint, key, payload):
                 self.request = endpoint, key, payload
-                return iter(["你好", "，", "我是 Voxa。"])
+                return iter(["你好", "，", "我是 Muxiva。"])
         client = Client()
         node = llm.QwenLlmStreamNode({}, lambda: client)
         ctx = Context()
@@ -87,11 +87,11 @@ class CascadeNodeTests(unittest.TestCase):
             node.on_process(TextFrame("你是谁？", sequence=3), ctx)
         self.assertEqual(
             [frame.text for port, frame in ctx.emissions if port == "text_out"],
-            ["你好，我是 Voxa。"],
+            ["你好，我是 Muxiva。"],
         )
         self.assertTrue(client.request[2]["stream"])
-        self.assertEqual(ctx.events[0][0], "voxa.voice.response.delta")
-        self.assertEqual(ctx.events[-1][0], "voxa.voice.response.completed")
+        self.assertEqual(ctx.events[0][0], "muxiva.voice.response.delta")
+        self.assertEqual(ctx.events[-1][0], "muxiva.voice.response.completed")
 
     def test_tts_converts_audio_delta_to_24k_pcm(self):
         transport = FakeTransport([
@@ -109,10 +109,10 @@ class CascadeNodeTests(unittest.TestCase):
 
     def test_manifests_reference_the_shared_connection_contract(self):
         import json
-        provider = json.loads((pathlib.Path(__file__).parents[2] / "voxa.provider.json").read_text())
+        provider = json.loads((pathlib.Path(__file__).parents[2] / "muxiva.provider.json").read_text())
         self.assertEqual(provider["connections"][0]["id"], "dashscope")
         for package in ("qwen_realtime", "qwen_asr_realtime", "qwen_llm_stream", "qwen_tts_realtime"):
-            manifest = json.loads((root / package / "voxa.node.json").read_text())
+            manifest = json.loads((root / package / "muxiva.node.json").read_text())
             self.assertNotIn("provider_id", manifest)
             self.assertEqual(manifest["connection_id"], "dashscope")
             self.assertNotIn("connection", manifest)

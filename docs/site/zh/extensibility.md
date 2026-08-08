@@ -1,13 +1,13 @@
 # Node 扩展机制
 
-Node 是 Voxa 的扩展单元。开发者不需要修改 Runtime 才能加入 ASR、工具调用、数据库、
+Node 是 Muxiva 的扩展单元。开发者不需要修改 Runtime 才能加入 ASR、工具调用、数据库、
 音频处理或自研模型；只需实现统一生命周期，并把实现注册成可发现的 Node Factory。
 
 ## 从源码到运行实例
 
 ```mermaid
 flowchart LR
-    CODE["Node 源码"] --> MANIFEST["voxa.node.json<br/>契约与元数据"]
+    CODE["Node 源码"] --> MANIFEST["muxiva.node.json<br/>契约与元数据"]
     MANIFEST --> PACK["Node Package"]
     PACK --> DISCOVER["CLI / Studio 发现"]
     DISCOVER --> REGISTRY["Registry 注册 Factory"]
@@ -22,7 +22,7 @@ flowchart LR
 
 ## Manifest 是 Studio 与 Runtime 的共同契约
 
-`voxa.node/v1` 至少回答这些问题：
+`muxiva.node/v1` 至少回答这些问题：
 
 | 字段 | 作用 |
 | --- | --- |
@@ -57,17 +57,17 @@ Event。Node 不直接调用下游 Node，不持有 Edge Queue，也不绕过 Ru
 
 ## 发现位置
 
-Studio 和 CLI 从受信任的目录发现 Package，包括项目内 `.voxa/nodes/` 和已配置的
+Studio 和 CLI 从受信任的目录发现 Package，包括项目内 `.muxiva/nodes/` 和已配置的
 官方 Node Root。Node Library 展示 Manifest、Port Schema、配置项和源码；开发者可以
 在 Studio 创建或编辑项目 Node，再导入 Library 并放到画布中。
 
 ## 推荐开发流程
 
 1. 先定义输入输出和失败语义；
-2. 创建 `voxa.node.json` 和最小实现；
-3. 使用 `voxa studio` 导入并检查 Port 与配置表单；
+2. 创建 `muxiva.node.json` 和最小实现；
+3. 使用 `muxiva studio` 导入并检查 Port 与配置表单；
 4. 把 Node 连入示例 Graph；
-5. 使用 `voxa validate <project>` 检查身份、类型和拓扑；
+5. 使用 `muxiva validate <project>` 检查身份、类型和拓扑；
 6. 用测试工具覆盖正常、慢下游、取消和错误路径；
 7. 作为项目 Node 或官方 Node Pack 分发。
 

@@ -1,8 +1,8 @@
 {
-  "version": "voxa.graph/v1",
+  "version": "muxiva.graph/v1",
   "graph_id": "voice-agent-workbench",
   "nodes": [
-    { "id": "source", "node_type": "builtin.text_source", "language": "rust", "factory_version": "1.0.0", "node_config": { "text": "Choose a Voice Graph template in Voxa Studio." } },
+    { "id": "source", "node_type": "builtin.text_source", "language": "rust", "factory_version": "1.0.0", "node_config": { "text": "Choose a Voice Graph template in Muxiva Studio." } },
     { "id": "sink", "node_type": "builtin.stdout_text_sink", "language": "rust", "factory_version": "1.0.0", "node_config": {} }
   ],
   "edges": [

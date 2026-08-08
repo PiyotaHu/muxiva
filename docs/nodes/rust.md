@@ -1,12 +1,12 @@
 # Rust Node development
 
 Use **Studio → Create Node → Rust** to generate a package skeleton. Rust Nodes
-implement `voxa_core::Node`; third-party binary packages must cross Voxa's
+implement `muxiva_core::Node`; third-party binary packages must cross Muxiva's
 stable C ABI rather than relying on Rust's unstable dynamic ABI.
 
 ```rust
-use voxa_core::{Node, NodeContext};
-use voxa_types::Frame;
+use muxiva_core::{Node, NodeContext};
+use muxiva_types::Frame;
 
 pub struct MyNode;
 
@@ -15,7 +15,7 @@ impl Node for MyNode {
         &mut self,
         input: Option<Frame>,
         context: &mut NodeContext,
-    ) -> voxa_types::Result<()> {
+    ) -> muxiva_types::Result<()> {
         // Validate the input and emit through a declared output Port.
         Ok(())
     }

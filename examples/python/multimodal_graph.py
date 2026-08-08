@@ -1,7 +1,7 @@
 """Schema-driven Python Source with four typed output ports and foreign Sinks."""
 
 import json
-import voxa
+import muxiva
 
 
 class Source:
@@ -10,10 +10,10 @@ class Source:
 
     def on_process(self):
         return {
-            "audio_out": voxa.AudioFrame(b"\0\0", 8000, 1, 1),
-            "video_out": voxa.VideoFrame(b"\xff\0\0\xff", 1, 1),
-            "byte_out": voxa.ByteFrame(b"voxa", media_type="application/octet-stream"),
-            "text_out": voxa.TextFrame(self.label),
+            "audio_out": muxiva.AudioFrame(b"\0\0", 8000, 1, 1),
+            "video_out": muxiva.VideoFrame(b"\xff\0\0\xff", 1, 1),
+            "byte_out": muxiva.ByteFrame(b"muxiva", media_type="application/octet-stream"),
+            "text_out": muxiva.TextFrame(self.label),
         }
 
 
@@ -27,7 +27,7 @@ source_ports = [
     {"name": f"{kind}_out", "direction": "output", "frame_type": kind}
     for kind in TYPES
 ]
-factories = [voxa.GraphNodeFactory(
+factories = [muxiva.GraphNodeFactory(
     "example.python.multimodal-source", Source, kind="source",
     ports_json=json.dumps(source_ports), pass_config=True,
     config_schema_json='{"type":"object"}',
@@ -40,12 +40,12 @@ nodes = [{
 edges = []
 for kind in TYPES:
     node_type = f"example.python.{kind}-sink"
-    factories.append(voxa.GraphNodeFactory(
+    factories.append(muxiva.GraphNodeFactory(
         node_type, Sink, kind="sink",
         ports_json=json.dumps([{"name": "in", "direction": "input", "frame_type": kind}]),
     ))
     nodes.append({"id": f"{kind}-sink", "node_type": node_type, "language": "python", "factory_version": "1.0.0", "node_config": {}})
     edges.append({"id": kind, "from": {"node_id": "source", "port": f"{kind}_out"}, "to": {"node_id": f"{kind}-sink", "port": "in"}, "frame_type": kind, "queue_policy": {"capacity": 8, "overflow": "block"}})
 
-graph = json.dumps({"version": "voxa.graph/v1", "graph_id": "python-multimodal", "nodes": nodes, "edges": edges})
-print(f"completed with {voxa.run_graph(graph, factories)} workers")
+graph = json.dumps({"version": "muxiva.graph/v1", "graph_id": "python-multimodal", "nodes": nodes, "edges": edges})
+print(f"completed with {muxiva.run_graph(graph, factories)} workers")

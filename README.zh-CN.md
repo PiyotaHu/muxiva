@@ -1,25 +1,25 @@
-# Voxa
+# Muxiva
 
 > 一个以 Rust 为核心的实时多模态 Agent Runtime，让 Rust、C++、Python 与 TypeScript 共享同一套图、生命周期和安全边界。
 
-[English](README.md) · [中文文档](https://piyotahu.github.io/Voxa/zh/) · [系统架构](https://piyotahu.github.io/Voxa/zh/concepts/) · [旗舰语音 Demo](https://piyotahu.github.io/Voxa/zh/voice-demo/) · [开发 Node](https://piyotahu.github.io/Voxa/zh/nodes/) · [Studio](https://piyotahu.github.io/Voxa/zh/studio/) · [Graph v1](https://piyotahu.github.io/Voxa/zh/graph/) · [测试体系](https://piyotahu.github.io/Voxa/zh/testing/)
+[English](README.md) · [中文文档](https://piyotahu.github.io/muxiva/zh/) · [系统架构](https://piyotahu.github.io/muxiva/zh/concepts/) · [旗舰语音 Demo](https://piyotahu.github.io/muxiva/zh/voice-demo/) · [开发 Node](https://piyotahu.github.io/muxiva/zh/nodes/) · [Studio](https://piyotahu.github.io/muxiva/zh/studio/) · [Graph v1](https://piyotahu.github.io/muxiva/zh/graph/) · [测试体系](https://piyotahu.github.io/muxiva/zh/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
-[![CI](https://github.com/PiyotaHu/Voxa/actions/workflows/ci.yml/badge.svg)](https://github.com/PiyotaHu/Voxa/actions/workflows/ci.yml)
-[![Bindings](https://github.com/PiyotaHu/Voxa/actions/workflows/bindings.yml/badge.svg)](https://github.com/PiyotaHu/Voxa/actions/workflows/bindings.yml)
-[![Documentation](https://github.com/PiyotaHu/Voxa/actions/workflows/docs.yml/badge.svg)](https://piyotahu.github.io/Voxa/)
+[![CI](https://github.com/PiyotaHu/muxiva/actions/workflows/ci.yml/badge.svg)](https://github.com/PiyotaHu/muxiva/actions/workflows/ci.yml)
+[![Bindings](https://github.com/PiyotaHu/muxiva/actions/workflows/bindings.yml/badge.svg)](https://github.com/PiyotaHu/muxiva/actions/workflows/bindings.yml)
+[![Documentation](https://github.com/PiyotaHu/muxiva/actions/workflows/docs.yml/badge.svg)](https://piyotahu.github.io/muxiva/)
 ![Rust](https://img.shields.io/badge/Rust-1.85%2B-black?logo=rust)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-blue?logo=cplusplus)
 ![Python](https://img.shields.io/badge/Python-3.13-tested-blue?logo=python)
 ![Node.js](https://img.shields.io/badge/Node.js-22-tested-green?logo=nodedotjs)
 
-Voxa 是一个早期阶段的实时多模态 Agent Runtime，用静态处理图构建语音、视频、文本和二进制流应用。Rust 统一负责调度、有界队列、背压、生命周期、取消、Signal、Event、关闭和可观测性；节点和 Adapter 可以使用 Rust、C++、Python 或 TypeScript 编写，语言对象不会跨越 Runtime 边界。
+Muxiva 是一个早期阶段的实时多模态 Agent Runtime，用静态处理图构建语音、视频、文本和二进制流应用。Rust 统一负责调度、有界队列、背压、生命周期、取消、Signal、Event、关闭和可观测性；节点和 Adapter 可以使用 Rust、C++、Python 或 TypeScript 编写，语言对象不会跨越 Runtime 边界。
 
 项目目前提供经过测试的基础 Runtime，以及应用层 Qwen + Agora 真实语音门面应用，
 但尚未达到生产级 Agent 平台标准。
 
-## 为什么选择 Voxa
+## 为什么选择 Muxiva
 
 - **单一 Runtime Core：**调度和安全语义统一由 Rust 实现。
 - **单一数据模型：**不可变 `Frame` 承载音频、视频、文本、字节、Signal 和 Event。
@@ -30,7 +30,7 @@ Voxa 是一个早期阶段的实时多模态 Agent Runtime，用静态处理图�
 
 ## 项目状态
 
-Voxa 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部分公开 API 与集成仍有意保持受限。
+Muxiva 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部分公开 API 与集成仍有意保持受限。
 
 | 领域 | 状态 | 当前边界 |
 | --- | --- | --- |
@@ -48,7 +48,7 @@ Voxa 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部
 
 ## 架构
 
-[![Voxa 系统架构](docs/site/zh/assets/architecture/voxa-system-overview.png)](https://piyotahu.github.io/Voxa/zh/concepts/)
+[![Muxiva 系统架构](docs/site/zh/assets/architecture/muxiva-system-overview.png)](https://piyotahu.github.io/muxiva/zh/concepts/)
 
 这张图从上到下描述完整系统：产品入口声明 Graph 并发现 Node Factory；厂商无关的
 Rust Core 编译和执行 Graph；Rust、C++、Python 与 TypeScript Node 提供可替换能力；
@@ -56,8 +56,8 @@ RTC、模型 API 与 Token 服务留在 Core 之外。蓝色实线表示数据�
 Signal 控制，灰色点线表示进程内 EventBus 可观测信息。
 
 ASR、LLM、TTS、Transport、Codec 和厂商“Provider”都不是 Runtime Core 的职责。
-请继续阅读[系统全景与核心概念串讲](https://piyotahu.github.io/Voxa/zh/concepts/)，
-或打开[可编辑 Draw.io 源文件](docs/site/zh/assets/architecture/voxa-system-overview.drawio)。
+请继续阅读[系统全景与核心概念串讲](https://piyotahu.github.io/muxiva/zh/concepts/)，
+或打开[可编辑 Draw.io 源文件](docs/site/zh/assets/architecture/muxiva-system-overview.drawio)。
 
 ## 快速开始
 
@@ -68,13 +68,13 @@ ASR、LLM、TTS、Transport、Codec 和厂商“Provider”都不是 Runtime Cor
 - 可选：CPython 3.13 与 maturin，用于 Python Binding
 - 可选：Node.js 22 与 pnpm，用于 Node-API Binding
 
-### 一次安装 `voxa` CLI
+### 一次安装 `muxiva` CLI
 
 ```bash
-git clone https://github.com/PiyotaHu/Voxa.git voxa
-cd voxa
-cargo install --locked --path crates/voxa-cli
-voxa --version
+git clone https://github.com/PiyotaHu/muxiva.git muxiva
+cd muxiva
+cargo install --locked --path crates/muxiva-cli
+muxiva --version
 ```
 
 首次二进制 Release 发布前，安装过程会从源码构建 CLI。完成这一次安装后，
@@ -92,17 +92,17 @@ voxa --version
 
 在 Studio 选择图、填写 **Connections**、点击 **Run**，然后打开 **Voice Room**。完整安装流程、
 双身份共享 RTC Session 模型、安全边界和离线门禁见
-[旗舰语音 Demo 指南](https://piyotahu.github.io/Voxa/zh/voice-demo/)。
+[旗舰语音 Demo 指南](https://piyotahu.github.io/muxiva/zh/voice-demo/)。
 
 ### 创建、校验并运行 Graph
 
 ```bash
-voxa init my-agent
-voxa validate my-agent
-voxa run my-agent
+muxiva init my-agent
+muxiva validate my-agent
+muxiva run my-agent
 ```
 
-`voxa init` 会创建完整项目目录。`voxa validate` 是无副作用的，不会创建或启动 Node。`voxa run` 会使用内置
+`muxiva init` 会创建完整项目目录。`muxiva validate` 是无副作用的，不会创建或启动 Node。`muxiva run` 会使用内置
 Registry 编译 Graph，实例化每个精确版本的 Factory，并通过并发 Runtime
 真正执行。默认执行期限为 30 秒；可用 `--timeout-ms` 和
 `--shutdown-timeout-ms` 设置有界的执行与清理等待时间。
@@ -110,15 +110,15 @@ Registry 编译 Graph，实例化每个精确版本的 Factory，并通过并发
 ### 启动本地可视化 Studio
 
 ```bash
-voxa studio
+muxiva studio
 ```
 
-无参数时会自动发现当前项目；在 Voxa 仓库根目录会直接打开旗舰 Voice Agent。
+无参数时会自动发现当前项目；在 Muxiva 仓库根目录会直接打开旗舰 Voice Agent。
 Studio 会打开内置 Graph v1 可视化编辑器。开发者可以把 Node 从 Palette
 拖进画布，在类型兼容的端口之间直接拉线，也可以点击 **Create Node**，在网页里
 编辑代码、声明端口并保存注册到项目 Node Library。当前文本 Python Node 可由
 可信本地开发 Host 直接运行。Studio 默认只监听 `127.0.0.1` 并生成本地访问
-Token。详见 [Studio 指南](https://piyotahu.github.io/Voxa/zh/studio/)。
+Token。详见 [Studio 指南](https://piyotahu.github.io/muxiva/zh/studio/)。
 
 ### 构建并测试多语言 SDK
 
@@ -128,31 +128,31 @@ Token。详见 [Studio 指南](https://piyotahu.github.io/Voxa/zh/studio/)。
 ./scripts/check-ffi.sh
 ```
 
-脚本会构建可真实安装的包、执行集成测试，并运行独立的 Python、TypeScript 与 C++ 消费者示例。安装与 Node 开发方式参见[Node 开发指南](https://piyotahu.github.io/Voxa/zh/nodes/)。
+脚本会构建可真实安装的包、执行集成测试，并运行独立的 Python、TypeScript 与 C++ 消费者示例。安装与 Node 开发方式参见[Node 开发指南](https://piyotahu.github.io/muxiva/zh/nodes/)。
 
 ## 旗舰 Graph
 
 真实语音应用的 Realtime 与 Cascade 模板位于
-[`examples/voice-agent/.voxa/templates/`](examples/voice-agent/.voxa/templates/)。
+[`examples/voice-agent/.muxiva/templates/`](examples/voice-agent/.muxiva/templates/)。
 通过 `./examples/voice-agent/run.sh` 启动 Studio 后，可以直接选择、查看和编辑两张图。
 
-Graph JSON 只用于声明式配置，不能包含可执行代码、动态脚本、凭据或任意远程资源。详见 [Graph 与类型化端口](https://piyotahu.github.io/Voxa/zh/graph/)。
+Graph JSON 只用于声明式配置，不能包含可执行代码、动态脚本、凭据或任意远程资源。详见 [Graph 与类型化端口](https://piyotahu.github.io/muxiva/zh/graph/)。
 
 ## 仓库结构
 
 ```text
-voxa/
+muxiva/
 ├── crates/
-│   ├── voxa-types/       # 不可变 Frame、ID、Value、Error
-│   ├── voxa-core/        # Graph、Runtime、Queue、Flow、Control Plane
-│   ├── voxa-ffi/         # 版本化 C ABI
-│   ├── voxa-graph-json/  # Graph v1 Parser 与 Compiler
-│   ├── voxa-cli/         # voxa 命令行
-│   ├── voxa-studio/      # Token 鉴权的本地 Studio Server
-│   ├── voxa-python/      # PyO3/maturin 包
-│   ├── voxa-node/        # Node-API Native Module
-│   └── voxa-testkit/     # 确定性测试 Harness
-├── bindings/node/        # @voxa/core 包
+│   ├── muxiva-types/       # 不可变 Frame、ID、Value、Error
+│   ├── muxiva-core/        # Graph、Runtime、Queue、Flow、Control Plane
+│   ├── muxiva-ffi/         # 版本化 C ABI
+│   ├── muxiva-graph-json/  # Graph v1 Parser 与 Compiler
+│   ├── muxiva-cli/         # muxiva 命令行
+│   ├── muxiva-studio/      # Token 鉴权的本地 Studio Server
+│   ├── muxiva-python/      # PyO3/maturin 包
+│   ├── muxiva-node/        # Node-API Native Module
+│   └── muxiva-testkit/     # 确定性测试 Harness
+├── bindings/node/        # @muxiva/core 包
 ├── cpp/                  # 公共 C/C++ SDK
 ├── providers/            # 厂商集成：Qwen/Python 与 Agora/C++
 ├── examples/             # Rust、Graph、Python、TypeScript 与 C++ 示例
@@ -163,7 +163,7 @@ voxa/
 
 ## 质量门禁
 
-下面的命令供修改 Voxa 仓库本身的贡献者使用，不是安装 `voxa` 二进制后的
+下面的命令供修改 Muxiva 仓库本身的贡献者使用，不是安装 `muxiva` 二进制后的
 应用开发方式。
 
 执行统一的本地检查：
@@ -212,7 +212,7 @@ Studio、CLI、Provider 或架构变化必须在同一个 PR 更新 `docs/`。
 
 ## 安全
 
-Voxa 仍处于 pre-alpha 阶段，不能用于执行不可信代码，也不应将 Studio 直接
+Muxiva 仍处于 pre-alpha 阶段，不能用于执行不可信代码，也不应将 Studio 直接
 暴露到公网。Graph 文件不得包含密钥；漏洞请按照[安全策略](SECURITY.md)私密报告。
 
 重要变化记录在 [CHANGELOG.md](CHANGELOG.md)，支持渠道参见
@@ -220,4 +220,4 @@ Voxa 仍处于 pre-alpha 阶段，不能用于执行不可信代码，也不应�
 
 ## 许可证
 
-Voxa 使用 [Apache License 2.0](LICENSE) 开源。
+Muxiva 使用 [Apache License 2.0](LICENSE) 开源。

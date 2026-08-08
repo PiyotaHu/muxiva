@@ -3,9 +3,9 @@
 | Item | D07 decision |
 | --- | --- |
 | SDK | Agora RTC Native 4.x C++ header contract only |
-| License/distribution | Optional vendor dependency; not vendored or redistributed by Voxa |
+| License/distribution | Optional vendor dependency; not vendored or redistributed by Muxiva |
 | Dynamic libraries | Supplied and packaged by the application for its target platform |
-| Buffer ownership | Voxa copies PCM16/I420 before every callback returns |
+| Buffer ownership | Muxiva copies PCM16/I420 before every callback returns |
 | Threading | Vendor callbacks are admission-only; SDK control is serialized on one C++ thread |
 | Backpressure | Fixed-capacity external ingress/queue; full means observable drop |
 | Shutdown | Stop admission, unregister, drain, destroy tracks, release engine, close ingress |

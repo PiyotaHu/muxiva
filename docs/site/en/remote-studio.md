@@ -1,12 +1,12 @@
 # Headless Linux and remote Studio
 
-Studio is a local HTTP service started by `voxa`; its browser does not need to run on the same
+Studio is a local HTTP service started by `muxiva`; its browser does not need to run on the same
 machine as the Runtime. On a headless Linux server, keep Studio on server loopback and use SSH
 port forwarding to open it in Chrome, Edge, or Safari on your own computer.
 
 ```mermaid
 flowchart LR
-    B["Laptop browser<br/>localhost:5678"] -->|"encrypted SSH tunnel"| S["Linux server<br/>Voxa Studio :5678"]
+    B["Laptop browser<br/>localhost:5678"] -->|"encrypted SSH tunnel"| S["Linux server<br/>Muxiva Studio :5678"]
     B -->|"microphone WebRTC"| A["Agora Cloud"]
     S -->|"C++ Bot RTC"| A
     S -->|"WebSocket"| Q["Alibaba Cloud Model Studio"]
@@ -23,13 +23,13 @@ For a normal project:
 
 ```bash
 cd /srv/my-agent
-voxa studio . --host 127.0.0.1 --port 5678 --no-open
+muxiva studio . --host 127.0.0.1 --port 5678 --no-open
 ```
 
 For the flagship voice demo in the repository:
 
 ```bash
-cd /srv/Voxa
+cd /srv/Muxiva
 ./examples/voice-agent/run.sh --host 127.0.0.1 --port 5678 --no-open
 ```
 
@@ -37,7 +37,7 @@ When neither `DISPLAY` nor `WAYLAND_DISPLAY` exists, `run.sh` automatically disa
 opening. It prints a URL like:
 
 ```text
-[VOXA][INFO][studio.ready] url=http://127.0.0.1:5678/#<ACCESS_TOKEN>
+[MUXIVA][INFO][studio.ready] url=http://127.0.0.1:5678/#<ACCESS_TOKEN>
 ```
 
 Keep the process running. Do not share the complete URL containing the access token.
@@ -73,20 +73,20 @@ directly, while the C++ Bot on Linux joins the same channel with its separate UI
 Use `tmux` or `systemd`. A minimal `tmux` workflow is:
 
 ```bash
-tmux new -s voxa
+tmux new -s muxiva
 ./examples/voice-agent/run.sh --host 127.0.0.1 --port 5678 --no-open
 ```
 
 Press `Ctrl-b`, then `d` to detach. Reconnect later with:
 
 ```bash
-tmux attach -t voxa
+tmux attach -t muxiva
 ```
 
 Follow logs with:
 
 ```bash
-tail -f examples/voice-agent/.voxa/runtime.log
+tail -f examples/voice-agent/.muxiva/runtime.log
 ```
 
 ## Run in a container
@@ -96,8 +96,8 @@ Listen on all interfaces inside the container, but bind the published host port 
 ```bash
 docker run --rm \
   -p 127.0.0.1:5678:5678 \
-  your-voxa-image \
-  voxa studio /app --host 0.0.0.0 --port 5678 --no-open
+  your-muxiva-image \
+  muxiva studio /app --host 0.0.0.0 --port 5678 --no-open
 ```
 
 If Docker runs on your computer, replace the printed hostname with `127.0.0.1:5678` while keeping
@@ -108,7 +108,7 @@ the original `#<ACCESS_TOKEN>`. If Docker is remote, use the SSH tunnel above.
 This listens on LAN or public interfaces:
 
 ```bash
-voxa studio . --host 0.0.0.0 --port 5678 --no-open
+muxiva studio . --host 0.0.0.0 --port 5678 --no-open
 ```
 
 Studio can edit Graphs, save Connections, and start Runtimes. Do not expose it directly to the

@@ -1,6 +1,6 @@
 # Rust Core and its objects
 
-Voxa is reliable because **Rust Runtime Core alone defines how data flows,
+Muxiva is reliable because **Rust Runtime Core alone defines how data flows,
 work stops, and errors propagate**. Algorithm Nodes may use different
 languages, but they cannot invent independent queues, lifecycle rules, or
 message formats.
@@ -50,7 +50,7 @@ rate, channels, sample format, pixel format, planes, and dimensions. Two
 `audio` Ports may still require different media formats. Port schemas describe
 that detail, and a Resample or Codec Node must perform an explicit conversion.
 
-Implementation: `voxa-types`.
+Implementation: `muxiva-types`.
 
 ### Node: one focused responsibility
 
@@ -81,13 +81,13 @@ each action explicit:
 ```python
 def on_process(self, frame, ctx):
     ctx.emit("text_out", output_frame)
-    ctx.emit_signal("voxa.turn.interrupt", {"reason": "barge-in"})
+    ctx.emit_signal("muxiva.turn.interrupt", {"reason": "barge-in"})
     ctx.publish_event("app.transcript.ready", {"text": frame.text})
 ```
 
 One callback can emit zero, one, or many Frames, or only publish control data.
 
-Implementation: `voxa-core::node`.
+Implementation: `muxiva-core::node`.
 
 ### Port: a typed Node socket
 
@@ -124,7 +124,7 @@ Capacity is always bounded. An unbounded real-time queue turns a brief service
 stall into uncontrolled memory use and stale responses seconds or minutes
 later.
 
-Implementation: `voxa-core::edge`, `queue`, and `flow`.
+Implementation: `muxiva-core::edge`, `queue`, and `flow`.
 
 ### Graph: a declaration, not a running object
 
@@ -137,7 +137,7 @@ Graph v1 is currently a static directed acyclic graph. Build-time validation
 rejects duplicate IDs, missing Ports, wrong directions, type mismatches,
 zero-capacity queues, and cycles.
 
-Implementation: `voxa-core::graph` and `voxa-graph-json`.
+Implementation: `muxiva-core::graph` and `muxiva-graph-json`.
 
 ### Registry and Factory: resolve declarations to code
 
@@ -152,7 +152,7 @@ For example, `qwen.asr_realtime + python + 1.0.0`. Runtime does not
 guess a version or silently switch languages. After validation, a Factory
 creates an independent runtime instance for each Graph Node ID.
 
-Implementation: `voxa-core::registry` and `foreign_registry`.
+Implementation: `muxiva-core::registry` and `foreign_registry`.
 
 ### Runtime: bring the Graph to life safely
 
@@ -168,17 +168,17 @@ Runtime:
 
 Business Nodes neither need nor receive permission to implement this scheduler.
 
-Implementation: `voxa-core::runner`, `concurrent`, and `registered_runtime`.
+Implementation: `muxiva-core::runner`, `concurrent`, and `registered_runtime`.
 
 ## Rust crate responsibilities
 
 | Crate | Responsibility |
 | --- | --- |
-| `voxa-types` | Frames, Buffers, time, IDs, schemas, lineage, and errors |
-| `voxa-core` | Nodes, Ports, Edges, Graph, Registry, Runtime, and control plane |
-| `voxa-graph-json` | Graph v1 JSON, built-in Registry, and compilation |
-| `voxa-ffi` | Stable C ABI and C++ Node Pack loading |
-| `voxa-testkit` | Deterministic tests, probes, clocks, and fault injection |
+| `muxiva-types` | Frames, Buffers, time, IDs, schemas, lineage, and errors |
+| `muxiva-core` | Nodes, Ports, Edges, Graph, Registry, Runtime, and control plane |
+| `muxiva-graph-json` | Graph v1 JSON, built-in Registry, and compilation |
+| `muxiva-ffi` | Stable C ABI and C++ Node Pack loading |
+| `muxiva-testkit` | Deterministic tests, probes, clocks, and fault injection |
 
 Next, read [Graph and typed Ports](graph.md) and
 [real-time flow and control](realtime-control.md).

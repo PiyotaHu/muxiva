@@ -4,8 +4,8 @@ import { GraphNodeFactory, NodeRunner, TypeScriptTransformNode, defineTransformN
 
 test('callbacks execute on a dedicated Worker and return synchronous output', async () => {
   const node = new TypeScriptTransformNode({ onProcess(frame) { return { text: frame.text.toUpperCase() } } })
-  const result = await node.process({ text: 'voxa' })
-  assert.deepEqual(result, { text: 'VOXA' })
+  const result = await node.process({ text: 'muxiva' })
+  assert.deepEqual(result, { text: 'MUXIVA' })
   await node.close()
 })
 
@@ -15,27 +15,27 @@ test('JavaScript throws and Promise results are structured failures', async () =
   await throwing.close()
 
   const promising = new TypeScriptTransformNode({ onProcess() { return Promise.resolve('late') } })
-  await assert.rejects(promising.process({}), (error) => error.code === 'VOXA_NODE_PROMISE_UNSUPPORTED')
+  await assert.rejects(promising.process({}), (error) => error.code === 'MUXIVA_NODE_PROMISE_UNSUPPORTED')
   await promising.close()
 })
 
 test('admission is bounded and close discards late output', async () => {
   const node = new TypeScriptTransformNode({ onProcess(value) { return value } }, { capacity: 1 })
   const first = node.process({ sequence: 1 })
-  await assert.rejects(node.process({ sequence: 2 }), (error) => error.code === 'VOXA_NODE_FULL')
+  await assert.rejects(node.process({ sequence: 2 }), (error) => error.code === 'MUXIVA_NODE_FULL')
   assert.deepEqual(await first, { sequence: 1 })
   assert.equal(await node.close(), true)
-  await assert.rejects(node.process({}), (error) => error.code === 'VOXA_NODE_CLOSED')
+  await assert.rejects(node.process({}), (error) => error.code === 'MUXIVA_NODE_CLOSED')
 })
 
 test('NodeRunner manages lifecycle and event callbacks', async () => {
   const implementation = defineTransformNode({
-    onPrepare() { this.prefix = 'VOXA: ' },
+    onPrepare() { this.prefix = 'MUXIVA: ' },
     onProcess(frame) { return { text: this.prefix + frame.text.toUpperCase() } },
     onEvent(event) { if (!event.topic) throw new Error('missing topic') },
   })
   const runner = new NodeRunner(implementation)
-  assert.deepEqual(await runner.process({ text: 'ready' }), { text: 'VOXA: READY' })
+  assert.deepEqual(await runner.process({ text: 'ready' }), { text: 'MUXIVA: READY' })
   await runner.event({ topic: 'agent.ready' })
   assert.equal(await runner.finish(), true)
   assert.equal(await runner.finish(), false)
@@ -44,7 +44,7 @@ test('NodeRunner manages lifecycle and event callbacks', async () => {
 
 test('TypeScript factory executes inside registered Graph v1 runtime', async () => {
   const graph = JSON.stringify({
-    version: 'voxa.graph/v1', graph_id: 'typescript-registered',
+    version: 'muxiva.graph/v1', graph_id: 'typescript-registered',
     nodes: [
       { id: 'source', node_type: 'builtin.text_source', language: 'rust', factory_version: '1.0.0', node_config: { text: 'hello' } },
       { id: 'upper', node_type: 'example.typescript.uppercase', language: 'typescript', factory_version: '1.0.0', node_config: {} },
@@ -95,6 +95,6 @@ test('schema-driven TypeScript source emits audio, video, bytes and multiple nam
     nodes.push({ id: `${frameType}-sink`, node_type: `example.typescript.${frameType}-sink`, language: 'typescript', factory_version: '1.0.0', node_config: {} })
     edges.push({ id: frameType, from: { node_id: 'source', port: `${frameType}_out` }, to: { node_id: `${frameType}-sink`, port: 'in' }, frame_type: frameType, queue_policy: { capacity: 8, overflow: 'block' } })
   }
-  const graph = JSON.stringify({ version: 'voxa.graph/v1', graph_id: 'typescript-multimodal', nodes, edges })
+  const graph = JSON.stringify({ version: 'muxiva.graph/v1', graph_id: 'typescript-multimodal', nodes, edges })
   assert.equal(await runGraph(graph, [source, ...sinks]), 5)
 })

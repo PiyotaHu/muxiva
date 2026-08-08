@@ -19,11 +19,11 @@ const dispatch = (command) => {
     const payload = command.payloadJson === undefined ? undefined : JSON.parse(command.payloadJson)
     const value = implementation[method](payload)
     if (value && (typeof value === 'object' || typeof value === 'function') && typeof value.then === 'function') {
-      throw Object.assign(new TypeError('Promise/thenable results are unsupported in Node V1'), { code: 'VOXA_NODE_PROMISE_UNSUPPORTED' })
+      throw Object.assign(new TypeError('Promise/thenable results are unsupported in Node V1'), { code: 'MUXIVA_NODE_PROMISE_UNSUPPORTED' })
     }
     domain.complete(command.sequence, JSON.stringify({ sequence: command.sequence, ok: true, value, threadId }))
   } catch (error) {
-    const code = error.code ?? 'VOXA_NODE_EXCEPTION'
+    const code = error.code ?? 'MUXIVA_NODE_EXCEPTION'
     const message = String(error.message ?? error)
     domain.fail(command.sequence, code, message, JSON.stringify({ sequence: command.sequence, ok: false, error: { code, message }, threadId }))
   }
@@ -42,5 +42,5 @@ parentPort.on('message', (message) => {
     return
   }
   const outcome = domain.submit(message.sequence, message.kind, JSON.stringify(message.payload))
-  if (outcome !== 'accepted') parentPort.postMessage({ sequence: message.sequence, ok: false, error: { code: `VOXA_NODE_${outcome.toUpperCase()}`, message: `node domain ${outcome}` }, threadId })
+  if (outcome !== 'accepted') parentPort.postMessage({ sequence: message.sequence, ok: false, error: { code: `MUXIVA_NODE_${outcome.toUpperCase()}`, message: `node domain ${outcome}` }, threadId })
 })

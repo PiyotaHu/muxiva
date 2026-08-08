@@ -1,4 +1,4 @@
-#include "voxa/agora_rtc.hpp"
+#include "muxiva/agora_rtc.hpp"
 
 #include "IAgoraMediaEngine.h"
 #include "IAgoraRtcEngine.h"
@@ -17,7 +17,7 @@
 #include <utility>
 #include <vector>
 
-namespace voxa::agora {
+namespace muxiva::agora {
 namespace {
 
 class SerialExecutor final {
@@ -143,7 +143,7 @@ public:
         if (result == 0) {
           std::fprintf(
               stderr,
-              "[VOXA][AGORA][native.initialized] audio=pcm_s16le/16000/mono "
+              "[MUXIVA][AGORA][native.initialized] audio=pcm_s16le/16000/mono "
               "local_remote_playback=muted\n");
         }
         return result;
@@ -173,7 +173,7 @@ public:
             engine_->joinChannel(token.empty() ? nullptr : token.c_str(),
                                  channel.c_str(), uid, options);
         std::fprintf(stderr,
-                     "[VOXA][AGORA][native.join.requested] uid=%u result=%d\n",
+                     "[MUXIVA][AGORA][native.join.requested] uid=%u result=%d\n",
                      uid, result);
         return result;
       });
@@ -331,7 +331,7 @@ private:
           received_audio_frames_.fetch_add(1, std::memory_order_relaxed) + 1;
       if (count == 1 || count % 500 == 0) {
         std::fprintf(stderr,
-                     "[VOXA][AGORA][audio.received] remote_uid=%u frames=%llu "
+                     "[MUXIVA][AGORA][audio.received] remote_uid=%u frames=%llu "
                      "rate_hz=%d "
                      "channels=%d\n",
                      uid, static_cast<unsigned long long>(count),
@@ -398,7 +398,7 @@ private:
   void onConnectionStateChanged(
       ::agora::rtc::CONNECTION_STATE_TYPE state,
       ::agora::rtc::CONNECTION_CHANGED_REASON_TYPE reason) override {
-    std::fprintf(stderr, "[VOXA][AGORA][connection.state] state=%d reason=%d\n",
+    std::fprintf(stderr, "[MUXIVA][AGORA][connection.state] state=%d reason=%d\n",
                  static_cast<int>(state), static_cast<int>(reason));
     if (auto *observer = observer_.load(std::memory_order_acquire)) {
       observer->on_connection_state(static_cast<ConnectionState>(state),
@@ -439,21 +439,21 @@ private:
     }
   }
   void onUserJoined(::agora::rtc::uid_t uid, int) override {
-    std::fprintf(stderr, "[VOXA][AGORA][participant.joined] uid=%u\n", uid);
+    std::fprintf(stderr, "[MUXIVA][AGORA][participant.joined] uid=%u\n", uid);
     if (auto *observer = observer_.load(std::memory_order_acquire)) {
       observer->on_participant_joined(uid);
     }
   }
   void onUserOffline(::agora::rtc::uid_t uid,
                      ::agora::rtc::USER_OFFLINE_REASON_TYPE reason) override {
-    std::fprintf(stderr, "[VOXA][AGORA][participant.left] uid=%u reason=%d\n",
+    std::fprintf(stderr, "[MUXIVA][AGORA][participant.left] uid=%u reason=%d\n",
                  uid, static_cast<int>(reason));
     if (auto *observer = observer_.load(std::memory_order_acquire)) {
       observer->on_participant_left(uid, static_cast<int>(reason));
     }
   }
   void onError(int error, const char *) override {
-    std::fprintf(stderr, "[VOXA][AGORA][native.error] code=%d\n", error);
+    std::fprintf(stderr, "[MUXIVA][AGORA][native.error] code=%d\n", error);
     if (auto *observer = observer_.load(std::memory_order_acquire)) {
       observer->on_error(error);
     }
@@ -762,4 +762,4 @@ std::unique_ptr<Sdk> make_native_sdk() noexcept {
   }
 }
 
-} // namespace voxa::agora
+} // namespace muxiva::agora

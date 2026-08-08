@@ -1,6 +1,6 @@
 # 状态与路线图
 
-Voxa 当前为 pre-alpha。基础阶段已经实现，但公开 Package 发布和多个执行 Host
+Muxiva 当前为 pre-alpha。基础阶段已经实现，但公开 Package 发布和多个执行 Host
 尚未完成。
 
 | 领域 | 状态 | 当前边界 |

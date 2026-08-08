@@ -1,17 +1,17 @@
-# Voxa Stage 2 Rust Foundation Implementation Plan
+# Muxiva Stage 2 Rust Foundation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a sustainable Rust Edition 2021 workspace with typed foundation values, contextual errors, replaceable logging, a runnable hello example, and Linux CI.
 
-**Architecture:** `voxa-types` owns dependency-light public value and error types; `voxa-core` depends on those types and owns runtime-facing services such as logging; `voxa-examples` depends on the public crates and proves consumer ergonomics. The stage adds no graph execution, Frame model, concurrency runtime, FFI, or media integration.
+**Architecture:** `muxiva-types` owns dependency-light public value and error types; `muxiva-core` depends on those types and owns runtime-facing services such as logging; `muxiva-examples` depends on the public crates and proves consumer ergonomics. The stage adds no graph execution, Frame model, concurrency runtime, FFI, or media integration.
 
 **Tech Stack:** Rust stable, Edition 2021, Cargo workspace, `thiserror`, `tracing`, `tracing-subscriber`, standard-library tests, GitHub Actions.
 
 ## Global Constraints
 
 - Use Rust stable and Edition 2021; Linux is the primary supported platform.
-- Workspace crates are `voxa-core`, `voxa-types`, and `voxa-examples`.
+- Workspace crates are `muxiva-core`, `muxiva-types`, and `muxiva-examples`.
 - Do not add Tokio, async runtimes, cross-language bindings, Frame types, graph execution, or media dependencies.
 - Do not use `unsafe` in Stage 2.
 - IDs must be distinct strong types rather than aliases or unrestricted interchangeable strings.
@@ -31,17 +31,17 @@ rust-toolchain.toml                     Stable toolchain plus rustfmt and clippy
 .rustfmt.toml                           Repository formatting policy
 .gitignore                              Rust build output exclusions
 .github/workflows/ci.yml                Linux format, lint, test, and example gates
-crates/voxa-types/Cargo.toml             Public foundation-type crate manifest
-crates/voxa-types/src/lib.rs             Public exports only
-crates/voxa-types/src/error.rs           ErrorCategory, ErrorContext, VoxaError, Result
-crates/voxa-types/src/id.rs              SessionId, NodeId, StreamId, TraceId newtypes
-crates/voxa-types/src/time.rs            Timestamp and SequenceId value types
-crates/voxa-core/Cargo.toml              Core crate manifest
-crates/voxa-core/src/lib.rs              Core public exports only
-crates/voxa-core/src/logging.rs          LogSink abstraction and tracing implementation
-crates/voxa-examples/Cargo.toml          Example package manifest
-crates/voxa-examples/src/lib.rs          Testable hello-message construction
-crates/voxa-examples/src/bin/hello.rs    Runnable hello example
+crates/muxiva-types/Cargo.toml             Public foundation-type crate manifest
+crates/muxiva-types/src/lib.rs             Public exports only
+crates/muxiva-types/src/error.rs           ErrorCategory, ErrorContext, MuxivaError, Result
+crates/muxiva-types/src/id.rs              SessionId, NodeId, StreamId, TraceId newtypes
+crates/muxiva-types/src/time.rs            Timestamp and SequenceId value types
+crates/muxiva-core/Cargo.toml              Core crate manifest
+crates/muxiva-core/src/lib.rs              Core public exports only
+crates/muxiva-core/src/logging.rs          LogSink abstraction and tracing implementation
+crates/muxiva-examples/Cargo.toml          Example package manifest
+crates/muxiva-examples/src/lib.rs          Testable hello-message construction
+crates/muxiva-examples/src/bin/hello.rs    Runnable hello example
 docs/pre_release_notes/02-rust-foundation.md  Stage report, APIs, checks, and risks
 ```
 
@@ -57,16 +57,16 @@ docs/pre_release_notes/02-rust-foundation.md  Stage report, APIs, checks, and ri
 - Create: `rust-toolchain.toml`
 - Create: `.rustfmt.toml`
 - Create: `.gitignore`
-- Create: `crates/voxa-types/Cargo.toml`
-- Create: `crates/voxa-types/src/lib.rs`
-- Create: `crates/voxa-core/Cargo.toml`
-- Create: `crates/voxa-core/src/lib.rs`
-- Create: `crates/voxa-examples/Cargo.toml`
-- Create: `crates/voxa-examples/src/lib.rs`
+- Create: `crates/muxiva-types/Cargo.toml`
+- Create: `crates/muxiva-types/src/lib.rs`
+- Create: `crates/muxiva-core/Cargo.toml`
+- Create: `crates/muxiva-core/src/lib.rs`
+- Create: `crates/muxiva-examples/Cargo.toml`
+- Create: `crates/muxiva-examples/src/lib.rs`
 
 **Interfaces:**
 - Consumes: Stage 1 package boundaries from `docs/design/01-product-and-technical-contract.md`.
-- Produces: Cargo packages named `voxa-types`, `voxa-core`, and `voxa-examples`; `voxa_core` depends on `voxa_types`; `voxa_examples` depends on both public crates.
+- Produces: Cargo packages named `muxiva-types`, `muxiva-core`, and `muxiva-examples`; `muxiva_core` depends on `muxiva_types`; `muxiva_examples` depends on both public crates.
 
 - [ ] **Step 1: Write a failing workspace metadata check**
 
@@ -85,9 +85,9 @@ Create the root manifest:
 ```toml
 [workspace]
 members = [
-    "crates/voxa-core",
-    "crates/voxa-examples",
-    "crates/voxa-types",
+    "crates/muxiva-core",
+    "crates/muxiva-examples",
+    "crates/muxiva-types",
 ]
 resolver = "2"
 
@@ -101,7 +101,7 @@ publish = false
 thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
-voxa-types = { path = "crates/voxa-types", version = "0.1.0" }
+muxiva-types = { path = "crates/muxiva-types", version = "0.1.0" }
 ```
 
 Create `rust-toolchain.toml`:
@@ -121,7 +121,7 @@ newline_style = "Unix"
 use_field_init_shorthand = true
 ```
 
-Create `.gitignore` containing `/target/`, and define each crate with `edition.workspace = true`, `version.workspace = true`, `rust-version.workspace = true`, and `publish.workspace = true`. `voxa-core` depends on `voxa-types.workspace = true`; `voxa-examples` depends on both crates by workspace path. Each initial `src/lib.rs` contains only `#![forbid(unsafe_code)]` and crate documentation. Stage 2 does not choose a license or assume a remote repository URL; release policy remains a pre-public-release decision from Stage 1.
+Create `.gitignore` containing `/target/`, and define each crate with `edition.workspace = true`, `version.workspace = true`, `rust-version.workspace = true`, and `publish.workspace = true`. `muxiva-core` depends on `muxiva-types.workspace = true`; `muxiva-examples` depends on both crates by workspace path. Each initial `src/lib.rs` contains only `#![forbid(unsafe_code)]` and crate documentation. Stage 2 does not choose a license or assume a remote repository URL; release policy remains a pre-public-release decision from Stage 1.
 
 - [ ] **Step 3: Verify workspace membership and dependency direction**
 
@@ -158,9 +158,9 @@ git commit -m "build: bootstrap Rust workspace"
 ### Task 2: Strong IDs, timestamp, and sequence types
 
 **Files:**
-- Create: `crates/voxa-types/src/id.rs`
-- Create: `crates/voxa-types/src/time.rs`
-- Modify: `crates/voxa-types/src/lib.rs`
+- Create: `crates/muxiva-types/src/id.rs`
+- Create: `crates/muxiva-types/src/time.rs`
+- Modify: `crates/muxiva-types/src/lib.rs`
 
 **Interfaces:**
 - Consumes: no production interfaces beyond Rust standard library.
@@ -189,7 +189,7 @@ Also add a compile-fail documentation example on `NodeId` showing that a `Sessio
 Run:
 
 ```bash
-cargo test -p voxa-types id::tests -- --nocapture
+cargo test -p muxiva-types id::tests -- --nocapture
 ```
 
 Expected: FAIL because the ID types and constructors do not exist.
@@ -222,14 +222,14 @@ fn timestamp_and_sequence_checked_arithmetic() {
 Run:
 
 ```bash
-cargo test -p voxa-types time::tests -- --nocapture
+cargo test -p muxiva-types time::tests -- --nocapture
 ```
 
 Expected: FAIL because `Timestamp` and `SequenceId` do not exist.
 
 - [ ] **Step 6: Implement time types and public exports**
 
-Implement `Timestamp(i64)` as signed nanoseconds so media-relative values can represent pre-roll, and `SequenceId(u64)` as an ordered counter. Derive copyable ordering/hash traits and use checked arithmetic only. Export all ID/time types from `voxa-types/src/lib.rs` without exposing module internals.
+Implement `Timestamp(i64)` as signed nanoseconds so media-relative values can represent pre-roll, and `SequenceId(u64)` as an ordered counter. Derive copyable ordering/hash traits and use checked arithmetic only. Export all ID/time types from `muxiva-types/src/lib.rs` without exposing module internals.
 
 - [ ] **Step 7: Verify the package**
 
@@ -237,9 +237,9 @@ Run:
 
 ```bash
 cargo fmt --all --check
-cargo clippy -p voxa-types --all-targets -- -D warnings
-cargo test -p voxa-types --all-targets
-cargo test -p voxa-types --doc
+cargo clippy -p muxiva-types --all-targets -- -D warnings
+cargo test -p muxiva-types --all-targets
+cargo test -p muxiva-types --doc
 ```
 
 Expected: PASS, including the compile-fail type-separation documentation test.
@@ -247,7 +247,7 @@ Expected: PASS, including the compile-fail type-separation documentation test.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add crates/voxa-types/src
+git add crates/muxiva-types/src
 git commit -m "feat(types): add strong identifiers and time values"
 ```
 
@@ -256,13 +256,13 @@ git commit -m "feat(types): add strong identifiers and time values"
 ### Task 3: Structured contextual errors
 
 **Files:**
-- Create: `crates/voxa-types/src/error.rs`
-- Modify: `crates/voxa-types/src/lib.rs`
-- Modify: `crates/voxa-types/Cargo.toml`
+- Create: `crates/muxiva-types/src/error.rs`
+- Modify: `crates/muxiva-types/src/lib.rs`
+- Modify: `crates/muxiva-types/Cargo.toml`
 
 **Interfaces:**
 - Consumes: `NodeId` from Task 2.
-- Produces: `ErrorCategory`, `ErrorContext`, `VoxaError`, and `pub type Result<T> = std::result::Result<T, VoxaError>`; builder methods `with_node`, `with_phase`, and `with_context`; accessors `category`, `code`, `message`, and `contexts`.
+- Produces: `ErrorCategory`, `ErrorContext`, `MuxivaError`, and `pub type Result<T> = std::result::Result<T, MuxivaError>`; builder methods `with_node`, `with_phase`, and `with_context`; accessors `category`, `code`, `message`, and `contexts`.
 
 - [ ] **Step 1: Add failing error tests**
 
@@ -270,22 +270,22 @@ git commit -m "feat(types): add strong identifiers and time values"
 #[test]
 fn error_preserves_category_code_and_context() {
     let node = NodeId::new("mock-asr").unwrap();
-    let error = VoxaError::new(ErrorCategory::Configuration, "VOXA-CFG-001", "missing model")
+    let error = MuxivaError::new(ErrorCategory::Configuration, "MUXIVA-CFG-001", "missing model")
         .with_node(node.clone())
         .with_phase("prepare")
         .with_context("config_key", "model");
 
     assert_eq!(error.category(), ErrorCategory::Configuration);
-    assert_eq!(error.code(), "VOXA-CFG-001");
+    assert_eq!(error.code(), "MUXIVA-CFG-001");
     assert_eq!(error.message(), "missing model");
-    assert!(error.to_string().contains("VOXA-CFG-001"));
+    assert!(error.to_string().contains("MUXIVA-CFG-001"));
     assert_eq!(error.contexts().len(), 3);
     assert_eq!(error.contexts()[0], ErrorContext::Node(node));
 }
 
 #[test]
 fn error_rejects_invalid_stable_code() {
-    assert!(VoxaError::try_new(ErrorCategory::Internal, "temporary code", "failure").is_err());
+    assert!(MuxivaError::try_new(ErrorCategory::Internal, "temporary code", "failure").is_err());
 }
 ```
 
@@ -294,7 +294,7 @@ fn error_rejects_invalid_stable_code() {
 Run:
 
 ```bash
-cargo test -p voxa-types error::tests -- --nocapture
+cargo test -p muxiva-types error::tests -- --nocapture
 ```
 
 Expected: FAIL because the error module is absent.
@@ -313,7 +313,7 @@ pub enum ErrorContext {
 }
 ```
 
-`VoxaError` stores category, validated stable code, message, contexts, and an optional boxed source error. Stable codes accept uppercase ASCII letters, digits, and hyphens, begin with `VOXA-`, and contain 6 through 64 bytes. `Display` renders `[CODE] message`; it does not automatically print all contexts, preventing accidental sensitive logging. `with_source` accepts an error that is `Send + Sync + 'static`.
+`MuxivaError` stores category, validated stable code, message, contexts, and an optional boxed source error. Stable codes accept uppercase ASCII letters, digits, and hyphens, begin with `MUXIVA-`, and contain 6 through 64 bytes. `Display` renders `[CODE] message`; it does not automatically print all contexts, preventing accidental sensitive logging. `with_source` accepts an error that is `Send + Sync + 'static`.
 
 - [ ] **Step 4: Export and verify errors**
 
@@ -321,8 +321,8 @@ Export the four public names from `lib.rs`, then run:
 
 ```bash
 cargo fmt --all --check
-cargo clippy -p voxa-types --all-targets -- -D warnings
-cargo test -p voxa-types --all-targets
+cargo clippy -p muxiva-types --all-targets -- -D warnings
+cargo test -p muxiva-types --all-targets
 ```
 
 Expected: PASS; invalid codes fail construction, structured context order is preserved, and source chaining is available through `std::error::Error::source`.
@@ -330,7 +330,7 @@ Expected: PASS; invalid codes fail construction, structured context order is pre
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/voxa-types
+git add crates/muxiva-types
 git commit -m "feat(types): add contextual error contract"
 ```
 
@@ -339,13 +339,13 @@ git commit -m "feat(types): add contextual error contract"
 ### Task 4: Replaceable logging with idempotent tracing default
 
 **Files:**
-- Create: `crates/voxa-core/src/logging.rs`
-- Modify: `crates/voxa-core/src/lib.rs`
-- Modify: `crates/voxa-core/Cargo.toml`
+- Create: `crates/muxiva-core/src/logging.rs`
+- Modify: `crates/muxiva-core/src/lib.rs`
+- Modify: `crates/muxiva-core/Cargo.toml`
 
 **Interfaces:**
-- Consumes: `NodeId` and `SessionId` from `voxa-types`.
-- Produces: `LogLevel`, `LogRecord`, object-safe `LogSink`, `TracingLogSink`, and idempotent `init_default_logging() -> voxa_types::Result<()>`.
+- Consumes: `NodeId` and `SessionId` from `muxiva-types`.
+- Produces: `LogLevel`, `LogRecord`, object-safe `LogSink`, `TracingLogSink`, and idempotent `init_default_logging() -> muxiva_types::Result<()>`.
 
 - [ ] **Step 1: Write failing replaceability and record tests**
 
@@ -363,14 +363,14 @@ fn custom_sink_receives_structured_record() {
 }
 ```
 
-Also test that reserved/sensitive field names `payload`, `authorization`, and `private_extension` are rejected with error code `VOXA-LOG-001`.
+Also test that reserved/sensitive field names `payload`, `authorization`, and `private_extension` are rejected with error code `MUXIVA-LOG-001`.
 
 - [ ] **Step 2: Run focused tests and confirm failure**
 
 Run:
 
 ```bash
-cargo test -p voxa-core logging::tests -- --nocapture
+cargo test -p muxiva-core logging::tests -- --nocapture
 ```
 
 Expected: FAIL because no logging module exists.
@@ -400,7 +400,7 @@ fn default_logging_initialization_is_idempotent() {
 Run:
 
 ```bash
-cargo test -p voxa-core logging::tests::default_logging_initialization_is_idempotent -- --exact
+cargo test -p muxiva-core logging::tests::default_logging_initialization_is_idempotent -- --exact
 ```
 
 Expected: FAIL until default initialization exists.
@@ -424,7 +424,7 @@ Expected: PASS, including custom sink, sensitive field rejection, and repeated i
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/voxa-core
+git add crates/muxiva-core
 git commit -m "feat(core): add replaceable structured logging"
 ```
 
@@ -433,13 +433,13 @@ git commit -m "feat(core): add replaceable structured logging"
 ### Task 5: Runnable hello example and Linux CI
 
 **Files:**
-- Modify: `crates/voxa-examples/src/lib.rs`
-- Create: `crates/voxa-examples/src/bin/hello.rs`
+- Modify: `crates/muxiva-examples/src/lib.rs`
+- Create: `crates/muxiva-examples/src/bin/hello.rs`
 - Create: `.github/workflows/ci.yml`
 
 **Interfaces:**
 - Consumes: `SessionId`, `LogRecord`, `LogLevel`, `TracingLogSink`, `LogSink`, and `init_default_logging`.
-- Produces: `voxa_examples::hello_message(&SessionId) -> String` and the `hello` binary.
+- Produces: `muxiva_examples::hello_message(&SessionId) -> String` and the `hello` binary.
 
 - [ ] **Step 1: Write a failing example-library test**
 
@@ -447,7 +447,7 @@ git commit -m "feat(core): add replaceable structured logging"
 #[test]
 fn hello_message_contains_typed_session_id() {
     let session = SessionId::new("hello-session").unwrap();
-    assert_eq!(hello_message(&session), "Voxa runtime ready: hello-session");
+    assert_eq!(hello_message(&session), "Muxiva runtime ready: hello-session");
 }
 ```
 
@@ -456,27 +456,27 @@ fn hello_message_contains_typed_session_id() {
 Run:
 
 ```bash
-cargo test -p voxa-examples --lib -- --nocapture
+cargo test -p muxiva-examples --lib -- --nocapture
 ```
 
 Expected: FAIL because `hello_message` does not exist.
 
 - [ ] **Step 3: Implement the library function and binary**
 
-Implement `hello_message` as a pure formatter. In `hello.rs`, construct `SessionId("hello-session")`, initialize logging twice to demonstrate idempotence, emit a `runtime.ready` record through `TracingLogSink`, and print exactly the string returned by `hello_message`. Return `voxa_types::Result<()>` from `main`.
+Implement `hello_message` as a pure formatter. In `hello.rs`, construct `SessionId("hello-session")`, initialize logging twice to demonstrate idempotence, emit a `runtime.ready` record through `TracingLogSink`, and print exactly the string returned by `hello_message`. Return `muxiva_types::Result<()>` from `main`.
 
 - [ ] **Step 4: Verify the executable output**
 
 Run:
 
 ```bash
-cargo run -p voxa-examples --bin hello
+cargo run -p muxiva-examples --bin hello
 ```
 
 Expected stdout contains exactly one line:
 
 ```text
-Voxa runtime ready: hello-session
+Muxiva runtime ready: hello-session
 ```
 
 Structured tracing output may additionally appear on stderr.
@@ -489,7 +489,7 @@ Create `.github/workflows/ci.yml` triggered on pushes and pull requests. Use `ub
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
-cargo run -p voxa-examples --bin hello
+cargo run -p muxiva-examples --bin hello
 ```
 
 - [ ] **Step 6: Run all local quality gates**
@@ -500,7 +500,7 @@ Run:
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
-cargo run -p voxa-examples --bin hello
+cargo run -p muxiva-examples --bin hello
 cargo tree --workspace
 ```
 
@@ -509,7 +509,7 @@ Expected: all commands pass; `cargo tree` contains no Tokio, async runtime, FFI,
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/voxa-examples .github/workflows/ci.yml
+git add crates/muxiva-examples .github/workflows/ci.yml
 git commit -m "ci: validate hello foundation workspace"
 ```
 
@@ -535,7 +535,7 @@ cargo --version
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
-cargo run -p voxa-examples --bin hello
+cargo run -p muxiva-examples --bin hello
 cargo tree --workspace
 ```
 

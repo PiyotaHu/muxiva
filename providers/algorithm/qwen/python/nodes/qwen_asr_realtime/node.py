@@ -1,4 +1,4 @@
-"""Qwen streaming ASR application Node Pack for Voxa."""
+"""Qwen streaming ASR application Node Pack for Muxiva."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import uuid
 from typing import Any, Callable, Iterable
 from urllib.parse import quote
 
-import voxa
+import muxiva
 
 
 class QwenAsrProtocolError(RuntimeError):
@@ -84,17 +84,17 @@ class QwenAsrRealtimeNode:
             if kind.endswith("input_audio_transcription.completed"):
                 text = event.get("transcript", event.get("text", "")).strip()
                 if text:
-                    ctx.emit("text_out", voxa.TextFrame(text, sequence=frame.sequence))
+                    ctx.emit("text_out", muxiva.TextFrame(text, sequence=frame.sequence))
                     ctx.emit(
                         "client_event_out",
-                        voxa.EventFrame(
-                            "voxa.voice.transcript.completed",
+                        muxiva.EventFrame(
+                            "muxiva.voice.transcript.completed",
                             json.dumps({"text": text}, separators=(",", ":"), ensure_ascii=False),
                             source="qwen.asr_realtime",
                             sequence=frame.sequence,
                         ),
                     )
-                    ctx.publish_event("voxa.voice.transcript.completed", {"text": text})
+                    ctx.publish_event("muxiva.voice.transcript.completed", {"text": text})
             elif kind == "error":
                 error = event.get("error", {})
                 raise QwenAsrProtocolError(
@@ -151,4 +151,4 @@ def _credentials() -> tuple[str, str]:
 
 
 def _event_id() -> str:
-    return f"event_voxa_{uuid.uuid4().hex}"
+    return f"event_muxiva_{uuid.uuid4().hex}"

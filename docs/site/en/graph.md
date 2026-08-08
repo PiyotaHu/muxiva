@@ -28,7 +28,7 @@ This shortened example omits Nodes and Edges that a production document would in
 
 ```json
 {
-  "version": "voxa.graph/v1",
+  "version": "muxiva.graph/v1",
   "graph_id": "voice-agent",
   "nodes": [
     {
@@ -111,7 +111,7 @@ flowchart LR
     BUILD --> RUN["Concurrent Runtime"]
 ```
 
-`voxa validate <project>` performs the first stages without running a Node. `voxa run <project>`
+`muxiva validate <project>` performs the first stages without running a Node. `muxiva run <project>`
 creates instances and external resources only after compilation succeeds. Studio uses the same
 Compiler, so canvas validation does not create a second set of rules.
 

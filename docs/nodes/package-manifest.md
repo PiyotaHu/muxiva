@@ -1,17 +1,17 @@
-# `voxa.node/v1` package Manifest
+# `muxiva.node/v1` package Manifest
 
-Each project package contains a `voxa.node.json` file and one language source
+Each project package contains a `muxiva.node.json` file and one language source
 file. A Python package created by Studio looks like this:
 
 ```text
-.voxa/nodes/my_asr/
-├── voxa.node.json
+.muxiva/nodes/my_asr/
+├── muxiva.node.json
 └── node.py
 ```
 
 ```json
 {
-  "format": "voxa.node/v1",
+  "format": "muxiva.node/v1",
   "package_id": "my_asr",
   "display_name": "My streaming ASR",
   "node_type": "example.streaming_asr",

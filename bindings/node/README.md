@@ -1,16 +1,16 @@
-# @voxa/core
+# @muxiva/core
 
-Build Voxa Nodes in TypeScript or JavaScript. Each Node runs in a dedicated
+Build Muxiva Nodes in TypeScript or JavaScript. Each Node runs in a dedicated
 `worker_threads` execution domain with bounded admission and structured errors.
 
 Published releases will use:
 
 ```bash
-pnpm add @voxa/core
+pnpm add @muxiva/core
 ```
 
 ```ts
-import { NodeRunner, defineTransformNode } from '@voxa/core'
+import { NodeRunner, defineTransformNode } from '@muxiva/core'
 
 type Text = { kind: 'text'; text: string; sequence: number }
 
@@ -27,7 +27,7 @@ await runner.close()
 ```
 
 V1 lifecycle callbacks are synchronous. Returning a Promise or thenable raises
-`VOXA_NODE_PROMISE_UNSUPPORTED`. Values crossing the Worker boundary must be
+`MUXIVA_NODE_PROMISE_UNSUPPORTED`. Values crossing the Worker boundary must be
 structured-clone-compatible and JSON-serializable. Callback methods must be
 self-contained because their source is installed into the dedicated Worker.
 

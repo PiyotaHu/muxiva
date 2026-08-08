@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-studio_dir="$repository_root/crates/voxa-studio"
+studio_dir="$repository_root/crates/muxiva-studio"
 
 if [[ ! -f "$studio_dir/package.json" || ! -f "$studio_dir/playwright.config.ts" ]]; then
   echo "SKIP Studio E2E: Stage 10 browser application and Playwright contract are not present"

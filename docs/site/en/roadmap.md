@@ -1,6 +1,6 @@
 # Status and roadmap
 
-Voxa is pre-alpha. The foundation stages are implemented, while public package
+Muxiva is pre-alpha. The foundation stages are implemented, while public package
 distribution and several execution Hosts remain incomplete.
 
 | Area | Status | Boundary |

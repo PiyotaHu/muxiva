@@ -1,0 +1,11 @@
+[package]
+name = "muxiva-core"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+tracing.workspace = true
+tracing-subscriber.workspace = true
+muxiva-types.workspace = true

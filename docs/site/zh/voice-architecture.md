@@ -1,6 +1,6 @@
 # 端到端语音链路
 
-一条真实语音链路最能说明 Voxa 的分层价值：浏览器处理用户体验，Agora 处理网络传输，
+一条真实语音链路最能说明 Muxiva 的分层价值：浏览器处理用户体验，Agora 处理网络传输，
 Qwen 处理算法，Rust Core 处理实时调度。任何一层都不需要知道其他层的内部实现。
 
 ## 两张可选 Graph
@@ -69,7 +69,7 @@ sequenceDiagram
     U->>T: 用户在播放期间开口
     T->>R: 新音频 Frame
     M->>M: 模型确认用户正在说话并取消当前回答
-    M-->>R: voxa.voice.speech.started Signal
+    M-->>R: muxiva.voice.speech.started Signal
     R-->>T: 透明转发 Signal
     T->>T: Audio Sink 清空尚未播放的音频
     R->>M: 后续音频继续进入同一 Node
@@ -82,7 +82,7 @@ sequenceDiagram
 ## 客户端数据不是 Studio 遥测
 
 ASR、Agent 文字和说话状态都从 Graph 进入 `agora.data_sink`。浏览器从 Agora 可靠有序
-数据流接收 `voxa.client-event/v1`，不再轮询 `/api/v1/runtime/events`，也不能启停 Runtime。
+数据流接收 `muxiva.client-event/v1`，不再轮询 `/api/v1/runtime/events`，也不能启停 Runtime。
 EventBus 继续作为进程内日志、指标和 Studio 运维观测设施，但不是终端用户协议。
 
 本地 `/api/v1/client/session` 只负责给浏览器提供临时 RTC 启动配置。生产部署应替换为

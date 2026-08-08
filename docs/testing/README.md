@@ -1,8 +1,8 @@
-# Voxa testing and quality gates
+# Muxiva testing and quality gates
 
-Voxa tests are layered so production code, native boundaries, language
+Muxiva tests are layered so production code, native boundaries, language
 bindings, the local Studio, and long-running safety tools remain independently
-reproducible. `voxa-testkit` is workspace-internal and may only be used by
+reproducible. `muxiva-testkit` is workspace-internal and may only be used by
 tests; production crates must never depend on it.
 
 Run the ordinary offline-capable gate with:
@@ -23,10 +23,10 @@ as executed coverage.
 | --- | --- | --- | --- |
 | Stage 8 Mock RTC | `./scripts/check-rtc.sh` | C ABI smoke; copied audio/video/text; bounded ingress; scripted loss/reorder; callback-thread ownership; repeated/concurrent leave; held-callback drain | Cargo, C11/C++17 compiler; current script uses `xcrun` and is therefore a macOS gate |
 | Stage 8 native safety | `./scripts/check-rtc-asan.sh` | The same adapter contract under AddressSanitizer and UndefinedBehaviorSanitizer | clang with ASan/UBSan plus the macOS SDK |
-| Stage 9 Python | `VOXA_PYTHON=/path/to/python ./scripts/check-python.sh` | Built wheel, immutable frames, private event-loop thread, structured exceptions, bounded domain/event delivery | supported Python with `maturin` and `pytest` already installed |
-| Stage 9 Node | `VOXA_NODE_HOME=/path/to/node ./scripts/check-node.sh` | Native package build, dedicated Worker execution, throws, rejected Promise returns, bounded admission, close behavior | Node 20–24 and `pnpm`; dependency store must already be populated for offline use |
-| Stage 9 combined | `VOXA_PYTHON=/path/to/python ./scripts/check-stage9-sanitizers.sh` | workspace Rust tests followed by both built binding packages | all Python and Node prerequisites above |
-| Stage 10 CLI/Studio | `cargo test --offline -p voxa-studio -p voxa-cli` | shared Graph v1 diagnostics, create-only init, bearer-token rejection, authenticated validation, and exact occupied-port failure | loopback sockets must be permitted by the test sandbox |
+| Stage 9 Python | `MUXIVA_PYTHON=/path/to/python ./scripts/check-python.sh` | Built wheel, immutable frames, private event-loop thread, structured exceptions, bounded domain/event delivery | supported Python with `maturin` and `pytest` already installed |
+| Stage 9 Node | `MUXIVA_NODE_HOME=/path/to/node ./scripts/check-node.sh` | Native package build, dedicated Worker execution, throws, rejected Promise returns, bounded admission, close behavior | Node 20–24 and `pnpm`; dependency store must already be populated for offline use |
+| Stage 9 combined | `MUXIVA_PYTHON=/path/to/python ./scripts/check-stage9-sanitizers.sh` | workspace Rust tests followed by both built binding packages | all Python and Node prerequisites above |
+| Stage 10 CLI/Studio | `cargo test --offline -p muxiva-studio -p muxiva-cli` | shared Graph v1 diagnostics, create-only init, bearer-token rejection, authenticated validation, and exact occupied-port failure | loopback sockets must be permitted by the test sandbox |
 | D07 Agora C++ | `./scripts/check-rtc.sh` and `./scripts/check-rtc-asan.sh` | fake-SDK PCM16/I420 copy, bounded ingress, signals/events, outbound media, idempotent close, deliberately late callback | C++17 compiler; vendor SDK is not required |
 | D08 media | `./scripts/check-media.sh` | exact PCM/video shapes, rate conversion, I420/RGBA conversion, timestamp continuity/discontinuity, byte budget, concurrent admission, flush/reset | C++17 compiler; real FFmpeg test runs when development libraries are discoverable |
 | D08 media safety | `./scripts/check-media-asan.sh` | provider-independent contract and, when discoverable, the real FFmpeg backend under ASan/UBSan | clang with ASan/UBSan |

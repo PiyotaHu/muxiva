@@ -1,4 +1,4 @@
-"""Qwen streaming TTS application Node Pack for Voxa."""
+"""Qwen streaming TTS application Node Pack for Muxiva."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import uuid
 from typing import Any, Callable, Iterable
 from urllib.parse import quote
 
-import voxa
+import muxiva
 
 
 class _WebSocketTransport:
@@ -86,7 +86,7 @@ class QwenTtsRealtimeNode:
             if event["type"] == "response.audio.delta":
                 pcm = base64.b64decode(event.get("delta", ""), validate=True)
                 if pcm and len(pcm) <= 256 * 1024 and len(pcm) % 2 == 0:
-                    ctx.emit("audio_out", voxa.AudioFrame(
+                    ctx.emit("audio_out", muxiva.AudioFrame(
                         pcm, sample_rate_hz=24_000, channels=1, sequence=frame.sequence
                     ))
             elif event["type"] == "error":
@@ -128,4 +128,4 @@ def _credentials() -> tuple[str, str]:
 
 
 def _event_id() -> str:
-    return f"event_voxa_{uuid.uuid4().hex}"
+    return f"event_muxiva_{uuid.uuid4().hex}"

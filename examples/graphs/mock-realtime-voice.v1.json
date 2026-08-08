@@ -1,5 +1,5 @@
 {
-  "version": "voxa.graph/v1",
+  "version": "muxiva.graph/v1",
   "graph_id": "realtime-voice-agent",
   "nodes": [
     {"id":"microphone","node_type":"builtin.demo.microphone","language":"rust","factory_version":"1.0.0","node_config":{"turns":4,"interval_ms":650}},

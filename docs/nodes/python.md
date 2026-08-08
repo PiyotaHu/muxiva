@@ -1,7 +1,7 @@
 # Python Node development
 
 The fastest path is **Studio → Create Node → Python**. Studio creates
-`.voxa/nodes/<package_id>/node.py` and its Manifest. Text-only Python source,
+`.muxiva/nodes/<package_id>/node.py` and its Manifest. Text-only Python source,
 transform, and sink Nodes can be added to the Graph and run immediately through
 Studio's local development Host. Saving or browsing a package never imports its
 code; the trusted local Host loads it only when you press **Run**.
@@ -11,13 +11,13 @@ data, graph-local control, and runtime-wide notifications explicitly without
 ending `on_process`:
 
 ```python
-import voxa
+import muxiva
 
 class Uppercase:
     def on_process(self, frame, ctx):
         ctx.emit(
             "text_out",
-            voxa.TextFrame(frame.text.upper(), sequence=frame.sequence),
+            muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence),
         )
         ctx.emit_signal("example.text.ready", {"sequence": frame.sequence})
         ctx.publish_event("example.text.uppercased", {"sequence": frame.sequence})

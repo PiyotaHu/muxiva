@@ -6,10 +6,10 @@ Turn；这些语义留在对应 Node 中。
 官方语音 Node：
 
 - `agora.audio_source`：C++ RTC 音频 Source；内部自调度，不需要外部 Clock Node。
-- `agora.audio_sink`：C++ RTC 音频 Sink；收到 `voxa.voice.speech.started` Signal 后清空播放队列。
+- `agora.audio_sink`：C++ RTC 音频 Sink；收到 `muxiva.voice.speech.started` Signal 后清空播放队列。
 - `qwen.audio_realtime`：Python Speech-to-Speech Node；负责 VAD、ASR、推理、TTS 和取消迟到响应。
 - `qwen.asr_realtime`、`qwen.llm_stream`、`qwen.tts_realtime`：可替换的级联 Node。
 
-项目 Node 放在 `.voxa/nodes/`。每个目录包含 `voxa.node.json` 和语言入口文件；Studio
+项目 Node 放在 `.muxiva/nodes/`。每个目录包含 `muxiva.node.json` 和语言入口文件；Studio
 可以查看源码、注册并拖入 Graph。Connection 字段通过 Manifest 声明，真实值写入被
 Git 忽略的 `.env`。

@@ -3,7 +3,7 @@
 Date: 2026-08-01
 
 Stage 4 implements the dependency-light, single-threaded graph boundary for
-Voxa's pre-release foundation. It builds a pure, deterministic DAG definition
+Muxiva's pre-release foundation. It builds a pure, deterministic DAG definition
 and runs separately owned Node instances through the fixed lifecycle without
 threads, async scheduling, queues, networking, FFI, Serde, or Python bindings.
 This is an implementation report, not a quality or release-readiness claim.
@@ -35,7 +35,7 @@ This is an implementation report, not a quality or release-readiness claim.
   `GraphRunner`. It deterministically prints:
 
   ```text
-  Collected uppercase text: HELLO, VOXA
+  Collected uppercase text: HELLO, MUXIVA
   ```
 
   Its focused integration test invokes the public binary and asserts that
@@ -51,7 +51,7 @@ Fresh validation completed from this Stage 4C worktree:
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | passed |
 | `cargo test --workspace --all-targets --all-features` | passed: 79 unit/integration tests |
 | `cargo test --doc --workspace --all-features` | passed: 4 doc tests |
-| all three `voxa-examples` binaries | passed; `text_graph` produced the output above |
+| all three `muxiva-examples` binaries | passed; `text_graph` produced the output above |
 | `git diff --check` | passed |
 | source/dependency audit | passed; production sources have no threads, Tokio, network, FFI, Serde, or Python surface |
 
@@ -94,7 +94,7 @@ as completed MVP functionality:
     current synchronous metric therefore overcounts dequeue timing rather than
     modeling a real dequeue event.
 11. `node_error` retains the error code and message but drops structured error
-    context from a returned `VoxaError`; that diagnostic fidelity must be
+    context from a returned `MuxivaError`; that diagnostic fidelity must be
     preserved in a future error/abort contract refinement.
 12. The original Stage 4 design status was stale after the runner landed; this
     Stage 4C update aligns its implementation status, but the contract still

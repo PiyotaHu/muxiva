@@ -1,9 +1,9 @@
-# Voxa
+# Muxiva
 
 **一张实时多模态 Graph，一套统一生命周期，让 Rust、C++、Python 与
 TypeScript 共享同一个 Agent Runtime。**
 
-Voxa 负责调度、有界队列、背压、取消、生命周期、控制消息和可观测性；应用通过
+Muxiva 负责调度、有界队列、背压、取消、生命周期、控制消息和可观测性；应用通过
 Node 提供语音、推理、媒体、传输与业务能力。
 
 !!! warning "Pre-alpha"
@@ -40,7 +40,7 @@ VAD → ASR → LLM → TTS 图，并持续展示 Node、Frame 和对话状态�
 | --- | --- |
 | 运行真实语音助手 | [旗舰语音 Demo](voice-demo.md) |
 | 安装并运行 Graph | [安装与首次运行](getting-started.md) |
-| 可视化开发 | [Voxa Studio](studio.md) |
+| 可视化开发 | [Muxiva Studio](studio.md) |
 | 理解 Runtime | [Runtime 架构](concepts.md) |
 | 编写 Node | [Node Package](nodes/index.md) |
 | 集成 RTC 或媒体 | [官方与自定义 Node](integrations.md) |

@@ -3,7 +3,7 @@
 Studio 当前可以创建并注册 `node.ts` 项目 Package。
 
 ```typescript
-import type { GraphNodeImplementation } from '@voxa/core'
+import type { GraphNodeImplementation } from '@muxiva/core'
 
 export const node: GraphNodeImplementation = {
   onProcess(frame, ctx) {
@@ -16,7 +16,7 @@ export const node: GraphNodeImplementation = {
 Worker Context 提供 `emit`、`emitSignal` 与 `publishEvent`。返回值仍作为兼容
 写法保留；显式发送允许一次生命周期回调执行多个互不排斥的动作。
 
-独立 `@voxa/core` SDK 会在专用 Worker 中执行 Hosted TypeScript Node。跨边界
+独立 `@muxiva/core` SDK 会在专用 Worker 中执行 Hosted TypeScript Node。跨边界
 数据必须兼容 Structured Clone，V1 回调保持同步。
 
 ## 当前 Studio 边界
@@ -24,7 +24,7 @@ Worker Context 提供 `emit`、`emitSignal` 与 `publishEvent`。返回值仍作
 Studio 项目 Package 执行尚未启用。保存后 Package 可以被发现，但不能进入可
 运行 Graph。后续 Host 必须：
 
-1. 解析锁定版本的 `@voxa/core`；
+1. 解析锁定版本的 `@muxiva/core`；
 2. 对 Package 执行类型检查；
 3. 在 Worker 中加载精确导出入口；
 4. 强制生命周期、取消、Payload 与关闭上限；

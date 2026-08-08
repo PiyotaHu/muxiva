@@ -1,15 +1,15 @@
 """Run a Python Factory as part of a Registry-compiled Graph v1."""
 
-import voxa
+import muxiva
 
 
 class Uppercase:
-    def on_process(self, frame: voxa.TextFrame):
-        return voxa.TextFrame(frame.text.upper(), sequence=frame.sequence)
+    def on_process(self, frame: muxiva.TextFrame):
+        return muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence)
 
 
 GRAPH = r'''{
-  "version":"voxa.graph/v1",
+  "version":"muxiva.graph/v1",
   "graph_id":"python-registered",
   "nodes":[
     {"id":"source","node_type":"builtin.text_source","language":"rust","factory_version":"1.0.0","node_config":{"text":"hello"}},
@@ -22,6 +22,6 @@ GRAPH = r'''{
   ]
 }'''
 
-factory = voxa.GraphNodeFactory("example.python.uppercase", Uppercase)
-workers = voxa.run_graph(GRAPH, [factory])
+factory = muxiva.GraphNodeFactory("example.python.uppercase", Uppercase)
+workers = muxiva.run_graph(GRAPH, [factory])
 print(f"Python Graph completed with {workers} workers")

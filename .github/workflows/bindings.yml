@@ -22,7 +22,7 @@ jobs:
         run: python -m pip install maturin==1.9.1 pytest==8.4.1
       - run: ./scripts/check-python.sh
         env:
-          VOXA_PYTHON: python
+          MUXIVA_PYTHON: python
 
   node:
     strategy:

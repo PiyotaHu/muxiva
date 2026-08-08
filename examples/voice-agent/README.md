@@ -1,10 +1,10 @@
-# Voxa Flagship Voice Agent
+# Muxiva Flagship Voice Agent
 
 [中文](#中文) · [English](#english)
 
 ## 中文
 
-这是 Voxa 的真实门面应用，不是 Mock：浏览器通过 Agora Web SDK 采集和播放语音，
+这是 Muxiva 的真实门面应用，不是 Mock：浏览器通过 Agora Web SDK 采集和播放语音，
 Agora Native C++ Node Pack 负责 RTC，Qwen Python Node Pack 负责智能层，Rust Runtime
 只处理厂商无关的 Frame、Graph、Signal、EventBus、Turn 与调度。
 
@@ -12,12 +12,12 @@ Studio 内置两张可选择的图：
 
 - **Qwen Realtime（推荐）**：Qwen Audio Realtime 端到端语音模型，链路短、延迟低；
 - **Qwen Cascade（可检查）**：VAD → ASR → LLM → TTS，每个阶段可替换，用户开口时
-  `builtin.audio_vad` 会发出 `voxa.runtime.interrupt`。
+  `builtin.audio_vad` 会发出 `muxiva.runtime.interrupt`。
 
 ### 准备
 
-1. 安装 `voxa` 发布版二进制，或在源码仓库执行
-   `cargo install --path crates/voxa-cli --locked`。
+1. 安装 `muxiva` 发布版二进制，或在源码仓库执行
+   `cargo install --path crates/muxiva-cli --locked`。
 2. 从 Agora 官方渠道取得目标平台 Native C++ SDK。
 3. 在阿里云百炼取得 API Key 与 Workspace ID；在 Agora 为同一 Channel 生成三个
    短期 RTC Token：浏览器 UID、Ingress Bot UID、Egress Bot UID。不要把 App
@@ -58,13 +58,13 @@ Studio 的真实 Registry 编译两张模板。带凭据的实房仍属于发布
 
 ## English
 
-This is Voxa's credentialed flagship application, not a mock. The browser uses
+This is Muxiva's credentialed flagship application, not a mock. The browser uses
 Agora Web SDK for capture and playback, native C++ Node Packs own RTC, Python
 Node Packs own Qwen intelligence, and the Rust Runtime remains vendor-neutral.
 
 Studio offers two graphs: low-latency **Qwen Realtime**, and an inspectable
 **VAD → ASR → LLM → TTS** cascade. In the cascade, the generic VAD emits
-`voxa.runtime.interrupt` when the user barges in.
+`muxiva.runtime.interrupt` when the user barges in.
 
 Prepare an Agora Native C++ SDK, DashScope API Key and Workspace ID, plus three
 short-lived RTC tokens for browser, ingress bot, and egress bot identities.

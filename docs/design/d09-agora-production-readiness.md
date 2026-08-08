@@ -18,7 +18,7 @@ recreating the provider.
 
 `renew_token` is a hot operation. It validates a non-empty token, serializes
 with C++ shutdown, invokes the vendor `renewToken` API, and records success or
-failure. Neither the old nor new token is copied into Voxa events, statistics,
+failure. Neither the old nor new token is copied into Muxiva events, statistics,
 exceptions, or the soak summary. Applications obtain fresh tokens from their
 own trusted server when `token_will_expire` or `token_required` is observed.
 
@@ -27,7 +27,7 @@ Late media remains contained and counted by the existing D07 drain contract.
 
 ## Callback isolation and observability
 
-Vendor callbacks never execute user code. C++ converts them into bounded Voxa
+Vendor callbacks never execute user code. C++ converts them into bounded Muxiva
 Signal/Event frames. Overflow is observable and does not block an Agora callback thread.
 
 The public snapshots include:
@@ -39,7 +39,7 @@ The public snapshots include:
   delay;
 - accepted/dropped control events and existing media queue counters.
 
-Quality values remain Agora's integer ratings. Voxa does not reinterpret them
+Quality values remain Agora's integer ratings. Muxiva does not reinterpret them
 as percentages or invent service-level guarantees.
 
 ## Verification

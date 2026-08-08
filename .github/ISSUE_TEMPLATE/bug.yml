@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible Voxa defect
+description: Report a reproducible Muxiva defect
 title: "[Bug]: "
 labels: [bug]
 body:
@@ -17,7 +17,7 @@ body:
           required: true
   - type: input
     attributes:
-      label: Voxa version or commit
+      label: Muxiva version or commit
       placeholder: v0.x.y or git SHA
     validations:
       required: true
@@ -60,7 +60,7 @@ body:
   - type: textarea
     attributes:
       label: Actual behavior and diagnostics
-      description: Include complete VOXA diagnostics or a short log with secrets removed.
+      description: Include complete MUXIVA diagnostics or a short log with secrets removed.
     validations:
       required: true
   - type: textarea

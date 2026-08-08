@@ -1,0 +1,24 @@
+[package]
+name = "muxiva-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+pyo3 = "0.29"
+serde.workspace = true
+serde_json.workspace = true
+muxiva-core = { path = "../muxiva-core" }
+muxiva-graph-json = { path = "../muxiva-graph-json" }
+muxiva-types.workspace = true
+
+[dev-dependencies]
+pyo3 = { version = "0.29", features = ["auto-initialize"] }

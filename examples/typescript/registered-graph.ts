@@ -1,7 +1,7 @@
-import { GraphNodeFactory, runGraph } from '@voxa/core'
+import { GraphNodeFactory, runGraph } from '@muxiva/core'
 
 const graph = JSON.stringify({
-  version: 'voxa.graph/v1', graph_id: 'typescript-registered',
+  version: 'muxiva.graph/v1', graph_id: 'typescript-registered',
   nodes: [
     { id: 'source', node_type: 'builtin.text_source', language: 'rust', factory_version: '1.0.0', node_config: { text: 'hello' } },
     { id: 'upper', node_type: 'example.typescript.uppercase', language: 'typescript', factory_version: '1.0.0', node_config: {} },

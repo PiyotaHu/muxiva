@@ -4,7 +4,7 @@ Stage 7 lands the first stable cross-language vertical slice.
 
 ## Delivered
 
-- `voxa-ffi` with `cdylib`, `staticlib`, and `rlib` artifacts and narrowly
+- `muxiva-ffi` with `cdylib`, `staticlib`, and `rlib` artifacts and narrowly
   audited unsafe pointer operations.
 - Checked-in C ABI v1 header and header-only C++17 RAII/node wrapper.
 - Six frame payload POD variants, copy validation, bounded copied ownership,

@@ -1,11 +1,11 @@
 # Agora provider setup
 
-Agora is optional. Voxa does not download, redistribute, or silently accept the
+Agora is optional. Muxiva does not download, redistribute, or silently accept the
 license of either SDK.
 
 ## Fastest macOS installation
 
-Voxa pins the official Agora macOS SDK `4.6.2`. The downloader obtains the six
+Muxiva pins the official Agora macOS SDK `4.6.2`. The downloader obtains the six
 RTC Basic XCFrameworks from Agora's official CDN and verifies the SHA-256 values
 published by the official Swift package:
 
@@ -29,16 +29,16 @@ Obtain the Agora Native SDK for the target platform, then configure:
 
 ```sh
 cmake -S providers/transport/agora/cpp -B build/agora \
-  -DVOXA_ENABLE_AGORA=ON \
-  -DVOXA_AGORA_SDK_ROOT=/absolute/path/to/agora-sdk \
-  -DVOXA_SOURCE_ROOT="$PWD"
-cmake --build build/agora --target voxa_agora
+  -DMUXIVA_ENABLE_AGORA=ON \
+  -DMUXIVA_AGORA_SDK_ROOT=/absolute/path/to/agora-sdk \
+  -DMUXIVA_SOURCE_ROOT="$PWD"
+cmake --build build/agora --target muxiva_agora
 ```
 
 The SDK root must contain either an Agora macOS `AgoraRtcKit.xcframework`, or
 `IAgoraRtcEngine.h` under `include`/`sdk/include` plus
 `agora_rtc_sdk`/`AgoraRtcKit` under a supported library directory. Link an
-application to `VoxaAgora::agora` and the installed Voxa C++ runtime, create an
+application to `MuxivaAgora::agora` and the installed Muxiva C++ runtime, create an
 external ingress, then pass
 `make_native_sdk()` to `RtcAdapter::create`.
 
@@ -56,18 +56,18 @@ The adapter never copies a token into a frame or metrics snapshot.
 ## Language boundary
 
 Agora integration is C++-only. Its headers, implementation, build project, and
-tests live under `providers/transport/agora/cpp`; the root Voxa CMake project and Python
+tests live under `providers/transport/agora/cpp`; the root Muxiva CMake project and Python
 package contain no Agora target or SDK wrapper.
 The flagship C++ source/sink Node Packs and their Manifests are under
 `providers/transport/agora/cpp/nodes`. The application references that catalog through
-`.voxa/providers.json`; Studio discovers it but does not compile or link Agora
+`.muxiva/providers.json`; Studio discovers it but does not compile or link Agora
 itself. Build the complete flagship packs with:
 
 ```sh
 ./examples/voice-agent/setup.sh
 ```
 
-Ingress and egress Nodes share one process-level Agora Engine and Voxa Bot UID/token; the
+Ingress and egress Nodes share one process-level Agora Engine and Muxiva Bot UID/token; the
 browser uses a second UID/token. The browser receives only explicitly exposed room fields; App
 Certificates and server/provider credentials must never enter the browser.
 
@@ -79,7 +79,7 @@ Node process. See [`D09 Agora production readiness`](../design/d09-agora-product
 
 1. Join with two clients and verify participant and connection events.
 2. Receive 48 kHz PCM16 and I420 for ten minutes with bounded queue metrics.
-3. Publish Voxa PCM16/I420 custom tracks and verify remote playout/render.
+3. Publish Muxiva PCM16/I420 custom tracks and verify remote playout/render.
 4. Disconnect/reconnect, rotate a short-lived token through the token file,
    then close during active callbacks.
 5. Confirm no callback after `leave()` touches freed state and no vendor thread

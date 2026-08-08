@@ -1,4 +1,4 @@
-# Voxa Stage 3 Frames and Ownership Implementation Plan
+# Muxiva Stage 3 Frames and Ownership Implementation Plan
 
 > **Execution rule:** Implement one checklist item at a time with a failing
 > test first. Do not start Stage 4 work while executing this plan.
@@ -7,14 +7,14 @@
 layouts, Arc-backed read-only buffers, privacy-aware extensions and views,
 lineage-preserving derivation, and a construction-only example.
 
-**Architecture:** `voxa-types` remains the dependency-light owner. Small
+**Architecture:** `muxiva-types` remains the dependency-light owner. Small
 modules own IDs/schema, buffers, values, extensions, lineage, header, audio,
 video, and non-media messages. `Frame` assembles validated parts and is the
-only future transport unit. `voxa-examples` proves consumer ergonomics without
+only future transport unit. `muxiva-examples` proves consumer ergonomics without
 a graph or runtime.
 
 **Tech stack:** Rust stable, Edition 2021, standard library (`Arc`, `BTreeMap`,
-threads), existing `thiserror`-backed `VoxaError`, Cargo. No new crate
+threads), existing `thiserror`-backed `MuxivaError`, Cargo. No new crate
 dependency is required.
 
 **Normative design:**
@@ -25,7 +25,7 @@ requirements.
 ## Global execution constraints
 
 - Work only on `codex/stage-3-frames` in
-  `/Users/private-user/Documents/voxa/.worktrees/codex-stage-3-frames`.
+  `/Users/private-user/Documents/muxiva/.worktrees/codex-stage-3-frames`.
 - Keep `#![forbid(unsafe_code)]`; do not add an `unsafe` block, allow, or
   exception.
 - Do not add Tokio, another async runtime, graph execution, Node/Edge structs,
@@ -37,7 +37,7 @@ requirements.
 - Use `checked_add`, `checked_mul`, and `try_from` before forming payload slice
   ranges. Numeric validation failures return the contract's stable code and do
   not panic.
-- Do not change `voxa-core` logging or add missing Stage 2 error-context
+- Do not change `muxiva-core` logging or add missing Stage 2 error-context
   builders. The only existing foundation correction authorized here is
   removing `Ord`/`PartialOrd` from `Timestamp`, correcting its documentation,
   and routing ordering through `FrameHeader::compare_timestamp`. Preserve all
@@ -49,23 +49,23 @@ requirements.
 ## Planned file set
 
 ```text
-crates/voxa-types/src/id.rs
-crates/voxa-types/src/time.rs
-crates/voxa-types/src/schema.rs
-crates/voxa-types/src/frame_buffer.rs
-crates/voxa-types/src/value.rs
-crates/voxa-types/src/extension.rs
-crates/voxa-types/src/lineage.rs
-crates/voxa-types/src/frame/mod.rs
-crates/voxa-types/src/frame/header.rs
-crates/voxa-types/src/frame/audio.rs
-crates/voxa-types/src/frame/video.rs
-crates/voxa-types/src/frame/message.rs
-crates/voxa-types/src/lib.rs
-crates/voxa-types/tests/frame_contract.rs
-crates/voxa-types/tests/frame_derivation.rs
-crates/voxa-types/tests/frame_concurrency.rs
-crates/voxa-examples/src/bin/frames.rs
+crates/muxiva-types/src/id.rs
+crates/muxiva-types/src/time.rs
+crates/muxiva-types/src/schema.rs
+crates/muxiva-types/src/frame_buffer.rs
+crates/muxiva-types/src/value.rs
+crates/muxiva-types/src/extension.rs
+crates/muxiva-types/src/lineage.rs
+crates/muxiva-types/src/frame/mod.rs
+crates/muxiva-types/src/frame/header.rs
+crates/muxiva-types/src/frame/audio.rs
+crates/muxiva-types/src/frame/video.rs
+crates/muxiva-types/src/frame/message.rs
+crates/muxiva-types/src/lib.rs
+crates/muxiva-types/tests/frame_contract.rs
+crates/muxiva-types/tests/frame_derivation.rs
+crates/muxiva-types/tests/frame_concurrency.rs
+crates/muxiva-examples/src/bin/frames.rs
 docs/pre_release_notes/03-frames-and-ownership.md
 ```
 
@@ -98,13 +98,13 @@ plus `Display` and `FromStr`; all remain distinct.
 ```rust
 pub struct SchemaVersion(u32);
 impl SchemaVersion {
-    pub fn new(value: u32) -> voxa_types::Result<Self>;
+    pub fn new(value: u32) -> muxiva_types::Result<Self>;
     pub const fn get(self) -> u32;
 }
 
 pub struct NamespacedName(Box<str>);
 impl NamespacedName {
-    pub fn new(value: impl Into<Box<str>>) -> voxa_types::Result<Self>;
+    pub fn new(value: impl Into<Box<str>>) -> muxiva_types::Result<Self>;
     pub fn as_str(&self) -> &str;
 }
 ```
@@ -124,7 +124,7 @@ impl FrameBuffer {
 
 pub struct FiniteF64(f64);
 impl FiniteF64 {
-    pub fn new(value: f64) -> voxa_types::Result<Self>;
+    pub fn new(value: f64) -> muxiva_types::Result<Self>;
     pub const fn get(self) -> f64;
 }
 
@@ -141,7 +141,7 @@ pub enum Value {
 pub struct ValueMap(BTreeMap<Box<str>, Value>);
 impl ValueMap {
     pub fn empty() -> Self;
-    pub fn try_from_iter<I, K>(values: I) -> voxa_types::Result<Self>
+    pub fn try_from_iter<I, K>(values: I) -> muxiva_types::Result<Self>
     where I: IntoIterator<Item = (K, Value)>, K: Into<Box<str>>;
     pub fn get(&self, key: &str) -> Option<&Value>;
     pub fn iter(&self) -> impl Iterator<Item = (&str, &Value)>;
@@ -152,7 +152,7 @@ impl ValueMap {
 pub struct Metadata(BTreeMap<Box<str>, Value>);
 impl Metadata {
     pub fn empty() -> Self;
-    pub fn try_from_iter<I, K>(values: I) -> voxa_types::Result<Self>
+    pub fn try_from_iter<I, K>(values: I) -> muxiva_types::Result<Self>
     where I: IntoIterator<Item = (K, Value)>, K: Into<Box<str>>;
     pub fn get(&self, key: &str) -> Option<&Value>;
     pub fn iter(&self) -> impl Iterator<Item = (&str, &Value)>;
@@ -186,7 +186,7 @@ impl Extension {
 pub struct Extensions;
 impl Extensions {
     pub fn empty() -> Self;
-    pub fn try_from_iter<I>(extensions: I) -> voxa_types::Result<Self>
+    pub fn try_from_iter<I>(extensions: I) -> muxiva_types::Result<Self>
     where I: IntoIterator<Item = Extension>;
     pub fn get(&self, key: &NamespacedName, version: SchemaVersion) -> Option<&Extension>;
     pub fn iter(&self) -> impl Iterator<Item = &Extension>;
@@ -200,7 +200,7 @@ impl TransformOrigin {
     pub fn new(
         node_id: Option<NodeId>,
         edge_id: Option<EdgeId>,
-    ) -> voxa_types::Result<Self>;
+    ) -> muxiva_types::Result<Self>;
     pub fn node_id(&self) -> Option<&NodeId>;
     pub fn edge_id(&self) -> Option<&EdgeId>;
 }
@@ -211,7 +211,7 @@ impl LineageEntry {
         parent_frame_id: FrameId,
         origin: TransformOrigin,
         reason: impl Into<Box<str>>,
-    ) -> voxa_types::Result<Self>;
+    ) -> muxiva_types::Result<Self>;
     pub fn parent_frame_id(&self) -> &FrameId;
     pub fn origin(&self) -> &TransformOrigin;
     pub fn reason(&self) -> &str;
@@ -267,7 +267,7 @@ impl FrameHeader {
         metadata: Metadata,
         extensions: Extensions,
         lineage: Lineage,
-    ) -> voxa_types::Result<Self>;
+    ) -> muxiva_types::Result<Self>;
     pub fn frame_id(&self) -> &FrameId;
     pub const fn timestamp(&self) -> Timestamp;
     pub fn clock_domain(&self) -> &ClockDomain;
@@ -281,7 +281,7 @@ impl FrameHeader {
     pub fn compare_timestamp(
         &self,
         other: &FrameHeader,
-    ) -> voxa_types::Result<std::cmp::Ordering>;
+    ) -> muxiva_types::Result<std::cmp::Ordering>;
 }
 
 pub enum PcmSampleFormat { U8, I16Le, I24Le, I32Le, F32Le, F64Le }
@@ -297,7 +297,7 @@ impl AudioData {
         sample_format: PcmSampleFormat,
         layout: AudioLayout,
         samples_per_channel: u64,
-    ) -> voxa_types::Result<Self>;
+    ) -> muxiva_types::Result<Self>;
     pub fn buffer(&self) -> &FrameBuffer;
     pub const fn sample_rate_hz(&self) -> u32;
     pub const fn channels(&self) -> u16;
@@ -305,7 +305,7 @@ impl AudioData {
     pub const fn layout(&self) -> AudioLayout;
     pub const fn samples_per_channel(&self) -> u64;
     pub const fn duration_ns(&self) -> u64;
-    pub fn plane_bytes(&self, plane: u16) -> voxa_types::Result<&[u8]>;
+    pub fn plane_bytes(&self, plane: u16) -> muxiva_types::Result<&[u8]>;
 }
 
 pub enum PixelFormat { Rgba8, Yuv420p }
@@ -325,7 +325,7 @@ pub struct VideoData;
 impl VideoData {
     pub fn rgba8(
         buffer: FrameBuffer, width: u32, height: u32, stride: usize,
-    ) -> voxa_types::Result<Self>;
+    ) -> muxiva_types::Result<Self>;
     pub fn yuv420p(
         buffer: FrameBuffer,
         width: u32,
@@ -333,25 +333,25 @@ impl VideoData {
         y_stride: usize,
         u_stride: usize,
         v_stride: usize,
-    ) -> voxa_types::Result<Self>;
+    ) -> muxiva_types::Result<Self>;
     pub fn buffer(&self) -> &FrameBuffer;
     pub const fn width(&self) -> u32;
     pub const fn height(&self) -> u32;
     pub const fn pixel_format(&self) -> PixelFormat;
     pub fn layout(&self) -> &VideoLayout;
-    pub fn plane_bytes(&self, plane: &VideoPlane) -> voxa_types::Result<&[u8]>;
+    pub fn plane_bytes(&self, plane: &VideoPlane) -> muxiva_types::Result<&[u8]>;
 }
 
 pub struct TextData;
 impl TextData {
     pub fn new(text: impl Into<Box<str>>) -> Self;
-    pub fn from_utf8(bytes: FrameBuffer) -> voxa_types::Result<Self>;
+    pub fn from_utf8(bytes: FrameBuffer) -> muxiva_types::Result<Self>;
     pub fn as_str(&self) -> &str;
 }
 
 pub struct MediaType;
 impl MediaType {
-    pub fn new(value: impl Into<Box<str>>) -> voxa_types::Result<Self>;
+    pub fn new(value: impl Into<Box<str>>) -> muxiva_types::Result<Self>;
     pub fn as_str(&self) -> &str;
 }
 
@@ -393,7 +393,7 @@ impl EventData {
 
 `Timestamp` no longer implements `Ord` or `PartialOrd`. This is an intentional
 pre-1.0 correction to the Stage 2 public surface. Header comparison returns
-`VOXA-FRM-CLOCK-DOMAIN` unless both complete `ClockDomain` values are equal;
+`MUXIVA-FRM-CLOCK-DOMAIN` unless both complete `ClockDomain` values are equal;
 equal domains compare the signed nanoseconds. Do not add a bare Timestamp
 comparison helper or implement clock conversion.
 
@@ -417,7 +417,7 @@ pub enum Frame {
 }
 
 impl Frame {
-    pub fn new(header: FrameHeader, payload: FramePayload) -> voxa_types::Result<Self>;
+    pub fn new(header: FrameHeader, payload: FramePayload) -> muxiva_types::Result<Self>;
     pub const fn frame_type(&self) -> FrameType;
     pub fn header(&self) -> &FrameHeader;
     pub fn as_audio(&self) -> Option<&AudioFrame>;
@@ -426,8 +426,8 @@ impl Frame {
     pub fn as_byte(&self) -> Option<&ByteFrame>;
     pub fn as_signal(&self) -> Option<&SignalFrame>;
     pub fn as_event(&self) -> Option<&EventFrame>;
-    pub fn ensure_type(&self, expected: FrameType) -> voxa_types::Result<()>;
-    pub fn derive(&self, derivation: FrameDerivation) -> voxa_types::Result<Self>;
+    pub fn ensure_type(&self, expected: FrameType) -> muxiva_types::Result<()>;
+    pub fn derive(&self, derivation: FrameDerivation) -> muxiva_types::Result<Self>;
     pub fn public_view(&self) -> PublicFrameView<'_>;
     pub fn log_safe_view(&self) -> LogSafeFrameView<'_>;
 }
@@ -440,7 +440,7 @@ impl FrameDerivation {
         sequence_id: SequenceId,
         origin: TransformOrigin,
         reason: impl Into<Box<str>>,
-    ) -> voxa_types::Result<Self>;
+    ) -> muxiva_types::Result<Self>;
     pub fn with_metadata(self, metadata: Metadata) -> Self;
     pub fn with_extensions(self, extensions: Extensions) -> Self;
     pub fn with_payload(self, payload: FramePayload) -> Self;
@@ -494,9 +494,9 @@ prints private data.
 
 **Files:**
 
-- Modify: `crates/voxa-types/src/id.rs`
-- Create: `crates/voxa-types/src/schema.rs`
-- Modify: `crates/voxa-types/src/lib.rs`
+- Modify: `crates/muxiva-types/src/id.rs`
+- Create: `crates/muxiva-types/src/schema.rs`
+- Modify: `crates/muxiva-types/src/lib.rs`
 
 - [ ] **Step 1 — RED: add ID separation and namespace tests**
 
@@ -506,7 +506,7 @@ Add this compile-fail doc test to `FrameId`:
 
 ```rust
 /// ```compile_fail
-/// use voxa_types::{EdgeId, FrameId};
+/// use muxiva_types::{EdgeId, FrameId};
 /// fn needs_edge(_: EdgeId) {}
 /// let frame = FrameId::new("frame-1").unwrap();
 /// needs_edge(frame);
@@ -516,8 +516,8 @@ Add this compile-fail doc test to `FrameId`:
 Run:
 
 ```bash
-cargo test -p voxa-types id::tests -- --nocapture
-cargo test -p voxa-types schema::tests -- --nocapture
+cargo test -p muxiva-types id::tests -- --nocapture
+cargo test -p muxiva-types schema::tests -- --nocapture
 ```
 
 Expected RED: unresolved new ID/schema symbols or absent module.
@@ -528,23 +528,23 @@ Reuse the private `identifier_type!` macro for all four IDs. Implement the
 contract grammar in one private `validate_namespace` helper. Return:
 
 ```rust
-VoxaError::new(
+MuxivaError::new(
     ErrorCategory::Validation,
-    "VOXA-FRM-NAMESPACE",
+    "MUXIVA-FRM-NAMESPACE",
     "name must be a qualified ASCII namespace",
 )
 ```
 
-for every namespace grammar failure and `VOXA-FRM-SCHEMA-VERSION` for zero.
+for every namespace grammar failure and `MUXIVA-FRM-SCHEMA-VERSION` for zero.
 
 Run:
 
 ```bash
 cargo fmt --all --check
-cargo clippy -p voxa-types --all-targets -- -D warnings
-cargo test -p voxa-types id::tests -- --nocapture
-cargo test -p voxa-types schema::tests -- --nocapture
-cargo test -p voxa-types --doc
+cargo clippy -p muxiva-types --all-targets -- -D warnings
+cargo test -p muxiva-types id::tests -- --nocapture
+cargo test -p muxiva-types schema::tests -- --nocapture
+cargo test -p muxiva-types --doc
 ```
 
 Expected GREEN: all pass, including nominal type separation.
@@ -552,7 +552,7 @@ Expected GREEN: all pass, including nominal type separation.
 - [ ] **Step 3 — commit**
 
 ```bash
-git add crates/voxa-types/src/id.rs crates/voxa-types/src/schema.rs crates/voxa-types/src/lib.rs
+git add crates/muxiva-types/src/id.rs crates/muxiva-types/src/schema.rs crates/muxiva-types/src/lib.rs
 git commit -m "feat(types): add frame identity and schema values"
 ```
 
@@ -560,9 +560,9 @@ git commit -m "feat(types): add frame identity and schema values"
 
 **Files:**
 
-- Create: `crates/voxa-types/src/frame_buffer.rs`
-- Create: `crates/voxa-types/src/value.rs`
-- Modify: `crates/voxa-types/src/lib.rs`
+- Create: `crates/muxiva-types/src/frame_buffer.rs`
+- Create: `crates/muxiva-types/src/value.rs`
+- Modify: `crates/muxiva-types/src/lib.rs`
 
 - [ ] **Step 1 — RED: write buffer lifetime tests beside the module**
 
@@ -587,7 +587,7 @@ and length-only Debug.
 Run:
 
 ```bash
-cargo test -p voxa-types frame_buffer::tests -- --nocapture
+cargo test -p muxiva-types frame_buffer::tests -- --nocapture
 ```
 
 Expected RED: `FrameBuffer` does not exist.
@@ -605,11 +605,11 @@ reference count.
 fn values_reject_non_finite_numbers_and_bad_keys() {
     assert_eq!(
         FiniteF64::new(f64::NAN).unwrap_err().code(),
-        "VOXA-FRM-VALUE-NUMBER"
+        "MUXIVA-FRM-VALUE-NUMBER"
     );
     let error = ValueMap::try_from_iter([(Box::<str>::from(""), Value::Null)])
         .unwrap_err();
-    assert_eq!(error.code(), "VOXA-FRM-VALUE-KEY");
+    assert_eq!(error.code(), "MUXIVA-FRM-VALUE-KEY");
 }
 ```
 
@@ -618,7 +618,7 @@ Test every Value variant and deterministic map/metadata iteration.
 Run:
 
 ```bash
-cargo test -p voxa-types value::tests -- --nocapture
+cargo test -p muxiva-types value::tests -- --nocapture
 ```
 
 Expected RED: Value and Metadata are absent.
@@ -632,9 +632,9 @@ Run:
 
 ```bash
 cargo fmt --all --check
-cargo clippy -p voxa-types --all-targets -- -D warnings
-cargo test -p voxa-types frame_buffer::tests -- --nocapture
-cargo test -p voxa-types value::tests -- --nocapture
+cargo clippy -p muxiva-types --all-targets -- -D warnings
+cargo test -p muxiva-types frame_buffer::tests -- --nocapture
+cargo test -p muxiva-types value::tests -- --nocapture
 ```
 
 Expected GREEN: buffer and value tests pass without new dependencies.
@@ -642,7 +642,7 @@ Expected GREEN: buffer and value tests pass without new dependencies.
 - [ ] **Step 5 — commit**
 
 ```bash
-git add crates/voxa-types/src/frame_buffer.rs crates/voxa-types/src/value.rs crates/voxa-types/src/lib.rs
+git add crates/muxiva-types/src/frame_buffer.rs crates/muxiva-types/src/value.rs crates/muxiva-types/src/lib.rs
 git commit -m "feat(types): add immutable frame buffers and values"
 ```
 
@@ -650,20 +650,20 @@ git commit -m "feat(types): add immutable frame buffers and values"
 
 **Files:**
 
-- Create: `crates/voxa-types/src/extension.rs`
-- Create: `crates/voxa-types/src/lineage.rs`
-- Modify: `crates/voxa-types/src/lib.rs`
+- Create: `crates/muxiva-types/src/extension.rs`
+- Create: `crates/muxiva-types/src/lineage.rs`
+- Modify: `crates/muxiva-types/src/lib.rs`
 
 - [ ] **Step 1 — RED: add extension uniqueness and visibility tests**
 
 Construct one public and one private extension. Assert `iter().count() == 2`,
 `public_iter().count() == 1`, and duplicate key/version returns
-`VOXA-FRM-EXTENSION-DUPLICATE`. Assert two versions of one key are accepted.
+`MUXIVA-FRM-EXTENSION-DUPLICATE`. Assert two versions of one key are accepted.
 
 Run:
 
 ```bash
-cargo test -p voxa-types extension::tests -- --nocapture
+cargo test -p muxiva-types extension::tests -- --nocapture
 ```
 
 Expected RED: extension module absent.
@@ -681,7 +681,7 @@ prints its Value; public Debug prints key/schema/producer but still omits Value.
 #[test]
 fn transform_origin_requires_attribution() {
     let error = TransformOrigin::new(None, None).unwrap_err();
-    assert_eq!(error.code(), "VOXA-FRM-LINEAGE-ORIGIN");
+    assert_eq!(error.code(), "MUXIVA-FRM-LINEAGE-ORIGIN");
 }
 ```
 
@@ -691,7 +691,7 @@ ordered entries through the crate-private constructor.
 Run:
 
 ```bash
-cargo test -p voxa-types lineage::tests -- --nocapture
+cargo test -p muxiva-types lineage::tests -- --nocapture
 ```
 
 Expected RED: lineage types absent.
@@ -705,9 +705,9 @@ Run:
 
 ```bash
 cargo fmt --all --check
-cargo clippy -p voxa-types --all-targets -- -D warnings
-cargo test -p voxa-types extension::tests -- --nocapture
-cargo test -p voxa-types lineage::tests -- --nocapture
+cargo clippy -p muxiva-types --all-targets -- -D warnings
+cargo test -p muxiva-types extension::tests -- --nocapture
+cargo test -p muxiva-types lineage::tests -- --nocapture
 ```
 
 Expected GREEN: collection, visibility, and lineage tests pass.
@@ -715,7 +715,7 @@ Expected GREEN: collection, visibility, and lineage tests pass.
 - [ ] **Step 5 — commit**
 
 ```bash
-git add crates/voxa-types/src/extension.rs crates/voxa-types/src/lineage.rs crates/voxa-types/src/lib.rs
+git add crates/muxiva-types/src/extension.rs crates/muxiva-types/src/lineage.rs crates/muxiva-types/src/lib.rs
 git commit -m "feat(types): add frame extensions and lineage"
 ```
 
@@ -723,12 +723,12 @@ git commit -m "feat(types): add frame extensions and lineage"
 
 **Files:**
 
-- Modify: `crates/voxa-types/src/time.rs`
-- Create: `crates/voxa-types/src/frame/mod.rs`
-- Create: `crates/voxa-types/src/frame/header.rs`
-- Create: `crates/voxa-types/src/frame/audio.rs`
-- Modify: `crates/voxa-types/src/lib.rs`
-- Create: `crates/voxa-types/tests/frame_contract.rs`
+- Modify: `crates/muxiva-types/src/time.rs`
+- Create: `crates/muxiva-types/src/frame/mod.rs`
+- Create: `crates/muxiva-types/src/frame/header.rs`
+- Create: `crates/muxiva-types/src/frame/audio.rs`
+- Modify: `crates/muxiva-types/src/lib.rs`
+- Create: `crates/muxiva-types/tests/frame_contract.rs`
 
 - [ ] **Step 1 — RED: prohibit raw timestamp ordering and test checked comparison**
 
@@ -738,7 +738,7 @@ because the body incorrectly compiles:
 
 ```rust
 /// ```compile_fail
-/// use voxa_types::Timestamp;
+/// use muxiva_types::Timestamp;
 /// let earlier = Timestamp::from_nanos(1);
 /// let later = Timestamp::from_nanos(2);
 /// let _ = earlier < later;
@@ -769,14 +769,14 @@ fn header_rejects_same_kind_with_different_clock_ids() {
     let left = header_in(media_domain("capture.left"), Timestamp::from_nanos(1));
     let right = header_in(media_domain("capture.right"), Timestamp::from_nanos(2));
     let error = left.compare_timestamp(&right).unwrap_err();
-    assert_eq!(error.code(), "VOXA-FRM-CLOCK-DOMAIN");
+    assert_eq!(error.code(), "MUXIVA-FRM-CLOCK-DOMAIN");
 }
 ```
 
 Put the self-parent cycle test in `frame/header.rs`'s unit-test module, not the
 public integration test. The unit test constructs one entry with
 `Lineage::from_entries`, sets `parent_frame_id` equal to the new header ID, and
-asserts `VOXA-FRM-LINEAGE-CYCLE`. This is the only test allowed to use that
+asserts `MUXIVA-FRM-LINEAGE-CYCLE`. This is the only test allowed to use that
 crate-private constructor. Keep the later public integration assertion that
 derivation rejects reuse of the direct parent ID.
 
@@ -791,16 +791,16 @@ fn header_rejects_self_parent_lineage() {
     let entry = LineageEntry::new(frame_id.clone(), origin, "normalize").unwrap();
     let lineage = Lineage::from_entries(vec![entry]);
     let error = header_with_lineage(frame_id, lineage).unwrap_err();
-    assert_eq!(error.code(), "VOXA-FRM-LINEAGE-CYCLE");
+    assert_eq!(error.code(), "MUXIVA-FRM-LINEAGE-CYCLE");
 }
 ```
 
 Run:
 
 ```bash
-cargo test -p voxa-types --doc
-cargo test -p voxa-types frame::header::tests -- --nocapture
-cargo test -p voxa-types --test frame_contract header -- --nocapture
+cargo test -p muxiva-types --doc
+cargo test -p muxiva-types frame::header::tests -- --nocapture
+cargo test -p muxiva-types --test frame_contract header -- --nocapture
 ```
 
 Expected RED: the raw comparison doc test compiles unexpectedly and the new
@@ -819,9 +819,9 @@ calling `self.timestamp.as_nanos().cmp(&other.timestamp.as_nanos())`. A
 different domain returns:
 
 ```rust
-VoxaError::new(
+MuxivaError::new(
     ErrorCategory::Validation,
-    "VOXA-FRM-CLOCK-DOMAIN",
+    "MUXIVA-FRM-CLOCK-DOMAIN",
     "timestamps from different clock domains cannot be ordered",
 )
 ```
@@ -833,10 +833,10 @@ Run:
 
 ```bash
 cargo fmt --all --check
-cargo clippy -p voxa-types --all-targets -- -D warnings
-cargo test -p voxa-types --doc
-cargo test -p voxa-types frame::header::tests -- --nocapture
-cargo test -p voxa-types --test frame_contract header -- --nocapture
+cargo clippy -p muxiva-types --all-targets -- -D warnings
+cargo test -p muxiva-types --doc
+cargo test -p muxiva-types frame::header::tests -- --nocapture
+cargo test -p muxiva-types --test frame_contract header -- --nocapture
 ```
 
 Expected GREEN: raw `<` is rejected by the compiler, same-domain signed values
@@ -864,15 +864,15 @@ fn constructs_interleaved_pcm_and_duration() {
 
 Table-test zero and 768,001 rates, zero and 1,025 channels, zero samples,
 short/trailing payloads, and `u64::MAX` samples causing
-`VOXA-FRM-ARITHMETIC` before allocation or slicing. Test plane 0 as the only
+`MUXIVA-FRM-ARITHMETIC` before allocation or slicing. Test plane 0 as the only
 valid interleaved plane, every `0..channels` planar plane, and invalid indices
-for both layouts; invalid indices must return `VOXA-FRM-AUDIO-PLANE`, never
-`VOXA-FRM-AUDIO-CHANNELS`.
+for both layouts; invalid indices must return `MUXIVA-FRM-AUDIO-PLANE`, never
+`MUXIVA-FRM-AUDIO-CHANNELS`.
 
 Run:
 
 ```bash
-cargo test -p voxa-types --test frame_contract audio -- --nocapture
+cargo test -p muxiva-types --test frame_contract audio -- --nocapture
 ```
 
 Expected RED: AudioData and its enums unresolved.
@@ -884,9 +884,9 @@ Use helpers shaped as:
 ```rust
 fn checked_product(left: u64, right: u64) -> Result<u64> {
     left.checked_mul(right).ok_or_else(|| {
-        VoxaError::new(
+        MuxivaError::new(
             ErrorCategory::Validation,
-            "VOXA-FRM-ARITHMETIC",
+            "MUXIVA-FRM-ARITHMETIC",
             "frame size arithmetic overflowed",
         )
     })
@@ -897,16 +897,16 @@ Convert to `usize` with `usize::try_from` and the same error code. Length
 mismatch errors attach decimal `expected_bytes` and `actual_bytes`, never
 payload content. `plane_bytes` returns the whole buffer for interleaved layout
 when `plane == 0`; any other interleaved plane returns
-`VOXA-FRM-AUDIO-PLANE`. For planar layout it returns the checked contiguous
+`MUXIVA-FRM-AUDIO-PLANE`. For planar layout it returns the checked contiguous
 channel plane and accepts `0..channels`. Document this behavior on the method.
 
 Run:
 
 ```bash
 cargo fmt --all --check
-cargo clippy -p voxa-types --all-targets -- -D warnings
-cargo test -p voxa-types --test frame_contract header -- --nocapture
-cargo test -p voxa-types --test frame_contract audio -- --nocapture
+cargo clippy -p muxiva-types --all-targets -- -D warnings
+cargo test -p muxiva-types --test frame_contract header -- --nocapture
+cargo test -p muxiva-types --test frame_contract audio -- --nocapture
 ```
 
 Expected GREEN: all header/audio cases pass and no panic is observed.
@@ -914,7 +914,7 @@ Expected GREEN: all header/audio cases pass and no panic is observed.
 - [ ] **Step 5 — commit**
 
 ```bash
-git add crates/voxa-types/src/time.rs crates/voxa-types/src/frame crates/voxa-types/src/lib.rs crates/voxa-types/tests/frame_contract.rs
+git add crates/muxiva-types/src/time.rs crates/muxiva-types/src/frame crates/muxiva-types/src/lib.rs crates/muxiva-types/tests/frame_contract.rs
 git commit -m "feat(types): validate frame headers and PCM audio"
 ```
 
@@ -922,10 +922,10 @@ git commit -m "feat(types): validate frame headers and PCM audio"
 
 **Files:**
 
-- Create: `crates/voxa-types/src/frame/video.rs`
-- Modify: `crates/voxa-types/src/frame/mod.rs`
-- Modify: `crates/voxa-types/src/lib.rs`
-- Modify: `crates/voxa-types/tests/frame_contract.rs`
+- Create: `crates/muxiva-types/src/frame/video.rs`
+- Modify: `crates/muxiva-types/src/frame/mod.rs`
+- Modify: `crates/muxiva-types/src/lib.rs`
+- Modify: `crates/muxiva-types/tests/frame_contract.rs`
 
 - [ ] **Step 1 — RED: add exact plane/stride/overflow tests**
 
@@ -936,18 +936,18 @@ Y=0/U=8/V=10. Assert every plane's row bytes and rows.
 Add tables for zero width/height, odd YUV dimensions, RGBA stride below
 `width * 4`, each Y/U/V short stride, short/trailing payload, and
 `u32::MAX` dimensions with huge strides. Overflow must return
-`VOXA-FRM-ARITHMETIC`; impossible allocation is never attempted.
+`MUXIVA-FRM-ARITHMETIC`; impossible allocation is never attempted.
 
 Construct two separate valid `VideoData` values, obtain a `VideoPlane`
 reference from the first value's `layout`, and pass it to the second value's
-`plane_bytes`. Assert `VOXA-FRM-VIDEO-PLANE`, even when both layouts have the
+`plane_bytes`. Assert `MUXIVA-FRM-VIDEO-PLANE`, even when both layouts have the
 same dimensions and scalar plane fields. Valid own-layout plane references
 must return their full stride-including ranges.
 
 Run:
 
 ```bash
-cargo test -p voxa-types --test frame_contract video -- --nocapture
+cargo test -p muxiva-types --test frame_contract video -- --nocapture
 ```
 
 Expected RED: video module/types absent.
@@ -960,7 +960,7 @@ and total length with checked arithmetic. `plane_bytes` verifies the plane is
 one of the current layout's borrowed descriptor instances with
 `std::ptr::eq` before returning its full stride-including range; scalar
 descriptor equality is insufficient. A foreign reference returns
-`VOXA-FRM-VIDEO-PLANE`. Reserve `VOXA-FRM-VIDEO-LENGTH` solely for constructor
+`MUXIVA-FRM-VIDEO-PLANE`. Reserve `MUXIVA-FRM-VIDEO-LENGTH` solely for constructor
 payload-length mismatch. This uses safe pointer identity and exposes no raw
 pointer.
 
@@ -968,8 +968,8 @@ Run:
 
 ```bash
 cargo fmt --all --check
-cargo clippy -p voxa-types --all-targets -- -D warnings
-cargo test -p voxa-types --test frame_contract video -- --nocapture
+cargo clippy -p muxiva-types --all-targets -- -D warnings
+cargo test -p muxiva-types --test frame_contract video -- --nocapture
 ```
 
 Expected GREEN: layouts and all invalid cases pass.
@@ -977,7 +977,7 @@ Expected GREEN: layouts and all invalid cases pass.
 - [ ] **Step 3 — commit**
 
 ```bash
-git add crates/voxa-types/src/frame/video.rs crates/voxa-types/src/frame/mod.rs crates/voxa-types/src/lib.rs crates/voxa-types/tests/frame_contract.rs
+git add crates/muxiva-types/src/frame/video.rs crates/muxiva-types/src/frame/mod.rs crates/muxiva-types/src/lib.rs crates/muxiva-types/tests/frame_contract.rs
 git commit -m "feat(types): validate immutable video layouts"
 ```
 
@@ -985,10 +985,10 @@ git commit -m "feat(types): validate immutable video layouts"
 
 **Files:**
 
-- Create: `crates/voxa-types/src/frame/message.rs`
-- Modify: `crates/voxa-types/src/frame/mod.rs`
-- Modify: `crates/voxa-types/src/lib.rs`
-- Modify: `crates/voxa-types/tests/frame_contract.rs`
+- Create: `crates/muxiva-types/src/frame/message.rs`
+- Modify: `crates/muxiva-types/src/frame/mod.rs`
+- Modify: `crates/muxiva-types/src/lib.rs`
+- Modify: `crates/muxiva-types/tests/frame_contract.rs`
 
 - [ ] **Step 1 — RED: add text, bytes, signal, and event tests**
 
@@ -999,7 +999,7 @@ variants. Assert Signal/Event timestamps come only from the common header.
 Run:
 
 ```bash
-cargo test -p voxa-types --test frame_contract messages -- --nocapture
+cargo test -p muxiva-types --test frame_contract messages -- --nocapture
 ```
 
 Expected RED: message payload types absent.
@@ -1020,7 +1020,7 @@ Then pair an Audio header with Text payload:
 ```rust
 let error = Frame::new(audio_header, FramePayload::Text(TextData::new("hello")))
     .unwrap_err();
-assert_eq!(error.code(), "VOXA-FRM-TYPE-MISMATCH");
+assert_eq!(error.code(), "MUXIVA-FRM-TYPE-MISMATCH");
 ```
 
 Also call `ensure_type` with matching and differing types.
@@ -1028,7 +1028,7 @@ Also call `ensure_type` with matching and differing types.
 Run:
 
 ```bash
-cargo test -p voxa-types --test frame_contract frame_variants -- --nocapture
+cargo test -p muxiva-types --test frame_contract frame_variants -- --nocapture
 ```
 
 Expected RED: Frame assembly incomplete.
@@ -1043,8 +1043,8 @@ Run:
 
 ```bash
 cargo fmt --all --check
-cargo clippy -p voxa-types --all-targets -- -D warnings
-cargo test -p voxa-types --test frame_contract -- --nocapture
+cargo clippy -p muxiva-types --all-targets -- -D warnings
+cargo test -p muxiva-types --test frame_contract -- --nocapture
 ```
 
 Expected GREEN: header, media, messages, six variants, and type gate pass.
@@ -1052,7 +1052,7 @@ Expected GREEN: header, media, messages, six variants, and type gate pass.
 - [ ] **Step 5 — commit**
 
 ```bash
-git add crates/voxa-types/src/frame/message.rs crates/voxa-types/src/frame/mod.rs crates/voxa-types/src/lib.rs crates/voxa-types/tests/frame_contract.rs
+git add crates/muxiva-types/src/frame/message.rs crates/muxiva-types/src/frame/mod.rs crates/muxiva-types/src/lib.rs crates/muxiva-types/tests/frame_contract.rs
 git commit -m "feat(types): assemble six immutable frame variants"
 ```
 
@@ -1060,9 +1060,9 @@ git commit -m "feat(types): assemble six immutable frame variants"
 
 **Files:**
 
-- Modify: `crates/voxa-types/src/frame/mod.rs`
-- Modify: `crates/voxa-types/src/frame/header.rs`
-- Create: `crates/voxa-types/tests/frame_derivation.rs`
+- Modify: `crates/muxiva-types/src/frame/mod.rs`
+- Modify: `crates/muxiva-types/src/frame/header.rs`
+- Create: `crates/muxiva-types/tests/frame_derivation.rs`
 
 - [ ] **Step 1 — RED: add derivation invariants**
 
@@ -1076,7 +1076,7 @@ payload buffer. Assert:
 - child lineage length is one, parent ID matches, origin matches, and reason
   is exact;
 - child buffer differs when payload is replaced; and
-- reusing the parent ID returns `VOXA-FRM-DERIVATION-ID`.
+- reusing the parent ID returns `MUXIVA-FRM-DERIVATION-ID`.
 
 Add a second derivation that overrides metadata/extensions and transforms Byte
 to Text, proving the child header type comes from the new payload.
@@ -1084,7 +1084,7 @@ to Text, proving the child header type comes from the new payload.
 Run:
 
 ```bash
-cargo test -p voxa-types --test frame_derivation derivation -- --nocapture
+cargo test -p muxiva-types --test frame_derivation derivation -- --nocapture
 ```
 
 Expected RED: FrameDerivation/derive absent.
@@ -1134,7 +1134,7 @@ from hiding a leaking `FrameHeader` or `Extension` implementation.
 Run:
 
 ```bash
-cargo test -p voxa-types --test frame_derivation privacy -- --nocapture
+cargo test -p muxiva-types --test frame_derivation privacy -- --nocapture
 ```
 
 Expected RED: view types absent or Debug leaks values.
@@ -1150,8 +1150,8 @@ Run:
 
 ```bash
 cargo fmt --all --check
-cargo clippy -p voxa-types --all-targets -- -D warnings
-cargo test -p voxa-types --test frame_derivation -- --nocapture
+cargo clippy -p muxiva-types --all-targets -- -D warnings
+cargo test -p muxiva-types --test frame_derivation -- --nocapture
 ```
 
 Expected GREEN: derivation, preservation, and privacy tests pass.
@@ -1159,7 +1159,7 @@ Expected GREEN: derivation, preservation, and privacy tests pass.
 - [ ] **Step 5 — commit**
 
 ```bash
-git add crates/voxa-types/src/frame crates/voxa-types/tests/frame_derivation.rs
+git add crates/muxiva-types/src/frame crates/muxiva-types/tests/frame_derivation.rs
 git commit -m "feat(types): derive frames with safe diagnostic views"
 ```
 
@@ -1167,7 +1167,7 @@ git commit -m "feat(types): derive frames with safe diagnostic views"
 
 **Files:**
 
-- Create: `crates/voxa-types/tests/frame_concurrency.rs`
+- Create: `crates/muxiva-types/tests/frame_concurrency.rs`
 
 - [ ] **Step 1 — RED: add public ownership tests**
 
@@ -1197,8 +1197,8 @@ call `as_slice()[0] = 9`.
 Run:
 
 ```bash
-cargo test -p voxa-types --test frame_concurrency -- --nocapture
-cargo test -p voxa-types --doc
+cargo test -p muxiva-types --test frame_concurrency -- --nocapture
+cargo test -p muxiva-types --doc
 ```
 
 Expected RED: Clone/Send/Sync or compile-fail documentation is incomplete.
@@ -1218,9 +1218,9 @@ Run:
 
 ```bash
 cargo fmt --all --check
-cargo clippy -p voxa-types --all-targets -- -D warnings
-cargo test -p voxa-types --test frame_concurrency -- --nocapture
-cargo test -p voxa-types --doc
+cargo clippy -p muxiva-types --all-targets -- -D warnings
+cargo test -p muxiva-types --test frame_concurrency -- --nocapture
+cargo test -p muxiva-types --doc
 ```
 
 Expected GREEN: concurrent reads and immutability compile checks pass under
@@ -1229,7 +1229,7 @@ the default test runner.
 - [ ] **Step 3 — commit**
 
 ```bash
-git add crates/voxa-types/tests/frame_concurrency.rs crates/voxa-types/src
+git add crates/muxiva-types/tests/frame_concurrency.rs crates/muxiva-types/src
 git commit -m "test(types): verify frame ownership and concurrent reads"
 ```
 
@@ -1237,14 +1237,14 @@ git commit -m "test(types): verify frame ownership and concurrent reads"
 
 **Files:**
 
-- Create: `crates/voxa-examples/src/bin/frames.rs`
+- Create: `crates/muxiva-examples/src/bin/frames.rs`
 
 - [ ] **Step 1 — RED: compile the absent example**
 
 Run:
 
 ```bash
-cargo run -p voxa-examples --bin frames
+cargo run -p muxiva-examples --bin frames
 ```
 
 Expected RED: Cargo reports no `frames` binary.
@@ -1261,7 +1261,7 @@ Replace the child audio buffer with a separately allocated 960-byte buffer.
 End with exactly one non-sensitive output line whose stable prefix is:
 
 ```text
-Voxa derived frame: frame-2 Audio lineage=1
+Muxiva derived frame: frame-2 Audio lineage=1
 ```
 
 Use assertions to prove the parent remains `frame-1` with empty lineage and
@@ -1272,9 +1272,9 @@ Run:
 
 ```bash
 cargo fmt --all --check
-cargo clippy -p voxa-examples --all-targets -- -D warnings
-cargo test -p voxa-examples --all-targets
-cargo run -p voxa-examples --bin frames
+cargo clippy -p muxiva-examples --all-targets -- -D warnings
+cargo test -p muxiva-examples --all-targets
+cargo run -p muxiva-examples --bin frames
 ```
 
 Expected GREEN: all pass and the one output line has the prefix above.
@@ -1282,7 +1282,7 @@ Expected GREEN: all pass and the one output line has the prefix above.
 - [ ] **Step 3 — commit**
 
 ```bash
-git add crates/voxa-examples/src/bin/frames.rs
+git add crates/muxiva-examples/src/bin/frames.rs
 git commit -m "feat(examples): construct and derive immutable frames"
 ```
 
@@ -1312,10 +1312,10 @@ execution unless an actual remote CI result is available.
 - [ ] **Step 2 — run focused acceptance**
 
 ```bash
-cargo test -p voxa-types --all-targets
-cargo test -p voxa-types --doc
-cargo test -p voxa-examples --all-targets
-cargo run -p voxa-examples --bin frames
+cargo test -p muxiva-types --all-targets
+cargo test -p muxiva-types --doc
+cargo test -p muxiva-examples --all-targets
+cargo run -p muxiva-examples --bin frames
 ```
 
 Expected GREEN: all tests pass; example output contains only the log-safe
@@ -1338,7 +1338,7 @@ serde, async runtime, FFI, media, RTC, or FFmpeg package.
 
 ```bash
 if rg -n 'unsafe\s*\{|allow\s*\(unsafe_code\)|tokio|serde::|derive[^\n]*(Serialize|Deserialize)|extern\s+"C"|no_mangle|GraphRunner|GraphBuilder|struct\s+Node|struct\s+Edge|VecDeque|mpsc|ffmpeg|webrtc|pyo3|napi' crates; then exit 1; fi
-if rg -n 'pub fn [^\n]*(&mut|as_mut|mut_ptr)|->\s*(&mut|\*mut|Vec<u8>|Arc<\[u8\]>)|pub [a-zA-Z_][a-zA-Z0-9_]*\s*:\s*(Vec<u8>|Arc<\[u8\]>|&mut|\*mut)' crates/voxa-types/src; then exit 1; fi
+if rg -n 'pub fn [^\n]*(&mut|as_mut|mut_ptr)|->\s*(&mut|\*mut|Vec<u8>|Arc<\[u8\]>)|pub [a-zA-Z_][a-zA-Z0-9_]*\s*:\s*(Vec<u8>|Arc<\[u8\]>|&mut|\*mut)' crates/muxiva-types/src; then exit 1; fi
 ```
 
 Expected GREEN: both scans return no matches. If the public-field expression
@@ -1382,8 +1382,8 @@ binding, or Stage 4 implementation.
 - [ ] All live data is owned; FrameBuffer exposes immutable bytes only.
 - [ ] Copy/Retain/Release are documentation, not foreign-buffer code.
 - [ ] Audio/video expected lengths and offsets use checked arithmetic.
-- [ ] Invalid audio indices use `VOXA-FRM-AUDIO-PLANE`; foreign VideoPlane
-  references use `VOXA-FRM-VIDEO-PLANE`.
+- [ ] Invalid audio indices use `MUXIVA-FRM-AUDIO-PLANE`; foreign VideoPlane
+  references use `MUXIVA-FRM-VIDEO-PLANE`.
 - [ ] Bare Timestamp ordering does not compile and header comparison requires
   complete clock-domain equality.
 - [ ] Six Frame variants match six FrameType values exactly.

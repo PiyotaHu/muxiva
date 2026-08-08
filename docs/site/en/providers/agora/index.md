@@ -2,7 +2,7 @@
 
 The official Agora transport Nodes are implemented in C++. Audio and data ingress/egress Nodes
 for one RTC identity share one Engine, keep credentials outside Graph JSON, and exchange typed
-PCM Audio Frames plus bounded, versioned client messages with Voxa. This version deliberately runs
+PCM Audio Frames plus bounded, versioned client messages with Muxiva. This version deliberately runs
 one Agent RTC session per Runtime process; production scales with process/container isolation.
 
 - Category: `transport`
@@ -15,14 +15,14 @@ Run on macOS:
 
 ```bash
 ./examples/voice-agent/setup.sh
-voxa doctor --voice
+muxiva doctor --voice
 ```
 
-Configure App ID, channel, Voxa Bot UID/token, and browser UID/token in Studio
+Configure App ID, channel, Muxiva Bot UID/token, and browser UID/token in Studio
 **Connections**. Use short-lived tokens in development and a token server in production.
 
-Do not generate only one token: the browser uses numeric UID `1001` and the Voxa Bot uses
-`2001`, so generate two tokens for the same channel. The App Certificate never enters Voxa.
+Do not generate only one token: the browser uses numeric UID `1001` and the Muxiva Bot uses
+`2001`, so generate two tokens for the same channel. The App Certificate never enters Muxiva.
 
 Nodes:
 

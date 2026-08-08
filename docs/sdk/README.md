@@ -1,16 +1,16 @@
-# Voxa language SDKs / 多语言 SDK
+# Muxiva language SDKs / 多语言 SDK
 
-Voxa now maintains the same minimum developer journey for Python, TypeScript,
+Muxiva now maintains the same minimum developer journey for Python, TypeScript,
 and C++: install the package, define a Node, execute its lifecycle through a
 bounded language domain, and verify the result from an independent consumer.
 
-Voxa 现在为 Python、TypeScript 和 C++ 提供相同的最小完整链路：安装 SDK、
+Muxiva 现在为 Python、TypeScript 和 C++ 提供相同的最小完整链路：安装 SDK、
 定义 Node、通过有界语言执行域运行生命周期，并在独立消费者项目中验收。
 
 | SDK | Install/build | Define Node | Execute | Independent example | Current limitation |
 | --- | --- | --- | --- | --- | --- |
 | [Python](python.md) | maturin wheel / `pip install` | `TransformNode` / schema-driven `GraphNodeFactory` | `NodeRunner` or Graph v1 | multimodal Source/Sink tests | in-process, one in-flight callback |
-| [TypeScript](typescript.md) | `@voxa/core` | `defineTransformNode` / schema-driven `GraphNodeFactory` | Worker-hosted Graph v1 | packed strict `tsc` consumer | synchronous callbacks only |
+| [TypeScript](typescript.md) | `@muxiva/core` | `defineTransformNode` / schema-driven `GraphNodeFactory` | Worker-hosted Graph v1 | packed strict `tsc` consumer | synchronous callbacks only |
 | [C++](cpp.md) | CMake install package | `TransformNode` / `MultimodalGraphNode` | `run_graph` / `run_multimodal_graph` | external CMake plus multimodal executable | packed RGBA8 and I420 video |
 
 ## Honest runtime boundary / 当前边界

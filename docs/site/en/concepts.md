@@ -1,6 +1,6 @@
-# Voxa system overview and core concepts
+# Muxiva system overview and core concepts
 
-Voxa is a **real-time multimodal Agent Runtime**. A developer uses a typed Graph
+Muxiva is a **real-time multimodal Agent Runtime**. A developer uses a typed Graph
 to describe how audio, video, text, bytes, and control messages move. Rust Core
 owns validation, scheduling, concurrency, backpressure, lifecycle, shutdown,
 and observability. Replaceable Nodes provide ASR, LLM, TTS, RTC, and other
@@ -11,9 +11,9 @@ replaceable capabilities, and a Graph composes both into an executable system.**
 
 ## System overview
 
-![Voxa system overview](assets/architecture/voxa-system-overview.png)
+![Muxiva system overview](assets/architecture/muxiva-system-overview.png)
 
-[Download the editable Draw.io source](assets/architecture/voxa-system-overview.drawio)
+[Download the editable Draw.io source](assets/architecture/muxiva-system-overview.drawio)
 
 The diagram has five layers. Read the boundaries first, then the connections.
 Solid blue lines represent data or calls, dashed magenta lines represent Signal
@@ -21,9 +21,9 @@ control, and dotted gray lines represent process-local EventBus telemetry.
 
 ### 1. Product and developer surfaces
 
-- The **`voxa` CLI** creates, validates, runs, and diagnoses projects for terminals,
+- The **`muxiva` CLI** creates, validates, runs, and diagnoses projects for terminals,
   scripts, and CI.
-- **Voxa Studio** edits Graphs, wires Ports, displays Node source, configures local
+- **Muxiva Studio** edits Graphs, wires Ports, displays Node source, configures local
   Connections, and observes the current Runtime.
 - **Language SDKs** let Rust, C++, Python, and TypeScript developers build Graphs
   or implement Nodes.
@@ -53,7 +53,7 @@ and how is it configured?**
 
 ### 3. Vendor-neutral Rust Runtime Core
 
-This is Voxa's stable kernel. It has no dependency on Agora, Qwen, or another
+This is Muxiva's stable kernel. It has no dependency on Agora, Qwen, or another
 vendor.
 
 - The **Graph Compiler** checks schemas, topology, Port direction, and compatibility
@@ -68,13 +68,13 @@ vendor.
 
 ### 4. Unified Node extension layer
 
-Voxa has one executable extension concept: the **Node**. A built-in integration or
+Muxiva has one executable extension concept: the **Node**. A built-in integration or
 vendor adapter is a Node that follows the same contract, not another Runtime entity.
 
 - **Rust built-in Nodes** fit resampling, VAD, cancellation gates, and general utilities.
 - The **Python Node Host** fits Qwen Realtime, ASR, LLM, TTS, and fast-moving algorithms.
 - **C++ ABI Node Packs** fit Agora RTC, codecs, device SDKs, and other native integrations.
-- **TypeScript and project Nodes** live under an Agent project's `.voxa/nodes/` and
+- **TypeScript and project Nodes** live under an Agent project's `.muxiva/nodes/` and
   use the same Manifest, Factory, and Frame contracts.
 
 Each language Host isolates threads, objects, and exceptions. A Graph always sees
@@ -91,7 +91,7 @@ mutable playback or generation state from leaking across sessions.
 
 ## Connect the core objects
 
-Think of Voxa as a controlled real-time factory:
+Think of Muxiva as a controlled real-time factory:
 
 | Concept | Plain-language model | Responsibility |
 | --- | --- | --- |
@@ -117,7 +117,7 @@ Manifest + Factory → Registry → Graph Compiler → Runtime
 ## How a Graph becomes a running system
 
 1. A developer defines Nodes and Edges through an SDK, JSON Graph v1, or Studio.
-2. `voxa validate` and the Graph Compiler check Node identity, configuration schemas,
+2. `muxiva validate` and the Graph Compiler check Node identity, configuration schemas,
    Ports, Frame Types, queue policies, and DAG topology without starting a Node or
    connecting to an external service.
 3. The Registry selects an exact Factory for each Graph Node ID, and the Runtime

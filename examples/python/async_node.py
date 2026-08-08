@@ -1,21 +1,21 @@
-"""A Voxa Python Node whose lifecycle uses async def."""
+"""A Muxiva Python Node whose lifecycle uses async def."""
 
 import asyncio
 
-import voxa
+import muxiva
 
 
-class AsyncPrefixNode(voxa.TransformNode):
+class AsyncPrefixNode(muxiva.TransformNode):
     async def on_prepare(self):
         await asyncio.sleep(0)
         self.prefix = "agent: "
 
-    async def on_process(self, frame: voxa.TextFrame):
+    async def on_process(self, frame: muxiva.TextFrame):
         await asyncio.sleep(0.001)
-        return voxa.TextFrame(self.prefix + frame.text, sequence=frame.sequence)
+        return muxiva.TextFrame(self.prefix + frame.text, sequence=frame.sequence)
 
 
-with voxa.NodeRunner(AsyncPrefixNode()) as runner:
-    [output] = runner.process(voxa.TextFrame("ready", sequence=1))
+with muxiva.NodeRunner(AsyncPrefixNode()) as runner:
+    [output] = runner.process(muxiva.TextFrame("ready", sequence=1))
     assert output.text == "agent: ready"
     print(output.text)

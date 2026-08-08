@@ -27,7 +27,7 @@ flowchart LR
 
 ```json
 {
-  "version": "voxa.graph/v1",
+  "version": "muxiva.graph/v1",
   "graph_id": "voice-agent",
   "nodes": [
     {
@@ -107,7 +107,7 @@ flowchart LR
     BUILD --> RUN["Concurrent Runtime"]
 ```
 
-`voxa validate <project>` 执行前半段但不运行 Node；`voxa run <project>` 只有在编译成功
+`muxiva validate <project>` 执行前半段但不运行 Node；`muxiva run <project>` 只有在编译成功
 后才创建实例和外部资源。Studio 使用相同 Compiler，所以画布校验不会形成另一套规则。
 
 ## 安全限制

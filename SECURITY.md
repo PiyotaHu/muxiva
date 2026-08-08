@@ -1,6 +1,6 @@
 # Security Policy
 
-Voxa processes real-time media and can load native and foreign-language Node
+Muxiva processes real-time media and can load native and foreign-language Node
 code. Security reports are taken seriously even during pre-alpha development.
 
 ## Supported versions
@@ -11,7 +11,7 @@ builds do not receive backports.
 
 ## Report a vulnerability privately
 
-Use [GitHub Private Vulnerability Reporting](https://github.com/PiyotaHu/Voxa/security/advisories/new).
+Use [GitHub Private Vulnerability Reporting](https://github.com/PiyotaHu/muxiva/security/advisories/new).
 Do not open a public Issue, Discussion, or pull request for an undisclosed
 vulnerability.
 

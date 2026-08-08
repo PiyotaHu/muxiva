@@ -8,7 +8,7 @@ importers:
 
   .:
     dependencies:
-      '@voxa/core':
+      '@muxiva/core':
         specifier: file:../../bindings/node
         version: file:../../bindings/node
     devDependencies:
@@ -21,7 +21,7 @@ packages:
   '@types/node@22.15.3':
     resolution: {integrity: sha512-lX7HFZeHf4QG/J7tBZqrCAXwz9J5RD56Y6MpP0eJkka8p+K0RY/yBTW7CYFJ4VGCclxqOLKmiGP5juQc6MKgcw==}
 
-  '@voxa/core@file:../../bindings/node':
+  '@muxiva/core@file:../../bindings/node':
     resolution: {directory: ../../bindings/node, type: directory}
     engines: {node: '>=20 <25'}
 
@@ -39,7 +39,7 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
-  '@voxa/core@file:../../bindings/node':
+  '@muxiva/core@file:../../bindings/node':
     dependencies:
       '@types/node': 22.15.3
 

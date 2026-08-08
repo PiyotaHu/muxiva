@@ -1,4 +1,4 @@
-# Voxa Stage 6 Signal, EventBus, and Resource Contract
+# Muxiva Stage 6 Signal, EventBus, and Resource Contract
 
 Status: **implemented**
 
@@ -33,7 +33,7 @@ still exactly `on_prepare`, `on_process`, `on_finish`, and `on_abort`.
 `NodeContext::emit_signal(SignalFrame)` validates that the payload source equals
 the active node and that at least one enabled downstream edge actually exists.
 No edge returns structured `SignalEmissionError::NoConnectedDownstream` and the
-stable converted code `VOXA-SIGNAL-NO-EDGE`. Signal emissions share the bounded
+stable converted code `MUXIVA-SIGNAL-NO-EDGE`. Signal emissions share the bounded
 per-callback emission budget.
 
 The concurrent runtime fans a signal out only to those actual downstream
@@ -104,7 +104,7 @@ output according to a voice-specific rule.
 
 For the flagship voice Graph, `qwen.audio_realtime` owns its remote response
 state. On detected speech it cancels the active response, discards late chunks,
-and emits `voxa.voice.speech.started`. `agora.audio_sink` receives that Signal
+and emits `muxiva.voice.speech.started`. `agora.audio_sink` receives that Signal
 and clears queued PCM. A cascade may put equivalent policy in VAD, context,
 model, and playback Nodes. Other applications can define different Signal
 schemas without changing Core.

@@ -1,4 +1,4 @@
-# Voxa Stage 4 Node, Graph, and Synchronous Runner Contract
+# Muxiva Stage 4 Node, Graph, and Synchronous Runner Contract
 
 Status: **Stage 4 synchronous graph model and runner implemented**
 
@@ -28,10 +28,10 @@ semantics ambiguous. Sections 8 through 11 are normative for 4B.
 
 ## 2. Scope and non-goals
 
-Stage 4 adds dependency-light modules in `voxa-core`:
+Stage 4 adds dependency-light modules in `muxiva-core`:
 
 ```text
-crates/voxa-core/src/
+crates/muxiva-core/src/
   node.rs       Node lifecycle, descriptors, ConfigMap, NodeContext, abort data
   edge.rs       Edge descriptors, policy selections, queue data, metrics shape
   graph.rs      GraphDefinition, GraphBuilder, validation, topology
@@ -76,13 +76,13 @@ There is one object-safe `Node` trait and exactly four hooks:
 
 ```rust,ignore
 pub trait Node: Send {
-    fn on_prepare(&mut self, context: &mut NodeContext) -> voxa_types::Result<()>;
+    fn on_prepare(&mut self, context: &mut NodeContext) -> muxiva_types::Result<()>;
     fn on_process(
         &mut self,
         input: Option<Frame>,
         context: &mut NodeContext,
-    ) -> voxa_types::Result<()>;
-    fn on_finish(&mut self, context: &mut NodeContext) -> voxa_types::Result<()>;
+    ) -> muxiva_types::Result<()>;
+    fn on_finish(&mut self, context: &mut NodeContext) -> muxiva_types::Result<()>;
     fn on_abort(&mut self, reason: &AbortReason, context: &mut NodeContext);
 }
 ```
@@ -90,7 +90,7 @@ pub trait Node: Send {
 `on_prepare` and `on_finish` default to success. `on_abort` defaults to a no-op.
 `on_process` is mandatory. `AudioFrame`, `VideoFrame`, `TextFrame`,
 `ByteFrame`, `SignalFrame`, and `EventFrame` do not receive specialized
-callbacks. A normal business failure is a `VoxaError`; panic is reserved for a
+callbacks. A normal business failure is a `MuxivaError`; panic is reserved for a
 bug and caught by the runner boundary.
 
 `NodeKind` is descriptor metadata with exactly `Source`, `Transform`, and

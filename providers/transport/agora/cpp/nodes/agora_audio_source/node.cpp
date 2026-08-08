@@ -1,5 +1,5 @@
-#include <voxa/agora_rtc.hpp>
-#include <voxa/voxa.hpp>
+#include <muxiva/agora_rtc.hpp>
+#include <muxiva/muxiva.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -15,31 +15,31 @@ std::string required_env(const char* name) {
   return value;
 }
 
-voxa_str_v1 borrow(const std::string& value) noexcept {
+muxiva_str_v1 borrow(const std::string& value) noexcept {
   return {value.data(), value.size()};
 }
 
-class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode {
+class AgoraAudioSourceNode final : public muxiva::MultimodalGraphNode {
  public:
   void on_prepare() override {
-    const auto app_id = required_env("VOXA_AGORA_APP_ID");
-    const auto token = required_env("VOXA_AGORA_BOT_TOKEN");
-    const auto channel = required_env("VOXA_AGORA_CHANNEL");
-    const auto uid = static_cast<std::uint32_t>(std::stoul(required_env("VOXA_AGORA_BOT_UID")));
+    const auto app_id = required_env("MUXIVA_AGORA_APP_ID");
+    const auto token = required_env("MUXIVA_AGORA_BOT_TOKEN");
+    const auto channel = required_env("MUXIVA_AGORA_CHANNEL");
+    const auto uid = static_cast<std::uint32_t>(std::stoul(required_env("MUXIVA_AGORA_BOT_UID")));
     const auto participant = static_cast<std::uint32_t>(
-        std::stoul(required_env("VOXA_AGORA_WEB_UID")));
-    session_ = voxa::agora::SharedSession::acquire(
+        std::stoul(required_env("MUXIVA_AGORA_WEB_UID")));
+    session_ = muxiva::agora::SharedSession::acquire(
         app_id, token, channel, uid, participant);
   }
 
-  void on_process(const voxa_frame_view_v1*, voxa::GraphNodeContext& ctx) override {
+  void on_process(const muxiva_frame_view_v1*, muxiva::GraphNodeContext& ctx) override {
     ctx.schedule_next_tick(std::chrono::milliseconds(20));
     if (!session_ || !session_->try_pop_audio(current_)) return;
     frame_ = {};
-    frame_.header.abi_version = VOXA_ABI_VERSION_V1;
+    frame_.header.abi_version = MUXIVA_ABI_VERSION_V1;
     frame_.header.struct_size = sizeof(frame_.header);
-    frame_.header.frame_type = VOXA_FRAME_AUDIO;
-    frame_.header.clock_kind = VOXA_CLOCK_MONOTONIC;
+    frame_.header.frame_type = MUXIVA_FRAME_AUDIO;
+    frame_.header.clock_kind = MUXIVA_CLOCK_MONOTONIC;
     frame_.header.timestamp_ns = current_.timestamp_ms * 1000000;
     frame_.header.sequence_id = ++sequence_;
     frame_id_ = "agora-audio-" + std::to_string(sequence_);
@@ -51,15 +51,15 @@ class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode {
     frame_.header.trace_id = borrow(trace_id_);
     frame_.payload.audio.sample_rate_hz = current_.sample_rate_hz;
     frame_.payload.audio.channels = current_.channels;
-    frame_.payload.audio.sample_format = VOXA_PCM_I16LE;
-    frame_.payload.audio.layout = VOXA_AUDIO_INTERLEAVED;
+    frame_.payload.audio.sample_format = MUXIVA_PCM_I16LE;
+    frame_.payload.audio.layout = MUXIVA_AUDIO_INTERLEAVED;
     frame_.payload.audio.samples_per_channel = current_.samples_per_channel;
     frame_.payload.audio.bytes = {current_.bytes.data(), current_.bytes.size()};
     ctx.emit("audio_out", frame_);
     const auto emitted = ++emitted_frames_;
     if (emitted == 1 || emitted % 500 == 0) {
       std::fprintf(stderr,
-                   "[VOXA][AGORA][audio.forwarded] frames=%llu bytes=%zu "
+                   "[MUXIVA][AGORA][audio.forwarded] frames=%llu bytes=%zu "
                    "participant_uid=%u\n",
                    static_cast<unsigned long long>(emitted), current_.bytes.size(),
                    current_.remote_uid);
@@ -70,14 +70,14 @@ class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode {
     session_.reset();
   }
 
-  void on_abort(const voxa_abort_reason_v1&) noexcept override {
+  void on_abort(const muxiva_abort_reason_v1&) noexcept override {
     try { on_finish(); } catch (...) {}
   }
 
  private:
-  std::shared_ptr<voxa::agora::SharedSession> session_;
-  voxa::agora::OwnedPcm16Frame current_;
-  voxa_frame_view_v1 frame_{};
+  std::shared_ptr<muxiva::agora::SharedSession> session_;
+  muxiva::agora::OwnedPcm16Frame current_;
+  muxiva_frame_view_v1 frame_{};
   std::uint64_t sequence_ = 0;
   std::atomic<std::uint64_t> emitted_frames_{0};
   std::string frame_id_;
@@ -87,9 +87,9 @@ class AgoraAudioSourceNode final : public voxa::MultimodalGraphNode {
 };
 }  // namespace
 
-extern "C" voxa_multimodal_node_factory_v1 voxa_node_pack_factory() {
-  static const auto factory = voxa::MultimodalGraphNodeFactory::make<AgoraAudioSourceNode>(
-      "agora.audio_source", VOXA_NODE_SOURCE,
+extern "C" muxiva_multimodal_node_factory_v1 muxiva_node_pack_factory() {
+  static const auto factory = muxiva::MultimodalGraphNodeFactory::make<AgoraAudioSourceNode>(
+      "agora.audio_source", MUXIVA_NODE_SOURCE,
       R"json([{"name":"audio_out","direction":"output","frameType":"audio"}])json",
       "{}", "1.1.0");
   return factory.view();

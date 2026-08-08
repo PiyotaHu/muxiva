@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use voxa_types::{FiniteF64, FrameBuffer, Value, ValueMap};
+use muxiva_types::{FiniteF64, FrameBuffer, Value, ValueMap};
 
 fuzz_target!(|data: &[u8]| {
     let number = data

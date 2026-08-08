@@ -1,0 +1,11 @@
+[package]
+name = "muxiva-testkit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+muxiva-core = { path = "../muxiva-core" }
+muxiva-types.workspace = true
+

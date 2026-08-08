@@ -1,4 +1,4 @@
-#include "voxa/media.hpp"
+#include "muxiva/media.hpp"
 
 extern "C" {
 #include <libavutil/channel_layout.h>
@@ -15,7 +15,7 @@ extern "C" {
 #include <limits>
 #include <memory>
 
-namespace voxa::media {
+namespace muxiva::media {
 namespace {
 
 constexpr int kInvalid = AVERROR(EINVAL);
@@ -285,4 +285,4 @@ std::unique_ptr<Backend> make_ffmpeg_backend() noexcept {
   }
 }
 
-} // namespace voxa::media
+} // namespace muxiva::media

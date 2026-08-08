@@ -1,6 +1,6 @@
-# Voxa built-in Nodes
+# Muxiva built-in Nodes
 
-Built-ins are vendor-neutral factories compiled into Voxa. They are classified by capability even
+Built-ins are vendor-neutral factories compiled into Muxiva. They are classified by capability even
 though they share the Rust runtime binary.
 
 | Node type | Layer | Capability | Contract |

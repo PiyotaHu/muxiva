@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-if [ -n "${VOXA_PYTHON:-}" ]; then
-  python_bin=$VOXA_PYTHON
+if [ -n "${MUXIVA_PYTHON:-}" ]; then
+  python_bin=$MUXIVA_PYTHON
 elif [ -x /Users/private-user/.pyenv/versions/3.13.12/bin/python3.13 ] && /Users/private-user/.pyenv/versions/3.13.12/bin/python3.13 -m maturin --version >/dev/null 2>&1; then
   python_bin=/Users/private-user/.pyenv/versions/3.13.12/bin/python3.13
 else
@@ -19,14 +19,14 @@ consumer_dir="$repo/target/python-sdk-consumer"
 rm -rf "$wheel_dir" "$unpack_dir" "$consumer_dir"
 mkdir -p "$wheel_dir" "$unpack_dir"
 PYO3_PYTHON="$python_bin" "$python_bin" -m maturin build \
-  --manifest-path "$repo/crates/voxa-python/Cargo.toml" \
+  --manifest-path "$repo/crates/muxiva-python/Cargo.toml" \
   --interpreter "$python_bin" --out "$wheel_dir"
-wheel=$(find "$wheel_dir" -type f -name 'voxa-*.whl' | sort | tail -n 1)
+wheel=$(find "$wheel_dir" -type f -name 'muxiva-*.whl' | sort | tail -n 1)
 test -n "$wheel"
 rm -rf "$unpack_dir"
 mkdir -p "$unpack_dir"
 "$python_bin" -m zipfile -e "$wheel" "$unpack_dir"
-PYTHONPATH="$unpack_dir" "$python_bin" -m pytest -q "$repo/crates/voxa-python/tests"
+PYTHONPATH="$unpack_dir" "$python_bin" -m pytest -q "$repo/crates/muxiva-python/tests"
 "$python_bin" -m venv "$consumer_dir"
 "$consumer_dir/bin/python" -m pip install --no-deps "$wheel"
 "$consumer_dir/bin/python" "$repo/examples/python/uppercase_node.py"

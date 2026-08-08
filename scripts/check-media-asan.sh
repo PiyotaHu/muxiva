@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-build=${TMPDIR:-/tmp}/voxa-media-asan-build
+build=${TMPDIR:-/tmp}/muxiva-media-asan-build
 mkdir -p "$build"
 cxx_bin=${CXX:-clang++}
 cxx_system=
@@ -17,7 +17,7 @@ fi
 "$build/media_pipeline_asan"
 
 ffmpeg_flags=
-pkg_path=${VOXA_FFMPEG_PKG_CONFIG_PATH:-}
+pkg_path=${MUXIVA_FFMPEG_PKG_CONFIG_PATH:-}
 if command -v pkg-config >/dev/null 2>&1; then
   if [ -z "$pkg_path" ] && command -v brew >/dev/null 2>&1 && brew --prefix ffmpeg >/dev/null 2>&1; then
     pkg_path="$(brew --prefix ffmpeg)/lib/pkgconfig"
@@ -37,7 +37,7 @@ if [ -z "$ffmpeg_flags" ]; then
 fi
 "$cxx_bin" -std=c++17 -Wall -Wextra -Wpedantic -Werror -pthread \
   -fsanitize=address,undefined -fno-omit-frame-pointer $cxx_system \
-  -DVOXA_ENABLE_FFMPEG=1 -I"$repo/cpp/media/include" \
+  -DMUXIVA_ENABLE_FFMPEG=1 -I"$repo/cpp/media/include" \
   "$repo/cpp/media/src/media_pipeline.cc" "$repo/cpp/media/src/ffmpeg_backend.cc" \
   "$repo/cpp/media/tests/ffmpeg_backend_test.cc" $ffmpeg_flags \
   -o "$build/ffmpeg_backend_asan"

@@ -3,7 +3,7 @@
 Date: 2026-08-01
 
 Stage 5 adds bounded concurrent graph execution, standalone adaptive realtime
-flow-control components, and isolated managed-service sessions to Voxa's
+flow-control components, and isolated managed-service sessions to Muxiva's
 pre-release foundation. This is an implementation report, not a performance,
 transport-readiness, or release-readiness claim. Stage 4's deterministic
 `GraphRunner` remains available and unchanged.
@@ -104,7 +104,7 @@ Fresh validation for the final documentation commit recorded the following.
 | `cargo test --workspace --all-targets --all-features` | passed: 116 unit/integration tests |
 | `cargo test --doc --workspace --all-features` | passed: 6 compile-fail doc tests |
 | focused `concurrent_runtime`, `realtime_flow`, and `managed_async_stream` integration tests | passed: 14, 12, and 8 tests respectively |
-| `hello`, `frames`, and `text_graph` example binaries | passed; `text_graph` printed `Collected uppercase text: HELLO, VOXA` |
+| `hello`, `frames`, and `text_graph` example binaries | passed; `text_graph` printed `Collected uppercase text: HELLO, MUXIVA` |
 | dependency and source audit | passed; only the established `thiserror` and tracing support tree, no Tokio/async runtime, network/protocol, FFI, Python, Serde, or unsafe implementation surface |
 | `git diff --check` | passed |
 
@@ -156,7 +156,7 @@ completed MVP behavior.
    Stage 5 neither silently closes them nor makes a quality-clean claim.
 
    - Stage 2: default tracing can still emit arbitrary field values; public
-     `VoxaError` builders still cannot attach `Session` or `Stream` context;
+     `MuxivaError` builders still cannot attach `Session` or `Stream` context;
      tracing capture/subscriber concurrency, identifier-boundary,
      event-name-wording, stale-example, and literal-versus-summarized-output
      review coverage remains incomplete. License, governance, security,

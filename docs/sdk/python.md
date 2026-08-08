@@ -2,12 +2,12 @@
 
 ## Install
 
-Published releases will use `pip install voxa`. From this repository:
+Published releases will use `pip install muxiva`. From this repository:
 
 ```bash
 python -m pip install maturin
-python -m maturin build --manifest-path crates/voxa-python/Cargo.toml --release
-python -m pip install target/wheels/voxa-*.whl
+python -m maturin build --manifest-path crates/muxiva-python/Cargo.toml --release
+python -m pip install target/wheels/muxiva-*.whl
 ```
 
 The package includes PEP 561 type information (`py.typed` and native stubs).
@@ -15,14 +15,14 @@ The package includes PEP 561 type information (`py.typed` and native stubs).
 ## Develop a Node
 
 ```python
-import voxa
+import muxiva
 
-class Uppercase(voxa.TransformNode):
-    def on_process(self, frame: voxa.TextFrame):
-        return voxa.TextFrame(frame.text.upper(), sequence=frame.sequence)
+class Uppercase(muxiva.TransformNode):
+    def on_process(self, frame: muxiva.TextFrame):
+        return muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence)
 
-with voxa.NodeRunner(Uppercase()) as runner:
-    [output] = runner.process(voxa.TextFrame("hello", sequence=1))
+with muxiva.NodeRunner(Uppercase()) as runner:
+    [output] = runner.process(muxiva.TextFrame("hello", sequence=1))
 ```
 
 `on_prepare`, `on_process`, `on_signal`, `on_event`, `on_finish`, and
@@ -37,8 +37,8 @@ before closing. See `examples/python/uppercase_node.py` and `async_node.py`.
 ## Register a Graph v1 Factory
 
 ```python
-factory = voxa.GraphNodeFactory("example.python.uppercase", Uppercase)
-worker_total = voxa.run_graph(graph_json, [factory])
+factory = muxiva.GraphNodeFactory("example.python.uppercase", Uppercase)
+worker_total = muxiva.run_graph(graph_json, [factory])
 ```
 
 The Graph node must select `language: "python"` and the exact Factory version.
@@ -54,7 +54,7 @@ such as `{"audio_out": frame, "text_out": [frame1, frame2]}` for named,
 multi-port emission. A Sink returns `None`. When `pass_config=True`, the
 constructor receives the Graph `node_config` dict. Graph JSON still cannot
 import Python code. The end-to-end contract is exercised in
-`crates/voxa-python/tests/test_voxa.py`.
+`crates/muxiva-python/tests/test_muxiva.py`.
 
 ## Provider boundary
 

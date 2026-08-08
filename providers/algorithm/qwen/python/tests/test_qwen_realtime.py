@@ -25,9 +25,9 @@ class EventFrame:
         self.schema_version, self.sequence = schema_version, sequence
 
 
-shim = types.ModuleType("voxa")
+shim = types.ModuleType("muxiva")
 shim.AudioFrame, shim.TextFrame, shim.EventFrame = AudioFrame, TextFrame, EventFrame
-sys.modules["voxa"] = shim
+sys.modules["muxiva"] = shim
 path = pathlib.Path(__file__).parents[1] / "nodes/qwen_realtime/node.py"
 spec = importlib.util.spec_from_file_location("qwen_node", path)
 module = importlib.util.module_from_spec(spec)
@@ -79,9 +79,9 @@ class QwenNodeTests(unittest.TestCase):
         node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=7), ctx)
         self.assertEqual(transport.sent[0]["type"], "input_audio_buffer.append")
         self.assertEqual(transport.sent[1]["type"], "response.cancel")
-        self.assertEqual(ctx.signals[0][0], "voxa.voice.speech.started")
+        self.assertEqual(ctx.signals[0][0], "muxiva.voice.speech.started")
         self.assertIn(
-            ("voxa.voice.barge_in", {"node": "qwen.audio_realtime", "response_cancelled": True}),
+            ("muxiva.voice.barge_in", {"node": "qwen.audio_realtime", "response_cancelled": True}),
             ctx.events,
         )
         ports = [port for port, _ in ctx.emissions]
@@ -89,8 +89,8 @@ class QwenNodeTests(unittest.TestCase):
         self.assertNotIn("audio_out", ports, "late output from the cancelled response is discarded")
         self.assertIn("transcript_out", ports)
         self.assertIn("client_event_out", ports)
-        self.assertIn(("voxa.voice.transcript.preview", {"text": "用户说"}), ctx.events)
-        self.assertIn(("voxa.voice.transcript.completed", {"text": "用户说"}), ctx.events)
+        self.assertIn(("muxiva.voice.transcript.preview", {"text": "用户说"}), ctx.events)
+        self.assertIn(("muxiva.voice.transcript.completed", {"text": "用户说"}), ctx.events)
 
     def test_uncancelled_response_emits_text_audio_and_completion(self):
         transport = FakeTransport([
@@ -111,7 +111,7 @@ class QwenNodeTests(unittest.TestCase):
         self.assertIn("audio_out", ports)
         self.assertIn("client_event_out", ports)
         self.assertIn(
-            ("voxa.voice.response.completed", {"text": "你好", "audio_bytes": 4}),
+            ("muxiva.voice.response.completed", {"text": "你好", "audio_bytes": 4}),
             ctx.events,
         )
 
@@ -131,7 +131,7 @@ class QwenNodeTests(unittest.TestCase):
         detection = module.session_update({"turn_detection": "smart_turn"})["session"]["turn_detection"]
         self.assertEqual(detection, {"type": "smart_turn"})
 
-    def test_idle_speech_interrupts_voxa_without_invalid_provider_cancel(self):
+    def test_idle_speech_interrupts_muxiva_without_invalid_provider_cancel(self):
         transport = FakeTransport([{"type": "input_audio_buffer.speech_started"}])
         node = module.QwenAudioRealtimeNode({}, lambda *_: transport)
         with mock.patch.dict(os.environ, {
@@ -141,8 +141,8 @@ class QwenNodeTests(unittest.TestCase):
         ctx = Context()
         node.on_process(AudioFrame(b"\0" * 640, 16000), ctx)
         self.assertEqual([item["type"] for item in transport.sent], ["input_audio_buffer.append"])
-        self.assertEqual(ctx.signals[0][0], "voxa.voice.speech.started")
-        self.assertFalse(any(topic == "voxa.voice.barge_in" for topic, _ in ctx.events))
+        self.assertEqual(ctx.signals[0][0], "muxiva.voice.speech.started")
+        self.assertFalse(any(topic == "muxiva.voice.barge_in" for topic, _ in ctx.events))
 
     def test_late_cancel_error_does_not_abort_the_next_turn(self):
         transport = FakeTransport([

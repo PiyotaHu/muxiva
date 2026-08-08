@@ -1,4 +1,4 @@
-# Voxa documentation sources
+# Muxiva documentation sources
 
 The public documentation site is strictly bilingual:
 

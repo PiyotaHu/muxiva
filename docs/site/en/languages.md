@@ -1,6 +1,6 @@
 # Multi-language execution
 
-Voxa is not four incompatible SDKs. The Rust Core defines Graph, Frame, Port, lifecycle, and
+Muxiva is not four incompatible SDKs. The Rust Core defines Graph, Frame, Port, lifecycle, and
 control semantics. Language adapters only carry callbacks and data safely across a boundary.
 
 ```mermaid

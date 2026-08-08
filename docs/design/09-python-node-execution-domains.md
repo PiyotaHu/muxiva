@@ -8,7 +8,7 @@ Status: pre-release implementation.
 owns bounded command and completion mailboxes, byte budgets, strict or
 unordered release, per-call deadlines, cancellation, late-output rejection,
 bounded shutdown diagnostics, and exactly-once abort ownership. Commands and
-completions contain owned Voxa values only; no interpreter object or borrowed
+completions contain owned Muxiva values only; no interpreter object or borrowed
 language memory enters Core.
 
 Foreign threads may accept commands and post completions, but they cannot call
@@ -17,7 +17,7 @@ completion mailbox and remains the routing authority.
 
 ## Python domain
 
-The `voxa` PyO3 module exposes owned immutable frame wrappers, minimal
+The `muxiva` PyO3 module exposes owned immutable frame wrappers, minimal
 Runtime/Session/EventBus resource owners, and `PythonNodeExecutionDomain`.
 Each node domain owns a bounded driver, a named OS thread, a fresh asyncio loop
 created and destroyed on that thread, and its Python implementation reference.
@@ -38,7 +38,7 @@ exist.
 
 ## Node domain
 
-The `@voxa/core` napi-rs package exposes the matching owned API and a bounded
+The `@muxiva/core` napi-rs package exposes the matching owned API and a bounded
 Node execution domain. Rust producers enqueue owned commands using nonblocking
 admission. A Node-API threadsafe function schedules lifecycle invocation on
 the JavaScript event loop; the foreign callback cannot execute JavaScript

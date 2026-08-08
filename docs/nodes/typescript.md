@@ -5,7 +5,7 @@ Manifest. The published SDK's hosted TypeScript Nodes run in a dedicated
 Worker and must return structured-clone-compatible, synchronous values in V1.
 
 ```ts
-import type { GraphNodeImplementation } from '@voxa/core'
+import type { GraphNodeImplementation } from '@muxiva/core'
 
 export const node: GraphNodeImplementation = {
   onProcess(frame) {
@@ -16,7 +16,7 @@ export const node: GraphNodeImplementation = {
 
 Studio project-package execution is **not active yet**. Saving registers the
 package for authoring and discovery, but Studio keeps it out of runnable Graphs
-until the planned Host can resolve `@voxa/core`, type-check the package, and
+until the planned Host can resolve `@muxiva/core`, type-check the package, and
 load the exact exported entrypoint. Use the programmatic SDK path documented in
 the [TypeScript SDK reference](../sdk/typescript.md) meanwhile.
 

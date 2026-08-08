@@ -5,10 +5,10 @@
 - Language-neutral `ForeignNodeDriver` with bounded admission/completion,
   strict and unordered release, deadlines, cancellation, late-result discard,
   and one abort owner.
-- Buildable PyO3/maturin distribution named `voxa` with owned Runtime,
+- Buildable PyO3/maturin distribution named `muxiva` with owned Runtime,
   Session, six immutable Frame variants, EventBus, and per-node Python
   thread/asyncio execution domains.
-- Buildable napi-rs package named `@voxa/core` with the matching owned API,
+- Buildable napi-rs package named `@muxiva/core` with the matching owned API,
   bounded TSFN scheduling onto the JS event loop, synchronous node lifecycle,
   throw conversion, and Promise/thenable rejection.
 - Real language import/load, copy ownership, thread/loop identity, independent

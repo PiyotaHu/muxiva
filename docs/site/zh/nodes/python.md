@@ -4,19 +4,19 @@ Python 是当前最快的 Studio 项目 Node 开发路径。文本 Source、Tran
 Package 可以通过可信本地 Python 开发 Host 运行。
 
 ```python
-import voxa
+import muxiva
 
 class Uppercase:
     def on_process(self, frame, ctx):
         ctx.emit(
             "text_out",
-            voxa.TextFrame(frame.text.upper(), sequence=frame.sequence),
+            muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence),
         )
         ctx.publish_event("example.text.uppercased", {"sequence": frame.sequence})
 
 class ClientEvent:
     def on_process(self, frame, ctx):
-        ctx.emit("event_out", voxa.EventFrame(
+        ctx.emit("event_out", muxiva.EventFrame(
             "example.client.message", '{"text":"ready"}',
             source="example.client_event", sequence=frame.sequence,
         ))

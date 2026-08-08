@@ -1,7 +1,7 @@
-"""Qwen Audio Realtime Voxa Node Pack.
+"""Qwen Audio Realtime Muxiva Node Pack.
 
 This is application/provider code. It deliberately has no import or build-time
-dependency on the Rust Voxa runtime; the generic Python Host injects ``voxa``.
+dependency on the Rust Muxiva runtime; the generic Python Host injects ``muxiva``.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import uuid
 from typing import Any, Callable, Iterable
 from urllib.parse import quote
 
-import voxa
+import muxiva
 
 
 DEFAULT_MODEL = "qwen-audio-3.0-realtime-flash"
@@ -81,7 +81,7 @@ class QwenAudioRealtimeNode:
     @staticmethod
     def _log(event: str, **fields: Any) -> None:
         detail = " ".join(f"{key}={value}" for key, value in fields.items())
-        print(f"[VOXA][QWEN][{event}] {detail}".rstrip(), file=sys.stderr, flush=True)
+        print(f"[MUXIVA][QWEN][{event}] {detail}".rstrip(), file=sys.stderr, flush=True)
 
     def on_prepare(self, _ctx: Any = None) -> None:
         api_key = os.environ.get("DASHSCOPE_API_KEY", "")
@@ -142,7 +142,7 @@ class QwenAudioRealtimeNode:
                 if not self._discard_response_output:
                     self._emit_client_event(
                         ctx,
-                        "voxa.voice.response.completed",
+                        "muxiva.voice.response.completed",
                         {"text": self._response_text, "audio_bytes": self._response_audio_bytes},
                         frame.sequence,
                     )
@@ -153,20 +153,20 @@ class QwenAudioRealtimeNode:
                     self._response_active = False
                     self._cancel_pending = True
                     self._discard_response_output = True
-                ctx.emit_signal("voxa.voice.speech.started", {"node": "qwen.audio_realtime"})
+                ctx.emit_signal("muxiva.voice.speech.started", {"node": "qwen.audio_realtime"})
                 self._emit_client_event(
-                    ctx, "voxa.voice.speech.started", {"node": "qwen.audio_realtime"}, frame.sequence
+                    ctx, "muxiva.voice.speech.started", {"node": "qwen.audio_realtime"}, frame.sequence
                 )
                 if response_cancelled:
                     self._emit_client_event(
                         ctx,
-                        "voxa.voice.barge_in",
+                        "muxiva.voice.barge_in",
                         {"node": "qwen.audio_realtime", "response_cancelled": True},
                         frame.sequence,
                     )
             elif kind == "input_audio_buffer.speech_stopped":
                 self._emit_client_event(
-                    ctx, "voxa.voice.speech.stopped", {"node": "qwen.audio_realtime"}, frame.sequence
+                    ctx, "muxiva.voice.speech.stopped", {"node": "qwen.audio_realtime"}, frame.sequence
                 )
             elif kind == "response.audio.delta":
                 if self._discard_response_output:
@@ -177,7 +177,7 @@ class QwenAudioRealtimeNode:
                 self._response_audio_bytes += len(audio)
                 ctx.emit(
                     "audio_out",
-                    voxa.AudioFrame(audio, sample_rate_hz=24_000, channels=1, sequence=frame.sequence),
+                    muxiva.AudioFrame(audio, sample_rate_hz=24_000, channels=1, sequence=frame.sequence),
                 )
             elif kind in ("response.audio_transcript.delta", "response.text.delta"):
                 if self._discard_response_output:
@@ -185,29 +185,29 @@ class QwenAudioRealtimeNode:
                 text = event.get("delta", "")
                 if text:
                     self._response_text += text
-                    ctx.emit("response_text_out", voxa.TextFrame(text, sequence=frame.sequence))
+                    ctx.emit("response_text_out", muxiva.TextFrame(text, sequence=frame.sequence))
                     self._emit_client_event(
-                        ctx, "voxa.voice.response.delta", {"text": text}, frame.sequence
+                        ctx, "muxiva.voice.response.delta", {"text": text}, frame.sequence
                     )
             elif kind == "conversation.item.input_audio_transcription.delta":
                 text = f"{event.get('text', '')}{event.get('stash', '')}"
                 if text:
-                    ctx.emit("transcript_preview_out", voxa.TextFrame(text, sequence=frame.sequence))
+                    ctx.emit("transcript_preview_out", muxiva.TextFrame(text, sequence=frame.sequence))
                     self._emit_client_event(
-                        ctx, "voxa.voice.transcript.preview", {"text": text}, frame.sequence
+                        ctx, "muxiva.voice.transcript.preview", {"text": text}, frame.sequence
                     )
             elif kind == "conversation.item.input_audio_transcription.completed":
                 text = event.get("transcript", "")
                 if text:
-                    ctx.emit("transcript_out", voxa.TextFrame(text, sequence=frame.sequence))
+                    ctx.emit("transcript_out", muxiva.TextFrame(text, sequence=frame.sequence))
                     self._emit_client_event(
-                        ctx, "voxa.voice.transcript.completed", {"text": text}, frame.sequence
+                        ctx, "muxiva.voice.transcript.completed", {"text": text}, frame.sequence
                     )
             elif kind == "conversation.item.input_audio_transcription.failed":
                 error = event.get("error", {})
                 self._emit_client_event(
                     ctx,
-                    "voxa.voice.transcript.failed",
+                    "muxiva.voice.transcript.failed",
                     {"message": str(error.get("message", "ASR transcription failed"))[:512]},
                     frame.sequence,
                 )
@@ -228,7 +228,7 @@ class QwenAudioRealtimeNode:
     def _emit_client_event(ctx: Any, topic: str, payload: dict[str, Any], sequence: int) -> None:
         ctx.emit(
             "client_event_out",
-            voxa.EventFrame(
+            muxiva.EventFrame(
                 topic,
                 json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
                 source="qwen.audio_realtime",
@@ -306,7 +306,7 @@ def _is_cancel_race(code: str, message: str) -> bool:
 
 
 def _event_id() -> str:
-    return f"event_voxa_{uuid.uuid4().hex}"
+    return f"event_muxiva_{uuid.uuid4().hex}"
 
 
 def parse_server_event(value: str | bytes) -> dict[str, Any]:

@@ -1,11 +1,11 @@
 # Node packages
 
 A project Node package keeps executable code outside Graph JSON. Its
-`voxa.node/v1` Manifest declares discovery and validation metadata.
+`muxiva.node/v1` Manifest declares discovery and validation metadata.
 
 ```text
-.voxa/nodes/my_node/
-├── voxa.node.json
+.muxiva/nodes/my_node/
+├── muxiva.node.json
 └── node.py
 ```
 

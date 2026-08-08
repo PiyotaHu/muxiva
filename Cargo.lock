@@ -282,6 +282,119 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "muxiva-bench"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "muxiva-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "muxiva-core",
+ "muxiva-graph-json",
+ "muxiva-studio",
+ "muxiva-types",
+ "serde_json",
+]
+
+[[package]]
+name = "muxiva-core"
+version = "0.1.0"
+dependencies = [
+ "muxiva-types",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "muxiva-examples"
+version = "0.1.0"
+dependencies = [
+ "muxiva-core",
+ "muxiva-types",
+]
+
+[[package]]
+name = "muxiva-ffi"
+version = "0.1.0"
+dependencies = [
+ "libloading 0.8.9",
+ "muxiva-core",
+ "muxiva-graph-json",
+ "muxiva-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "muxiva-graph-json"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "muxiva-core",
+ "muxiva-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "muxiva-node"
+version = "0.1.0"
+dependencies = [
+ "muxiva-core",
+ "muxiva-graph-json",
+ "muxiva-types",
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "muxiva-python"
+version = "0.1.0"
+dependencies = [
+ "muxiva-core",
+ "muxiva-graph-json",
+ "muxiva-types",
+ "pyo3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "muxiva-studio"
+version = "0.1.0"
+dependencies = [
+ "muxiva-core",
+ "muxiva-ffi",
+ "muxiva-graph-json",
+ "muxiva-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "muxiva-testkit"
+version = "0.1.0"
+dependencies = [
+ "muxiva-core",
+ "muxiva-types",
+]
+
+[[package]]
+name = "muxiva-types"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "napi"
 version = "3.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -671,119 +784,6 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
-
-[[package]]
-name = "voxa-bench"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "voxa-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "serde_json",
- "voxa-core",
- "voxa-graph-json",
- "voxa-studio",
- "voxa-types",
-]
-
-[[package]]
-name = "voxa-core"
-version = "0.1.0"
-dependencies = [
- "tracing",
- "tracing-subscriber",
- "voxa-types",
-]
-
-[[package]]
-name = "voxa-examples"
-version = "0.1.0"
-dependencies = [
- "voxa-core",
- "voxa-types",
-]
-
-[[package]]
-name = "voxa-ffi"
-version = "0.1.0"
-dependencies = [
- "libloading 0.8.9",
- "serde",
- "serde_json",
- "voxa-core",
- "voxa-graph-json",
- "voxa-types",
-]
-
-[[package]]
-name = "voxa-graph-json"
-version = "0.1.0"
-dependencies = [
- "base64",
- "serde",
- "serde_json",
- "voxa-core",
- "voxa-types",
-]
-
-[[package]]
-name = "voxa-node"
-version = "0.1.0"
-dependencies = [
- "napi",
- "napi-build",
- "napi-derive",
- "serde",
- "serde_json",
- "voxa-core",
- "voxa-graph-json",
- "voxa-types",
-]
-
-[[package]]
-name = "voxa-python"
-version = "0.1.0"
-dependencies = [
- "pyo3",
- "serde",
- "serde_json",
- "voxa-core",
- "voxa-graph-json",
- "voxa-types",
-]
-
-[[package]]
-name = "voxa-studio"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "voxa-core",
- "voxa-ffi",
- "voxa-graph-json",
- "voxa-types",
-]
-
-[[package]]
-name = "voxa-testkit"
-version = "0.1.0"
-dependencies = [
- "voxa-core",
- "voxa-types",
-]
-
-[[package]]
-name = "voxa-types"
-version = "0.1.0"
-dependencies = [
- "thiserror",
-]
 
 [[package]]
 name = "windows-link"

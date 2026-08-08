@@ -27,8 +27,8 @@ and one text output so every language can ship the same fully tested contract.
 - TypeScript exposes `GraphNodeFactory` and `runGraph`. The wrapper owns a
   dedicated Worker; Rust graph execution runs off its event loop and uses a
   bounded ThreadsafeFunction to invoke synchronous lifecycle callbacks.
-- C++ adds a versioned `voxa_node_factory_v1` ABI and
-  `voxa::GraphNodeFactory`. A synchronous `Runtime::run_graph` call copies
+- C++ adds a versioned `muxiva_node_factory_v1` ABI and
+  `muxiva::GraphNodeFactory`. A synchronous `Runtime::run_graph` call copies
   registration metadata and creates fresh vtables before startup.
 
 All three combine their trusted registrations with the same Rust built-ins,

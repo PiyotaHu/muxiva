@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use voxa_types::{Extensions, FrameBuffer, FrameId, Metadata, StreamId, TextData, TraceId, Value};
+use muxiva_types::{Extensions, FrameBuffer, FrameId, Metadata, StreamId, TextData, TraceId, Value};
 
 fuzz_target!(|data: &[u8]| {
     let text = FrameBuffer::from_vec(data.to_vec());

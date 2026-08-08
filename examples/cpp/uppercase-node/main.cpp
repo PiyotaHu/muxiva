@@ -1,4 +1,4 @@
-#include <voxa/voxa.hpp>
+#include <muxiva/muxiva.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -9,14 +9,14 @@
 namespace {
 int process_count = 0;
 
-voxa_str_v1 borrow(const std::string& value) {
+muxiva_str_v1 borrow(const std::string& value) {
   return {value.data(), value.size()};
 }
 
-class UppercaseNode final : public voxa::TransformNode {
+class UppercaseNode final : public muxiva::TransformNode {
  public:
-  void on_process(const voxa_frame_view_v1& input,
-                  voxa_frame_view_v1& output) override {
+  void on_process(const muxiva_frame_view_v1& input,
+                  muxiva_frame_view_v1& output) override {
     ++process_count;
     const auto text = input.payload.text.text;
     value_.assign(text.data, text.len);
@@ -32,20 +32,20 @@ class UppercaseNode final : public voxa::TransformNode {
 }  // namespace
 
 int main() {
-  voxa::Error error;
-  voxa::Runtime runtime(error);
-  auto node = voxa::Node::make<UppercaseNode>(error);
-  const voxa::TextFrame input("hello voxa", 1);
+  muxiva::Error error;
+  muxiva::Runtime runtime(error);
+  auto node = muxiva::Node::make<UppercaseNode>(error);
+  const muxiva::TextFrame input("hello muxiva", 1);
   std::string output;
-  if (runtime.run_text(node, input, output, error) != VOXA_STATUS_OK) {
+  if (runtime.run_text(node, input, output, error) != MUXIVA_STATUS_OK) {
     std::cerr << error.code() << ": " << error.message() << '\n';
     return 1;
   }
   std::cout << output << '\n';
-  if (output != "HELLO VOXA") return 2;
+  if (output != "HELLO MUXIVA") return 2;
 
   const std::string graph = R"json({
-    "version":"voxa.graph/v1",
+    "version":"muxiva.graph/v1",
     "graph_id":"cpp-registered",
     "nodes":[
       {"id":"source","node_type":"builtin.text_source","language":"rust","factory_version":"1.0.0","node_config":{"text":"hello"}},
@@ -58,10 +58,10 @@ int main() {
     ]
   })json";
   const auto before_graph = process_count;
-  const std::vector<voxa::GraphNodeFactory> factories{
-      voxa::GraphNodeFactory::make<UppercaseNode>("example.cpp.uppercase")};
+  const std::vector<muxiva::GraphNodeFactory> factories{
+      muxiva::GraphNodeFactory::make<UppercaseNode>("example.cpp.uppercase")};
   uint32_t workers = 0;
-  if (runtime.run_graph(graph, factories, workers, error) != VOXA_STATUS_OK) {
+  if (runtime.run_graph(graph, factories, workers, error) != MUXIVA_STATUS_OK) {
     std::cerr << error.code() << ": " << error.message() << '\n';
     return 3;
   }

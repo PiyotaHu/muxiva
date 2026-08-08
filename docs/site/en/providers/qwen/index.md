@@ -13,7 +13,7 @@ Run setup, then enter the API Key and Workspace ID in Studio **Connections**:
 
 ```bash
 ./examples/voice-agent/setup.sh
-voxa doctor --voice
+muxiva doctor --voice
 ```
 
 Both values must belong to the same China (Beijing) workspace. These Qwen Nodes require no

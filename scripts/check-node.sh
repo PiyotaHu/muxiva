@@ -6,7 +6,7 @@ if ! command -v node >/dev/null 2>&1 || ! command -v pnpm >/dev/null 2>&1; then
   exit 0
 fi
 export CI=true
-node --check "$repo/crates/voxa-studio/src/assets/studio.js"
+node --check "$repo/crates/muxiva-studio/src/assets/studio.js"
 cd "$repo/bindings/node"
 if ! pnpm install --offline --frozen-lockfile; then
   echo "SKIP Node binding gate: one or more locked build dependencies are absent from the offline pnpm store"
@@ -19,7 +19,7 @@ consumer_dir="$repo/target/node-sdk-consumer"
 rm -rf "$package_dir" "$consumer_dir"
 mkdir -p "$package_dir" "$consumer_dir"
 pnpm pack --pack-destination "$package_dir"
-package=$(find "$package_dir" -type f -name 'voxa-core-*.tgz' | sort | tail -n 1)
+package=$(find "$package_dir" -type f -name 'muxiva-core-*.tgz' | sort | tail -n 1)
 test -n "$package"
 
 cd "$consumer_dir"

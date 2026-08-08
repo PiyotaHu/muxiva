@@ -3,7 +3,7 @@
 Status: **Implemented**
 
 D03 closes the boundary between a reproducibly compiled Graph v1 document and
-the general concurrent Voxa Runtime. `voxa run` is now an execution command,
+the general concurrent Muxiva Runtime. `muxiva run` is now an execution command,
 not a second spelling of validation.
 
 ## Startup contract
@@ -17,7 +17,7 @@ not a second spelling of validation.
 
 If a selection is absent or Factory creation fails, startup stops before the
 Runtime can enter its lifecycle. This avoids partially prepared graphs and
-makes Factory failures deterministic. `voxa validate` uses only the first step
+makes Factory failures deterministic. `muxiva validate` uses only the first step
 and remains allocation-free and side-effect free.
 
 The reusable Core entry points are `materialize_registered_nodes` and
@@ -41,12 +41,12 @@ for cleanup.
 - missing selections and Factory creation failures are pre-start errors;
 - Node errors propagate as the Runtime's terminal abort result;
 - timeout diagnostics identify live Nodes and bounded stop completes;
-- the graph produced by `voxa init` executes as three workers from the CLI;
+- the graph produced by `muxiva init` executes as three workers from the CLI;
 - invalid input produces the same compiler diagnostics in `validate` and `run`.
 
 ## Deliberate boundary
 
-The CLI currently installs Voxa's compiled-in Rust built-ins. D03 does not add
+The CLI currently installs Muxiva's compiled-in Rust built-ins. D03 does not add
 dynamic library loading, code embedded in Graph JSON, or remote implementation
 fetching. D04 now adapts the existing Python, TypeScript, and C++ execution
 domains into versioned Registry factories so hosted text Transform Nodes use

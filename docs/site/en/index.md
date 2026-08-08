@@ -1,9 +1,9 @@
-# Voxa
+# Muxiva
 
 **A real-time multimodal agent runtime with one graph and lifecycle contract
 across Rust, C++, Python, and TypeScript.**
 
-Voxa owns scheduling, bounded queues, backpressure, cancellation, lifecycle,
+Muxiva owns scheduling, bounded queues, backpressure, cancellation, lifecycle,
 control messages, and observability. Applications provide Nodes for speech,
 reasoning, media, transport, and business logic.
 
@@ -44,7 +44,7 @@ state.
 | --- | --- |
 | Run a real voice assistant | [Flagship voice demo](voice-demo.md) |
 | Install and run a graph | [Installation and first run](getting-started.md) |
-| Build visually | [Voxa Studio](studio.md) |
+| Build visually | [Muxiva Studio](studio.md) |
 | Understand the runtime | [Runtime architecture](concepts.md) |
 | Write a Node | [Node packages](nodes/index.md) |
 | Integrate RTC or media | [Official and custom Nodes](integrations.md) |

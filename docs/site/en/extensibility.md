@@ -1,6 +1,6 @@
 # Node extensibility
 
-A Node is Voxa's extension unit. Adding ASR, tool use, a database, audio processing, or a
+A Node is Muxiva's extension unit. Adding ASR, tool use, a database, audio processing, or a
 custom model does not require changing the Runtime. Implement the shared lifecycle and register
 the implementation as a discoverable Node Factory.
 
@@ -8,7 +8,7 @@ the implementation as a discoverable Node Factory.
 
 ```mermaid
 flowchart LR
-    CODE["Node source"] --> MANIFEST["voxa.node.json<br/>contract and metadata"]
+    CODE["Node source"] --> MANIFEST["muxiva.node.json<br/>contract and metadata"]
     MANIFEST --> PACK["Node Package"]
     PACK --> DISCOVER["CLI / Studio discovery"]
     DISCOVER --> REGISTRY["Factory registration"]
@@ -24,7 +24,7 @@ flowchart LR
 
 ## The Manifest is shared by Studio and the Runtime
 
-`voxa.node/v1` answers these questions:
+`muxiva.node/v1` answers these questions:
 
 | Field | Purpose |
 | --- | --- |
@@ -62,17 +62,17 @@ Runtime with unmanaged global threads.
 ## Discovery locations
 
 Studio and the CLI discover Packages in trusted locations, including project-local
-`.voxa/nodes/` and configured official Node roots. The Node Library displays the Manifest, Port
+`.muxiva/nodes/` and configured official Node roots. The Node Library displays the Manifest, Port
 schemas, configuration, and source code. A developer can create or edit a project Node in
 Studio, import it into the Library, and place it on the canvas.
 
 ## Recommended development flow
 
 1. Define inputs, outputs, and failure behavior first.
-2. Create `voxa.node.json` and a minimal implementation.
-3. Import it with `voxa studio` and inspect Ports and configuration forms.
+2. Create `muxiva.node.json` and a minimal implementation.
+3. Import it with `muxiva studio` and inspect Ports and configuration forms.
 4. Connect the Node in an example Graph.
-5. Run `voxa validate <project>` to check identity, types, and topology.
+5. Run `muxiva validate <project>` to check identity, types, and topology.
 6. Test success, slow-consumer, cancellation, and error paths.
 7. Distribute it as a project Node or an official Node Pack.
 

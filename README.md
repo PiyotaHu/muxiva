@@ -1,26 +1,26 @@
-# Voxa
+# Muxiva
 
 > A Rust-native, real-time multimodal agent runtime with one graph and lifecycle contract across Rust, C++, Python, and TypeScript.
 
-[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/Voxa/) · [Architecture](https://piyotahu.github.io/Voxa/concepts/) · [Flagship voice demo](https://piyotahu.github.io/Voxa/voice-demo/) · [Build Nodes](https://piyotahu.github.io/Voxa/nodes/) · [Studio](https://piyotahu.github.io/Voxa/studio/) · [Graph v1](https://piyotahu.github.io/Voxa/graph/) · [Testing](https://piyotahu.github.io/Voxa/testing/)
+[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/muxiva/) · [Architecture](https://piyotahu.github.io/muxiva/concepts/) · [Flagship voice demo](https://piyotahu.github.io/muxiva/voice-demo/) · [Build Nodes](https://piyotahu.github.io/muxiva/nodes/) · [Studio](https://piyotahu.github.io/muxiva/studio/) · [Graph v1](https://piyotahu.github.io/muxiva/graph/) · [Testing](https://piyotahu.github.io/muxiva/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
-[![CI](https://github.com/PiyotaHu/Voxa/actions/workflows/ci.yml/badge.svg)](https://github.com/PiyotaHu/Voxa/actions/workflows/ci.yml)
-[![Bindings](https://github.com/PiyotaHu/Voxa/actions/workflows/bindings.yml/badge.svg)](https://github.com/PiyotaHu/Voxa/actions/workflows/bindings.yml)
-[![Documentation](https://github.com/PiyotaHu/Voxa/actions/workflows/docs.yml/badge.svg)](https://piyotahu.github.io/Voxa/)
+[![CI](https://github.com/PiyotaHu/muxiva/actions/workflows/ci.yml/badge.svg)](https://github.com/PiyotaHu/muxiva/actions/workflows/ci.yml)
+[![Bindings](https://github.com/PiyotaHu/muxiva/actions/workflows/bindings.yml/badge.svg)](https://github.com/PiyotaHu/muxiva/actions/workflows/bindings.yml)
+[![Documentation](https://github.com/PiyotaHu/muxiva/actions/workflows/docs.yml/badge.svg)](https://piyotahu.github.io/muxiva/)
 ![Rust](https://img.shields.io/badge/Rust-1.85%2B-black?logo=rust)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-blue?logo=cplusplus)
 ![Python](https://img.shields.io/badge/Python-3.13-tested-blue?logo=python)
 ![Node.js](https://img.shields.io/badge/Node.js-22-tested-green?logo=nodedotjs)
 
-Voxa is an early-stage runtime for building streaming voice, video, text, and binary agents as static processing graphs. Rust owns scheduling, bounded queues, backpressure, lifecycle, cancellation, signals, events, shutdown, and observability. Nodes and adapters can be implemented in Rust, C++, Python, or TypeScript without moving language-specific objects across runtime boundaries.
+Muxiva is an early-stage runtime for building streaming voice, video, text, and binary agents as static processing graphs. Rust owns scheduling, bounded queues, backpressure, lifecycle, cancellation, signals, events, shutdown, and observability. Nodes and adapters can be implemented in Rust, C++, Python, or TypeScript without moving language-specific objects across runtime boundaries.
 
 The project currently provides a tested Runtime foundation and an
 application-layer Qwen + Agora real-voice flagship. It is not yet a
 production-ready agent platform.
 
-## Why Voxa
+## Why Muxiva
 
 - **One runtime core:** scheduling and safety semantics live in Rust.
 - **One data model:** immutable `Frame` values carry audio, video, text, bytes, signals, and events.
@@ -31,7 +31,7 @@ production-ready agent platform.
 
 ## Project status
 
-Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but several public APIs and integrations remain intentionally limited.
+Muxiva is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but several public APIs and integrations remain intentionally limited.
 
 | Area | Status | Current boundary |
 | --- | --- | --- |
@@ -49,7 +49,7 @@ Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but
 
 ## Architecture
 
-[![Voxa system architecture](docs/site/en/assets/architecture/voxa-system-overview.png)](https://piyotahu.github.io/Voxa/concepts/)
+[![Muxiva system architecture](docs/site/en/assets/architecture/muxiva-system-overview.png)](https://piyotahu.github.io/muxiva/concepts/)
 
 Read the diagram from top to bottom: product surfaces declare a Graph and discover
 Node Factories; the vendor-neutral Rust Core compiles and executes it; Rust, C++,
@@ -59,8 +59,8 @@ lines are Signal control, and dotted gray lines are process-local EventBus telem
 
 The runtime never treats ASR, LLM, TTS, transport, codec behavior, or a vendor
 “provider” as Core responsibilities. See the
-[system overview and core-concepts walkthrough](https://piyotahu.github.io/Voxa/concepts/),
-or open the [editable Draw.io source](docs/site/en/assets/architecture/voxa-system-overview.drawio).
+[system overview and core-concepts walkthrough](https://piyotahu.github.io/muxiva/concepts/),
+or open the [editable Draw.io source](docs/site/en/assets/architecture/muxiva-system-overview.drawio).
 
 ## Quick start
 
@@ -71,13 +71,13 @@ or open the [editable Draw.io source](docs/site/en/assets/architecture/voxa-syst
 - Optional: CPython 3.13 with maturin for Python bindings
 - Optional: Node.js 22 and pnpm for Node-API bindings
 
-### Install the `voxa` CLI once
+### Install the `muxiva` CLI once
 
 ```bash
-git clone https://github.com/PiyotaHu/Voxa.git voxa
-cd voxa
-cargo install --locked --path crates/voxa-cli
-voxa --version
+git clone https://github.com/PiyotaHu/muxiva.git muxiva
+cd muxiva
+cargo install --locked --path crates/muxiva-cli
+muxiva --version
 ```
 
 Until the first binary release, installation builds the CLI from the checkout.
@@ -96,17 +96,17 @@ VAD → ASR → LLM → TTS graph, with Agora C++ transport and a browser microp
 
 Choose a graph in Studio, fill **Connections**, click **Run**, then open **Voice Room**. The
 full setup, two-identity shared-session RTC model, security boundary, and offline gates
-are documented in the [flagship voice demo guide](https://piyotahu.github.io/Voxa/voice-demo/).
+are documented in the [flagship voice demo guide](https://piyotahu.github.io/muxiva/voice-demo/).
 
 ### Create, validate, and run a graph
 
 ```bash
-voxa init my-agent
-voxa validate my-agent
-voxa run my-agent
+muxiva init my-agent
+muxiva validate my-agent
+muxiva run my-agent
 ```
 
-`voxa init` creates a complete project directory. `voxa validate` is side-effect free: it never creates or starts a Node. `voxa run`
+`muxiva init` creates a complete project directory. `muxiva validate` is side-effect free: it never creates or starts a Node. `muxiva run`
 compiles the graph against the built-in Registry, materializes every exact
 Factory selection, and executes it through the concurrent Runtime. Runs have a
 30-second default deadline; use `--timeout-ms` and `--shutdown-timeout-ms` to
@@ -115,16 +115,16 @@ set bounded execution and cleanup waits.
 ### Start the local visual Studio
 
 ```bash
-voxa studio
+muxiva studio
 ```
 
-With no argument, Studio discovers the current project; from the Voxa source
+With no argument, Studio discovers the current project; from the Muxiva source
 root it opens the flagship Voice Agent. Studio opens a bundled visual Graph v1 editor. Drag Nodes from the Palette,
 wire compatible typed ports, inspect live runtime metrics, or open **Create
 Node** to edit and register a project Node without leaving the browser. Text
 Python project Nodes run through the trusted local development Host. Studio
 listens on `127.0.0.1` by default and generates a local access token. See the
-[Studio guide](https://piyotahu.github.io/Voxa/studio/).
+[Studio guide](https://piyotahu.github.io/muxiva/studio/).
 
 ### Build and test the language SDKs
 
@@ -134,32 +134,32 @@ listens on `127.0.0.1` by default and generates a local access token. See the
 ./scripts/check-ffi.sh
 ```
 
-These scripts build real installable packages, run integration tests, and execute independent Python, TypeScript, and C++ consumer examples. See the [Node development guide](https://piyotahu.github.io/Voxa/nodes/) for language-specific workflows.
+These scripts build real installable packages, run integration tests, and execute independent Python, TypeScript, and C++ consumer examples. See the [Node development guide](https://piyotahu.github.io/muxiva/nodes/) for language-specific workflows.
 
 ## Flagship graphs
 
 The real-voice Realtime and Cascade templates live under
-[`examples/voice-agent/.voxa/templates/`](examples/voice-agent/.voxa/templates/).
+[`examples/voice-agent/.muxiva/templates/`](examples/voice-agent/.muxiva/templates/).
 Start Studio with `./examples/voice-agent/run.sh` to select, inspect, and edit
 either graph.
 
-Graph JSON is declarative configuration. It cannot contain executable code, dynamic scripts, credentials, or arbitrary remote resources. See the [Graph and typed ports guide](https://piyotahu.github.io/Voxa/graph/).
+Graph JSON is declarative configuration. It cannot contain executable code, dynamic scripts, credentials, or arbitrary remote resources. See the [Graph and typed ports guide](https://piyotahu.github.io/muxiva/graph/).
 
 ## Repository layout
 
 ```text
-voxa/
+muxiva/
 ├── crates/
-│   ├── voxa-types/       # Immutable frames, IDs, values, errors
-│   ├── voxa-core/        # Graph, runtime, queues, flow and control plane
-│   ├── voxa-ffi/         # Versioned C ABI
-│   ├── voxa-graph-json/  # Graph v1 parser and compiler
-│   ├── voxa-cli/         # voxa command-line interface
-│   ├── voxa-studio/      # Local token-authenticated Studio server
-│   ├── voxa-python/      # PyO3/maturin package
-│   ├── voxa-node/        # Node-API native module
-│   └── voxa-testkit/     # Deterministic test harnesses
-├── bindings/node/        # @voxa/core package
+│   ├── muxiva-types/       # Immutable frames, IDs, values, errors
+│   ├── muxiva-core/        # Graph, runtime, queues, flow and control plane
+│   ├── muxiva-ffi/         # Versioned C ABI
+│   ├── muxiva-graph-json/  # Graph v1 parser and compiler
+│   ├── muxiva-cli/         # muxiva command-line interface
+│   ├── muxiva-studio/      # Local token-authenticated Studio server
+│   ├── muxiva-python/      # PyO3/maturin package
+│   ├── muxiva-node/        # Node-API native module
+│   └── muxiva-testkit/     # Deterministic test harnesses
+├── bindings/node/        # @muxiva/core package
 ├── cpp/                  # Public C/C++ SDK
 ├── providers/            # Vendor integrations: Qwen/Python and Agora/C++
 ├── examples/             # Rust, graph, Python, TypeScript and C++ examples
@@ -170,8 +170,8 @@ voxa/
 
 ## Quality gates
 
-The commands below are for Voxa contributors working on the repository, not
-for application developers using the installed `voxa` binary.
+The commands below are for Muxiva contributors working on the repository, not
+for application developers using the installed `muxiva` binary.
 
 Run the consolidated local gate:
 
@@ -221,7 +221,7 @@ Please keep changes bounded, deterministic, and free of real service credentials
 
 ## Security
 
-Voxa is pre-alpha and must not be used to execute untrusted code or expose
+Muxiva is pre-alpha and must not be used to execute untrusted code or expose
 Studio directly to the public internet. Graph files must never contain secrets.
 Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 
@@ -230,4 +230,4 @@ See [CHANGELOG.md](CHANGELOG.md) for notable unreleased changes and
 
 ## License
 
-Voxa is licensed under the [Apache License 2.0](LICENSE).
+Muxiva is licensed under the [Apache License 2.0](LICENSE).

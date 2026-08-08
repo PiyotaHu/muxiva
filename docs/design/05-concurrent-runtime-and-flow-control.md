@@ -1,4 +1,4 @@
-# Voxa Stage 5 Concurrent Runtime and Flow-Control Contract
+# Muxiva Stage 5 Concurrent Runtime and Flow-Control Contract
 
 Status: **Stage 5A runtime and standalone Stage 5B/5C components implemented**
 

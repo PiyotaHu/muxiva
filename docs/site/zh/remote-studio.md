@@ -1,12 +1,12 @@
 # 无 GUI Linux 与远程 Studio
 
-Studio 是由 `voxa` 启动的本地 HTTP 服务，网页不要求与 Runtime 运行在同一台机器。
+Studio 是由 `muxiva` 启动的本地 HTTP 服务，网页不要求与 Runtime 运行在同一台机器。
 在无桌面的 Linux 服务器上，推荐让 Studio 只监听服务器的 `127.0.0.1`，再通过 SSH
 端口转发，用你自己电脑上的 Chrome、Edge 或 Safari 打开。
 
 ```mermaid
 flowchart LR
-    B["你的电脑浏览器<br/>localhost:5678"] -->|"SSH 加密隧道"| S["Linux 服务器<br/>Voxa Studio :5678"]
+    B["你的电脑浏览器<br/>localhost:5678"] -->|"SSH 加密隧道"| S["Linux 服务器<br/>Muxiva Studio :5678"]
     B -->|"麦克风 WebRTC"| A["Agora Cloud"]
     S -->|"C++ Bot RTC"| A
     S -->|"WebSocket"| Q["阿里云百炼"]
@@ -23,20 +23,20 @@ flowchart LR
 
 ```bash
 cd /srv/my-agent
-voxa studio . --host 127.0.0.1 --port 5678 --no-open
+muxiva studio . --host 127.0.0.1 --port 5678 --no-open
 ```
 
 仓库内的旗舰语音 Demo：
 
 ```bash
-cd /srv/Voxa
+cd /srv/Muxiva
 ./examples/voice-agent/run.sh --host 127.0.0.1 --port 5678 --no-open
 ```
 
 无 `DISPLAY`/`WAYLAND_DISPLAY` 时，`run.sh` 会自动禁用打开浏览器。它会打印类似：
 
 ```text
-[VOXA][INFO][studio.ready] url=http://127.0.0.1:5678/#<ACCESS_TOKEN>
+[MUXIVA][INFO][studio.ready] url=http://127.0.0.1:5678/#<ACCESS_TOKEN>
 ```
 
 保持这个进程运行。不要把包含 `#<ACCESS_TOKEN>` 的完整 URL 发给别人。
@@ -72,20 +72,20 @@ Linux 服务器上的 C++ Bot 使用另一个 UID 加入同一 Channel。
 使用 `tmux` 或 `systemd` 保持 Studio 进程。最简单的 `tmux` 流程：
 
 ```bash
-tmux new -s voxa
+tmux new -s muxiva
 ./examples/voice-agent/run.sh --host 127.0.0.1 --port 5678 --no-open
 ```
 
 按 `Ctrl-b`，再按 `d` 退出会话；重新连接后：
 
 ```bash
-tmux attach -t voxa
+tmux attach -t muxiva
 ```
 
 日志始终位于：
 
 ```bash
-tail -f examples/voice-agent/.voxa/runtime.log
+tail -f examples/voice-agent/.muxiva/runtime.log
 ```
 
 ## 容器中运行
@@ -95,8 +95,8 @@ tail -f examples/voice-agent/.voxa/runtime.log
 ```bash
 docker run --rm \
   -p 127.0.0.1:5678:5678 \
-  your-voxa-image \
-  voxa studio /app --host 0.0.0.0 --port 5678 --no-open
+  your-muxiva-image \
+  muxiva studio /app --host 0.0.0.0 --port 5678 --no-open
 ```
 
 如果 Docker 宿主机就是你的电脑，打开输出 URL 时把主机改为
@@ -108,7 +108,7 @@ docker run --rm \
 下面的命令会让局域网或公网接口直接监听 Studio：
 
 ```bash
-voxa studio . --host 0.0.0.0 --port 5678 --no-open
+muxiva studio . --host 0.0.0.0 --port 5678 --no-open
 ```
 
 Studio 可以读写 Graph、保存 Connections 并启动 Runtime；不要把它裸露在公网。并且普通

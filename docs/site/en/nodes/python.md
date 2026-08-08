@@ -4,19 +4,19 @@ Python is the fastest Studio project-Node path today. Text Source, Transform,
 and Sink packages run through the trusted local Python development Host.
 
 ```python
-import voxa
+import muxiva
 
 class Uppercase:
     def on_process(self, frame, ctx):
         ctx.emit(
             "text_out",
-            voxa.TextFrame(frame.text.upper(), sequence=frame.sequence),
+            muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence),
         )
         ctx.publish_event("example.text.uppercased", {"sequence": frame.sequence})
 
 class ClientEvent:
     def on_process(self, frame, ctx):
-        ctx.emit("event_out", voxa.EventFrame(
+        ctx.emit("event_out", muxiva.EventFrame(
             "example.client.message", '{"text":"ready"}',
             source="example.client_event", sequence=frame.sequence,
         ))

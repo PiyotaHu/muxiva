@@ -1,22 +1,22 @@
-# Voxa Studio
+# Muxiva Studio
 
-Studio is the local visual environment bundled with the `voxa` CLI. It edits
+Studio is the local visual environment bundled with the `muxiva` CLI. It edits
 the same strict Graph v1 document used by validation and runtime compilation.
 
 ## Start Studio
 
 ```bash
-voxa studio
+muxiva studio
 ```
 
 With no argument, the CLI discovers the current project's `graph.json`, a
-standalone `voxa.graph.json`, or the flagship Voice Agent inside a Voxa source
-checkout, in that order. If none exists, it creates a new `voxa.graph.json`
+standalone `muxiva.graph.json`, or the flagship Voice Agent inside a Muxiva source
+checkout, in that order. If none exists, it creates a new `muxiva.graph.json`
 without overwriting any file. You can also pass a project directory or Graph:
 
 ```bash
-voxa studio my-agent
-voxa studio path/to/graph.json
+muxiva studio my-agent
+muxiva studio path/to/graph.json
 ```
 
 Studio can open a Graph that does not yet validate so that you can repair it on
@@ -44,22 +44,22 @@ Select **Create Node**, choose a language and role, edit the starter code,
 declare ports and configuration schema, then select **Save & Register**.
 
 ```text
-.voxa/nodes/my_python_node/
-├── voxa.node.json
+.muxiva/nodes/my_python_node/
+├── muxiva.node.json
 └── node.py
 ```
 
 The package appears in the project Palette immediately. Python Nodes run through
 the trusted local Host. A C++ dynamic library under
-`.voxa/native/<package_id>/` is loadable after Studio verifies its ABI v1
+`.muxiva/native/<package_id>/` is loadable after Studio verifies its ABI v1
 identity, version, role, and exact port shape against the Manifest. TypeScript
 and Rust project source still requires an externally built supported artifact.
 
-Selecting a project Node shows the exact source stored under `.voxa/nodes/`
+Selecting a project Node shows the exact source stored under `.muxiva/nodes/`
 and offers **Edit in Node Lab**. Shared packages loaded through
-Official Nodes loaded through the compatibility file `.voxa/providers.json` show their exact
+Official Nodes loaded through the compatibility file `.muxiva/providers.json` show their exact
 source as read-only, while project-owned
-`.voxa/nodes` remain editable. Selecting a compiled built-in shows its exact
+`.muxiva/nodes` remain editable. Selecting a compiled built-in shows its exact
 Factory identity and a link to the authoritative Rust implementation.
 
 ## Runtime observability
@@ -68,7 +68,7 @@ The Runtime panel reports callback counts and duration, active and failed
 Nodes, Edge throughput, queue occupancy, drops, and retained terminal outcome.
 Run uses the current canvas snapshot; saving first is not required.
 
-When a project provides `.voxa/web/index.html`, the toolbar exposes its project
+When a project provides `.muxiva/web/index.html`, the toolbar exposes its project
 experience, such as **Voice Room**. Studio saves the current valid graph before
 opening it. The page is bearer-token protected, and only short-lived connection
 fields explicitly marked `client_exposed: true` can be returned to it; server

@@ -1,21 +1,21 @@
 # C++ Node
 
-C++ SDK 在 Voxa 版本化 C ABI 之上提供 RAII Wrapper。多模态实现通过声明的
+C++ SDK 在 Muxiva 版本化 C ABI 之上提供 RAII Wrapper。多模态实现通过声明的
 Port 输出具名 Frame。
 
 ```cpp
-#include <voxa/voxa.hpp>
+#include <muxiva/muxiva.hpp>
 
-class MyNode final : public voxa::MultimodalGraphNode {
+class MyNode final : public muxiva::MultimodalGraphNode {
  public:
-  void on_process(const voxa_frame_view_v1* input,
-                  voxa::GraphNodeContext& ctx) override {
+  void on_process(const muxiva_frame_view_v1* input,
+                  muxiva::GraphNodeContext& ctx) override {
     // ctx.emit("text_out", output_frame);
     // Source 可调用 ctx.schedule_next_tick(std::chrono::milliseconds(20));
     // 自己安排下一次轮询，不需要在 Graph 里连接时钟 Node。
   }
-  void on_signal(const voxa_frame_view_v1& signal) override {
-    // 接收 voxa.voice.speech.started 等图内控制信号。
+  void on_signal(const muxiva_frame_view_v1& signal) override {
+    // 接收 muxiva.voice.speech.started 等图内控制信号。
   }
 };
 ```

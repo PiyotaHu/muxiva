@@ -4,9 +4,9 @@ Status: implemented pre-release vertical slice.
 
 ## Boundary
 
-`voxa-ffi` is the only workspace crate permitted to contain unsafe code. Its
-checked-in normative header is `cpp/include/voxa/voxa.h`; the library and
-header agree on `VOXA_ABI_VERSION_V1` (`0x00010000`). The crate builds as an
+`muxiva-ffi` is the only workspace crate permitted to contain unsafe code. Its
+checked-in normative header is `cpp/include/muxiva/muxiva.h`; the library and
+header agree on `MUXIVA_ABI_VERSION_V1` (`0x00010000`). The crate builds as an
 `rlib`, `staticlib`, and `cdylib`.
 
 The ABI passes only fixed-width C scalars, POD views, callbacks, and 128-bit
@@ -16,14 +16,14 @@ recover the private implementation only for the duration of a callback.
 
 ## Frames and ownership
 
-`voxa_frame_view_v1` contains the common header and a discriminated union for
+`muxiva_frame_view_v1` contains the common header and a discriminated union for
 audio, video, text, byte, signal, and event payloads. All views are borrowed
-for one call. `voxa_frame_copy_v1` validates version, exact v1 size, enum
+for one call. `muxiva_frame_copy_v1` validates version, exact v1 size, enum
 values, zero reserved fields, UTF-8/identifier rules, null/length pairs, size
 arithmetic, and the 16 MiB copy ceiling before storing owned bytes.
 
-Copy is the only enabled v1 ownership mode. `VOXA_CAP_RETAIN_RELEASE` is
-reserved but clear, and `voxa_frame_retain_v1` returns `UNSUPPORTED`.
+Copy is the only enabled v1 ownership mode. `MUXIVA_CAP_RETAIN_RELEASE` is
+reserved but clear, and `muxiva_frame_retain_v1` returns `UNSUPPORTED`.
 Foreign buffers may be reused immediately after a copy call returns.
 
 ## Handles and no-unwind rule
@@ -48,7 +48,7 @@ vtable's `destroy` callback executes once and never under the registry lock.
 
 ## Executable vertical slice
 
-`voxa_runtime_run_text_v1` is intentionally a focused Stage 7 bridge harness.
+`muxiva_runtime_run_text_v1` is intentionally a focused Stage 7 bridge harness.
 It constructs and runs the existing synchronous Rust graph:
 
 ```text

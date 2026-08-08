@@ -21,7 +21,7 @@ def fail(message: str) -> None:
 
 def nearest_provider(path: Path) -> Path | None:
     for parent in (path.parent, *path.parents):
-        candidate = parent / "voxa.provider.json"
+        candidate = parent / "muxiva.provider.json"
         if candidate.is_file():
             return candidate
         if parent == PROVIDERS:
@@ -35,10 +35,10 @@ def main() -> int:
     packages: set[str] = set()
     providers: dict[Path, dict] = {}
 
-    for path in sorted(PROVIDERS.rglob("voxa.provider.json")):
+    for path in sorted(PROVIDERS.rglob("muxiva.provider.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
         providers[path] = data
-        if data.get("format") != "voxa.provider/v1":
+        if data.get("format") != "muxiva.provider/v1":
             fail(f"{path.relative_to(ROOT)} has an unsupported format")
             errors += 1
         if data.get("category") not in CATEGORIES:
@@ -49,7 +49,7 @@ def main() -> int:
             fail(f"{path.relative_to(ROOT)} repeats a connection ID")
             errors += 1
 
-    for path in sorted(PROVIDERS.rglob("voxa.node.json")):
+    for path in sorted(PROVIDERS.rglob("muxiva.node.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
         provider_path = nearest_provider(path)
         if provider_path is None:
@@ -57,9 +57,6 @@ def main() -> int:
             errors += 1
             continue
         provider = providers[provider_path]
-        if data.get("provider_id") != provider.get("provider_id"):
-            fail(f"{path.relative_to(ROOT)} provider_id does not match its owner")
-            errors += 1
         if data.get("category") not in CATEGORIES:
             fail(f"{path.relative_to(ROOT)} has an invalid category")
             errors += 1

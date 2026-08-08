@@ -1,4 +1,4 @@
-# Voxa Pre-release Notes: Stage 3 Frames and Ownership
+# Muxiva Pre-release Notes: Stage 3 Frames and Ownership
 
 Date: **2026-08-01**
 
@@ -22,16 +22,16 @@ started, and this report does not authorize it.
 - Contract and plan:
   `docs/design/03-frame-and-ownership-contract.md` and
   `docs/superpowers/plans/2026-08-01-stage-3-frames-and-ownership.md`.
-- Identity and scalar values: `crates/voxa-types/src/id.rs`, `time.rs`,
+- Identity and scalar values: `crates/muxiva-types/src/id.rs`, `time.rs`,
   `schema.rs`, and `value.rs`.
-- Ownership and metadata: `crates/voxa-types/src/frame_buffer.rs`,
+- Ownership and metadata: `crates/muxiva-types/src/frame_buffer.rs`,
   `extension.rs`, and `lineage.rs`.
-- Frame implementation: `crates/voxa-types/src/frame/mod.rs`, `header.rs`,
+- Frame implementation: `crates/muxiva-types/src/frame/mod.rs`, `header.rs`,
   `audio.rs`, `video.rs`, and `message.rs`, exported by `src/lib.rs`.
-- Public behavior tests: `crates/voxa-types/tests/frame_contract.rs`,
+- Public behavior tests: `crates/muxiva-types/tests/frame_contract.rs`,
   `frame_derivation.rs`, and `frame_concurrency.rs`, plus colocated unit and
   compile-fail documentation tests.
-- Consumer example: `crates/voxa-examples/src/bin/frames.rs`.
+- Consumer example: `crates/muxiva-examples/src/bin/frames.rs`.
 - Status documentation: this report and the README Stage 3 status/link.
 
 ## Public API delivered
@@ -72,29 +72,29 @@ All failures below use `ErrorCategory::Validation`.
 
 | Code | Rejected condition |
 | --- | --- |
-| `VOXA-FRM-SCHEMA-VERSION` | zero schema version |
-| `VOXA-FRM-NAMESPACE` | invalid extension, signal, or topic namespace |
-| `VOXA-FRM-VALUE-NUMBER` | non-finite floating point value |
-| `VOXA-FRM-VALUE-KEY` | invalid or duplicate Value-map/Metadata key |
-| `VOXA-FRM-EXTENSION-DUPLICATE` | duplicate extension key and schema version |
-| `VOXA-FRM-LINEAGE-ORIGIN` | lineage has neither Node nor Edge source |
-| `VOXA-FRM-LINEAGE-REASON` | empty, oversized, or control-bearing reason |
-| `VOXA-FRM-LINEAGE-CYCLE` | new header names itself as a parent |
-| `VOXA-FRM-CLOCK-DOMAIN` | timestamp ordering crosses complete clock domains |
-| `VOXA-FRM-TYPE-MISMATCH` | header, payload, or expected FrameType differs |
-| `VOXA-FRM-AUDIO-RATE` | sample rate outside 1..=768,000 |
-| `VOXA-FRM-AUDIO-CHANNELS` | channel count outside 1..=1,024 |
-| `VOXA-FRM-AUDIO-SAMPLES` | zero samples per channel |
-| `VOXA-FRM-AUDIO-LENGTH` | payload length differs from checked exact length |
-| `VOXA-FRM-AUDIO-PLANE` | plane index is absent from the audio layout |
-| `VOXA-FRM-VIDEO-DIMENSIONS` | zero dimensions or odd YUV420P dimensions |
-| `VOXA-FRM-VIDEO-STRIDE` | stride is smaller than its row bytes |
-| `VOXA-FRM-VIDEO-LENGTH` | payload length differs from checked plane total |
-| `VOXA-FRM-VIDEO-PLANE` | descriptor is not borrowed from that VideoData layout |
-| `VOXA-FRM-ARITHMETIC` | checked size, offset, or duration arithmetic overflow |
-| `VOXA-FRM-TEXT-UTF8` | invalid UTF-8 text bytes |
-| `VOXA-FRM-MEDIA-TYPE` | invalid optional media type |
-| `VOXA-FRM-DERIVATION-ID` | derivation reuses its direct parent's FrameId |
+| `MUXIVA-FRM-SCHEMA-VERSION` | zero schema version |
+| `MUXIVA-FRM-NAMESPACE` | invalid extension, signal, or topic namespace |
+| `MUXIVA-FRM-VALUE-NUMBER` | non-finite floating point value |
+| `MUXIVA-FRM-VALUE-KEY` | invalid or duplicate Value-map/Metadata key |
+| `MUXIVA-FRM-EXTENSION-DUPLICATE` | duplicate extension key and schema version |
+| `MUXIVA-FRM-LINEAGE-ORIGIN` | lineage has neither Node nor Edge source |
+| `MUXIVA-FRM-LINEAGE-REASON` | empty, oversized, or control-bearing reason |
+| `MUXIVA-FRM-LINEAGE-CYCLE` | new header names itself as a parent |
+| `MUXIVA-FRM-CLOCK-DOMAIN` | timestamp ordering crosses complete clock domains |
+| `MUXIVA-FRM-TYPE-MISMATCH` | header, payload, or expected FrameType differs |
+| `MUXIVA-FRM-AUDIO-RATE` | sample rate outside 1..=768,000 |
+| `MUXIVA-FRM-AUDIO-CHANNELS` | channel count outside 1..=1,024 |
+| `MUXIVA-FRM-AUDIO-SAMPLES` | zero samples per channel |
+| `MUXIVA-FRM-AUDIO-LENGTH` | payload length differs from checked exact length |
+| `MUXIVA-FRM-AUDIO-PLANE` | plane index is absent from the audio layout |
+| `MUXIVA-FRM-VIDEO-DIMENSIONS` | zero dimensions or odd YUV420P dimensions |
+| `MUXIVA-FRM-VIDEO-STRIDE` | stride is smaller than its row bytes |
+| `MUXIVA-FRM-VIDEO-LENGTH` | payload length differs from checked plane total |
+| `MUXIVA-FRM-VIDEO-PLANE` | descriptor is not borrowed from that VideoData layout |
+| `MUXIVA-FRM-ARITHMETIC` | checked size, offset, or duration arithmetic overflow |
+| `MUXIVA-FRM-TEXT-UTF8` | invalid UTF-8 text bytes |
+| `MUXIVA-FRM-MEDIA-TYPE` | invalid optional media type |
+| `MUXIVA-FRM-DERIVATION-ID` | derivation reuses its direct parent's FrameId |
 
 Media length, stride, offset, plane, and duration calculations use checked
 integer arithmetic before conversion or slicing. Errors attach scalar
@@ -135,7 +135,7 @@ Fresh evidence includes a compile-fail documentation test proving raw
 timestamp ordering does not compile, an integration test covering Less,
 Greater, and Equal in one domain, and a test proving equal
 `ClockKind::MediaRelative` values with different domain IDs return
-`VOXA-FRM-CLOCK-DOMAIN`. The Stage 2 timestamp clock-domain wording and raw
+`MUXIVA-FRM-CLOCK-DOMAIN`. The Stage 2 timestamp clock-domain wording and raw
 ordering finding is resolved by this stage.
 
 ## Example evidence
@@ -148,7 +148,7 @@ allocated 960-byte child buffer. Assertions preserve the parent and unknown
 extension. Fresh execution produced exactly:
 
 ```text
-Voxa derived frame: frame-2 Audio lineage=1
+Muxiva derived frame: frame-2 Audio lineage=1
 ```
 
 ## Fresh verification evidence
@@ -168,20 +168,20 @@ cargo 1.97.1 (c980f4866 2026-06-30)
 Focused acceptance:
 
 ```text
-$ cargo test -p voxa-types --all-targets
-voxa-types unit: 26 passed; frame_concurrency: 3 passed;
+$ cargo test -p muxiva-types --all-targets
+muxiva-types unit: 26 passed; frame_concurrency: 3 passed;
 frame_contract: 18 passed; frame_derivation: 6 passed
 observed total: 53 passed; 0 failed
 
-$ cargo test -p voxa-types --doc
+$ cargo test -p muxiva-types --doc
 4 passed; 0 failed (all four are compile-fail tests)
 
-$ cargo test -p voxa-examples --all-targets
-voxa-examples library: 1 passed; frames binary: 0; hello binary: 0
+$ cargo test -p muxiva-examples --all-targets
+muxiva-examples library: 1 passed; frames binary: 0; hello binary: 0
 observed total: 1 passed; 0 failed
 
-$ cargo run -p voxa-examples --bin frames
-Voxa derived frame: frame-2 Audio lineage=1
+$ cargo run -p muxiva-examples --bin frames
+Muxiva derived frame: frame-2 Audio lineage=1
 ```
 
 Complete local quality gates:
@@ -194,11 +194,11 @@ $ cargo clippy --workspace --all-targets -- -D warnings
 Finished successfully with no diagnostics
 
 $ cargo test --workspace --all-targets
-voxa-core: 7 passed; voxa-examples: 1 passed; voxa-types: 53 passed
+muxiva-core: 7 passed; muxiva-examples: 1 passed; muxiva-types: 53 passed
 observed total: 61 passed; 0 failed
 
 $ cargo test --workspace --doc
-voxa-core: 0; voxa-examples: 0; voxa-types: 4 passed
+muxiva-core: 0; muxiva-examples: 0; muxiva-types: 4 passed
 observed total: 4 passed; 0 failed
 ```
 
@@ -216,7 +216,7 @@ return, or public mutable/storage field. `git diff --check` also passed.
 No dependency changed in Stage 3. Fresh `cargo tree --workspace` resolved:
 
 ```text
-voxa-core v0.1.0
+muxiva-core v0.1.0
 ├── tracing v0.1.44
 │   ├── pin-project-lite v0.2.17
 │   ├── tracing-attributes v0.1.31
@@ -237,7 +237,7 @@ voxa-core v0.1.0
 │   └── tracing-log v0.2.0
 │       ├── log v0.4.33
 │       └── once_cell v1.21.4
-└── voxa-types v0.1.0
+└── muxiva-types v0.1.0
     └── thiserror v2.0.19
         └── thiserror-impl v2.0.19
             ├── proc-macro2 v1.0.107
@@ -245,13 +245,13 @@ voxa-core v0.1.0
             ├── syn v3.0.3
             └── unicode-ident v1.0.24
 
-voxa-examples v0.1.0
-├── voxa-core v0.1.0
-└── voxa-types v0.1.0
+muxiva-examples v0.1.0
+├── muxiva-core v0.1.0
+└── muxiva-types v0.1.0
 ```
 
 The tree contains no Tokio, serde, async runtime, FFI, media, RTC, or FFmpeg
-package. `voxa-types` remains dependent only on `thiserror`.
+package. `muxiva-types` remains dependent only on `thiserror`.
 
 ## Stage 3 review debt
 
@@ -281,7 +281,7 @@ review:
 - the default `TracingLogSink` can emit arbitrary field values and therefore
   does not yet enforce the Stage 1 default-log privacy boundary;
 - `ErrorContext::Session` and `ErrorContext::Stream` cannot yet be attached
-  through public `VoxaError` builder methods; and
+  through public `MuxivaError` builder methods; and
 - verification/documentation coverage for tracing-output capture, concurrent
   and pre-installed subscriber initialization, identifier length boundaries,
   event-name grammar wording, the stale fallible logging example in the Stage

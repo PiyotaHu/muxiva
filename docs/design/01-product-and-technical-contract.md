@@ -1,4 +1,4 @@
-# Voxa v0.1 Product and Technical Contract
+# Muxiva v0.1 Product and Technical Contract
 
 Status: **Accepted design; Stage 1 foundation contract**
 
@@ -8,7 +8,7 @@ Last updated: **2026-07-31**
 
 ## 1. Purpose
 
-Voxa is a real-time multimodal agent runtime with a single Rust core and a
+Muxiva is a real-time multimodal agent runtime with a single Rust core and a
 common node model for Rust, C++, Python, and TypeScript. Its first end-to-end
 validation target is a real-time voice-agent pipeline, while its public core
 contracts remain media- and vendor-neutral.
@@ -90,7 +90,7 @@ an explicit worker or native implementation and must not masquerade as async.
 | Edge | A declared connection between one output port and one input port. |
 | Signal | A `SignalFrame` routed only across actual adjacent graph edges. |
 | Event | An `EventFrame` published through the global EventBus. |
-| Adapter | Native integration code that converts an external SDK contract to the Voxa C ABI. |
+| Adapter | Native integration code that converts an external SDK contract to the Muxiva C ABI. |
 | Studio | The local web graph editor that reads and writes `GraphDefinition`. |
 
 Documentation and APIs must use these terms. In particular, component,
@@ -100,12 +100,12 @@ processor, pipeline step, and handler are not synonyms for Node in public APIs.
 
 ```text
 Python Node ---- PyO3 -----+
-TypeScript Node - N-API ---+--> Rust Voxa Core
+TypeScript Node - N-API ---+--> Rust Muxiva Core
 C++ Node ------- C ABI ----+    graph, scheduling, queues, backpressure,
 C++ SDK -> C++ Adapter ----+    lifecycle, Signal, EventBus, stop, metrics
 ```
 
-### 4.1 Rust Voxa Core
+### 4.1 Rust Muxiva Core
 
 The core exclusively owns graph validation and execution, scheduling, queues,
 admission and backpressure, cancellation, lifecycle coordination, Signal
@@ -121,7 +121,7 @@ inside the C++ boundary and translated to stable errors.
 ### 4.3 C++ adapters
 
 Adapters encapsulate RTC, FFmpeg, codecs, or other native SDKs. They translate
-SDK buffers, callbacks, lifetime rules, and errors into the Voxa C ABI. An
+SDK buffers, callbacks, lifetime rules, and errors into the Muxiva C ABI. An
 adapter cannot invoke graph logic from an SDK callback thread.
 
 ### 4.4 Python nodes
@@ -355,12 +355,12 @@ the first public release; they do not alter the runtime contract in Stage 1.
 ## 14. Planned repository boundaries
 
 ```text
-crates/voxa-core     Runtime graph, scheduling, lifecycle, flow, stop, metrics
-crates/voxa-types    Stable Rust frame, ID, value, error, and graph data types
-crates/voxa-cli      Validation, execution, and local Studio launcher
-crates/voxa-ffi      Versioned C ABI and safe Rust boundary
-crates/voxa-python   PyO3 node development surface
-crates/voxa-node     Node-API TypeScript/JavaScript surface
+crates/muxiva-core     Runtime graph, scheduling, lifecycle, flow, stop, metrics
+crates/muxiva-types    Stable Rust frame, ID, value, error, and graph data types
+crates/muxiva-cli      Validation, execution, and local Studio launcher
+crates/muxiva-ffi      Versioned C ABI and safe Rust boundary
+crates/muxiva-python   PyO3 node development surface
+crates/muxiva-node     Node-API TypeScript/JavaScript surface
 cpp/include         Public C ABI headers and C++ safety wrappers
 cpp/nodes           C++ node examples and support
 cpp/adapters        Replaceable native SDK adapters
@@ -388,7 +388,7 @@ scope and non-goals, and define every later stage's boundary.
 
 Input: Stage 1 contract.
 
-Output: Edition 2021 Cargo workspace, `voxa-core`, `voxa-types`, examples,
+Output: Edition 2021 Cargo workspace, `muxiva-core`, `muxiva-types`, examples,
 typed IDs, timestamps, contextual errors, replaceable logging, CI, and tests.
 
 Exit: fmt, clippy, tests, and example builds pass; no Tokio, FFI, media SDK, or

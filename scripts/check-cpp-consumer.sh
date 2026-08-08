@@ -7,8 +7,8 @@ if ! command -v cmake >/dev/null 2>&1; then
   exit 0
 fi
 
-build_dir="$repo/target/cmake-voxa-sdk"
-prefix_dir="$repo/target/cmake-voxa-prefix"
+build_dir="$repo/target/cmake-muxiva-sdk"
+prefix_dir="$repo/target/cmake-muxiva-prefix"
 consumer_dir="$repo/target/cmake-cpp-consumer"
 rm -rf "$build_dir" "$prefix_dir" "$consumer_dir"
 
@@ -25,4 +25,4 @@ cmake -S "$repo/examples/cpp/uppercase-node" -B "$consumer_dir" \
   -DCMAKE_PREFIX_PATH="$prefix_dir" \
   -DCMAKE_CXX_FLAGS="$consumer_cxx_flags"
 cmake --build "$consumer_dir" --parallel
-"$consumer_dir/voxa_cpp_uppercase"
+"$consumer_dir/muxiva_cpp_uppercase"

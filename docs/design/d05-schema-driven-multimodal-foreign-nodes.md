@@ -21,11 +21,11 @@ C++ Graph hosts while preserving Graph v1 as a pure-data format.
 Python returns a dict from output port names to frame values or lists.
 TypeScript uses a JSON wire union for owned audio/video/text/byte frames and an
 object keyed by port. C++ uses an additive ABI with a borrowed array of
-`voxa_named_frame_v1`; Rust copies every name and frame before the callback
+`muxiva_named_frame_v1`; Rust copies every name and frame before the callback
 storage may be reused.
 
 The older single-text Factory APIs remain available. C++ keeps their exact ABI
-layout and adds `voxa_runtime_run_multimodal_graph_v1` rather than resizing a
+layout and adds `muxiva_runtime_run_multimodal_graph_v1` rather than resizing a
 published v1 struct.
 
 ## Current media boundary

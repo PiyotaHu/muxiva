@@ -1,16 +1,16 @@
 # C++ Node development
 
 Use **Studio → Create Node → C++** to generate `node.cpp` and a Manifest.
-Multimodal implementations derive from `voxa::MultimodalGraphNode` and emit
+Multimodal implementations derive from `muxiva::MultimodalGraphNode` and emit
 named Frames.
 
 ```cpp
-#include <voxa/voxa.hpp>
+#include <muxiva/muxiva.hpp>
 
-class MyNode final : public voxa::MultimodalGraphNode {
+class MyNode final : public muxiva::MultimodalGraphNode {
  public:
-  void on_process(const voxa_frame_view_v1* input,
-                  voxa::GraphNodeContext& ctx) override {
+  void on_process(const muxiva_frame_view_v1* input,
+                  muxiva::GraphNodeContext& ctx) override {
     // ctx.emit("text_out", output_frame);
   }
 };

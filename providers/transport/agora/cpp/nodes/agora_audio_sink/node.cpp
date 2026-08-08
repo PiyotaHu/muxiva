@@ -1,5 +1,5 @@
-#include <voxa/agora_rtc.hpp>
-#include <voxa/voxa.hpp>
+#include <muxiva/agora_rtc.hpp>
+#include <muxiva/muxiva.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -23,24 +23,24 @@ std::string required_env(const char *name) {
   return value;
 }
 
-class AgoraAudioSinkNode final : public voxa::MultimodalGraphNode {
+class AgoraAudioSinkNode final : public muxiva::MultimodalGraphNode {
 public:
   void on_prepare() override {
-    const auto app_id = required_env("VOXA_AGORA_APP_ID");
-    const auto token = required_env("VOXA_AGORA_BOT_TOKEN");
-    const auto channel = required_env("VOXA_AGORA_CHANNEL");
+    const auto app_id = required_env("MUXIVA_AGORA_APP_ID");
+    const auto token = required_env("MUXIVA_AGORA_BOT_TOKEN");
+    const auto channel = required_env("MUXIVA_AGORA_CHANNEL");
     const auto uid = static_cast<std::uint32_t>(
-        std::stoul(required_env("VOXA_AGORA_BOT_UID")));
+        std::stoul(required_env("MUXIVA_AGORA_BOT_UID")));
     const auto participant = static_cast<std::uint32_t>(
-        std::stoul(required_env("VOXA_AGORA_WEB_UID")));
-    session_ = voxa::agora::SharedSession::acquire(
+        std::stoul(required_env("MUXIVA_AGORA_WEB_UID")));
+    session_ = muxiva::agora::SharedSession::acquire(
         app_id, token, channel, uid, participant);
     sender_ = std::thread([this] { send_loop(); });
   }
 
-  void on_process(const voxa_frame_view_v1 *input,
-                  voxa::GraphNodeContext &) override {
-    if (input == nullptr || input->header.frame_type != VOXA_FRAME_AUDIO) {
+  void on_process(const muxiva_frame_view_v1 *input,
+                  muxiva::GraphNodeContext &) override {
+    if (input == nullptr || input->header.frame_type != MUXIVA_FRAME_AUDIO) {
       throw std::invalid_argument("Agora audio Sink requires an Audio Frame");
     }
     const auto &audio = input->payload.audio;
@@ -65,13 +65,13 @@ public:
     cv_.notify_one();
   }
 
-  void on_signal(const voxa_frame_view_v1 &signal) override {
-    if (signal.header.frame_type != VOXA_FRAME_SIGNAL)
+  void on_signal(const muxiva_frame_view_v1 &signal) override {
+    if (signal.header.frame_type != MUXIVA_FRAME_SIGNAL)
       return;
     const auto &name = signal.payload.signal.signal_name;
     const std::string_view value(name.data == nullptr ? "" : name.data,
                                  name.data == nullptr ? 0 : name.len);
-    if (value != "voxa.voice.speech.started")
+    if (value != "muxiva.voice.speech.started")
       return;
     std::size_t cancelled = 0;
     {
@@ -83,7 +83,7 @@ public:
       ++interruptions_;
     }
     std::fprintf(stderr,
-                 "[VOXA][AGORA][audio.cancelled] signal=voxa.voice.speech.started "
+                 "[MUXIVA][AGORA][audio.cancelled] signal=muxiva.voice.speech.started "
                  "bytes=%zu through_sequence=%llu interruptions=%llu\n",
                  cancelled,
                  static_cast<unsigned long long>(signal.header.sequence_id),
@@ -103,7 +103,7 @@ public:
     }
   }
 
-  void on_abort(const voxa_abort_reason_v1 &) noexcept override {
+  void on_abort(const muxiva_abort_reason_v1 &) noexcept override {
     try {
       on_finish();
     } catch (...) {
@@ -130,7 +130,7 @@ private:
           pcm_.pop_front();
         }
       }
-      const voxa::agora::Pcm16FrameView frame{packet.data(),
+      const muxiva::agora::Pcm16FrameView frame{packet.data(),
                                               packet.size(),
                                               kSampleRate,
                                               1,
@@ -141,7 +141,7 @@ private:
       const auto count = ++published_packets_;
       if (count == 1 || count % 100 == 0 || result != 0) {
         std::fprintf(stderr,
-                     "[VOXA][AGORA][audio.published] packets=%llu result=%d "
+                     "[MUXIVA][AGORA][audio.published] packets=%llu result=%d "
                      "queued_bytes=%zu dropped_bytes=%llu\n",
                      static_cast<unsigned long long>(count), result,
                      queued_bytes(),
@@ -164,7 +164,7 @@ private:
   static constexpr std::uint64_t kSamplesPerPacket = 480;
   static constexpr std::size_t kPacketBytes = kSamplesPerPacket * 2;
   static constexpr std::size_t kMaximumQueuedBytes = kSampleRate * 2 * 120;
-  std::shared_ptr<voxa::agora::SharedSession> session_;
+  std::shared_ptr<muxiva::agora::SharedSession> session_;
   mutable std::mutex mutex_;
   std::condition_variable cv_;
   std::deque<std::uint8_t> pcm_;
@@ -177,10 +177,10 @@ private:
 };
 } // namespace
 
-extern "C" voxa_multimodal_node_factory_v1 voxa_node_pack_factory() {
-  static const auto factory = voxa::MultimodalGraphNodeFactory::make<
+extern "C" muxiva_multimodal_node_factory_v1 muxiva_node_pack_factory() {
+  static const auto factory = muxiva::MultimodalGraphNodeFactory::make<
       AgoraAudioSinkNode>(
-      "agora.audio_sink", VOXA_NODE_SINK,
+      "agora.audio_sink", MUXIVA_NODE_SINK,
       R"json([{"name":"audio_in","direction":"input","frameType":"audio"},{"name":"signal_in","direction":"input","frameType":"signal"}])json");
   return factory.view();
 }

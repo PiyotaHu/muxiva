@@ -6,8 +6,8 @@ serves design and debugging, and the project web page serves the end user.
 
 ```mermaid
 flowchart TB
-    CLI["voxa CLI<br/>create · validate · run · diagnose"] --> CORE["Graph Compiler + Rust Runtime"]
-    STUDIO["Voxa Studio<br/>design · configure · debug"] --> CORE
+    CLI["muxiva CLI<br/>create · validate · run · diagnose"] --> CORE["Graph Compiler + Rust Runtime"]
+    STUDIO["Muxiva Studio<br/>design · configure · debug"] --> CORE
     WEB["Project web page<br/>microphone · camera · product UX"] --> API["Project / Transport boundary"]
     API --> CORE
     CLI --> REG["Shared Registry"]
@@ -15,18 +15,18 @@ flowchart TB
     CORE --> REG
 ```
 
-## The `voxa` CLI: a scriptable entry point
+## The `muxiva` CLI: a scriptable entry point
 
-After installation, use the `voxa` binary directly. Running through `cargo run` is not required.
+After installation, use the `muxiva` binary directly. Running through `cargo run` is not required.
 
 | Command | When to use it | Executes a Graph |
 | --- | --- | --- |
-| `voxa init my-agent` | Create a Graph and project Node directories | No |
-| `voxa validate my-agent` | Check identity, configuration, Ports, and topology before CI or a run | No |
-| `voxa run my-agent` | Execute a project with the concurrent Runtime | Yes |
-| `voxa studio` | Discover a project and open the local visual environment | Only after the user selects Run |
-| `voxa doctor --voice` | Check tools, official Nodes, native libraries, and voice credential readiness | No |
-| `voxa simulate --scenario voice` | Run a network-free fixture for Runtime control flow | Yes, with synthetic data |
+| `muxiva init my-agent` | Create a Graph and project Node directories | No |
+| `muxiva validate my-agent` | Check identity, configuration, Ports, and topology before CI or a run | No |
+| `muxiva run my-agent` | Execute a project with the concurrent Runtime | Yes |
+| `muxiva studio` | Discover a project and open the local visual environment | Only after the user selects Run |
+| `muxiva doctor --voice` | Check tools, official Nodes, native libraries, and voice credential readiness | No |
+| `muxiva simulate --scenario voice` | Run a network-free fixture for Runtime control flow | Yes, with synthetic data |
 
 `simulate` is an engineering tool for the Runtime, not a real ASR, LLM, or TTS product demo.
 Start a real voice experience with the [flagship voice guide](voice-demo.md).
@@ -45,11 +45,11 @@ directly and provides:
 - local Node credentials in Connections, without writing their values to the Graph.
 
 Studio is a local development tool, not a production control plane to expose to the internet.
-See [Voxa Studio](studio.md) for the complete workflow.
+See [Muxiva Studio](studio.md) for the complete workflow.
 
 ## Project web pages: the end-user entry point
 
-A project can provide a page under `.voxa/web/`. The Voice Room, for example:
+A project can provide a page under `.muxiva/web/`. The Voice Room, for example:
 
 1. asks for browser microphone permission;
 2. joins a channel with the Agora Web SDK;
@@ -66,9 +66,9 @@ Production deployments replace it with an application backend and short-lived to
 A typical development loop is:
 
 ```text
-voxa init → voxa studio → connect/write Nodes → Validate → Run → open the project web experience
+muxiva init → muxiva studio → connect/write Nodes → Validate → Run → open the project web experience
                          └────────── the same Graph v1 ──────────┘
 ```
 
-After commit, CI repeats the same contract checks with `voxa validate` and tests. Deployment can
-use `voxa run` or embed the Runtime in a service without shipping Studio.
+After commit, CI repeats the same contract checks with `muxiva validate` and tests. Deployment can
+use `muxiva run` or embed the Runtime in a service without shipping Studio.

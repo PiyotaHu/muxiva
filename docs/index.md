@@ -1,9 +1,9 @@
-# Voxa
+# Muxiva
 
 **One real-time multimodal graph. One lifecycle contract. Rust, C++, Python,
 and TypeScript Nodes.**
 
-Voxa is a Rust-native runtime for streaming voice, video, text, and binary
+Muxiva is a Rust-native runtime for streaming voice, video, text, and binary
 agents. It owns scheduling, bounded queues, backpressure, cancellation,
 lifecycle, control messages, and observability while language SDKs provide the
 Node implementations.
@@ -14,7 +14,7 @@ Node implementations.
 
 ## Run the real voice experience
 
-Install the `voxa` binary once, then start the Qwen + Agora flagship Voice Room:
+Install the `muxiva` binary once, then start the Qwen + Agora flagship Voice Room:
 
 ```bash
 ./examples/voice-agent/setup.sh
@@ -30,12 +30,12 @@ flowchart LR
 ```
 
 This path captures and plays real audio. The offline synthetic fixture is named
-`voxa simulate` and belongs to testing, not the product quick start.
+`muxiva simulate` and belongs to testing, not the product quick start.
 
 ## Create a Node without leaving Studio
 
 Open **Create Node**, choose Python, edit the starter, define typed ports, and
-press **Save & Register**. Studio writes a `voxa.node/v1` package into the
+press **Save & Register**. Studio writes a `muxiva.node/v1` package into the
 project Node Library and immediately adds it to the Palette. Text Python Nodes
 can run in the trusted local development Host today.
 
@@ -50,6 +50,6 @@ privately through GitHub, never through a public Issue.
 
 ## 中文快速说明
 
-Voxa 是 Rust 驱动的实时多模态 Agent Runtime。产品入口是 Qwen + Agora 真实语音
-房间；`voxa studio` 无参数即可发现或创建工作区。`voxa simulate` 只用于无网络
+Muxiva 是 Rust 驱动的实时多模态 Agent Runtime。产品入口是 Qwen + Agora 真实语音
+房间；`muxiva studio` 无参数即可发现或创建工作区。`muxiva simulate` 只用于无网络
 Runtime 测试，不是语音产品体验。

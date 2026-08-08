@@ -13,7 +13,7 @@ Qwen 官方 Node 使用 Python 实现，直接调用 DashScope 官方 WebSocket 
 
 ```bash
 ./examples/voice-agent/setup.sh
-voxa doctor --voice
+muxiva doctor --voice
 ```
 
 两者必须来自华北 2（北京）的同一业务空间。这些 Qwen Node 不需要下载厂商 SDK。

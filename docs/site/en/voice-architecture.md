@@ -1,6 +1,6 @@
 # End-to-end voice path
 
-A real voice path demonstrates Voxa's layers clearly. The browser owns user experience, Agora
+A real voice path demonstrates Muxiva's layers clearly. The browser owns user experience, Agora
 owns network transport, Qwen owns algorithms, and the Rust Core owns real-time scheduling. No
 layer needs the internal implementation of another.
 
@@ -42,7 +42,7 @@ flowchart LR
 ```
 
 Choose it when the application needs custom VAD, prompts, tools, moderation, transcripts, or
-TTS. Branching and joining are normal Graph capabilities; Voxa is not limited to a linear
+TTS. Branching and joining are normal Graph capabilities; Muxiva is not limited to a linear
 `A → B → C` pipeline.
 
 ## What each layer owns
@@ -73,7 +73,7 @@ sequenceDiagram
     U->>T: user speaks during playback
     T->>R: new audio Frame
     M->>M: model confirms speech and cancels its response
-    M-->>R: voxa.voice.speech.started Signal
+    M-->>R: muxiva.voice.speech.started Signal
     R-->>T: route the opaque Signal
     T->>T: Audio Sink clears queued playback
     R->>M: subsequent audio continues into the same Node
@@ -87,7 +87,7 @@ Core understands neither voice, turns, nor a particular Signal name—it only ro
 ## Client data is not Studio telemetry
 
 ASR text, assistant text, and speech state leave the Graph through `agora.data_sink`. The browser
-receives `voxa.client-event/v1` messages from Agora's reliable ordered data stream. It never polls
+receives `muxiva.client-event/v1` messages from Agora's reliable ordered data stream. It never polls
 `/api/v1/runtime/events`, and it cannot start or stop the Runtime. EventBus remains an in-process
 observability facility for logs and Studio operators; it is not the end-user transport contract.
 

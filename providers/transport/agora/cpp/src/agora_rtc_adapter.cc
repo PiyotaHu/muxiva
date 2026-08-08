@@ -1,4 +1,4 @@
-#include "voxa/agora_rtc.hpp"
+#include "muxiva/agora_rtc.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace voxa::agora {
+namespace muxiva::agora {
 namespace {
 
 constexpr int kInvalidArgument = -1001;
@@ -53,10 +53,10 @@ Status Status::failure(int value, const char* text) noexcept {
 
 struct RtcAdapter::Impl final {
   explicit Impl(AdapterConfig value, std::unique_ptr<Sdk> provider,
-                voxa_session_ingress_v1 retained) noexcept
+                muxiva_session_ingress_v1 retained) noexcept
       : config(value), sdk(std::move(provider)), ingress(retained) {}
 
-  ~Impl() { (void)voxa_session_ingress_release_v1(ingress); }
+  ~Impl() { (void)muxiva_session_ingress_release_v1(ingress); }
 
   struct Flight final {
     explicit Flight(Impl& value) noexcept : impl(value) {
@@ -73,12 +73,12 @@ struct RtcAdapter::Impl final {
     return sequence.fetch_add(1, std::memory_order_relaxed) + 1;
   }
 
-  void account(voxa_status_v1 status, std::uint64_t current) noexcept {
-    if (status == VOXA_STATUS_OK) {
+  void account(muxiva_status_v1 status, std::uint64_t current) noexcept {
+    if (status == MUXIVA_STATUS_OK) {
       accepted.fetch_add(1, std::memory_order_relaxed);
-    } else if (status == VOXA_STATUS_QUEUE_FULL || status == VOXA_STATUS_BUSY) {
+    } else if (status == MUXIVA_STATUS_QUEUE_FULL || status == MUXIVA_STATUS_BUSY) {
       full.fetch_add(1, std::memory_order_relaxed);
-    } else if (status == VOXA_STATUS_CLOSED) {
+    } else if (status == MUXIVA_STATUS_CLOSED) {
       closed.fetch_add(1, std::memory_order_relaxed);
     } else {
       invalid.fetch_add(1, std::memory_order_relaxed);
@@ -93,11 +93,11 @@ struct RtcAdapter::Impl final {
       return;
     }
     const auto current = next_sequence();
-    voxa_frame_view_v1 frame{};
-    frame.header.abi_version = VOXA_ABI_VERSION_V1;
+    muxiva_frame_view_v1 frame{};
+    frame.header.abi_version = MUXIVA_ABI_VERSION_V1;
     frame.header.struct_size = sizeof(frame.header);
-    frame.header.frame_type = event ? VOXA_FRAME_EVENT : VOXA_FRAME_SIGNAL;
-    frame.header.clock_kind = VOXA_CLOCK_MONOTONIC;
+    frame.header.frame_type = event ? MUXIVA_FRAME_EVENT : MUXIVA_FRAME_SIGNAL;
+    frame.header.clock_kind = MUXIVA_CLOCK_MONOTONIC;
     frame.header.sequence_id = current;
     static constexpr char frame_id[] = "agora.control";
     static constexpr char clock_id[] = "agora.control.clock";
@@ -107,7 +107,7 @@ struct RtcAdapter::Impl final {
     frame.header.clock_domain_id = {clock_id, sizeof(clock_id) - 1};
     frame.header.stream_id = {stream_id, sizeof(stream_id) - 1};
     frame.header.trace_id = {trace_id, sizeof(trace_id) - 1};
-    const voxa_bytes_v1 bytes{reinterpret_cast<const std::uint8_t*>(value.data()),
+    const muxiva_bytes_v1 bytes{reinterpret_cast<const std::uint8_t*>(value.data()),
                               value.size()};
     if (event) {
       frame.payload.event = {{name, std::strlen(name)}, bytes, {0, 0}};
@@ -116,15 +116,15 @@ struct RtcAdapter::Impl final {
       frame.payload.signal = {{name, std::strlen(name)},
                               {source, sizeof(source) - 1}, bytes, {0, 0}};
     }
-    voxa_error_v1 error{};
-    error.abi_version = VOXA_ABI_VERSION_V1;
+    muxiva_error_v1 error{};
+    error.abi_version = MUXIVA_ABI_VERSION_V1;
     error.struct_size = sizeof(error);
-    account(voxa_session_ingress_try_submit_v1(ingress, &frame, &error), current);
+    account(muxiva_session_ingress_try_submit_v1(ingress, &frame, &error), current);
   }
 
   AdapterConfig config;
   std::unique_ptr<Sdk> sdk;
-  voxa_session_ingress_v1 ingress{};
+  muxiva_session_ingress_v1 ingress{};
   mutable std::mutex lifecycle;
   std::mutex drain_mutex;
   std::condition_variable drain_cv;
@@ -172,12 +172,12 @@ std::unique_ptr<RtcAdapter> RtcAdapter::create(AdapterConfig config,
       config.callback_drain_timeout.count() < 0) {
     return fail(kInvalidArgument, "invalid Agora adapter configuration");
   }
-  voxa_session_ingress_v1 retained{};
-  voxa_error_v1 error{};
-  error.abi_version = VOXA_ABI_VERSION_V1;
+  muxiva_session_ingress_v1 retained{};
+  muxiva_error_v1 error{};
+  error.abi_version = MUXIVA_ABI_VERSION_V1;
   error.struct_size = sizeof(error);
-  if (voxa_session_ingress_clone_v1(config.ingress, &retained, &error) != VOXA_STATUS_OK) {
-    return fail(kInvalidArgument, "failed to retain Voxa ingress");
+  if (muxiva_session_ingress_clone_v1(config.ingress, &retained, &error) != MUXIVA_STATUS_OK) {
+    return fail(kInvalidArgument, "failed to retain Muxiva ingress");
   }
   try {
     auto impl = std::make_unique<Impl>(config, std::move(sdk), retained);
@@ -185,7 +185,7 @@ std::unique_ptr<RtcAdapter> RtcAdapter::create(AdapterConfig config,
     if (status) *status = Status::success();
     return adapter;
   } catch (...) {
-    (void)voxa_session_ingress_release_v1(retained);
+    (void)muxiva_session_ingress_release_v1(retained);
     return fail(kInvalidArgument, "failed to allocate Agora adapter");
   }
 }
@@ -208,7 +208,7 @@ Status RtcAdapter::connect(const std::string& app_id, const std::string& token,
   if (const int result = impl_->sdk->initialize(app_id, this); result != 0) {
     impl_->sdk->shutdown();
     impl_->closed_once.store(true, std::memory_order_release);
-    (void)voxa_session_ingress_close_v1(impl_->ingress);
+    (void)muxiva_session_ingress_close_v1(impl_->ingress);
     return Status::failure(result, "Agora SDK initialization failed");
   }
   impl_->accepting.store(true, std::memory_order_release);
@@ -216,7 +216,7 @@ Status RtcAdapter::connect(const std::string& app_id, const std::string& token,
     impl_->accepting.store(false, std::memory_order_release);
     impl_->sdk->shutdown();
     impl_->closed_once.store(true, std::memory_order_release);
-    (void)voxa_session_ingress_close_v1(impl_->ingress);
+    (void)muxiva_session_ingress_close_v1(impl_->ingress);
     return Status::failure(result, "Agora SDK join failed");
   }
   return Status::success();
@@ -289,7 +289,7 @@ Status RtcAdapter::leave() noexcept {
     if (!impl_->closed_once.exchange(true, std::memory_order_acq_rel)) {
       owns_shutdown = true;
       impl_->accepting.store(false, std::memory_order_release);
-      (void)voxa_session_ingress_close_v1(impl_->ingress);
+      (void)muxiva_session_ingress_close_v1(impl_->ingress);
       leave_result = impl_->sdk->leave();
       impl_->sdk->shutdown();
     }
@@ -489,11 +489,11 @@ void RtcAdapter::on_audio_frame(const Pcm16FrameView& value) noexcept {
     return;
   }
   const auto current = impl_->next_sequence();
-  voxa_frame_view_v1 frame{};
-  frame.header.abi_version = VOXA_ABI_VERSION_V1;
+  muxiva_frame_view_v1 frame{};
+  frame.header.abi_version = MUXIVA_ABI_VERSION_V1;
   frame.header.struct_size = sizeof(frame.header);
-  frame.header.frame_type = VOXA_FRAME_AUDIO;
-  frame.header.clock_kind = VOXA_CLOCK_MEDIA_RELATIVE;
+  frame.header.frame_type = MUXIVA_FRAME_AUDIO;
+  frame.header.clock_kind = MUXIVA_CLOCK_MEDIA_RELATIVE;
   frame.header.timestamp_ns = timestamp_ns(value.timestamp_ms);
   frame.header.sequence_id = current;
   static constexpr char frame_id[] = "agora.audio";
@@ -504,13 +504,13 @@ void RtcAdapter::on_audio_frame(const Pcm16FrameView& value) noexcept {
   frame.header.clock_domain_id = {clock_id, sizeof(clock_id) - 1};
   frame.header.stream_id = {stream_id, sizeof(stream_id) - 1};
   frame.header.trace_id = {trace_id, sizeof(trace_id) - 1};
-  frame.payload.audio = {value.sample_rate_hz, value.channels, VOXA_PCM_I16LE,
-                         VOXA_AUDIO_INTERLEAVED, 0, value.samples_per_channel,
+  frame.payload.audio = {value.sample_rate_hz, value.channels, MUXIVA_PCM_I16LE,
+                         MUXIVA_AUDIO_INTERLEAVED, 0, value.samples_per_channel,
                          {value.data, value.size}, {0, 0}};
-  voxa_error_v1 error{};
-  error.abi_version = VOXA_ABI_VERSION_V1;
+  muxiva_error_v1 error{};
+  error.abi_version = MUXIVA_ABI_VERSION_V1;
   error.struct_size = sizeof(error);
-  impl_->account(voxa_session_ingress_try_submit_v1(impl_->ingress, &frame, &error),
+  impl_->account(muxiva_session_ingress_try_submit_v1(impl_->ingress, &frame, &error),
                  current);
 }
 
@@ -557,11 +557,11 @@ void RtcAdapter::on_video_frame(const I420FrameView& value) noexcept {
                   chroma_width);
     }
     const auto current = impl_->next_sequence();
-    voxa_frame_view_v1 frame{};
-    frame.header.abi_version = VOXA_ABI_VERSION_V1;
+    muxiva_frame_view_v1 frame{};
+    frame.header.abi_version = MUXIVA_ABI_VERSION_V1;
     frame.header.struct_size = sizeof(frame.header);
-    frame.header.frame_type = VOXA_FRAME_VIDEO;
-    frame.header.clock_kind = VOXA_CLOCK_MEDIA_RELATIVE;
+    frame.header.frame_type = MUXIVA_FRAME_VIDEO;
+    frame.header.clock_kind = MUXIVA_CLOCK_MEDIA_RELATIVE;
     frame.header.timestamp_ns = timestamp_ns(value.timestamp_ms);
     frame.header.sequence_id = current;
     static constexpr char frame_id[] = "agora.video";
@@ -572,16 +572,16 @@ void RtcAdapter::on_video_frame(const I420FrameView& value) noexcept {
     frame.header.clock_domain_id = {clock_id, sizeof(clock_id) - 1};
     frame.header.stream_id = {stream_id, sizeof(stream_id) - 1};
     frame.header.trace_id = {trace_id, sizeof(trace_id) - 1};
-    frame.payload.video = {value.width, value.height, VOXA_PIXEL_I420, 3,
+    frame.payload.video = {value.width, value.height, MUXIVA_PIXEL_I420, 3,
                            {packed.data(), packed.size()}, {0, 0, 0, 0}};
-    voxa_error_v1 error{};
-    error.abi_version = VOXA_ABI_VERSION_V1;
+    muxiva_error_v1 error{};
+    error.abi_version = MUXIVA_ABI_VERSION_V1;
     error.struct_size = sizeof(error);
     impl_->account(
-        voxa_session_ingress_try_submit_v1(impl_->ingress, &frame, &error), current);
+        muxiva_session_ingress_try_submit_v1(impl_->ingress, &frame, &error), current);
   } catch (...) {
     impl_->invalid.fetch_add(1, std::memory_order_relaxed);
   }
 }
 
-}  // namespace voxa::agora
+}  // namespace muxiva::agora

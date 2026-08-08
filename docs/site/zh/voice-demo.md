@@ -1,7 +1,7 @@
 # 从零运行真实语音 Agent
 
 本页从一个干净的 macOS 开发环境开始，不假设你了解 Agora 或 Qwen。完成后，浏览器
-麦克风通过 Agora 进入 Voxa Graph，由 Qwen 生成实时回复，再通过 Agora 播放出来。
+麦克风通过 Agora 进入 Muxiva Graph，由 Qwen 生成实时回复，再通过 Agora 播放出来。
 
 !!! danger "只有 App ID 还不能运行"
     必须先准备 2 个 Agora RTC Token、百炼 API Key 和 Workspace ID。没有全部配置时，
@@ -9,7 +9,7 @@
 
 !!! info "你真正需要准备的东西"
     Agora 需要一个账号、App ID 和两个临时 RTC Token。Qwen **不需要下载 SDK**，
-    只需要阿里云百炼 API Key 与 Workspace ID。Voxa 会自动下载并校验 Agora macOS
+    只需要阿里云百炼 API Key 与 Workspace ID。Muxiva 会自动下载并校验 Agora macOS
     SDK，也会在隔离的 Python 环境中安装 Qwen WebSocket 依赖。
 
 ## 0. 当前支持范围
@@ -20,14 +20,14 @@
 - Windows/其他平台目前需要从 [Agora SDK 官方页面](https://docs.agora.io/en/api-reference/sdks?product=voice)
   手动下载，并把解压目录传给 `setup.sh`。
 
-## 1. 安装 Voxa 与官方 Node
+## 1. 安装 Muxiva 与官方 Node
 
 先准备 Git、Rust、Python 3、CMake 3.20+ 与 Xcode Command Line Tools，然后运行：
 
 ```bash
-git clone https://github.com/PiyotaHu/Voxa.git
-cd Voxa
-cargo install --locked --path crates/voxa-cli
+git clone https://github.com/PiyotaHu/muxiva.git
+cd Muxiva
+cargo install --locked --path crates/muxiva-cli
 ./examples/voice-agent/setup.sh
 ```
 
@@ -36,16 +36,16 @@ cargo install --locked --path crates/voxa-cli
 1. 从 [Agora 官方 macOS SDK 仓库](https://github.com/AgoraIO/AgoraRtcEngine_macOS/tree/4.6.2)
    对应的官方 CDN 下载 RTC Basic 所需 XCFramework；
 2. 对每个压缩包执行 SHA-256 校验；
-3. 创建 `examples/voice-agent/.voxa/venv` 并安装 `websocket-client`；
+3. 创建 `examples/voice-agent/.muxiva/venv` 并安装 `websocket-client`；
 4. 编译 `agora.audio_source`、`agora.audio_sink`、`agora.data_source`、
    `agora.data_sink` 四个 C++ Node；它们共享一个 RTC Engine 和 Bot UID。
 
 出现以下三行才代表安装完成：
 
 ```text
-[VOXA][READY] Native and Python Node Packs are installed.
-[VOXA][AGORA] sdk=.../build/vendor/agora-macos-4.6.2
-[VOXA][QWEN]  python=.../.voxa/venv/bin/python (no Qwen SDK download required)
+[MUXIVA][READY] Native and Python Node Packs are installed.
+[MUXIVA][AGORA] sdk=.../build/vendor/agora-macos-4.6.2
+[MUXIVA][QWEN]  python=.../.muxiva/venv/bin/python (no Qwen SDK download required)
 ```
 
 如果你已经手动下载 SDK，也可以运行：
@@ -63,7 +63,7 @@ cargo install --locked --path crates/voxa-cli
 2. 进入 [Projects](https://console.agora.io/legacy/project-management)，点击
    **Create New**，认证方式选择 **Secured mode: APP ID + Token**。
 3. 复制项目的 **App ID**。
-4. 选一个 Channel 名称，例如 `voxa-demo`。后面所有 Token 必须使用完全相同的名称。
+4. 选一个 Channel 名称，例如 `muxiva-demo`。后面所有 Token 必须使用完全相同的名称。
 5. 按 Agora 官方的[账号与临时 Token 指南](https://docs.agora.io/en/realtime-media/voice/manage-agora-account)
    打开项目安全配置或 [Agora Token Builder](https://agora-token-generator-demo.vercel.app/)，
    为同一个 Channel 生成两个短期 RTC Token：
@@ -71,7 +71,7 @@ cargo install --locked --path crates/voxa-cli
 | Studio 字段 | UID | 第一次运行建议角色 | 用途 |
 | --- | ---: | --- | --- |
 | Browser UID / Token | `1001` | Publisher | 浏览器采集麦克风并播放音频 |
-| Voxa Bot UID / Token | `2001` | Publisher | 同一个 C++ RTC Engine 接收麦克风并发布助手音频 |
+| Muxiva Bot UID / Token | `2001` | Publisher | 同一个 C++ RTC Engine 接收麦克风并发布助手音频 |
 
 !!! warning "不要暴露 App Certificate"
     App Certificate 只用于服务端生成 Token。不要把它填进 Studio、网页或提交到 Git。
@@ -89,14 +89,14 @@ cargo install --locked --path crates/voxa-cli
 3. 按官方[首次调用 Qwen](https://help.aliyun.com/zh/model-studio/first-api-call-to-qwen)
    指南找到同一 Workspace 的 **Workspace ID**。
 
-这里没有“Qwen SDK 下载”步骤。Voxa 的 Python Node 直接使用官方 WebSocket/HTTP
+这里没有“Qwen SDK 下载”步骤。Muxiva 的 Python Node 直接使用官方 WebSocket/HTTP
 协议，`setup.sh` 已安装唯一的第三方 Python 依赖。Realtime 图默认使用
 `qwen-audio-3.0-realtime-flash`；级联图使用 Qwen ASR、LLM 与 TTS。
 
 ## 4. 启动并填写 Studio
 
 ```bash
-voxa doctor --voice
+muxiva doctor --voice
 ./examples/voice-agent/run.sh
 ```
 
@@ -121,12 +121,12 @@ Realtime 跑通后，再切换 **Qwen Cascade**，观察 VAD → ASR → LLM →
 
 ## 运行日志与链路定位
 
-`run.sh` 会同时把终端输出保存到 `examples/voice-agent/.voxa/runtime.log`。遇到“已经
+`run.sh` 会同时把终端输出保存到 `examples/voice-agent/.muxiva/runtime.log`。遇到“已经
 连接但没有回复”时，按下面的顺序找第一个没有增长的指标：
 
 1. Voice Room 显示浏览器已加入、麦克风已发布；
-2. 日志出现 `[VOXA][AGORA][participant.joined] uid=1001`；
-3. 日志出现 `[VOXA][AGORA][audio.received]`，Studio 的 `agora-in.audio_out` 增长；
+2. 日志出现 `[MUXIVA][AGORA][participant.joined] uid=1001`；
+3. 日志出现 `[MUXIVA][AGORA][audio.received]`，Studio 的 `agora-in.audio_out` 增长；
 4. `audio-to-qwen`、Qwen Node 调用与字幕开始增长；
 5. `qwen-audio` 和 `agora-out` 增长，浏览器听到回复。
 
@@ -152,8 +152,8 @@ Runtime 启动后关闭 Studio，不会改变 RTC 媒体与消息协议。本地
 | Qwen 返回鉴权/模型错误 | API Key、Workspace ID、模型必须属于华北 2（北京）同一 Workspace |
 | Agora 加入 Channel 失败 | App ID、Channel、UID 必须与生成该 Token 时完全一致，Token 也不能过期 |
 | 页面没有麦克风 | 浏览器未授权；在浏览器站点权限中允许本地 Studio 使用麦克风 |
-| 清晰听到自己的声音 | 更新 Voxa 并重新运行 `setup.sh` 编译 Agora Node Pack；Bot 本地远端播放日志必须显示 `muted` |
-| 有文字但没有语音 | 查找 `[VOXA][AGORA][audio.published]`；没有该日志说明 Qwen 未产生音频，有日志则检查浏览器是否订阅 Bot 音轨 |
+| 清晰听到自己的声音 | 更新 Muxiva 并重新运行 `setup.sh` 编译 Agora Node Pack；Bot 本地远端播放日志必须显示 `muted` |
+| 有文字但没有语音 | 查找 `[MUXIVA][AGORA][audio.published]`；没有该日志说明 Qwen 未产生音频，有日志则检查浏览器是否订阅 Bot 音轨 |
 | 页面没有用户 ASR | 查找 Qwen `input_audio_transcription.completed`；新版页面显示 `text + stash` 实时预览和最终 `transcript` |
 
 ## 6. 工程验收

@@ -1,13 +1,13 @@
 # Qwen provider setup
 
-The Qwen Provider does **not** require a Qwen or DashScope SDK download. Voxa
+The Qwen Provider does **not** require a Qwen or DashScope SDK download. Muxiva
 uses the documented WebSocket and HTTP protocols directly. Run:
 
 ```sh
 ./examples/voice-agent/setup.sh
 ```
 
-This creates `examples/voice-agent/.voxa/venv` and installs the declared Python
+This creates `examples/voice-agent/.muxiva/venv` and installs the declared Python
 requirements from `providers/algorithm/qwen/python/requirements.txt`. Studio and the CLI
 automatically select that project Python environment.
 

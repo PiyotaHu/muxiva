@@ -1,4 +1,4 @@
-import { NodeRunner, defineTransformNode } from '@voxa/core'
+import { NodeRunner, defineTransformNode } from '@muxiva/core'
 
 type TextValue = { kind: 'text'; text: string; sequence: number }
 
@@ -9,8 +9,8 @@ const uppercase = defineTransformNode<TextValue, TextValue>({
 })
 
 const runner = new NodeRunner(uppercase)
-const output = await runner.process({ kind: 'text', text: 'hello voxa', sequence: 1 })
-if (Array.isArray(output) || output == null || output.text !== 'HELLO VOXA') {
+const output = await runner.process({ kind: 'text', text: 'hello muxiva', sequence: 1 })
+if (Array.isArray(output) || output == null || output.text !== 'HELLO MUXIVA') {
   throw new Error('unexpected Node output')
 }
 console.log(output.text)

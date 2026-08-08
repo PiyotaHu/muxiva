@@ -2,7 +2,7 @@
 
 This guide starts from a clean macOS development environment and assumes no
 prior Agora or Qwen knowledge. At the end, browser microphone audio travels
-through Agora into a Voxa Graph, Qwen generates a live response, and Agora
+through Agora into a Muxiva Graph, Qwen generates a live response, and Agora
 plays it back.
 
 !!! danger "An App ID alone cannot run the demo"
@@ -12,7 +12,7 @@ plays it back.
 !!! info "What you actually need"
     Agora requires an account, App ID, and two temporary RTC tokens. Qwen
     requires **no SDK download**—only an Alibaba Cloud Model Studio API Key and
-    Workspace ID. Voxa downloads and verifies the Agora macOS SDK and installs
+    Workspace ID. Muxiva downloads and verifies the Agora macOS SDK and installs
     the Qwen WebSocket dependency in an isolated Python environment.
 
 ## 0. Current support boundary
@@ -24,14 +24,14 @@ plays it back.
   [official Agora SDK page](https://docs.agora.io/en/api-reference/sdks?product=voice)
   and pass its extracted directory to `setup.sh`.
 
-## 1. Install Voxa and the official Nodes
+## 1. Install Muxiva and the official Nodes
 
 Install Git, Rust, Python 3, CMake 3.20+, and Xcode Command Line Tools, then run:
 
 ```bash
-git clone https://github.com/PiyotaHu/Voxa.git
-cd Voxa
-cargo install --locked --path crates/voxa-cli
+git clone https://github.com/PiyotaHu/muxiva.git
+cd Muxiva
+cargo install --locked --path crates/muxiva-cli
 ./examples/voice-agent/setup.sh
 ```
 
@@ -40,16 +40,16 @@ The final command:
 1. downloads RTC Basic XCFrameworks from Agora's official CDN, using the
    [official macOS SDK repository](https://github.com/AgoraIO/AgoraRtcEngine_macOS/tree/4.6.2);
 2. verifies every archive with SHA-256;
-3. creates `examples/voice-agent/.voxa/venv` and installs `websocket-client`;
+3. creates `examples/voice-agent/.muxiva/venv` and installs `websocket-client`;
 4. builds the four C++ Nodes `agora.audio_source`, `agora.audio_sink`,
    `agora.data_source`, and `agora.data_sink`. They share one RTC Engine and Bot UID.
 
 Installation is complete only after these lines appear:
 
 ```text
-[VOXA][READY] Native and Python Node Packs are installed.
-[VOXA][AGORA] sdk=.../build/vendor/agora-macos-4.6.2
-[VOXA][QWEN]  python=.../.voxa/venv/bin/python (no Qwen SDK download required)
+[MUXIVA][READY] Native and Python Node Packs are installed.
+[MUXIVA][AGORA] sdk=.../build/vendor/agora-macos-4.6.2
+[MUXIVA][QWEN]  python=.../.muxiva/venv/bin/python (no Qwen SDK download required)
 ```
 
 To use a manually downloaded SDK instead:
@@ -67,7 +67,7 @@ The steps below are only a completion summary.
 2. Open [Projects](https://console.agora.io/legacy/project-management), select
    **Create New**, and choose **Secured mode: APP ID + Token**.
 3. Copy the project's **App ID**.
-4. Choose one channel name, such as `voxa-demo`. Every token below must use the
+4. Choose one channel name, such as `muxiva-demo`. Every token below must use the
    exact same channel name.
 5. Follow Agora's official [account and temporary-token guide](https://docs.agora.io/en/realtime-media/voice/manage-agora-account)
    or use the linked [Agora Token Builder](https://agora-token-generator-demo.vercel.app/)
@@ -76,7 +76,7 @@ The steps below are only a completion summary.
 | Studio field | UID | First-run role | Purpose |
 | --- | ---: | --- | --- |
 | Browser UID / Token | `1001` | Publisher | Browser microphone and playback |
-| Voxa Bot UID / Token | `2001` | Publisher | One C++ RTC Engine receives microphone and publishes assistant audio |
+| Muxiva Bot UID / Token | `2001` | Publisher | One C++ RTC Engine receives microphone and publishes assistant audio |
 
 !!! warning "Never expose the App Certificate"
     The App Certificate belongs only on a token server. Never enter it in
@@ -95,7 +95,7 @@ The key and Workspace ID must be a matching pair from the same China (Beijing) w
 3. Follow the official [first Qwen API call guide](https://help.aliyun.com/en/model-studio/first-api-call-to-qwen)
    to locate the **Workspace ID** in the same Workspace.
 
-There is no Qwen SDK download step. Voxa's Python Node talks directly to
+There is no Qwen SDK download step. Muxiva's Python Node talks directly to
 the documented WebSocket/HTTP protocols; `setup.sh` installs its only external
 Python dependency. Realtime defaults to `qwen-audio-3.0-realtime-flash`; the
 cascade uses Qwen ASR, LLM, and TTS.
@@ -103,7 +103,7 @@ cascade uses Qwen ASR, LLM, and TTS.
 ## 4. Start Studio and enter the credentials
 
 ```bash
-voxa doctor --voice
+muxiva doctor --voice
 ./examples/voice-agent/run.sh
 ```
 
@@ -128,12 +128,12 @@ TTS. The session remains live until you select **End session**.
 
 ## Runtime logs and pipeline diagnosis
 
-`run.sh` mirrors terminal output to `examples/voice-agent/.voxa/runtime.log`. If both clients
+`run.sh` mirrors terminal output to `examples/voice-agent/.muxiva/runtime.log`. If both clients
 look connected but there is no response, find the first signal that does not advance:
 
 1. Voice Room reports that the browser joined and published the microphone.
-2. The log reports `[VOXA][AGORA][participant.joined] uid=1001`.
-3. The log reports `[VOXA][AGORA][audio.received]` and `agora-in.audio_out` advances in Studio.
+2. The log reports `[MUXIVA][AGORA][participant.joined] uid=1001`.
+3. The log reports `[MUXIVA][AGORA][audio.received]` and `agora-in.audio_out` advances in Studio.
 4. `audio-to-qwen`, Qwen Node calls, and captions advance.
 5. `qwen-audio` and `agora-out` advance and the browser plays the response.
 
@@ -161,8 +161,8 @@ exposes Studio's Graph or Runtime management APIs.
 | Qwen authentication/model error | Key, Workspace ID, and model must belong to the same China (Beijing) Workspace |
 | Agora cannot join | App ID, channel, and UID must exactly match token generation and the token must be unexpired |
 | No microphone input | Allow microphone access for the local Studio page in browser site permissions |
-| You clearly hear your own voice | Update Voxa and rerun `setup.sh` to rebuild the Agora Node Pack; Bot remote playout must log `muted` |
-| Text appears but no voice plays | Look for `[VOXA][AGORA][audio.published]`; if absent Qwen produced no audio, otherwise verify the browser subscribed to the Bot track |
+| You clearly hear your own voice | Update Muxiva and rerun `setup.sh` to rebuild the Agora Node Pack; Bot remote playout must log `muted` |
+| Text appears but no voice plays | Look for `[MUXIVA][AGORA][audio.published]`; if absent Qwen produced no audio, otherwise verify the browser subscribed to the Bot track |
 | User ASR is missing | Look for Qwen `input_audio_transcription.completed`; the current page renders `text + stash` previews and final `transcript` |
 
 ## 6. Engineering verification

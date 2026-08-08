@@ -4,14 +4,14 @@ set -euo pipefail
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repository_root"
 
-if find crates -maxdepth 1 -type d -name 'voxa-provider-*' | grep -q .; then
-  echo "Provider crates must not be compiled into the Voxa framework workspace" >&2
+if find crates -maxdepth 1 -type d -name 'muxiva-provider-*' | grep -q .; then
+  echo "Provider crates must not be compiled into the Muxiva framework workspace" >&2
   exit 1
 fi
 
 if rg -ni 'qwen|dashscope|agora' \
   Cargo.toml CMakeLists.txt cmake \
-  crates/voxa-core/src crates/voxa-graph-json/src/builtins.rs; then
+  crates/muxiva-core/src crates/muxiva-graph-json/src/builtins.rs; then
   echo "Vendor-specific code leaked into the framework workspace, build, Core, or built-in Nodes" >&2
   exit 1
 fi
@@ -25,7 +25,7 @@ import json
 from pathlib import Path
 
 root = Path("examples/voice-agent")
-manifests = [json.loads(path.read_text()) for path in Path("providers").rglob("voxa.node.json")]
+manifests = [json.loads(path.read_text()) for path in Path("providers").rglob("muxiva.node.json")]
 for manifest in manifests:
     node_type = manifest["node_type"]
     language = manifest["language"]
@@ -34,7 +34,7 @@ for manifest in manifests:
     if node_type.startswith("agora.") and language != "cpp":
         raise SystemExit(f"{node_type} must be implemented in C++, found {language}")
 
-for path in root.glob(".voxa/templates/*.json"):
+for path in root.glob(".muxiva/templates/*.json"):
     graph = json.loads(path.read_text())["graph"]
     for node in graph["nodes"]:
         node_type, language = node["node_type"], node["language"]

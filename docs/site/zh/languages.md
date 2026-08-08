@@ -1,6 +1,6 @@
 # 多语言执行模型
 
-Voxa 不是四套互不兼容的 SDK。Graph、Frame、Port、生命周期和控制语义由 Rust Core
+Muxiva 不是四套互不兼容的 SDK。Graph、Frame、Port、生命周期和控制语义由 Rust Core
 统一定义，语言适配层只负责把回调与数据安全地跨过语言边界。
 
 ```mermaid

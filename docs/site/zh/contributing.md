@@ -1,14 +1,14 @@
 # 参与贡献
 
-Voxa 欢迎聚焦的设计反馈、可复现 Bug、文档、测试与 Pull Request。
+Muxiva 欢迎聚焦的设计反馈、可复现 Bug、文档、测试与 Pull Request。
 
 ## 从这里开始
 
-- 阅读[贡献指南](https://github.com/PiyotaHu/Voxa/blob/main/CONTRIBUTING.md)；
-- 遵守[行为准则](https://github.com/PiyotaHu/Voxa/blob/main/CODE_OF_CONDUCT.md)；
-- 通过[私密漏洞报告](https://github.com/PiyotaHu/Voxa/security/advisories/new)提交安全问题；
-- 使用 [Discussions](https://github.com/PiyotaHu/Voxa/discussions)讨论使用与架构；
-- 使用 [Issues](https://github.com/PiyotaHu/Voxa/issues)提交可复现 Bug 与已接受工作。
+- 阅读[贡献指南](https://github.com/PiyotaHu/muxiva/blob/main/CONTRIBUTING.md)；
+- 遵守[行为准则](https://github.com/PiyotaHu/muxiva/blob/main/CODE_OF_CONDUCT.md)；
+- 通过[私密漏洞报告](https://github.com/PiyotaHu/muxiva/security/advisories/new)提交安全问题；
+- 使用 [Discussions](https://github.com/PiyotaHu/muxiva/discussions)讨论使用与架构；
+- 使用 [Issues](https://github.com/PiyotaHu/muxiva/issues)提交可复现 Bug 与已接受工作。
 
 ## 文档契约
 

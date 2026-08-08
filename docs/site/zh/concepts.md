@@ -1,25 +1,25 @@
-# Voxa 系统全景与核心概念
+# Muxiva 系统全景与核心概念
 
-Voxa 是一套**实时多模态 Agent Runtime**。开发者用一张类型化 Graph 描述音频、
+Muxiva 是一套**实时多模态 Agent Runtime**。开发者用一张类型化 Graph 描述音频、
 视频、文本、字节和控制消息如何流动；Rust Core 统一负责校验、调度、并发、背压、
 生命周期、关闭和可观测性；ASR、LLM、TTS、RTC 等具体能力则由可替换 Node 提供。
 
-理解 Voxa 最重要的一句话是：**Core 定义稳定的运行机制，Node 实现可替换的业务能力，
+理解 Muxiva 最重要的一句话是：**Core 定义稳定的运行机制，Node 实现可替换的业务能力，
 Graph 把两者组合成可执行系统。**
 
 ## 系统全景
 
-![Voxa 系统全景](assets/architecture/voxa-system-overview.png)
+![Muxiva 系统全景](assets/architecture/muxiva-system-overview.png)
 
-[下载可编辑的 Draw.io 源文件](assets/architecture/voxa-system-overview.drawio)
+[下载可编辑的 Draw.io 源文件](assets/architecture/muxiva-system-overview.drawio)
 
 图从上到下分为五层。阅读时先看层与层之间的边界，再看连线：蓝色实线表示数据或
 调用关系，品红虚线表示 Signal 控制，灰色点线表示进程内 EventBus 可观测信息。
 
 ### 1. 产品与开发者入口
 
-- **`voxa` CLI** 创建、校验、运行和诊断项目，适合终端、脚本与 CI。
-- **Voxa Studio** 编辑 Graph、连接 Port、查看 Node 源码、配置本地 Connection，并观察
+- **`muxiva` CLI** 创建、校验、运行和诊断项目，适合终端、脚本与 CI。
+- **Muxiva Studio** 编辑 Graph、连接 Port、查看 Node 源码、配置本地 Connection，并观察
   当前 Runtime。
 - **多语言 SDK** 让 Rust、C++、Python 和 TypeScript 开发者创建 Graph 或实现 Node。
 - **项目 Web / Voice Room** 面向最终用户，负责麦克风、扬声器、聊天和 Barge-in 展示。
@@ -42,7 +42,7 @@ Graph 把两者组合成可执行系统。**
 
 ### 3. Vendor-neutral Rust Runtime Core
 
-这是 Voxa 的稳定内核，完全不依赖 Agora、Qwen 或其他厂商。
+这是 Muxiva 的稳定内核，完全不依赖 Agora、Qwen 或其他厂商。
 
 - **Graph Compiler** 在创建任何 Node 前检查 Schema、拓扑、Port 方向与兼容性，并把
   声明式 Graph 物化为可执行计划。
@@ -55,13 +55,13 @@ Graph 把两者组合成可执行系统。**
 
 ### 4. 统一 Node 扩展层
 
-Voxa 的可执行扩展只有一个概念：**Node**。所谓“内置集成”或“厂商适配”都是遵守同一
+Muxiva 的可执行扩展只有一个概念：**Node**。所谓“内置集成”或“厂商适配”都是遵守同一
 契约的 Node，而不是另一种 Runtime 实体。
 
 - **Rust 内置 Node** 适合重采样、VAD、取消门和通用工具等基础能力。
 - **Python Node Host** 适合 Qwen Realtime、ASR、LLM、TTS 和快速迭代的算法逻辑。
 - **C++ ABI Node Pack** 适合 Agora RTC、Codec、设备 SDK 等原生集成。
-- **TypeScript / 项目 Node** 位于 Agent 项目的 `.voxa/nodes/`，使用同一套 Manifest、
+- **TypeScript / 项目 Node** 位于 Agent 项目的 `.muxiva/nodes/`，使用同一套 Manifest、
   Factory 与 Frame 契约。
 
 语言 Host 负责隔离线程、对象和异常；Graph 看见的始终是相同的 Node、Port 与 Frame，
@@ -76,7 +76,7 @@ Studio 和 Agora 只是一个组合示例：开发者可以替换这些 Node，�
 
 ## 把核心对象连成一条链
 
-可以把 Voxa 想成一座受控的实时工厂：
+可以把 Muxiva 想成一座受控的实时工厂：
 
 | 概念 | 通俗解释 | 在系统中的职责 |
 | --- | --- | --- |
@@ -102,7 +102,7 @@ Manifest + Factory → Registry → Graph Compiler → Runtime
 ## 一张 Graph 是怎样跑起来的
 
 1. 开发者通过 SDK、JSON Graph v1 或 Studio 定义 Node 与 Edge。
-2. `voxa validate` / Graph Compiler 检查 Node 身份、配置 Schema、Port、Frame Type、
+2. `muxiva validate` / Graph Compiler 检查 Node 身份、配置 Schema、Port、Frame Type、
    Queue Policy 和 DAG 拓扑；此时不会启动 Node 或连接外部服务。
 3. Registry 为每个 Graph Node ID 选择精确 Factory，Runtime 创建独立 Node 实例。
 4. Runtime 调用所有 Node 的 `on_prepare`，然后启动 Source、Worker 和有界 Edge Queue。

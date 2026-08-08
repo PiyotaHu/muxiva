@@ -1,6 +1,6 @@
 # Governance
 
-Voxa currently uses a maintainer-led, consensus-seeking model appropriate for
+Muxiva currently uses a maintainer-led, consensus-seeking model appropriate for
 an early-stage project.
 
 ## Roles
@@ -33,6 +33,6 @@ this file and CODEOWNERS.
 
 ## 中文说明
 
-Voxa 当前采用维护者主导、优先寻求共识的治理方式。涉及公开 API、ABI、调度、
+Muxiva 当前采用维护者主导、优先寻求共识的治理方式。涉及公开 API、ABI、调度、
 所有权、Schema 或安全边界的重大决定，必须先形成 Issue 或设计文档，并同步发布
 到文档站。

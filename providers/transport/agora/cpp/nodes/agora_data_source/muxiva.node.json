@@ -1,0 +1,19 @@
+{
+  "format": "muxiva.node/v1",
+  "package_id": "agora_data_source",
+  "display_name": "Agora Realtime Message Ingress",
+  "node_type": "agora.data_source",
+  "language": "cpp",
+  "factory_version": "1.0.0",
+  "kind": "source",
+  "entrypoint": "AgoraDataSourceNode",
+  "category": "transport",
+  "capability": "rtc.data.ingress",
+  "summary": "Receives authenticated client commands from the shared Agora RTC data stream.",
+  "connection_id": "agora",
+  "tags": ["rtc", "data", "commands", "ingress"],
+  "ports": [
+    { "name": "message_out", "direction": "output", "frame_type": "byte", "schema": { "media_type": "application/vnd.muxiva.client-command+json", "maximum_bytes": 1024, "streaming": true } }
+  ],
+  "config_schema": { "type": "object", "properties": {}, "additionalProperties": false }
+}

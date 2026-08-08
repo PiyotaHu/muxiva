@@ -19,4 +19,4 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --all-targets
       - name: Run hello example
-        run: cargo run -p voxa-examples --bin hello
+        run: cargo run -p muxiva-examples --bin hello

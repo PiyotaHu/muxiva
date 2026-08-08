@@ -1,4 +1,4 @@
-#include "voxa/media.hpp"
+#include "muxiva/media.hpp"
 
 #include <atomic>
 #include <cassert>
@@ -11,8 +11,8 @@
 
 namespace {
 
-std::size_t width(voxa::media::AudioSampleFormat format) {
-  using Format = voxa::media::AudioSampleFormat;
+std::size_t width(muxiva::media::AudioSampleFormat format) {
+  using Format = muxiva::media::AudioSampleFormat;
   if (format == Format::u8)
     return 1;
   if (format == Format::i16le)
@@ -31,17 +31,17 @@ struct BlockState final {
   bool entered = false;
 };
 
-class DeterministicBackend final : public voxa::media::Backend {
+class DeterministicBackend final : public muxiva::media::Backend {
 public:
   explicit DeterministicBackend(std::shared_ptr<BlockState> state = {})
       : state_(std::move(state)) {}
 
   const char *name() const noexcept override { return "deterministic"; }
 
-  int convert_audio(const voxa::media::PackedAudioView &input,
-                    const voxa::media::AudioSpec &output_spec,
+  int convert_audio(const muxiva::media::PackedAudioView &input,
+                    const muxiva::media::AudioSpec &output_spec,
                     std::size_t maximum,
-                    voxa::media::OwnedAudioFrame *output) noexcept override {
+                    muxiva::media::OwnedAudioFrame *output) noexcept override {
     if (state_) {
       std::unique_lock<std::mutex> lock(state_->mutex);
       state_->entered = true;
@@ -60,22 +60,22 @@ public:
     return 0;
   }
 
-  int flush_audio(const voxa::media::AudioSpec &output_spec, std::size_t,
-                  voxa::media::OwnedAudioFrame *output) noexcept override {
+  int flush_audio(const muxiva::media::AudioSpec &output_spec, std::size_t,
+                  muxiva::media::OwnedAudioFrame *output) noexcept override {
     output->bytes.clear();
     output->spec = output_spec;
     output->samples_per_channel = 0;
     return 0;
   }
 
-  int convert_video(const voxa::media::PackedVideoView &,
-                    const voxa::media::VideoSpec &output_spec,
+  int convert_video(const muxiva::media::PackedVideoView &,
+                    const muxiva::media::VideoSpec &output_spec,
                     std::size_t maximum,
-                    voxa::media::OwnedVideoFrame *output) noexcept override {
+                    muxiva::media::OwnedVideoFrame *output) noexcept override {
     const auto pixels =
         static_cast<std::size_t>(output_spec.width) * output_spec.height;
     const auto bytes =
-        output_spec.pixel_format == voxa::media::PixelFormat::rgba8
+        output_spec.pixel_format == muxiva::media::PixelFormat::rgba8
             ? pixels * 4
             : pixels + pixels / 2;
     if (bytes > maximum)
@@ -94,7 +94,7 @@ private:
 } // namespace
 
 int main() {
-  using namespace voxa::media;
+  using namespace muxiva::media;
   PipelineConfig config;
   config.max_frame_bytes = 4096;
   config.audio_timestamp_tolerance = std::chrono::milliseconds(2);

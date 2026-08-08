@@ -1,4 +1,4 @@
-#include "voxa/media.hpp"
+#include "muxiva/media.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -8,7 +8,7 @@
 #include <vector>
 
 int main() {
-  using namespace voxa::media;
+  using namespace muxiva::media;
   Status status;
   auto backend = make_ffmpeg_backend();
   assert(backend);

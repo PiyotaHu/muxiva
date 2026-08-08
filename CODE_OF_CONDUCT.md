@@ -2,7 +2,7 @@
 
 ## Our pledge
 
-We pledge to make participation in the Voxa community a harassment-free
+We pledge to make participation in the Muxiva community a harassment-free
 experience for everyone, regardless of age, body size, disability, ethnicity,
 sex characteristics, gender identity and expression, level of experience,
 education, socioeconomic status, nationality, personal appearance, race,
@@ -36,7 +36,7 @@ and other contributions that are not aligned with this Code of Conduct.
 ## Scope
 
 This Code applies in all project spaces and when an individual is officially
-representing Voxa in public spaces.
+representing Muxiva in public spaces.
 
 ## Reporting and enforcement
 
@@ -57,5 +57,5 @@ This Code is adapted from the
 
 ## 中文说明
 
-Voxa 社区要求尊重、专业和建设性的交流。骚扰、人身攻击、泄露隐私和报复举报者
+Muxiva 社区要求尊重、专业和建设性的交流。骚扰、人身攻击、泄露隐私和报复举报者
 均不可接受。涉及隐私的行为准则问题请私下联系维护者，不要公开提交敏感信息。

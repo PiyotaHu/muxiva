@@ -2,7 +2,7 @@
 
 Status: **Implemented Core contract**
 
-The `voxa-core` registry is the trusted boundary between pure graph data and
+The `muxiva-core` registry is the trusted boundary between pure graph data and
 runtime node instances. A registration is keyed by the exact tuple:
 
 ```text
@@ -43,7 +43,7 @@ D01 provides the executable registry contract, not the complete JSON runtime:
 - D02 now makes Graph v1 carry and validate exact Factory versions and uses
   the Registry as the only descriptor/config source.
 - D03 now materializes every graph Node and Edge policy and starts the complete
-  concurrent runtime from `voxa run`.
+  concurrent runtime from `muxiva run`.
 - D04 now registers Python, TypeScript, and C++ bridge factories through this
   same contract.
 

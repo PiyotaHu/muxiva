@@ -1,5 +1,5 @@
 [package]
-name = "voxa-fuzz"
+name = "muxiva-fuzz"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -9,9 +9,9 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-voxa-ffi = { path = "../crates/voxa-ffi" }
-voxa-graph-json = { path = "../crates/voxa-graph-json" }
-voxa-types = { path = "../crates/voxa-types" }
+muxiva-ffi = { path = "../crates/muxiva-ffi" }
+muxiva-graph-json = { path = "../crates/muxiva-graph-json" }
+muxiva-types = { path = "../crates/muxiva-types" }
 
 [workspace]
 members = ["."]

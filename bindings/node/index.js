@@ -6,13 +6,13 @@ import { fileURLToPath } from 'node:url'
 const require = createRequire(import.meta.url)
 const platform = `${process.platform}-${process.arch}`
 const candidates = [
-  new URL(`./native/voxa.${platform}.node`, import.meta.url),
-  new URL(`./native/voxa.${platform}-gnu.node`, import.meta.url),
-  new URL(`./native/voxa.${platform}-musl.node`, import.meta.url),
-  new URL('./native/voxa.node', import.meta.url),
+  new URL(`./native/muxiva.${platform}.node`, import.meta.url),
+  new URL(`./native/muxiva.${platform}-gnu.node`, import.meta.url),
+  new URL(`./native/muxiva.${platform}-musl.node`, import.meta.url),
+  new URL('./native/muxiva.node', import.meta.url),
 ]
 const binary = candidates.find((url) => existsSync(fileURLToPath(url)))
-if (!binary) throw new Error(`@voxa/core has no native binary for ${platform}; run npm run build`)
+if (!binary) throw new Error(`@muxiva/core has no native binary for ${platform}; run npm run build`)
 const native = require(fileURLToPath(binary))
 export const { Runtime, Session, EventBus, Frame, AudioFrame, VideoFrame, TextFrame, ByteFrame, SignalFrame, EventFrame, NodeExecutionDomain } = native
 
@@ -46,12 +46,12 @@ export class TypeScriptTransformNode {
     this.#worker.on('exit', (code) => {
       this.#closeResolve?.()
       this.#closeResolve = undefined
-      if (!this.#closed && code !== 0) this.#failAll(new Error(`Voxa Node worker exited with code ${code}`))
+      if (!this.#closed && code !== 0) this.#failAll(new Error(`Muxiva Node worker exited with code ${code}`))
     })
   }
   invoke(kind, payload = null) {
-    if (this.#closed) return Promise.reject(Object.assign(new Error('node domain is closed'), { code: 'VOXA_NODE_CLOSED' }))
-    if (this.#pending.size >= this.#capacity) return Promise.reject(Object.assign(new Error('node domain queue is full'), { code: 'VOXA_NODE_FULL' }))
+    if (this.#closed) return Promise.reject(Object.assign(new Error('node domain is closed'), { code: 'MUXIVA_NODE_CLOSED' }))
+    if (this.#pending.size >= this.#capacity) return Promise.reject(Object.assign(new Error('node domain queue is full'), { code: 'MUXIVA_NODE_FULL' }))
     const sequence = this.#next++
     return new Promise((resolve, reject) => { this.#pending.set(sequence, { resolve, reject }); this.#worker.postMessage({ type: 'invoke', sequence, kind, payload }) })
   }
@@ -64,7 +64,7 @@ export class TypeScriptTransformNode {
   async close() {
     if (this.#closed) return false
     this.#closed = true
-    this.#failAll(Object.assign(new Error('node domain stopped'), { code: 'VOXA_NODE_STOPPED' }))
+    this.#failAll(Object.assign(new Error('node domain stopped'), { code: 'MUXIVA_NODE_STOPPED' }))
     await new Promise((resolve) => {
       this.#closeResolve = resolve
       this.#worker.postMessage({ type: 'close' })
@@ -129,7 +129,7 @@ export function runGraph(graphJson, factories, { timeoutMs = 30_000 } = {}) {
     })
     worker.once('error', (error) => { if (!settled) { settled = true; reject(error) } })
     worker.once('exit', (code) => {
-      if (!settled && code !== 0) reject(new Error(`Voxa Graph worker exited with code ${code}`))
+      if (!settled && code !== 0) reject(new Error(`Muxiva Graph worker exited with code ${code}`))
     })
   })
 }

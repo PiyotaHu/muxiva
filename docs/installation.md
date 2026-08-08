@@ -1,20 +1,20 @@
-# Install Voxa / 安装 Voxa
+# Install Muxiva / 安装 Muxiva
 
 ## Application developers / 应用开发者
 
-`voxa` is a binary CLI. Cargo is used once to build and install the current
+`muxiva` is a binary CLI. Cargo is used once to build and install the current
 pre-alpha checkout; it is not part of normal graph execution.
 
-`voxa` 是一个二进制 CLI。当前 pre-alpha 阶段只需使用 Cargo 从源码安装
+`muxiva` 是一个二进制 CLI。当前 pre-alpha 阶段只需使用 Cargo 从源码安装
 一次；正常运行 Graph 时不再经过 Cargo。
 
 ```bash
-git clone https://github.com/PiyotaHu/Voxa.git voxa
-cd voxa
-cargo install --locked --path crates/voxa-cli
+git clone https://github.com/PiyotaHu/muxiva.git muxiva
+cd muxiva
+cargo install --locked --path crates/muxiva-cli
 
-voxa --version
-voxa
+muxiva --version
+muxiva
 ```
 
 The executable is installed to Cargo's binary directory, normally
@@ -32,12 +32,12 @@ After installation, the product commands are:
 安装完成后的产品命令是：
 
 ```bash
-voxa studio
-voxa init my-agent
-voxa validate my-agent
-voxa run my-agent
-voxa doctor --voice
-voxa simulate --turns 4  # offline Runtime fixture, not a product demo
+muxiva studio
+muxiva init my-agent
+muxiva validate my-agent
+muxiva run my-agent
+muxiva doctor --voice
+muxiva simulate --turns 4  # offline Runtime fixture, not a product demo
 ```
 
 To update a source installation:
@@ -46,7 +46,7 @@ To update a source installation:
 
 ```bash
 git pull --ff-only
-cargo install --locked --force --path crates/voxa-cli
+cargo install --locked --force --path crates/muxiva-cli
 ```
 
 To remove it:
@@ -54,23 +54,23 @@ To remove it:
 卸载：
 
 ```bash
-cargo uninstall voxa-cli
+cargo uninstall muxiva-cli
 ```
 
 ## Repository contributors / 仓库贡献者
 
-Commands such as `cargo run -p voxa-cli -- ...` and
-`cargo run -p voxa-examples --bin ...` are contributor-only shortcuts for
+Commands such as `cargo run -p muxiva-cli -- ...` and
+`cargo run -p muxiva-examples --bin ...` are contributor-only shortcuts for
 testing an uninstalled workspace build. User-facing tutorials must use the
-installed `voxa` command.
+installed `muxiva` command.
 
-`cargo run -p voxa-cli -- ...` 和 `cargo run -p voxa-examples --bin ...`
+`cargo run -p muxiva-cli -- ...` 和 `cargo run -p muxiva-examples --bin ...`
 只用于贡献者测试尚未安装的 workspace 构建。面向用户的教程必须使用已安装的
-`voxa` 命令。
+`muxiva` 命令。
 
 ## Public release boundary / 正式发布边界
 
-Before the first public alpha, Voxa still needs signed GitHub binaries with
+Before the first public alpha, Muxiva still needs signed GitHub binaries with
 checksums and platform installers such as Homebrew. Those release channels
 will remove the Rust toolchain requirement for application developers. Until
 those artifacts exist, the documentation explicitly describes source

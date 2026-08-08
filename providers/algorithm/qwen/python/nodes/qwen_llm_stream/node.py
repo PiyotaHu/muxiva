@@ -8,7 +8,7 @@ import re
 import urllib.request
 from typing import Any, Callable, Iterable
 
-import voxa
+import muxiva
 
 
 class _SseClient:
@@ -47,7 +47,7 @@ class QwenLlmStreamNode:
         self._history.append({"role": "user", "content": frame.text})
         messages = [{"role": "system", "content": self.config.get(
             "system_prompt",
-            "You are Voxa, a warm, concise real-time voice assistant. Respond in the user's language.",
+            "You are Muxiva, a warm, concise real-time voice assistant. Respond in the user's language.",
         )}, *self._history[-12:]]
         payload = {
             "model": self.config.get("model", "qwen-flash"),
@@ -61,30 +61,30 @@ class QwenLlmStreamNode:
             answer.append(sentence)
             # A sentence-sized chunk keeps captions responsive and gives TTS a
             # stable commit boundary instead of synthesizing token fragments.
-            ctx.emit("text_out", voxa.TextFrame(sentence, sequence=frame.sequence))
+            ctx.emit("text_out", muxiva.TextFrame(sentence, sequence=frame.sequence))
             ctx.emit(
                 "client_event_out",
-                voxa.EventFrame(
-                    "voxa.voice.response.delta",
+                muxiva.EventFrame(
+                    "muxiva.voice.response.delta",
                     json.dumps({"text": sentence}, separators=(",", ":"), ensure_ascii=False),
                     source="qwen.llm_stream",
                     sequence=frame.sequence,
                 ),
             )
-            ctx.publish_event("voxa.voice.response.delta", {"text": sentence})
+            ctx.publish_event("muxiva.voice.response.delta", {"text": sentence})
         if answer:
             completed = "".join(answer)
             self._history.append({"role": "assistant", "content": completed})
             ctx.emit(
                 "client_event_out",
-                voxa.EventFrame(
-                    "voxa.voice.response.completed",
+                muxiva.EventFrame(
+                    "muxiva.voice.response.completed",
                     json.dumps({"text": completed}, separators=(",", ":"), ensure_ascii=False),
                     source="qwen.llm_stream",
                     sequence=frame.sequence,
                 ),
             )
-            ctx.publish_event("voxa.voice.response.completed", {"text": completed})
+            ctx.publish_event("muxiva.voice.response.completed", {"text": completed})
 
 
 def _credentials() -> tuple[str, str]:

@@ -1,6 +1,6 @@
-# Voxa 内置 Node
+# Muxiva 内置 Node
 
-Builtin 是编译进 Voxa 的厂商无关 Factory。即使它们共享 Rust Runtime 二进制，也会按照
+Builtin 是编译进 Muxiva 的厂商无关 Factory。即使它们共享 Rust Runtime 二进制，也会按照
 真实能力进行分类。
 
 | Node Type | 层级 | Capability | 契约 |

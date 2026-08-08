@@ -55,13 +55,13 @@ struct FrameView {
 }
 
 extern "C" {
-    fn voxa_frame_copy_v1(frame: *const FrameView, out: *mut Token, error: *mut c_void) -> i32;
-    fn voxa_frame_release_v1(frame: Token) -> i32;
+    fn muxiva_frame_copy_v1(frame: *const FrameView, out: *mut Token, error: *mut c_void) -> i32;
+    fn muxiva_frame_release_v1(frame: Token) -> i32;
 }
 
 fuzz_target!(|data: &[u8]| {
-    // Force the actual Voxa rlib into the final fuzz binary before resolving C symbols below.
-    let _ = voxa_ffi::voxa_abi_version_v1();
+    // Force the actual Muxiva rlib into the final fuzz binary before resolving C symbols below.
+    let _ = muxiva_ffi::muxiva_abi_version_v1();
     let split = data.len() / 2;
     let (identity, text) = data.split_at(split);
     let view = |bytes: &[u8]| StrView {
@@ -95,8 +95,8 @@ fuzz_target!(|data: &[u8]| {
         },
     };
     // All pointers reference owned backing that remains alive for the complete call.
-    let status = unsafe { voxa_frame_copy_v1(&frame, &mut output, std::ptr::null_mut()) };
+    let status = unsafe { muxiva_frame_copy_v1(&frame, &mut output, std::ptr::null_mut()) };
     if status == 0 {
-        let _ = unsafe { voxa_frame_release_v1(output) };
+        let _ = unsafe { muxiva_frame_release_v1(output) };
     }
 });

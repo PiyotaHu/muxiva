@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      VOXA_FUZZ_TOOLCHAIN: nightly-2026-07-15
+      MUXIVA_FUZZ_TOOLCHAIN: nightly-2026-07-15
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
@@ -24,7 +24,7 @@ jobs:
         run: cargo fetch --manifest-path fuzz/Cargo.toml
       - name: Run bounded fuzz targets
         env:
-          VOXA_FUZZ_RUNS: "10000"
+          MUXIVA_FUZZ_RUNS: "10000"
         run: ./scripts/check-fuzz.sh
       - name: Archive fuzz corpus
         if: always()

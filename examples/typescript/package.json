@@ -1,5 +1,5 @@
 {
-  "name": "voxa-typescript-example",
+  "name": "muxiva-typescript-example",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,7 +7,7 @@
     "start": "node dist/uppercase-node.js"
   },
   "dependencies": {
-    "@voxa/core": "file:../../bindings/node"
+    "@muxiva/core": "file:../../bindings/node"
   },
   "devDependencies": {
     "typescript": "5.9.2"

@@ -1,11 +1,11 @@
 # Node Package
 
-项目 Node Package 将可执行代码保存在 Graph JSON 之外，`voxa.node/v1`
+项目 Node Package 将可执行代码保存在 Graph JSON 之外，`muxiva.node/v1`
 Manifest 只声明发现与校验元数据。
 
 ```text
-.voxa/nodes/my_node/
-├── voxa.node.json
+.muxiva/nodes/my_node/
+├── muxiva.node.json
 └── node.py
 ```
 

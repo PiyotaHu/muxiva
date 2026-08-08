@@ -1,4 +1,4 @@
-#include "voxa/agora_rtc.hpp"
+#include "muxiva/agora_rtc.hpp"
 
 #include <cstdio>
 #include <deque>
@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace voxa::agora {
+namespace muxiva::agora {
 namespace {
 std::mutex global_mutex;
 std::weak_ptr<SharedSession> global_session;
@@ -56,7 +56,7 @@ SharedSession::SharedSession(std::string app_id, std::string token,
     throw std::runtime_error("Agora C++ SDK failed to join the configured room");
   }
   std::fprintf(stderr,
-               "[VOXA][AGORA][session.shared] channel=%s bot_uid=%u participant_uid=%u\n",
+               "[MUXIVA][AGORA][session.shared] channel=%s bot_uid=%u participant_uid=%u\n",
                channel_.c_str(), bot_uid_, allowed_remote_uid_);
 }
 
@@ -125,21 +125,21 @@ void SharedSession::on_data_message(const DataMessageView& message) noexcept {
 void SharedSession::on_connection_state(ConnectionState, int) noexcept {}
 void SharedSession::on_rejoined(std::uint32_t, int) noexcept {}
 void SharedSession::on_connection_lost() noexcept {
-  std::fprintf(stderr, "[VOXA][AGORA][connection.lost]\n");
+  std::fprintf(stderr, "[MUXIVA][AGORA][connection.lost]\n");
 }
 void SharedSession::on_token_expiring() noexcept {
-  std::fprintf(stderr, "[VOXA][AGORA][token.expiring] restart-or-renew-required=true\n");
+  std::fprintf(stderr, "[MUXIVA][AGORA][token.expiring] restart-or-renew-required=true\n");
 }
 void SharedSession::on_token_required() noexcept {
-  std::fprintf(stderr, "[VOXA][AGORA][token.required]\n");
+  std::fprintf(stderr, "[MUXIVA][AGORA][token.required]\n");
 }
 void SharedSession::on_network_quality(std::uint32_t, int, int) noexcept {}
 void SharedSession::on_rtc_stats(const RtcStatsSnapshot&) noexcept {}
 void SharedSession::on_participant_joined(std::uint32_t) noexcept {}
 void SharedSession::on_participant_left(std::uint32_t, int) noexcept {}
 void SharedSession::on_error(int code) noexcept {
-  std::fprintf(stderr, "[VOXA][AGORA][session.error] code=%d\n", code);
+  std::fprintf(stderr, "[MUXIVA][AGORA][session.error] code=%d\n", code);
 }
 void SharedSession::on_video_frame(const I420FrameView&) noexcept {}
 
-}  // namespace voxa::agora
+}  // namespace muxiva::agora

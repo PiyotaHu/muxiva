@@ -1,7 +1,7 @@
 # Voice demo credentials: obtain and enter every value
 
 This is the copy-and-follow path for a first run. You obtain **five values**: one Agora App ID,
-two RTC tokens, one Model Studio API key, and one Workspace ID. Keep Voxa's default channel and
+two RTC tokens, one Model Studio API key, and one Workspace ID. Keep Muxiva's default channel and
 two numeric UIDs.
 
 !!! warning "Do not select Run yet"
@@ -10,18 +10,18 @@ two numeric UIDs.
 
 ## Field map
 
-| Service | Voxa field | First-run value |
+| Service | Muxiva field | First-run value |
 | --- | --- | --- |
 | Agora | App ID | The 32-character App ID of your Agora project |
-| Agora | Channel | `voxa-demo` |
+| Agora | Channel | `muxiva-demo` |
 | Agora | Browser UID | `1001` |
-| Agora | Browser Token | RTC token generated for channel `voxa-demo`, UID `1001` |
-| Agora | Voxa Bot UID | `2001` |
-| Agora | Voxa Bot Token | RTC token generated for channel `voxa-demo`, UID `2001` |
+| Agora | Browser Token | RTC token generated for channel `muxiva-demo`, UID `1001` |
+| Agora | Muxiva Bot UID | `2001` |
+| Agora | Muxiva Bot Token | RTC token generated for channel `muxiva-demo`, UID `2001` |
 | Model Studio | API Key | Pay-as-you-go key created in China (Beijing) |
 | Model Studio | Workspace ID | ID of the workspace that owns that key |
 
-The Agora **App Certificate never goes into Voxa**. It is used only by Token Builder.
+The Agora **App Certificate never goes into Muxiva**. It is used only by Token Builder.
 
 ## A. Create an Agora project and two tokens
 
@@ -52,11 +52,11 @@ changes.
 | App Certificate | Primary Certificate | The same Certificate |
 | User ID / UID | `1001` | `2001` |
 | Token expiration time | `3600` (one hour for evaluation) | `3600` |
-| Channel name | `voxa-demo` | `voxa-demo` |
-| Paste result into Studio | Browser Token | Voxa Bot Token |
+| Channel name | `muxiva-demo` | `muxiva-demo` |
+| Paste result into Studio | Browser Token | Muxiva Bot Token |
 
 !!! important "You do not pre-create the channel"
-    `voxa-demo` is a case-sensitive room name agreed by every participant. It must match Token
+    `muxiva-demo` is a case-sensitive room name agreed by every participant. It must match Token
     Builder and Studio character for character. UID-bound tokens are not interchangeable.
 
 Agora Console also offers **Generate Temp Token**. For deterministic, separate browser and bot
@@ -68,7 +68,7 @@ identities, this guide uses Token Builder to generate two explicit numeric-UID t
 
 1. Sign in to [Alibaba Cloud Model Studio](https://bailian.console.aliyun.com/).
 2. Complete activation or identity verification if prompted.
-3. In the upper-right corner, select **China (Beijing)** and keep this region selected. Voxa's
+3. In the upper-right corner, select **China (Beijing)** and keep this region selected. Muxiva's
    current Qwen Nodes use the Beijing workspace endpoint.
 
 ### B2. Create the API key
@@ -79,7 +79,7 @@ identities, this guide uses Token Builder to generate two explicit numeric-UID t
 4. Paste it into **Alibaba Cloud Model Studio → API Key** in Studio.
 
 Official instructions: [obtain an API key](https://help.aliyun.com/en/model-studio/get-api-key).
-Voxa expects a pay-as-you-go Model Studio key, not a Coding Plan or Token Plan key.
+Muxiva expects a pay-as-you-go Model Studio key, not a Coding Plan or Token Plan key.
 
 ### B3. Copy the Workspace ID that owns the key
 
@@ -92,13 +92,13 @@ Voxa expects a pay-as-you-go Model Studio key, not a Coding Plan or Token Plan k
 Official instructions: [obtain a Workspace ID](https://help.aliyun.com/en/model-studio/obtain-the-app-id-and-workspace-id).
 A region or workspace mismatch causes WebSocket authentication failures.
 
-There is no Qwen SDK download. Voxa's Python Nodes use the documented WebSocket/HTTP
+There is no Qwen SDK download. Muxiva's Python Nodes use the documented WebSocket/HTTP
 protocols, and `setup.sh` installs the Python dependency.
 
-## C. Save the values once in Voxa
+## C. Save the values once in Muxiva
 
 ```bash
-cd /path/to/Voxa
+cd /path/to/Muxiva
 ./examples/voice-agent/run.sh
 ```
 
@@ -113,12 +113,12 @@ Studio saves credentials to `examples/voice-agent/.env` with mode `0600`; Git ig
 and later runs load it automatically:
 
 ```dotenv
-VOXA_AGORA_APP_ID="..."
-VOXA_AGORA_CHANNEL="voxa-demo"
-VOXA_AGORA_WEB_UID="1001"
-VOXA_AGORA_WEB_TOKEN="..."
-VOXA_AGORA_BOT_UID="2001"
-VOXA_AGORA_BOT_TOKEN="..."
+MUXIVA_AGORA_APP_ID="..."
+MUXIVA_AGORA_CHANNEL="muxiva-demo"
+MUXIVA_AGORA_WEB_UID="1001"
+MUXIVA_AGORA_WEB_TOKEN="..."
+MUXIVA_AGORA_BOT_UID="2001"
+MUXIVA_AGORA_BOT_TOKEN="..."
 DASHSCOPE_API_KEY="..."
 DASHSCOPE_WORKSPACE_ID="..."
 ```
@@ -126,18 +126,18 @@ DASHSCOPE_WORKSPACE_ID="..."
 ## D. Verify and troubleshoot
 
 ```bash
-voxa doctor --voice
-tail -f examples/voice-agent/.voxa/runtime.log
+muxiva doctor --voice
+tail -f examples/voice-agent/.muxiva/runtime.log
 ```
 
 `doctor` checks tooling, official Nodes, and credential presence. It does not issue tokens or print
 secret values. Follow a real session in order:
 
 1. Voice Room reports `Browser joined Agora` and `microphone published`.
-2. The log reports `[VOXA][AGORA][participant.joined] uid=1001`.
-3. The log reports `[VOXA][AGORA][audio.received]`.
-4. The log reports `[VOXA][QWEN][event] type=input_audio_buffer.speech_started`.
-5. `response.created`, `[VOXA][AGORA][data.published]`, and audio output begin increasing.
+2. The log reports `[MUXIVA][AGORA][participant.joined] uid=1001`.
+3. The log reports `[MUXIVA][AGORA][audio.received]`.
+4. The log reports `[MUXIVA][QWEN][event] type=input_audio_buffer.speech_started`.
+5. `response.created`, `[MUXIVA][AGORA][data.published]`, and audio output begin increasing.
 6. Voice Room diagnostics show increasing Client Messages and the chat renders both sides.
 
 | Symptom | Check first |

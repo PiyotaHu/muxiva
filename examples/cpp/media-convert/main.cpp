@@ -1,11 +1,11 @@
-#include <voxa/media.hpp>
+#include <muxiva/media.hpp>
 
 #include <cstdint>
 #include <iostream>
 #include <vector>
 
 int main() {
-  using namespace voxa::media;
+  using namespace muxiva::media;
   Status status;
   auto pipeline = Pipeline::create({}, make_ffmpeg_backend(), &status);
   if (!pipeline) {

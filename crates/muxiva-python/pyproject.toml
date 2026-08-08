@@ -1,0 +1,33 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "muxiva"
+version = "0.1.0"
+requires-python = ">=3.8"
+description = "Safe Python bindings for the Muxiva multimodal agent runtime"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Rust",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/PiyotaHu/muxiva"
+Documentation = "https://piyotahu.github.io/muxiva/nodes/python/"
+Repository = "https://github.com/PiyotaHu/muxiva"
+Issues = "https://github.com/PiyotaHu/muxiva/issues"
+
+[tool.maturin]
+module-name = "muxiva._native"
+python-source = "python"
+features = ["extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

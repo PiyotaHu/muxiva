@@ -1,15 +1,15 @@
 # Contributing
 
-Voxa welcomes focused design feedback, reproducible bug reports,
+Muxiva welcomes focused design feedback, reproducible bug reports,
 documentation, tests, and pull requests.
 
 ## Start here
 
-- read the [contribution guide](https://github.com/PiyotaHu/Voxa/blob/main/CONTRIBUTING.md);
-- follow the [Code of Conduct](https://github.com/PiyotaHu/Voxa/blob/main/CODE_OF_CONDUCT.md);
-- report vulnerabilities through [Private Vulnerability Reporting](https://github.com/PiyotaHu/Voxa/security/advisories/new);
-- use [Discussions](https://github.com/PiyotaHu/Voxa/discussions) for questions and architecture ideas;
-- use [Issues](https://github.com/PiyotaHu/Voxa/issues) for reproducible bugs and accepted work.
+- read the [contribution guide](https://github.com/PiyotaHu/muxiva/blob/main/CONTRIBUTING.md);
+- follow the [Code of Conduct](https://github.com/PiyotaHu/muxiva/blob/main/CODE_OF_CONDUCT.md);
+- report vulnerabilities through [Private Vulnerability Reporting](https://github.com/PiyotaHu/muxiva/security/advisories/new);
+- use [Discussions](https://github.com/PiyotaHu/muxiva/discussions) for questions and architecture ideas;
+- use [Issues](https://github.com/PiyotaHu/muxiva/issues) for reproducible bugs and accepted work.
 
 ## Documentation contract
 

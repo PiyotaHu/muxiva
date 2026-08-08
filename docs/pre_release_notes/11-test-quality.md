@@ -1,6 +1,6 @@
 # Stage 11 pre-release note
 
-Stage 11 introduces the workspace-internal `voxa-testkit`, consolidated local
+Stage 11 introduces the workspace-internal `muxiva-testkit`, consolidated local
 quality scripts, and documented deterministic fault boundaries. Optional Miri
 and fuzz gates are honest capability checks: missing local toolchains are
 reported as skips and are provisioned separately in CI.

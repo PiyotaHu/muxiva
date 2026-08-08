@@ -27,7 +27,7 @@ were voice-product policies inside a vendor-neutral Core.
 They have been removed. Core now routes opaque Signals without understanding
 turns or interruption. Model/context Nodes own request and turn state; playback
 Nodes own buffered-output cancellation. In the flagship Graph,
-`qwen.audio_realtime` emits `voxa.voice.speech.started`, cancels its own remote
+`qwen.audio_realtime` emits `muxiva.voice.speech.started`, cancels its own remote
 response, and discards late chunks; `agora.audio_sink` clears queued PCM.
 
 ## Current public API summary
