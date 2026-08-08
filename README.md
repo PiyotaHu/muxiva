@@ -2,7 +2,7 @@
 
 > A Rust-native, real-time multimodal agent runtime with one graph and lifecycle contract across Rust, C++, Python, and TypeScript.
 
-[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/Voxa/) · [Flagship voice demo](https://piyotahu.github.io/Voxa/voice-demo/) · [Build Nodes](https://piyotahu.github.io/Voxa/nodes/) · [Studio](https://piyotahu.github.io/Voxa/studio/) · [Graph v1](https://piyotahu.github.io/Voxa/graph/) · [Testing](https://piyotahu.github.io/Voxa/testing/)
+[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/Voxa/) · [Architecture](https://piyotahu.github.io/Voxa/concepts/) · [Flagship voice demo](https://piyotahu.github.io/Voxa/voice-demo/) · [Build Nodes](https://piyotahu.github.io/Voxa/nodes/) · [Studio](https://piyotahu.github.io/Voxa/studio/) · [Graph v1](https://piyotahu.github.io/Voxa/graph/) · [Testing](https://piyotahu.github.io/Voxa/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -49,19 +49,18 @@ Voxa is **pre-alpha**. Stages 1–11 of the foundation plan are implemented, but
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    SDK["Rust / C++ / Python / TypeScript SDKs"] --> GD["GraphDefinition / JSON Graph v1"]
-    GD --> RT["Rust Runtime"]
-    RT --> Q["Bounded Edge Queues"]
-    Q --> N["Source / Transform / Sink Nodes"]
-    RTC["RTC or external callbacks"] --> IN["Bounded ExternalIngress"]
-    IN --> RT
-    RT --> CP["Signal · EventBus · Turn Control"]
-    RT --> OBS["Metrics · Diagnostics · Test Probes"]
-```
+[![Voxa system architecture](docs/site/en/assets/architecture/voxa-system-overview.png)](https://piyotahu.github.io/Voxa/concepts/)
 
-The runtime never treats ASR, LLM, TTS, transport, or codec behavior as Core responsibilities. Those capabilities belong in nodes and adapters.
+Read the diagram from top to bottom: product surfaces declare a Graph and discover
+Node Factories; the vendor-neutral Rust Core compiles and executes it; Rust, C++,
+Python, and TypeScript Nodes provide replaceable capabilities; RTC, model APIs, and
+token services remain outside Core. Solid lines are data or calls, dashed magenta
+lines are Signal control, and dotted gray lines are process-local EventBus telemetry.
+
+The runtime never treats ASR, LLM, TTS, transport, codec behavior, or a vendor
+“provider” as Core responsibilities. See the
+[system overview and core-concepts walkthrough](https://piyotahu.github.io/Voxa/concepts/),
+or open the [editable Draw.io source](docs/site/en/assets/architecture/voxa-system-overview.drawio).
 
 ## Quick start
 

@@ -2,7 +2,7 @@
 
 > 一个以 Rust 为核心的实时多模态 Agent Runtime，让 Rust、C++、Python 与 TypeScript 共享同一套图、生命周期和安全边界。
 
-[English](README.md) · [中文文档](https://piyotahu.github.io/Voxa/zh/) · [旗舰语音 Demo](https://piyotahu.github.io/Voxa/zh/voice-demo/) · [开发 Node](https://piyotahu.github.io/Voxa/zh/nodes/) · [Studio](https://piyotahu.github.io/Voxa/zh/studio/) · [Graph v1](https://piyotahu.github.io/Voxa/zh/graph/) · [测试体系](https://piyotahu.github.io/Voxa/zh/testing/)
+[English](README.md) · [中文文档](https://piyotahu.github.io/Voxa/zh/) · [系统架构](https://piyotahu.github.io/Voxa/zh/concepts/) · [旗舰语音 Demo](https://piyotahu.github.io/Voxa/zh/voice-demo/) · [开发 Node](https://piyotahu.github.io/Voxa/zh/nodes/) · [Studio](https://piyotahu.github.io/Voxa/zh/studio/) · [Graph v1](https://piyotahu.github.io/Voxa/zh/graph/) · [测试体系](https://piyotahu.github.io/Voxa/zh/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -48,19 +48,16 @@ Voxa 当前为 **pre-alpha**。0 到 1 计划的 Stage 1–11 已完成，但部
 
 ## 架构
 
-```mermaid
-flowchart LR
-    SDK["Rust / C++ / Python / TypeScript SDK"] --> GD["GraphDefinition / JSON Graph v1"]
-    GD --> RT["Rust Runtime"]
-    RT --> Q["有界 Edge Queue"]
-    Q --> N["Source / Transform / Sink Node"]
-    RTC["RTC 或外部回调"] --> IN["有界 ExternalIngress"]
-    IN --> RT
-    RT --> CP["Signal · EventBus · Turn Control"]
-    RT --> OBS["Metrics · Diagnostics · Test Probe"]
-```
+[![Voxa 系统架构](docs/site/zh/assets/architecture/voxa-system-overview.png)](https://piyotahu.github.io/Voxa/zh/concepts/)
 
-ASR、LLM、TTS、Transport 和 Codec 不属于 Runtime Core，它们应该作为 Node 或 Adapter 接入。
+这张图从上到下描述完整系统：产品入口声明 Graph 并发现 Node Factory；厂商无关的
+Rust Core 编译和执行 Graph；Rust、C++、Python 与 TypeScript Node 提供可替换能力；
+RTC、模型 API 与 Token 服务留在 Core 之外。蓝色实线表示数据或调用，品红虚线表示
+Signal 控制，灰色点线表示进程内 EventBus 可观测信息。
+
+ASR、LLM、TTS、Transport、Codec 和厂商“Provider”都不是 Runtime Core 的职责。
+请继续阅读[系统全景与核心概念串讲](https://piyotahu.github.io/Voxa/zh/concepts/)，
+或打开[可编辑 Draw.io 源文件](docs/site/zh/assets/architecture/voxa-system-overview.drawio)。
 
 ## 快速开始
 

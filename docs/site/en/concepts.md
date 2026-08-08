@@ -1,124 +1,190 @@
-# Understand Voxa: the system map
+# Voxa system overview and core concepts
 
-Voxa is not an ASR, LLM, or TTS SDK, and it is not a flowchart that only runs
-inside a web editor. It is a **real-time multimodal Agent Runtime**. Developers
-place audio, video, text, bytes, and control messages into a typed Graph. Voxa
-owns scheduling, concurrency, backpressure, Signal routing, shutdown, and
-observability, while replaceable Nodes supply algorithms, interruption policy,
-and external services.
+Voxa is a **real-time multimodal Agent Runtime**. A developer uses a typed Graph
+to describe how audio, video, text, bytes, and control messages move. Rust Core
+owns validation, scheduling, concurrency, backpressure, lifecycle, shutdown,
+and observability. Replaceable Nodes provide ASR, LLM, TTS, RTC, and other
+application capabilities.
 
-Think of a voice Agent as a factory:
+The central idea is: **Core defines stable execution mechanisms, Nodes provide
+replaceable capabilities, and a Graph composes both into an executable system.**
 
-- a **Frame** is the item moving through the factory;
-- a **Node** is a machine that processes an item;
-- a **Port** is a machine input or output with an exact specification;
-- an **Edge** is a bounded conveyor between two machines;
-- a **Graph** is the factory blueprint; and
-- the **Rust Runtime** starts, schedules, limits, stops, and recovers the factory.
+## System overview
 
-## The complete layer model
+![Voxa system overview](assets/architecture/voxa-system-overview.png)
 
-```mermaid
-flowchart TB
-    DEV["Developers and end users"]
-    SURFACE["Product and tooling<br/>voxa CLI · Studio · project web app"]
-    DEF["Definition and discovery<br/>Graph v1 · Node Manifest · Registry · Connection"]
-    LANG["Node extension layer<br/>Rust · C++ · Python · TypeScript"]
-    PACK["Node categories and distribution<br/>built-in · official · project"]
-    CORE["Rust Runtime Core<br/>Node · Port · Edge · Frame · Graph · Scheduler"]
-    EXTERNAL["External systems<br/>RTC · model APIs · codecs · devices · databases"]
+[Download the editable Draw.io source](assets/architecture/voxa-system-overview.drawio)
 
-    DEV --> SURFACE
-    SURFACE --> DEF
-    DEF --> LANG
-    DEF --> CORE
-    LANG --> CORE
-    PACK --> LANG
-    EXTERNAL <--> LANG
-    CORE --> OBS["Bounded queues · backpressure · Signal · EventBus · metrics"]
+The diagram has five layers. Read the boundaries first, then the connections.
+Solid blue lines represent data or calls, dashed magenta lines represent Signal
+control, and dotted gray lines represent process-local EventBus telemetry.
+
+### 1. Product and developer surfaces
+
+- The **`voxa` CLI** creates, validates, runs, and diagnoses projects for terminals,
+  scripts, and CI.
+- **Voxa Studio** edits Graphs, wires Ports, displays Node source, configures local
+  Connections, and observes the current Runtime.
+- **Language SDKs** let Rust, C++, Python, and TypeScript developers build Graphs
+  or implement Nodes.
+- A **project web app / Voice Room** owns the end-user microphone, speaker, chat,
+  and barge-in presentation.
+
+The project web app is an independent client, not part of Studio. It communicates
+with the Agent through RTC or an application Transport. It does not call Runtime
+lifecycle APIs or poll the process-local EventBus.
+
+### 2. Definition, discovery, and configuration
+
+This layer answers three questions: **what should run, where is its implementation,
+and how is it configured?**
+
+- **Graph v1** declares Nodes, named Ports, Edges, types, queue capacities, and
+  policies. It is a blueprint and contains no threads, sockets, secrets, or live
+  objects.
+- A **Node Manifest** declares `node_type`, language, Factory version, capabilities,
+  configuration schema, and exact input/output schemas.
+- **Registry and Discovery** collect built-in, official, and project Nodes and
+  select the exact Factory requested by a Graph. The Runtime never guesses from
+  a similar name.
+- **Connections and Secrets** provide shared local connection settings to Nodes.
+  Development values may live in a project `.env` ignored by Git; production
+  values should come from a secret or token service.
+
+### 3. Vendor-neutral Rust Runtime Core
+
+This is Voxa's stable kernel. It has no dependency on Agora, Qwen, or another
+vendor.
+
+- The **Graph Compiler** checks schemas, topology, Port direction, and compatibility
+  before creating a Node, then materializes the declaration into an executable plan.
+- The **Concurrent Graph Runtime** manages `prepare → process → signal → finish / abort`,
+  worker scheduling, cancellation, and bounded shutdown.
+- The **data plane** uses immutable Frames, typed Ports, and bounded Edge queues for
+  audio, video, text, and bytes, with backpressure controlling latency and memory.
+- The **control and observability plane** routes adjacent Signals and publishes Events
+  to process-local observers. Core supplies mechanisms but does not hard-code
+  interruption, turn, or vendor policy.
+
+### 4. Unified Node extension layer
+
+Voxa has one executable extension concept: the **Node**. A built-in integration or
+vendor adapter is a Node that follows the same contract, not another Runtime entity.
+
+- **Rust built-in Nodes** fit resampling, VAD, cancellation gates, and general utilities.
+- The **Python Node Host** fits Qwen Realtime, ASR, LLM, TTS, and fast-moving algorithms.
+- **C++ ABI Node Packs** fit Agora RTC, codecs, device SDKs, and other native integrations.
+- **TypeScript and project Nodes** live under an Agent project's `.voxa/nodes/` and
+  use the same Manifest, Factory, and Frame contracts.
+
+Each language Host isolates threads, objects, and exceptions. A Graph always sees
+the same Node, Port, and Frame model, regardless of implementation language.
+
+### 5. External services and the production boundary
+
+External models, RTC networks, and token services are not part of Core. The voice
+application in the diagram uses Alibaba Cloud Model Studio and Agora as one composition;
+developers can replace those Nodes without changing the Runtime. A browser receives
+only short-lived RTC tokens, while model credentials remain server-side. In the current
+voice deployment model, one Runtime process represents one Agent RTC session, preventing
+mutable playback or generation state from leaking across sessions.
+
+## Connect the core objects
+
+Think of Voxa as a controlled real-time factory:
+
+| Concept | Plain-language model | Responsibility |
+| --- | --- | --- |
+| **Frame** | An item on the production line | Immutable data with an audio, video, text, or byte payload plus a traceable header |
+| **Node** | A machine | Consumes Frames in lifecycle callbacks and emits zero or more outputs or control messages through `NodeContext` |
+| **Port** | A typed socket | Constrains a Node's input or output by name, direction, Frame Type, and schema |
+| **Edge** | A bounded conveyor | Connects one output Port to one input Port and defines capacity, backpressure, and overflow policy |
+| **Graph** | The factory blueprint | Declares Nodes, Edges, configuration, and a static DAG; it stores no live state |
+| **Manifest** | A machine specification | Declares Node identity, version, language, capabilities, configuration, and I/O schemas |
+| **Factory** | A machine builder | Creates one independent instance for each Graph Node ID from a Manifest and configuration |
+| **Registry** | The available machine catalog | Discovers Factories and selects an exact type, language, and version for a Graph |
+| **Runtime** | The factory control system | Materializes, starts, schedules, limits, cancels, stops, and converges failures |
+| **NodeContext** | A controlled Node console | Provides named output, Signal, Event, cancellation, and runtime context without direct downstream calls |
+
+The relationship compresses to:
+
+```text
+Manifest + Factory → Registry → Graph Compiler → Runtime
+                                           │
+                     Frame → Node.output Port → bounded Edge → Node.input Port
 ```
 
-### 1. Rust Runtime Core: the stable kernel
+## How a Graph becomes a running system
 
-Rust Core defines the semantics every implementation must follow: Frame
-ownership, Node lifecycle, Port types, Edge queues, Graph validation,
-concurrent execution, cancellation, and observability. It does not depend on
-Agora, Qwen, or another vendor, so changing a model or RTC service does not
-require a new Runtime.
+1. A developer defines Nodes and Edges through an SDK, JSON Graph v1, or Studio.
+2. `voxa validate` and the Graph Compiler check Node identity, configuration schemas,
+   Ports, Frame Types, queue policies, and DAG topology without starting a Node or
+   connecting to an external service.
+3. The Registry selects an exact Factory for each Graph Node ID, and the Runtime
+   creates independent Node instances.
+4. The Runtime calls every Node's `on_prepare`, then starts Sources, workers, and
+   bounded Edge queues.
+5. In `on_process(frame, ctx)`, a Node calls `ctx.emit(port, frame)` for results. One
+   invocation may emit nothing or emit through several named Ports.
+6. Normal completion calls `on_finish`; errors, cancellation, or deadlines call
+   `on_abort`, followed by bounded waits for foreign execution domains and callbacks.
 
-Continue with [Rust Core and its objects](core-runtime.md).
+## Why data, control, and observation are separate
 
-### 2. Node extension layer: business capabilities become building blocks
+A real-time Agent has three kinds of communication. They must not collapse into a
+single universal message bus:
 
-ASR, VAD, LLM, TTS, audio resampling, and database access can all be Nodes. A
-Node emits Frames through named Ports using `NodeContext`, sends adjacent
-Signals, or publishes global Events. Business code never calls a downstream
-Node directly and never owns an Edge queue.
+| Channel | Propagation | Intended content | Must not become |
+| --- | --- | --- | --- |
+| **Frame + Edge** | Explicit Graph topology and bounded queues | Audio, video, ASR text, LLM output, and client interaction messages | A global broadcast |
+| **Signal** | Runtime delivery along the current Node's adjacent Edges | Interruption, cancellation, and stale-playback clearing that changes related Node state | Remote client transport |
+| **EventBus Event** | Process-local observers | Logs, metrics, Studio diagnostics, transcript-ready telemetry | A browser protocol or business data path |
 
-Continue with [Extending Voxa with Nodes](extensibility.md).
+For barge-in, a VAD or Realtime Node detects that the user has started speaking and
+emits a Signal. The Runtime delivers it to related model and playback Nodes. The model
+cancels the old generation and rejects late fragments; the playback Node clears stale
+audio. If a remote Voice Room must display “user is speaking,” a Transport Node sends
+a client event as a Frame or byte protocol—the browser never reaches into EventBus.
 
-### 3. Multi-language execution: one contract, four languages
+## Validate the model with the voice path
 
-Rust, C++, Python, and TypeScript use different Hosts and ABIs, but all of them
-register the same Node Factory model and consume the same Frame contract. The
-implementation language does not change Graph semantics.
-
-Continue with [Multi-language execution](languages.md).
-
-### 4. Node categories: vendor code stays outside Core
-
-Voxa presents one extension concept to developers: the Node. `builtin.*` Nodes
-ship with the Runtime; official Agora and Qwen Nodes demonstrate multi-language
-integrations; project Nodes live under `.voxa/nodes/`, where Studio can inspect
-and edit their source. `voxa.node.json` declares capability, configuration, and
-I/O schemas. A Connection only shares local credentials among Nodes—it is not
-another runtime entity.
-
-Continue with [Node architecture](provider-architecture.md).
-
-### 5. Product and tooling: several entrances to one Runtime
-
-The `voxa` CLI creates, validates, runs, and diagnoses projects. Studio edits a
-Graph visually and shows Node source and live metrics. A project web app owns
-microphone, camera, or end-user interaction. All three use the same Graph and
-Registry; they are not separate runtime models.
-
-Continue with [CLI, Studio, and the web surface](developer-surfaces.md).
-
-## How one audio Frame crosses the system
-
-```mermaid
-sequenceDiagram
-    participant Browser as Browser microphone
-    participant Agora as Agora Transport
-    participant Core as Voxa Rust Core
-    participant Qwen as Qwen Algorithm
-    participant Speaker as Browser speaker
-
-    Browser->>Agora: RTC audio packet
-    Agora->>Core: Audio Frame
-    Core->>Qwen: scheduled through bounded Edge
-    Qwen-->>Core: Text Frame and Audio Frame
-    Core-->>Agora: audio over a bounded Edge
-    Agora-->>Speaker: RTC playout
+```text
+Browser microphone
+  → Agora RTC network
+  → C++ Agora Audio Source Node
+  → Audio Resampler / VAD / Qwen Python Node
+  → text and audio Frames
+  → C++ Agora Data / Audio Sink Node
+  → browser chat bubbles and speaker
 ```
 
-Agora does not know how the Graph is scheduled. Qwen does not know how the
-browser captures audio. The browser never receives the model key. Rust Core
-contains no vendor business logic. The layers cooperate through explicit
-contracts.
+Agora does not know how the Graph is scheduled. Qwen does not know how the browser
+captures audio. The browser never receives the model key, and Rust Core contains no
+vendor business code. The layers cooperate through Manifest, Frame, Port, Edge,
+Signal, and lifecycle contracts.
 
-Continue with [the real voice path](voice-architecture.md).
+## Architectural boundaries to remember
+
+1. **A Graph is a declaration; a Runtime is a live instance.** JSON cannot contain
+   executable code or secrets.
+2. **Every application capability is a Node.** “Provider” may organize documentation,
+   but it is not a new Runtime abstraction.
+3. **EventBus is process-local observability.** Cross-machine messages use Transport
+   Nodes or an application protocol.
+4. **Core does not understand vendors or voice business rules.** Turn, barge-in, ASR,
+   and TTS policy live in Nodes.
+5. **Studio is a local development surface, not a production client.** A project web
+   app and Runtime may run on different machines.
+6. **Queues and shutdown are bounded.** A real-time system cannot hide failure behind
+   unlimited buffering or waiting.
 
 ## Recommended reading order
 
-For a first visit, read:
-
-1. this page for the system map;
-2. [Rust Core and its objects](core-runtime.md);
-3. [Graph and typed Ports](graph.md);
-4. [Real-time flow and control](realtime-control.md);
-5. [Node extensibility](extensibility.md) and [multi-language execution](languages.md);
-6. [Node architecture](provider-architecture.md);
-7. [CLI, Studio, and web](developer-surfaces.md); and
-8. [the real voice path](voice-architecture.md) and [runnable demo](voice-demo.md).
+1. [Rust Core and core objects](core-runtime.md) for Frame, Node, Port, Edge, and Graph;
+2. [Graph and typed Ports](graph.md) for Graph v1;
+3. [Real-time flow and control](realtime-control.md) for backpressure, Signal, EventBus,
+   and interruption;
+4. [Node extensibility](extensibility.md) and [multi-language execution](languages.md);
+5. [the unified Node architecture](provider-architecture.md);
+6. [CLI, Studio, and project web apps](developer-surfaces.md); and
+7. [the end-to-end voice path](voice-architecture.md) and [runnable voice demo](voice-demo.md).
