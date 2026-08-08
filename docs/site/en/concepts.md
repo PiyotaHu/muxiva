@@ -146,6 +146,34 @@ cancels the old generation and rejects late fragments; the playback Node clears 
 audio. If a remote Voice Room must display “user is speaking,” a Transport Node sends
 a client event as a Frame or byte protocol—the browser never reaches into EventBus.
 
+## Current voice interruption mechanism
+
+![Muxiva full-duplex voice interruption sequence](assets/control/muxiva-barge-in.drawio.png)
+
+[Download the editable Draw.io source](assets/control/muxiva-barge-in.drawio)
+
+The diagram follows the actual `Qwen Realtime + Agora RTC` Graph:
+
+1. Browser microphone uplink remains active while the Agent is playing an answer, which
+   provides the input side of full duplex.
+2. Qwen Realtime Server VAD reports `input_audio_buffer.speech_started`. If the old
+   response is active, the Qwen Node immediately sends `response.cancel` and enables its
+   stale-response discard gate.
+3. The Qwen Node calls `ctx.emit_signal("muxiva.voice.speech.started", ...)`. Rust Runtime
+   does not interpret that name; it only follows the explicit Signal Edge and invokes
+   Agora Audio Sink's `on_signal`.
+4. Audio Sink clears unsent PCM, advances its cancellation sequence watermark, and drops
+   old Audio Frames at or below that watermark. This is a second guard after the Qwen
+   Node's late-chunk filter.
+5. `speech.started` and `barge_in` also travel as client Event Frames through the Encoder
+   and Agora Data Sink to the remote Voice Room. `publish_event` only reaches the
+   process-local EventBus for logs, metrics, and Studio diagnostics.
+
+There is a physical boundary: audio already inside the Agora network or browser playback
+buffer cannot be recalled. Low-latency interruption therefore also depends on short PCM
+packets, bounded Audio Sink queues, and shallow client playback buffers. Core neither
+switches application Turns nor contains Qwen- or Agora-specific interruption policy.
+
 ## Validate the model with the voice path
 
 ```text

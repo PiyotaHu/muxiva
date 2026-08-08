@@ -1,0 +1,136 @@
+<mxfile>
+  <diagram id="seqlayout" name="Muxiva 全双工语音打断机制">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="client" value="Voice Room&#xa;浏览器客户端" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;size=40;participant=umlActor;verticalAlign=bottom;spacingBottom=-14;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="100" height="1830" as="geometry"/>
+        </mxCell>
+        <mxCell id="rtc" value="Agora RTC&#xa;网络频道" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;size=40;" vertex="1" parent="1">
+          <mxGeometry x="330" y="40" width="100" height="1830" as="geometry"/>
+        </mxCell>
+        <mxCell id="source" value="Agora Audio&#xa;Source Node" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;size=40;" vertex="1" parent="1">
+          <mxGeometry x="620" y="40" width="100" height="1830" as="geometry"/>
+        </mxCell>
+        <mxCell id="runtime" value="Muxiva Rust&#xa;Runtime" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;size=40;" vertex="1" parent="1">
+          <mxGeometry x="910" y="40" width="100" height="1830" as="geometry"/>
+        </mxCell>
+        <mxCell id="qwen" value="Qwen Audio&#xa;Realtime Node" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;size=40;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="40" width="100" height="1830" as="geometry"/>
+        </mxCell>
+        <mxCell id="api" value="Qwen Realtime&#xa;API + Server VAD" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;size=40;" vertex="1" parent="1">
+          <mxGeometry x="1490" y="40" width="100" height="1830" as="geometry"/>
+        </mxCell>
+        <mxCell id="audio_sink" value="Agora Audio&#xa;Sink Node" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;size=40;" vertex="1" parent="1">
+          <mxGeometry x="1780" y="40" width="100" height="1830" as="geometry"/>
+        </mxCell>
+        <mxCell id="data_sink" value="Agora Data&#xa;Sink Node" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;size=40;" vertex="1" parent="1">
+          <mxGeometry x="2070" y="40" width="100" height="1830" as="geometry"/>
+        </mxCell>
+        <mxCell id="note0" value="正常全双工：上行麦克风持续工作，下行回答同时播放" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="980" y="110" width="198" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="m1" value="持续发布麦克风 PCM" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.082;entryX=0.5;entryY=0.082;" edge="1" parent="1" source="client" target="rtc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m2" value="远端 PCM 回调" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.1093;entryX=0.5;entryY=0.1093;" edge="1" parent="1" source="rtc" target="source">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m3" value="ctx.emit(audio_out, AudioFrame)" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.1366;entryX=0.5;entryY=0.1366;" edge="1" parent="1" source="source" target="runtime">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m4" value="显式 Audio Edge → on_process" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.1639;entryX=0.5;entryY=0.1639;" edge="1" parent="1" source="runtime" target="qwen">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m5" value="input_audio_buffer.append" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.1913;entryX=0.5;entryY=0.1913;" edge="1" parent="1" source="qwen" target="api">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m6" value="response.created + audio.delta" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.2186;entryX=0.5;entryY=0.2186;" edge="1" parent="1" source="api" target="qwen">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m7" value="ctx.emit(audio_out, 24 kHz PCM)" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.2459;entryX=0.5;entryY=0.2459;" edge="1" parent="1" source="qwen" target="runtime">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m8" value="Audio Edge（重采样后 48 kHz）" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.2732;entryX=0.5;entryY=0.2732;" edge="1" parent="1" source="runtime" target="audio_sink">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m9" value="10 ms PCM 包" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.3005;entryX=0.5;entryY=0.3005;" edge="1" parent="1" source="audio_sink" target="rtc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m10" value="扬声器播放 Agent 回答" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.3279;entryX=0.5;entryY=0.3279;" edge="1" parent="1" source="rtc" target="client">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="note11" value="Barge-in：Agent 尚在回答时，用户重新开口" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="670" width="219" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="m12" value="用户重新说话" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.388;entryX=0.5;entryY=0.388;" edge="1" parent="1" source="client" target="rtc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m13" value="新一批远端 PCM" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.4153;entryX=0.5;entryY=0.4153;" edge="1" parent="1" source="rtc" target="source">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m14" value="AudioFrame" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.4426;entryX=0.5;entryY=0.4426;" edge="1" parent="1" source="source" target="runtime">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m15" value="on_process(audio)" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.4699;entryX=0.5;entryY=0.4699;" edge="1" parent="1" source="runtime" target="qwen">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m16" value="继续 append 输入音频" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.4973;entryX=0.5;entryY=0.4973;" edge="1" parent="1" source="qwen" target="api">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m17" value="input_audio_buffer.speech_started" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.5246;entryX=0.5;entryY=0.5246;" edge="1" parent="1" source="api" target="qwen">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m18" value="response.cancel（仅旧回复 active 时）" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.5519;entryX=0.5;entryY=0.5519;" edge="1" parent="1" source="qwen" target="api">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m19" value="设置 discard_response_output=true" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.5792;entryX=0.5;entryY=0.5956;" edge="1" parent="1" source="qwen" target="qwen">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1310" y="1100"/><mxPoint x="1310" y="1130"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m20" value="ctx.emit_signal(muxiva.voice.speech.started)" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.6175;entryX=0.5;entryY=0.6175;" edge="1" parent="1" source="qwen" target="runtime">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m21" value="显式 Signal Edge → on_signal" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.6448;entryX=0.5;entryY=0.6448;" edge="1" parent="1" source="runtime" target="audio_sink">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m22" value="清空 PCM 队列 + 更新 sequence 水位" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.6721;entryX=0.5;entryY=0.6885;" edge="1" parent="1" source="audio_sink" target="audio_sink">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1890" y="1270"/><mxPoint x="1890" y="1300"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m23" value="client_event_out：speech.started / barge_in" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.7104;entryX=0.5;entryY=0.7104;" edge="1" parent="1" source="qwen" target="runtime">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m24" value="publish_event：仅进程内日志/指标" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.7377;entryX=0.5;entryY=0.7377;" edge="1" parent="1" source="qwen" target="runtime">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m25" value="EventFrame → Encoder → ByteFrame" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.765;entryX=0.5;entryY=0.765;" edge="1" parent="1" source="runtime" target="data_sink">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m26" value="有序 RTC Data Message" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.7923;entryX=0.5;entryY=0.7923;" edge="1" parent="1" source="data_sink" target="rtc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m27" value="展示“正在说话 / 正在打断”" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.8197;entryX=0.5;entryY=0.8197;" edge="1" parent="1" source="rtc" target="client">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m28" value="可能晚到的旧 response.delta" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.847;entryX=0.5;entryY=0.847;" edge="1" parent="1" source="api" target="qwen">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m29" value="丢弃旧分片，不再进入 Audio Edge" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.8743;entryX=0.5;entryY=0.8907;" edge="1" parent="1" source="qwen" target="qwen">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1310" y="1640"/><mxPoint x="1310" y="1670"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="note30" value="双保险：Node 拒收晚到模型分片；Audio Sink 清队列并丢弃不高于水位的旧帧。已经发到 RTC 网络/终端播放器的音频无法撤回，因此仍需控制缓冲。" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="1810" y="1680" width="300" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="note31" value="边界：Runtime 只透明路由 Signal；不识别语音、不切换业务 Turn，也不把 EventBus 暴露给远程客户端。" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="930" y="1750" width="330" height="70" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -126,6 +126,30 @@ Runtime 将它投递给相关模型与播放 Node；模型取消旧生成并丢�
 陈旧音频。若需要把“用户正在说话”展示到远程 Voice Room，应由 Transport Node 把
 客户端事件作为 Frame / 字节协议发送，而不是让浏览器访问 EventBus。
 
+## 当前语音打断机制
+
+![Muxiva 全双工语音打断时序](assets/control/muxiva-barge-in.drawio.png)
+
+[下载可编辑的 Draw.io 源文件](assets/control/muxiva-barge-in.drawio)
+
+这张图对应当前 `Qwen Realtime + Agora RTC` Graph 的真实执行路径：
+
+1. 浏览器的麦克风上行不会因为 Agent 正在播放回答而停止，因此链路具备全双工输入条件。
+2. Qwen Realtime API 的 Server VAD 识别到 `input_audio_buffer.speech_started`；若旧回答仍
+   处于 active 状态，Qwen Node 立即发送 `response.cancel`，并设置拒收旧回复分片的标记。
+3. Qwen Node 通过 `ctx.emit_signal("muxiva.voice.speech.started", ...)` 发出控制消息。
+   Rust Runtime 不解释这个名称，只沿 Graph 中显式的 Signal Edge 调用 Agora Audio Sink
+   的 `on_signal`。
+4. Audio Sink 清空尚未发出的 PCM 队列、推进 sequence 取消水位，并拒绝不高于该水位的
+   旧音频 Frame。这与 Qwen Node 的晚到分片过滤形成双保险。
+5. `speech.started` / `barge_in` 同时作为客户端 Event Frame，经 Encoder 和 Agora Data
+   Sink 发到远程 Voice Room；`publish_event` 只进入进程内 EventBus，供日志、指标和
+   Studio 诊断使用。
+
+需要注意物理边界：已经进入 Agora 网络或浏览器播放器缓冲区的音频无法撤回。因此真正
+低延迟的打断不仅依赖 Signal，还依赖 Audio Sink 以短 PCM 包发送、限制队列长度，并让
+客户端避免过深的播放缓冲。Core 不切换业务 Turn，也不包含 Qwen 或 Agora 的打断策略。
+
 ## 用语音链路验证这套模型
 
 ```text
