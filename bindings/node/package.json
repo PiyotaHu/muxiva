@@ -20,5 +20,5 @@
     "check": "npm run build:debug && npm test"
   },
   "dependencies": { "@types/node": "22.15.3" },
-  "devDependencies": { "@napi-rs/cli": "3.8.0", "typescript": "5.9.2" }
+  "devDependencies": { "@napi-rs/cli": "3.8.0", "typescript": "7.0.2" }
 }
