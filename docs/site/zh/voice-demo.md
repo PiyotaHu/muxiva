@@ -51,8 +51,8 @@ cargo install --locked --path crates/muxiva-cli
 [MUXIVA][READY] Native, Python, and TypeScript Agent Node Packs are installed.
 [MUXIVA][AGORA] sdk=.../build/vendor/agora-macos-4.6.2
 [MUXIVA][QWEN]  python=.../.muxiva/venv/bin/python (no Qwen SDK download required)
-[MUXIVA][AGENT] repository=https://github.com/PiyotaHu/muxiva-pi-agent.git ref=v0.1.2 commit=...
-[MUXIVA][AGENT] workspace=.../.muxiva/workspaces/pi-agent permissions=list,read,search,create,replace
+[MUXIVA][AGENT] repository=https://github.com/PiyotaHu/muxiva-pi-agent.git ref=v0.2.1 commit=...
+[MUXIVA][AGENT] workspace=.../.muxiva/workspaces/pi-agent permissions=list,read,search,create,replace,web-search
 ```
 
 如果你已经手动下载 SDK，也可以运行：
@@ -99,7 +99,8 @@ cargo install --locked --path crates/muxiva-cli
 这里没有“Qwen SDK 下载”步骤。Muxiva 的 Python Node 直接使用官方 WebSocket/HTTP
 协议。Realtime 图默认使用 `qwen-audio-3.0-realtime-flash`；级联图在 Qwen ASR 与
 Qwen TTS 之间使用由 `qwen-flash` 驱动的 [Pi 编码 Agent](nodes/pi-agent.md)。它可以在
-受限工作区真实读取、搜索、创建和修改文件；通用接入方法见
+受限工作区真实读取、搜索、创建和修改文件，也能复用相同百炼凭据按需联网搜索并返回
+来源；通用接入方法见
 [Agent 集成 SOP](nodes/agent-integration.md)。
 
 ## 4. 启动并填写 Studio

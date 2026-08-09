@@ -91,7 +91,7 @@ export function createMyAgentDriver({ config }) {
 
 Type-check and test tools, cancellation, and permissions in that repository.
 Release a reviewed Tag. Never make production setup follow external `main`;
-the demo pins `v0.1.2`, and applications should pin a reviewed Tag or Commit.
+the demo pins `v0.2.1`, and applications should pin a reviewed Tag or Commit.
 
 ## SOP 2: create a thin Node adapter
 
@@ -189,7 +189,51 @@ Set `workspace_root` to `.` only after reviewing Agent code and model policy.
 A safer workflow gives the Agent a dedicated workspace, reviews its diff, and
 merges through a human or CI gate.
 
-## SOP 5: connect the Graph and verify interruption
+## SOP 5: add observable web search
+
+Web search is an Agent tool, not a Muxiva Runtime responsibility. The reference
+Agent declares `web_search` in its independent repository. Pi decides whether
+current information is needed, then the tool invokes Bailian's native
+DashScope endpoint with `forced_search`. File tasks and ordinary conversation
+do not silently incur search calls.
+
+```text
+User question → Pi selects web_search → Bailian turbo search
+                                     → answer + sources + latency
+                                     → Pi writes a cited answer
+```
+
+Tool input contract:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `query` | yes | focused query, up to 2,000 characters |
+| `freshness_days` | no | restrict results to roughly the last 1–365 days |
+| `domains` | no | restrict search to at most ten domains |
+
+Output includes `answer`, `sources[]`, `model`, `duration_ms`,
+`search_strategy`, and token usage. Each source preserves its original index,
+title, site, and URL for citation. Muxiva does not parse Bailian protocol; it
+observes the call through generic `tool.started/completed` Events and Semantic
+Trace.
+
+```json
+{
+  "web_search_enabled": true,
+  "web_search_model": "qwen-flash",
+  "web_search_strategy": "turbo",
+  "web_search_max_sources": 10,
+  "web_search_timeout_ms": 20000
+}
+```
+
+Search reuses `DASHSCOPE_API_KEY` and `DASHSCOPE_WORKSPACE_ID`; it adds no third
+credential. `turbo` is the low-latency voice default. Use `max` only when deeper
+retrieval justifies additional latency and cost. The account must have Model
+Studio search enabled, and Alibaba Cloud bills search separately. See the
+[official Bailian web-search documentation](https://help.aliyun.com/zh/model-studio/web-search/).
+
+## SOP 6: connect the Graph and verify interruption
 
 ```text
 ASR.transcript_out ──Text──> Agent.prompt_in
@@ -209,9 +253,11 @@ Verification checklist:
 2. Studio Validate succeeds and the Agent appears in the Palette;
 3. “List workspace files” creates `tool.started/completed` events in Observe;
 4. “Create index.html” produces a real file in the workspace;
-5. barge-in prevents old answer and Tool results from reaching TTS;
-6. Semantic Trace shows Text, Event, and Signal grouped by Turn;
-7. `runtime.log` contains no Host framing or unexpected permission error.
+5. “Search for today's Qwen updates and cite sources” produces a `web_search`
+   trace and URLs in the answer;
+6. barge-in prevents old answer and Tool results from reaching TTS;
+7. Semantic Trace shows Text, Event, and Signal grouped by Turn;
+8. `runtime.log` contains no Host framing or unexpected permission error.
 
 ## Reference implementation
 

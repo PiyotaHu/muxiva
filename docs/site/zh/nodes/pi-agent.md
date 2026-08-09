@@ -31,7 +31,7 @@ export const PiAgentNode = defineAgentNode({
 
 ## Agent 能做什么
 
-当前 `v0.1.2` 提供：
+当前 `v0.2.1` 提供：
 
 | Tool | 行为 |
 | --- | --- |
@@ -41,6 +41,7 @@ export const PiAgentNode = defineAgentNode({
 | `search_files` | 在受限数量文件中搜索精确文本 |
 | `write_file` | 创建文件；覆盖已有文件必须显式确认 |
 | `replace_in_file` | 按预期匹配次数做精确代码替换 |
+| `web_search` | 通过百炼执行真实联网搜索，返回综合答案、标题、站点和来源 URL |
 | `get_current_time` | 查询指定时区当前时间 |
 | `get_current_weather` | 通过 Open-Meteo 查询实时天气 |
 
@@ -50,6 +51,7 @@ export const PiAgentNode = defineAgentNode({
 - “读取需求，然后创建一个单页网站 `index.html`”；
 - “把标题 Muxiva 改成 My Agent，其他内容不要动”；
 - “搜索所有出现 TODO 的位置并告诉我行号”。
+- “搜索今天发布的 Qwen 更新，引用来源并总结和当前模型的区别”。
 
 文件会真实写入：
 
@@ -76,7 +78,7 @@ examples/voice-agent/.muxiva/workspaces/pi-agent/
 
 脚本依次：
 
-1. 从 GitHub 拉取 `PiyotaHu/muxiva-pi-agent` 的 `v0.1.2`；
+1. 从 GitHub 拉取 `PiyotaHu/muxiva-pi-agent` 的 `v0.2.1`；
 2. 保存到被 Git 忽略的 `.muxiva/agents/muxiva-pi-agent`；
 3. 使用项目 `package-lock.json` 安装 `@muxiva/agent`、外部 Agent 及 Pi 依赖；
 4. 对 Demo 适配器与外部 Agent 分别运行 TypeScript 检查；
@@ -116,3 +118,8 @@ ls -la examples/voice-agent/.muxiva/workspaces/pi-agent
 
 打开 Observe：Tool 生命周期应出现在 Semantic Trace；`pi-agent` 的 Text 输出进入 TTS；
 用户插话产生的 Signal 会取消当前 Pi Turn，旧 Generation 的晚到输出不会继续播报。
+
+再问一个必须联网的问题，例如“搜索今天的 Qwen 新闻并给出来源”。Observe 中应看到
+`web_search` 的 `tool.started/completed`；Tool 详情包含 `duration_ms`、`search_strategy`、
+`search_calls` 和结构化 `sources`。它复用 Connections 中的百炼 Key 和 Workspace ID，
+无需增加凭据，但搜索调用会按百炼规则计费。

@@ -56,8 +56,8 @@ Installation is complete only after these lines appear:
 [MUXIVA][READY] Native, Python, and TypeScript Agent Node Packs are installed.
 [MUXIVA][AGORA] sdk=.../build/vendor/agora-macos-4.6.2
 [MUXIVA][QWEN]  python=.../.muxiva/venv/bin/python (no Qwen SDK download required)
-[MUXIVA][AGENT] repository=https://github.com/PiyotaHu/muxiva-pi-agent.git ref=v0.1.2 commit=...
-[MUXIVA][AGENT] workspace=.../.muxiva/workspaces/pi-agent permissions=list,read,search,create,replace
+[MUXIVA][AGENT] repository=https://github.com/PiyotaHu/muxiva-pi-agent.git ref=v0.2.1 commit=...
+[MUXIVA][AGENT] workspace=.../.muxiva/workspaces/pi-agent permissions=list,read,search,create,replace,web-search
 ```
 
 To use a manually downloaded SDK instead:
@@ -107,7 +107,8 @@ There is no Qwen SDK download step. Muxiva's Python Node talks directly to
 the documented WebSocket/HTTP protocols. Realtime defaults to
 `qwen-audio-3.0-realtime-flash`; the cascade uses Qwen ASR and TTS around a
 [Pi coding Agent](nodes/pi-agent.md) backed by `qwen-flash`. It can really
-read, search, create, and edit files inside a bounded workspace. See the
+read, search, create, and edit files inside a bounded workspace, and can use
+the same Model Studio credentials for cited live web search. See the
 [Agent integration SOP](nodes/agent-integration.md) for application-owned Agents.
 
 ## 4. Start Studio and enter the credentials

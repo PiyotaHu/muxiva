@@ -93,7 +93,7 @@ export function createMyAgentDriver({ config }) {
 ```
 
 先在该仓库独立完成类型检查、Tool 单元测试、取消测试和权限测试，再发布 Tag。不要让
-Muxiva 的 `setup.sh` 永远跟随外部仓库 `main`；Demo 使用 `v0.1.2`，真实项目也应该锁定
+Muxiva 的 `setup.sh` 永远跟随外部仓库 `main`；Demo 使用 `v0.2.1`，真实项目也应该锁定
 经过审查的 Tag 或 Commit。
 
 ## SOP 2：建立薄 Node 适配器
@@ -193,7 +193,49 @@ Shell、进程执行、任意删除和项目外权限。
 代码和模型策略。更稳妥的方式是把需要修改的源码放进独立 workspace，验收 Diff 后再由
 人或 CI 合并。
 
-## SOP 5：连接 Graph 并验证打断
+## SOP 5：增加可观察的联网搜索 Tool
+
+联网搜索属于 Agent 的工具能力，不属于 Muxiva Runtime。参考 Agent 在独立仓库中声明
+`web_search`；外层 Pi 判断是否需要实时信息，工具再通过百炼 DashScope 原生接口执行
+`forced_search`。普通文件任务和闲聊不会偷偷产生搜索调用。
+
+```text
+用户问题 → Pi Agent 判断需要联网 → web_search Tool
+                                    → 百炼 turbo search
+                                    → answer + sources + latency
+                                    → Pi 组织带来源回答
+```
+
+工具输入契约：
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `query` | 是 | 聚焦的检索问题，最多 2000 字符 |
+| `freshness_days` | 否 | 只关注最近 1–365 天 |
+| `domains` | 否 | 最多 10 个域名，仅搜索指定站点 |
+
+工具输出包含 `answer`、`sources[]`、`model`、`duration_ms`、`search_strategy` 和 Token
+用量。`sources[]` 保留搜索结果原始序号、标题、站点和 URL，供 Agent 在回答中引用。
+Muxiva 不解析百炼协议：它只通过通用 `tool.started/completed` Event 和 Semantic Trace
+观察这次工具调用。
+
+参考配置：
+
+```json
+{
+  "web_search_enabled": true,
+  "web_search_model": "qwen-flash",
+  "web_search_strategy": "turbo",
+  "web_search_max_sources": 10,
+  "web_search_timeout_ms": 20000
+}
+```
+
+搜索复用 `DASHSCOPE_API_KEY` 和 `DASHSCOPE_WORKSPACE_ID`，不增加第三份凭据。`turbo`
+用于实时语音的低延迟路径；需要更深检索时可以改成 `max`，但延迟和费用会增加。百炼
+搜索需要账号已开通对应服务，并会单独计费。实现依据[百炼联网搜索官方文档](https://help.aliyun.com/zh/model-studio/web-search/)。
+
+## SOP 6：连接 Graph 并验证打断
 
 典型级联链路：
 
@@ -214,9 +256,10 @@ Agent.event_out ──Event────> 应用 Event Encoder
 2. Studio Validate 通过，Palette 中能看到 Agent Node；
 3. 询问“列一下工作区文件”，Observe 中出现 `tool.started/completed`；
 4. 要求“创建一个 index.html”，文件真实出现在 workspace；
-5. Agent 回答过程中插话，旧回答与旧 Tool 结果不再进入 TTS；
-6. Observe 的 Semantic Trace 能按 Turn 查看 Text、Event 和 Signal；
-7. `runtime.log` 中没有 Host 协议破坏、路径拒绝之外的异常。
+5. 询问“搜索今天的 Qwen 更新并给出来源”，Trace 出现 `web_search` 且回答包含 URL；
+6. Agent 回答过程中插话，旧回答与旧 Tool 结果不再进入 TTS；
+7. Observe 的 Semantic Trace 能按 Turn 查看 Text、Event 和 Signal；
+8. `runtime.log` 中没有 Host 协议破坏、路径拒绝之外的异常。
 
 ## 参考实现
 
