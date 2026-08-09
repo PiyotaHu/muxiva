@@ -6,8 +6,8 @@ through Agora into a Muxiva Graph, Qwen generates a live response, and Agora
 plays it back.
 
 !!! danger "An App ID alone cannot run the demo"
-    Prepare two Agora RTC tokens, a Model Studio API key, and a Workspace ID before selecting
-    Run or Voice Room. Follow the [field-by-field credential checklist](voice-credentials.md).
+    Prepare two Agora RTC tokens, a Model Studio API key, and a Workspace ID before
+    starting `muxiva serve`. Follow the [field-by-field credential checklist](voice-credentials.md).
 
 !!! info "What you actually need"
     Agora requires an account, App ID, and two temporary RTC tokens. Qwen
@@ -111,32 +111,32 @@ read, search, create, and edit files inside a bounded workspace, and can use
 the same Model Studio credentials for cited live web search. See the
 [Agent integration SOP](nodes/agent-integration.md) for application-owned Agents.
 
-## 4. Start Studio and enter the credentials
+## 4. Start the Headless Runtime and standalone Voice Room
+
+Create the local credential file once. It is Git ignored and loaded by both the CLI and optional Studio:
 
 ```bash
+cp examples/voice-agent/.env.example examples/voice-agent/.env
+# Edit examples/voice-agent/.env with the values from sections 2 and 3.
 muxiva doctor --voice
+```
+
+`doctor` must report the Agora Node Packs, Qwen Python environment, and Pi TypeScript Agent as ready. A `MISSING` line means `.env` is incomplete.
+
+Terminal A starts the Graph. `run.sh` now invokes `muxiva serve`; it does not start Studio:
+
+```bash
 ./examples/voice-agent/run.sh
 ```
 
-`doctor` should report both Agora packs as `mode=agora-native`, report
-`qwen-python dependency=websocket`, and report
-`pi-typescript-agent ... dependencies=locked`. With no credentials it prints every `MISSING` value;
-that is a blocking diagnosis, not an optional hint. `run.sh` also prints `[MUXIVA][CLI]`; in a
-source checkout it should point at this repository's `target/debug/muxiva` or
-`target/release/muxiva`, preventing an older global CLI from serving stale Studio assets. In Studio:
+Terminal B serves static browser files only:
 
-1. Open **Connections**.
-2. Enter the Model Studio API Key and Workspace ID.
-3. Enter the Agora App ID, channel, and tokens for UIDs `1001` and `2001`.
-4. Select **Save connections** and confirm both cards show **Ready**; otherwise the Runtime will not start.
-5. Open **Templates** and choose **Qwen Realtime** for the first run.
-6. Select **Run** in Studio and confirm the Runtime is live. Studio owns this management action.
-7. Open **Voice Room**, select **Start live conversation**, and allow microphone access.
-8. Confirm **MIC LEVEL** rises above `0%` while speaking, then speak again while the assistant is
-   playing to verify full-duplex interruption.
+```bash
+cd examples/voice-agent
+npm run voice-room
+```
 
-Save connections writes values to `examples/voice-agent/.env` (mode `0600`, Git ignored).
-Future runs load it automatically. You can also create it manually from `.env.example`.
+Open `http://127.0.0.1:4173`, keep Backend URL at `http://127.0.0.1:8080`, select **Test connection**, then start the conversation. The web client and Runtime are independent processes. See [Headless Runtime and standalone web client](headless-deployment.md) for macOS, Windows, SSH, public-address, and Docker commands. Studio remains available to edit Graph and VAD configuration, but is no longer part of startup or conversation delivery.
 
 After Realtime works, switch to **Pi Agent Full-Duplex Cascade (Demo 2)** to inspect
 Qwen Server VAD + Streaming ASR → a stateful TypeScript Agent with Tool Calls →
@@ -147,7 +147,7 @@ real tool execution. Speak again during playback: Voice Room should enter interr
 old text and audio should stop, and the next transcript and answer should remain
 in the same session. The session stays live until you select **End session**.
 
-Demo 2 starts with `vad_threshold: 0.45`. To tune it for a microphone or room, select
+The checked-in `graph.json` is Demo 2 and starts with `vad_threshold: 0.45`. To tune it for a microphone or room, select
 `qwen-vad-asr` on the canvas, edit the number in **Configuration**, then select **Validate** and
 **Save graph**. Lower values are more sensitive; higher values reject more low-energy sounds.
 
@@ -156,9 +156,8 @@ Demo 2 starts with `vad_threshold: 0.45`. To tune it for a microphone or room, s
 `run.sh` mirrors terminal output to `examples/voice-agent/.muxiva/runtime.log`. If both clients
 look connected but there is no response, find the first signal that does not advance:
 
-Open **◎ Observe** in Studio to correlate Nodes, Edges, and SDK-internal queues and highlight
-yellow/red bottlenecks automatically. See [Observability and bottleneck diagnosis](observability.md)
-for metric definitions, thresholds, and log filters.
+In headless mode, start with terminal output and `runtime.log`. During local Graph design, Studio's
+**◎ Observe** can inspect the same Graph separately. See [Observability and bottleneck diagnosis](observability.md) for metric definitions, thresholds, and log filters.
 
 1. Voice Room reports that the browser joined and published the microphone.
 2. **MIC LEVEL** rises while speaking; after five seconds without speech energy the page identifies
@@ -180,10 +179,7 @@ the final text from `conversation.item.input_audio_transcription.completed`. The
 remote PCM without playing the user's voice on the Runtime machine and publishes assistant audio
 as paced 10 ms PCM packets.
 
-Closing Studio after the Runtime has been started does not change the RTC media/message protocol.
-The bundled page currently uses `/api/v1/client/session` only to bootstrap temporary local browser
-credentials. A production web app replaces that one endpoint with its token service and never
-exposes Studio's Graph or Runtime management APIs.
+The standalone page calls only the Headless Runtime's `/api/v1/client/session` endpoint for browser RTC bootstrap. That server exposes no Studio Graph or Runtime management APIs. A production application should replace the development bootstrap with its own Token Service.
 
 ## 5. Troubleshooting
 

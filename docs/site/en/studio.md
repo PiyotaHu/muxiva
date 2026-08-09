@@ -70,11 +70,10 @@ rates and queue age, Node-owned SDK buffers, automatic hotspot verdicts, and
 click-through details. See [Observability and bottleneck diagnosis](observability.md).
 Run uses the current canvas snapshot; saving first is not required.
 
-When a project provides `.muxiva/web/index.html`, the toolbar exposes its project
-experience, such as **Voice Room**. Studio saves the current valid graph before
-opening it. The page is bearer-token protected, and only short-lived connection
-fields explicitly marked `client_exposed: true` can be returned to it; server
-API keys and bot credentials remain unavailable to browser code.
+Studio no longer hosts Voice Room or other end-user pages. Deploy a Graph with
+`muxiva serve` and host `examples/voice-agent/web/` independently. The microphone
+page on a user's device therefore has no dependency on a developer's Studio.
+See [Headless Runtime and standalone web client](headless-deployment.md).
 
 ## Security boundary
 

@@ -99,18 +99,19 @@ protocols, and `setup.sh` installs the Python dependency.
 
 ```bash
 cd /path/to/Muxiva
+cp examples/voice-agent/.env.example examples/voice-agent/.env
+# Edit the file with the values listed below.
 ./examples/voice-agent/run.sh
 ```
 
-1. Select **Connections** in Studio.
-2. Fill both cards and select **Save connections**.
-3. After both cards show **Ready**, select **Templates → Qwen Realtime**.
-4. Select **Run** and wait until Studio reports that Runtime is active.
-5. Open **Voice Room → Start live conversation** and allow microphone access.
-6. Say a complete sentence and pause for about one second for the first response.
+1. Save the Agora and Model Studio fields in the project `.env`.
+2. Run `muxiva doctor --voice` and resolve every `MISSING` line.
+3. Run `run.sh` and wait for `runtime.started mode=headless`.
+4. In another terminal run `cd examples/voice-agent && npm run voice-room`.
+5. Open `http://127.0.0.1:4173`, test the Backend URL, and start the conversation.
+6. Allow microphone access, say a complete sentence, and pause for the first response.
 
-Studio saves credentials to `examples/voice-agent/.env` with mode `0600`; Git ignores the file
-and later runs load it automatically:
+Credentials remain in the Git-ignored `examples/voice-agent/.env`; later runs load it automatically:
 
 ```dotenv
 MUXIVA_AGORA_APP_ID="..."

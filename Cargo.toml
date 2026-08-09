@@ -30,4 +30,5 @@ ureq = { version = "=3.3.0", features = ["json"] }
 clap = { version = "4", features = ["derive"] }
 libloading = "0.8.9"
 bytes = "1.12"
+ctrlc = { version = "3.4", features = ["termination"] }
 muxiva-types = { path = "crates/muxiva-types", version = "0.1.0" }

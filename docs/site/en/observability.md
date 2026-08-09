@@ -4,7 +4,7 @@ When captions arrive seconds late, do not begin by guessing whether the network 
 
 ## First diagnosis
 
-1. Start the project with `./examples/voice-agent/run.sh`, then click **Run** in Studio.
+1. Open the local diagnostic environment with `muxiva studio examples/voice-agent/graph.json`, then select **Run** in Studio.
 2. Speak one complete utterance and open **◎ Observe** in the top bar.
 3. Start with **Hotspots**, then click a red or yellow Node / Edge row.
 4. The details pane shows the measurements behind the verdict and a concrete next action.
@@ -46,12 +46,17 @@ Filter the log quickly:
 rg '\[MUXIVA\]\[OBSERVE\]|\[MUXIVA\].*(ERROR|WARN)' examples/voice-agent/.muxiva/runtime.log
 ```
 
-## Cross-session history and trends
+## Top-level Session selector and cross-session trends
 
-Studio persists a bounded snapshot every five seconds and a final snapshot when a session terminates. Open **◎ Observe → Session history** to:
+Observe starts with a Session dropdown. Each option is keyed by `Session #<session_id>` and adds
+the start time and RTC channel as context. Once selected, Summary, Hotspots, Semantic Trace,
+Media Dump, Nodes, Edges, and the detail pane all read that Session only; the current Runtime is
+never mixed into a historical view.
+
+Studio persists a bounded snapshot every five seconds and a final snapshot when a session terminates. Use the top selector to:
 
 - compare total Frames, peak backlog, drops, and slowest Node average across Runtime sessions;
-- click a historical session and inspect Queued frames, Slowest Node avg, Drops, and Frames processed trends;
+- select a historical session and inspect Queued frames, Slowest Node avg, Drops, and Frames processed trends;
 - retain history across Studio restarts.
 
 The Studio Server samples in the background; the Observe page does not need to remain open.
@@ -167,7 +172,7 @@ export OTEL_EXPORTER_OTLP_METRICS_PROTOCOL="http/json"
 export OTEL_EXPORTER_OTLP_METRICS_HEADERS="authorization=Bearer%20YOUR_TOKEN"
 ```
 
-The Session history heading reports `OTLP configured`, `exporting`, or the most recent error. Export happens on a separate thread and never blocks Node callbacks or Runtime scheduling; an unfinished export cannot create an unbounded request backlog.
+The area below the top Session selector reports `OTLP configured`, `exporting`, or the most recent error. Export happens on a separate thread and never blocks Node callbacks or Runtime scheduling; an unfinished export cannot create an unbounded request backlog.
 
 !!! note
     This implementation exports Metrics only, not Traces or Logs. Project-local history is a development feature and does not replace long-term retention in Prometheus, Tempo, Jaeger, or a hosted backend.

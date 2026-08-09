@@ -60,6 +60,7 @@ plugins:
             Flagship voice demo: 旗舰语音 Demo
             Voice credentials checklist: 语音凭据清单
             Remote and headless Linux: 远程与无 GUI Linux
+            Headless Runtime and standalone web: Headless Runtime 与独立网页
             Studio: Studio 可视化开发
             Observability: 可观测性与堵点定位
             Core concepts: 核心概念
@@ -121,6 +122,7 @@ nav:
       - Installation and first run: getting-started.md
       - Voice credentials checklist: voice-credentials.md
       - Flagship voice demo: voice-demo.md
+      - Headless Runtime and standalone web: headless-deployment.md
       - Remote and headless Linux: remote-studio.md
       - Studio: studio.md
       - Observability: observability.md

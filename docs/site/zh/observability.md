@@ -4,7 +4,7 @@
 
 ## 第一次定位
 
-1. 用 `./examples/voice-agent/run.sh` 启动项目，在 Studio 点击 **Run**。
+1. 用 `muxiva studio examples/voice-agent/graph.json` 打开本地诊断环境，在 Studio 点击 **Run**。
 2. 说一句完整的话，同时打开顶部的 **◎ Observe**。
 3. 先看 **Hotspots**，再点击红色或黄色的 Node / Edge 行。
 4. 右侧会展示导致判定的原始数值和建议动作。
@@ -46,12 +46,16 @@ tail -f examples/voice-agent/.muxiva/runtime.log
 rg '\[MUXIVA\]\[OBSERVE\]|\[MUXIVA\].*(ERROR|WARN)' examples/voice-agent/.muxiva/runtime.log
 ```
 
-## 跨会话历史趋势
+## 顶部 Session 选择器与跨会话趋势
 
-Studio 每 5 秒保存一个有界快照，并在会话结束时保存最终快照。打开 **◎ Observe → Session history** 可以：
+Observe 顶部首先展示 Session 下拉框。选项以 `Session #<session_id>` 为主键，并附带
+开始时间和 RTC Channel；选中后，Summary、Hotspots、Semantic Trace、Media Dump、
+Nodes、Edges 和右侧详情全部只读取该 Session，当前 Runtime 不会混入历史视图。
+
+Studio 每 5 秒保存一个有界快照，并在会话结束时保存最终快照。通过顶部选择器可以：
 
 - 比较不同 Runtime Session 的总 Frame、最大积压、丢帧和最慢 Node 平均耗时；
-- 点击一次历史会话，查看 Queued frames、Slowest Node avg、Drops 和 Frames processed 趋势；
+- 选择一个历史会话，查看 Queued frames、Slowest Node avg、Drops 和 Frames processed 趋势；
 - Studio 重启后继续查看历史。
 
 采样由 Studio Server 后台执行，不依赖 Observe 页面保持打开。
@@ -167,7 +171,7 @@ export OTEL_EXPORTER_OTLP_METRICS_PROTOCOL="http/json"
 export OTEL_EXPORTER_OTLP_METRICS_HEADERS="authorization=Bearer%20YOUR_TOKEN"
 ```
 
-Observe 的 Session history 标题栏会显示 `OTLP configured`、`exporting` 或最近一次错误。导出在独立线程执行，不阻塞 Node 回调和 Runtime 调度；上一次请求未结束时不会无限堆积新请求。
+Observe 顶部 Session 选择器下方会显示 `OTLP configured`、`exporting` 或最近一次错误。导出在独立线程执行，不阻塞 Node 回调和 Runtime 调度；上一次请求未结束时不会无限堆积新请求。
 
 !!! note
     当前实现只导出 Metrics，不导出 Trace 和 Log；采样历史是项目本地开发能力，不代替 Prometheus、Tempo、Jaeger 或厂商后台的长期保留。

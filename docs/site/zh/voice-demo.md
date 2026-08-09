@@ -5,7 +5,7 @@
 
 !!! danger "只有 App ID 还不能运行"
     必须先准备 2 个 Agora RTC Token、百炼 API Key 和 Workspace ID。没有全部配置时，
-    不要点击 Run 或 Voice Room。请先逐项完成[语音凭据配置清单](voice-credentials.md)。
+    `muxiva serve` 会启动失败。请先逐项完成[语音凭据配置清单](voice-credentials.md)。
 
 !!! info "你真正需要准备的东西"
     Agora 需要一个账号、App ID 和两个临时 RTC Token。Qwen **不需要下载 SDK**，
@@ -103,30 +103,39 @@ Qwen TTS 之间使用由 `qwen-flash` 驱动的 [Pi 编码 Agent](nodes/pi-agent
 来源；通用接入方法见
 [Agent 集成 SOP](nodes/agent-integration.md)。
 
-## 4. 启动并填写 Studio
+## 4. 启动 Headless Runtime 与独立 Voice Room
+
+先从示例创建本地凭据文件并填一次。它被 Git 忽略，之后 CLI 和 Studio 都会自动读取：
 
 ```bash
+cp examples/voice-agent/.env.example examples/voice-agent/.env
+# 编辑 examples/voice-agent/.env，填入第 2、3 节取得的值
 muxiva doctor --voice
+```
+
+`doctor` 应显示 Agora Node Pack 为 `mode=agora-native`，并显示 Qwen Python 与 Pi
+TypeScript Agent 已就绪。出现 `MISSING` 表示 `.env` 仍缺必填值，不是可以跳过的提示。
+
+终端 A 启动 Graph。`run.sh` 现在调用 `muxiva serve`，不会启动 Studio：
+
+```bash
 ./examples/voice-agent/run.sh
 ```
 
-`doctor` 应显示两个 Agora Node Pack 为 `mode=agora-native`，并显示
-`qwen-python dependency=websocket` 和 `pi-typescript-agent ... dependencies=locked`。
-凭据未配置时它会逐项打印 `MISSING`，这是诊断结果，
-不是可以跳过的提示。`run.sh` 还会打印 `[MUXIVA][CLI]`；源码仓库内应指向当前仓库的
-`target/debug/muxiva` 或 `target/release/muxiva`，避免旧的全局 CLI 启动过期 Studio。然后在 Studio 中：
+终端 B 只启动网页静态文件：
 
-1. 打开 **Connections**。
-2. 在 **Alibaba Cloud Model Studio** 填写 API Key、Workspace ID。
-3. 在 **Agora RTC** 填写 App ID、Channel，以及 `1001`、`2001` 对应的 UID/Token。
-4. 点击 **Save connections**，确认两张卡片都显示 **Ready**；否则 Runtime 不会启动。
-5. 保存后进入 **Templates**，第一次选择 **Qwen Realtime**。
-6. 在 Studio 点击 **Run**，确认 Runtime 已启动；这是 Studio 的管理动作。
-7. 打开 **Voice Room**，点击 **Start live conversation**，允许麦克风权限。
-8. 说话时确认 **MIC LEVEL** 明显高于 `0%`；助手播放时再次开口，验证全双工打断。
+```bash
+cd examples/voice-agent
+npm run voice-room
+```
 
-点击 Save connections 后，值会保存到 `examples/voice-agent/.env`（权限 `0600`、Git
-忽略）。以后再次运行无需重复填写。也可以参考 `.env.example` 手动创建该文件。
+打开 `http://127.0.0.1:4173`，Backend URL 使用 Runtime 打印的
+`http://127.0.0.1:8080`，点击 **Test connection**，再开始通话。网页和 Runtime 是两个
+独立进程；网页关闭不会停止 Graph，Graph 停止也不会由网页静态服务器接管。
+
+macOS、Windows、无 GUI Linux、SSH、公网和 Docker 的完整命令见
+[Headless Runtime 与独立网页](headless-deployment.md)。Studio 仍可用于修改 Graph 和 VAD
+配置，但不再参与启动与通话。
 
 Realtime 跑通后，再切换 **Pi Agent Full-Duplex Cascade（Demo 2）**，观察 Qwen
 Server VAD + Streaming ASR → 有状态 TypeScript Agent 与 Tool Call → Speech Formatter →
@@ -136,7 +145,7 @@ Server VAD + Streaming ASR → 有状态 TypeScript Agent 与 Tool Call → Spee
 Voice Room 应立即显示打断状态，旧文字停止增长、旧语音停止播放，新一句转写和回答随后
 进入同一会话。会话会持续运行，直到点击 **End session**。
 
-Demo 2 默认使用 `vad_threshold: 0.45`。需要适配麦克风或房间时，在画布选择
+当前 `graph.json` 是 Demo 2，默认使用 `vad_threshold: 0.45`。需要适配麦克风或房间时，可在 Studio 画布选择
 `qwen-vad-asr`，修改 **Configuration** 中的数值，然后点击 **Validate** 和
 **Save graph**。数值越低越灵敏，越高越能过滤低能量声音。
 
@@ -145,8 +154,8 @@ Demo 2 默认使用 `vad_threshold: 0.45`。需要适配麦克风或房间时，
 `run.sh` 会同时把终端输出保存到 `examples/voice-agent/.muxiva/runtime.log`。遇到“已经
 连接但没有回复”时，按下面的顺序找第一个没有增长的指标：
 
-Studio 顶部的 **◎ Observe** 会把 Node、Edge 和内部 SDK 队列放在同一个页面，并自动
-标记黄/红堵点；指标含义、阈值与日志过滤命令见[可观测性与堵点定位](observability.md)。
+Headless 模式先以终端和 `runtime.log` 定位；本地设计时可另开 Studio 使用 **◎ Observe**
+检查同一份 Graph。指标含义、阈值与日志过滤命令见[可观测性与堵点定位](observability.md)。
 
 1. Voice Room 显示浏览器已加入、麦克风已发布；
 2. 说话时 **MIC LEVEL** 增长；连续五秒没有语音能量时页面会直接提示检查输入设备；
@@ -166,9 +175,8 @@ Qwen 增量 ASR 使用 `text + stash` 作为实时预览，并在
 `conversation.item.input_audio_transcription.completed` 到达后固定最终文本。Agora Bot
 只消费远端 PCM，不在运行机器的扬声器播放用户声音；助手音频以 10 ms PCM 包匀速发布。
 
-Runtime 启动后关闭 Studio，不会改变 RTC 媒体与消息协议。本地页面目前只通过
-`/api/v1/client/session` 获取临时浏览器凭据；生产网页应把这个入口替换为自己的 Token
-服务，绝不能暴露 Studio 的 Graph 或 Runtime 管理接口。
+独立页面只通过 Headless Runtime 的 `/api/v1/client/session` 获取浏览器 RTC 启动配置。
+该服务没有 Studio 的 Graph 或 Runtime 管理接口；生产网页应进一步替换为业务 Token Service。
 
 ## 5. 常见错误
 

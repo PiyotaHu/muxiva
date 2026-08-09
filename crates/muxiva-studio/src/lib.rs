@@ -47,6 +47,7 @@ struct RuntimeSession {
     run_id: String,
     started_at_unix_ms: u64,
     graph_id: String,
+    channel: Option<String>,
     node_ids: Vec<NodeId>,
     edge_ids: Vec<EdgeId>,
     runtime: GraphRuntime,
@@ -83,12 +84,14 @@ impl RuntimeObserver for StudioRuntimeObserver {
 
 impl StudioRuntime {
     fn new(graph: &Path) -> Result<Self, String> {
+        let observability = observability::ObservabilityStore::new(graph);
+        let latest_session_id = observability.latest_session_id();
         Ok(Self {
-            next_session: AtomicU64::new(0),
+            next_session: AtomicU64::new(latest_session_id),
             session: Mutex::new(None),
             connections: node_library::ConnectionStore::load(graph)?,
             events: Arc::new(Mutex::new(VecDeque::with_capacity(128))),
-            observability: observability::ObservabilityStore::new(graph),
+            observability,
             media_dumps: Arc::new(media_dump::MediaDumpStore::new(graph)),
             semantic_traces: Arc::new(semantic_trace::SemanticTraceStore::new()),
         })
@@ -289,13 +292,7 @@ fn handle_connection(
         }
     }
     let (status, content_type, payload) = route(&request, graph, authorized, runtime);
-    write_response(
-        &mut stream,
-        status,
-        content_type,
-        &payload,
-        request.path.starts_with("/project/"),
-    )
+    write_response(&mut stream, status, content_type, &payload, false)
 }
 
 fn route(
@@ -350,21 +347,6 @@ fn route(
             "text/javascript; charset=utf-8",
             SCRIPT.to_owned(),
         ),
-        ("GET", path) if path.starts_with("/project/") => {
-            match read_project_asset(graph, &path["/project/".len()..]) {
-                Ok((content_type, payload)) => ("200 OK", content_type, payload),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
-                    "404 Not Found",
-                    "text/plain; charset=utf-8",
-                    "project asset not found".into(),
-                ),
-                Err(_) => (
-                    "400 Bad Request",
-                    "text/plain; charset=utf-8",
-                    "invalid project asset".into(),
-                ),
-            }
-        }
         _ if !authorized => (
             "401 Unauthorized",
             "text/plain; charset=utf-8",
@@ -430,7 +412,6 @@ fn route(
                 "graph_path": graph.display().to_string(),
                 "max_document_bytes": MAX_DOCUMENT_BYTES,
                 "writable": fs::metadata(graph).map(|metadata| !metadata.permissions().readonly()).unwrap_or(false),
-                "project_demo": graph.parent().unwrap_or_else(|| Path::new(".")).join(".muxiva/web/index.html").is_file(),
             });
             ("200 OK", "application/json", payload.to_string())
         }
@@ -455,20 +436,6 @@ fn route(
                 ),
             }
         }
-        ("GET", "/api/v1/connections/client") => (
-            "200 OK",
-            "application/json",
-            runtime.connections.client_json().to_string(),
-        ),
-        // Development bootstrap for the separately deployable conversation
-        // client. It intentionally exposes neither Graph management nor the
-        // Runtime NotificationBus; production deployments replace it with a short-lived
-        // token service using the same response shape.
-        ("GET", "/api/v1/client/session") => (
-            "200 OK",
-            "application/json",
-            runtime.connections.client_json().to_string(),
-        ),
         ("PUT", "/api/v1/connections" | "/api/v1/providers") => {
             match runtime.connections.update_json(&request.body) {
                 Ok(()) => (
@@ -592,46 +559,6 @@ fn route(
     }
 }
 
-fn read_project_asset(graph: &Path, requested: &str) -> std::io::Result<(&'static str, String)> {
-    let relative = Path::new(requested);
-    if requested.is_empty()
-        || relative.is_absolute()
-        || relative
-            .components()
-            .any(|part| !matches!(part, std::path::Component::Normal(_)))
-    {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "unsafe project asset path",
-        ));
-    }
-    let path = graph
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(".muxiva/web")
-        .join(relative);
-    let metadata = fs::metadata(&path)?;
-    if !metadata.is_file() || metadata.len() > 4 * 1024 * 1024 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "project asset is not a bounded file",
-        ));
-    }
-    let content_type = match path.extension().and_then(|value| value.to_str()) {
-        Some("html") => "text/html; charset=utf-8",
-        Some("js") => "text/javascript; charset=utf-8",
-        Some("css") => "text/css; charset=utf-8",
-        Some("json") => "application/json",
-        _ => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "unsupported project asset type",
-            ))
-        }
-    };
-    Ok((content_type, fs::read_to_string(path)?))
-}
-
 fn project_templates(graph: &Path) -> std::io::Result<Vec<serde_json::Value>> {
     let root = graph
         .parent()
@@ -681,6 +608,13 @@ pub fn project_registry(graph: &Path) -> Result<muxiva_core::NodeRegistry, Strin
     let mut registry = muxiva_graph_json::builtin_registry();
     node_library::register_project_nodes_with_connections(graph, &mut registry, connections)?;
     Ok(registry)
+}
+
+/// Returns only fields explicitly marked `client_exposed` by Node manifests.
+/// It is used by a separately deployed browser client and never includes model
+/// credentials, Agora bot tokens, Graph mutation, or Runtime control APIs.
+pub fn project_client_session(graph: &Path) -> Result<serde_json::Value, String> {
+    Ok(node_library::ConnectionStore::load(graph)?.client_json())
 }
 
 fn studio_project_registry(
@@ -819,6 +753,19 @@ fn start_runtime(
     let id = state.next_session.fetch_add(1, Ordering::Relaxed) + 1;
     let started_at_unix_ms = observability::unix_time_ms();
     let run_id = format!("{started_at_unix_ms}-{id}");
+    let channel = state
+        .connections
+        .client_json()
+        .as_object()
+        .and_then(|connections| {
+            connections.values().find_map(|connection| {
+                connection
+                    .get("channel")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned)
+            })
+        });
     state.media_dumps.start_session(&run_id);
     state.semantic_traces.start_session(&run_id);
     let observer = Arc::new(StudioRuntimeObserver {
@@ -850,6 +797,7 @@ fn start_runtime(
         run_id: run_id.clone(),
         started_at_unix_ms,
         graph_id,
+        channel,
         node_ids,
         edge_ids,
         runtime,
@@ -1080,6 +1028,7 @@ fn session_snapshot(session: &RuntimeSession) -> serde_json::Value {
         "run_id": session.run_id,
         "started_at_unix_ms": session.started_at_unix_ms,
         "graph_id": session.graph_id,
+        "channel": session.channel,
         "status": status,
         "runtime_state": format!("{:?}", session.runtime.state()).to_lowercase(),
         "elapsed_ms": u64::try_from(session.started.elapsed().as_millis()).unwrap_or(u64::MAX),
@@ -1370,6 +1319,9 @@ mod tests {
         assert!(LOGO.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(response.contains("Node media dumps"));
         assert!(response.contains("Semantic trace"));
+        assert!(response.contains("Select one runtime session"));
+        assert!(response.contains("observe-session-select"));
+        assert!(!response.contains("<h2>Session history</h2>"));
         assert!(response.contains("◎ Observe"));
         assert!(!response.contains("<script>"));
     }
@@ -1663,13 +1615,7 @@ mod tests {
         assert!(payload.contains(r#""name":"api_key"#));
         assert!(payload.contains(r#""set":true"#));
         assert!(payload.contains("https://custom.example"));
-        let client_request = HttpRequest {
-            method: "GET".into(),
-            path: "/api/v1/connections/client".into(),
-            authorization: None,
-            body: String::new(),
-        };
-        let (_, _, client_payload) = route(&client_request, &graph, true, &runtime);
+        let client_payload = crate::project_client_session(&graph).unwrap().to_string();
         assert!(client_payload.contains("https://custom.example"));
         assert!(!client_payload.contains(api_key));
         assert!(!client_payload.contains("api_key"));
