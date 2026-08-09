@@ -4,7 +4,7 @@
   "display_name": "Qwen Server VAD + Streaming ASR",
   "node_type": "qwen.asr_realtime",
   "language": "python",
-  "factory_version": "1.2.0",
+  "factory_version": "1.3.0",
   "kind": "transform",
   "entrypoint": "node:QwenAsrRealtimeNode",
   "category": "algorithm",

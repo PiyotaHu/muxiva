@@ -41,6 +41,9 @@
 }
 
 #diagnostic-log li { padding: 5px 0; border-top: 1px solid rgba(255,255,255,.045); }
+#diagnostic-log li.warning-line { color: #ffd38a; }
 #diagnostic-log li.error-line { color: #ffb8c1; }
 #diagnostic-log time { color: #657086; margin-right: 9px; }
 #diagnostic-log code { color: #d5deef; }
+
+.telemetry { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }

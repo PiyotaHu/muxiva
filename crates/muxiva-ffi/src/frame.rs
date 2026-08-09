@@ -1,4 +1,6 @@
-use std::mem;
+use std::{ffi::c_void, mem, ptr::NonNull, sync::Arc};
+
+use libloading::Library;
 
 use muxiva_types::{
     AudioData, AudioLayout, ByteData, ClockDomain, ClockDomainId, ClockKind, Extensions, Frame,
@@ -8,7 +10,7 @@ use muxiva_types::{
 };
 
 use crate::{
-    abi::{self, FramePayload, FrameView, StrView},
+    abi::{self, FramePayload, FrameView, OwnedNamedFrameView, StrView},
     error::FfiError,
 };
 
@@ -242,7 +244,7 @@ impl OwnedFrame {
             .map_err(|_| invalid("invalid text frame"))
     }
 
-    pub fn to_rust(&self) -> Result<Frame, FfiError> {
+    pub fn into_rust(self) -> Result<Frame, FfiError> {
         let clock = match self.header.clock_kind {
             1 => ClockKind::Monotonic,
             2 => ClockKind::MediaRelative,
@@ -261,29 +263,27 @@ impl OwnedFrame {
             }
         };
         let header = RustHeader::new(
-            FrameId::new(self.header.frame_id.clone()).map_err(|_| invalid("invalid frame ID"))?,
+            FrameId::new(self.header.frame_id).map_err(|_| invalid("invalid frame ID"))?,
             Timestamp::from_nanos(self.header.timestamp_ns),
             ClockDomain::new(
-                ClockDomainId::new(self.header.clock_domain_id.clone())
+                ClockDomainId::new(self.header.clock_domain_id)
                     .map_err(|_| invalid("invalid clock domain ID"))?,
                 clock,
             ),
             SequenceId::new(self.header.sequence_id),
-            StreamId::new(self.header.stream_id.clone())
-                .map_err(|_| invalid("invalid stream ID"))?,
-            TraceId::new(self.header.trace_id.clone()).map_err(|_| invalid("invalid trace ID"))?,
+            StreamId::new(self.header.stream_id).map_err(|_| invalid("invalid stream ID"))?,
+            TraceId::new(self.header.trace_id).map_err(|_| invalid("invalid trace ID"))?,
             frame_type,
             Metadata::empty(),
             Extensions::empty(),
             Lineage::empty(),
         )
         .map_err(|_| invalid("invalid frame header"))?;
-        let payload = match &self.payload {
-            OwnedPayload::Text(text) => RustPayload::Text(TextData::new(text.clone())),
+        let payload = match self.payload {
+            OwnedPayload::Text(text) => RustPayload::Text(TextData::new(text)),
             OwnedPayload::Byte { bytes, media_type } => RustPayload::Byte(ByteData::new(
-                FrameBuffer::from_vec(bytes.clone()),
+                FrameBuffer::from_vec(bytes),
                 media_type
-                    .as_deref()
                     .map(MediaType::new)
                     .transpose()
                     .map_err(|_| invalid("invalid media type"))?,
@@ -312,12 +312,12 @@ impl OwnedFrame {
                 };
                 RustPayload::Audio(
                     AudioData::new(
-                        FrameBuffer::from_vec(bytes.clone()),
-                        *sample_rate_hz,
-                        *channels,
+                        FrameBuffer::from_vec(bytes),
+                        sample_rate_hz,
+                        channels,
                         format,
                         layout,
-                        *samples_per_channel,
+                        samples_per_channel,
                     )
                     .map_err(|_| invalid("invalid audio frame"))?,
                 )
@@ -329,13 +329,13 @@ impl OwnedFrame {
                 pixel_format,
                 plane_count,
             } => {
-                let buffer = FrameBuffer::from_vec(bytes.clone());
-                let data = match (*pixel_format, *plane_count) {
+                let buffer = FrameBuffer::from_vec(bytes);
+                let data = match (pixel_format, plane_count) {
                     (1, 1) => VideoData::rgba8(
                         buffer,
-                        *width,
-                        *height,
-                        usize::try_from(*width)
+                        width,
+                        height,
+                        usize::try_from(width)
                             .ok()
                             .and_then(|width| width.checked_mul(4))
                             .ok_or_else(|| invalid("invalid RGBA8 video stride"))?,
@@ -343,12 +343,12 @@ impl OwnedFrame {
                     .map_err(|_| invalid("invalid RGBA8 video"))?,
                     (2, 3) => VideoData::yuv420p(
                         buffer,
-                        *width,
-                        *height,
-                        usize::try_from(*width).map_err(|_| invalid("invalid I420 width"))?,
-                        usize::try_from(*width / 2)
+                        width,
+                        height,
+                        usize::try_from(width).map_err(|_| invalid("invalid I420 width"))?,
+                        usize::try_from(width / 2)
                             .map_err(|_| invalid("invalid I420 chroma width"))?,
-                        usize::try_from(*width / 2)
+                        usize::try_from(width / 2)
                             .map_err(|_| invalid("invalid I420 chroma width"))?,
                     )
                     .map_err(|_| invalid("invalid I420 video"))?,
@@ -361,6 +361,276 @@ impl OwnedFrame {
             }
         };
         Frame::new(header, payload).map_err(|_| invalid("invalid frame"))
+    }
+}
+
+/// Owns one native payload allocation after an ABI ownership transfer.
+/// Keeping the Node Pack library pinned guarantees that the release callback
+/// remains mapped until the final FrameBuffer clone is dropped.
+pub struct ForeignPayloadOwner {
+    data: NonNull<u8>,
+    len: usize,
+    owner: NonNull<c_void>,
+    release: abi::OwnedPayloadReleaseCallback,
+    _library: Option<Arc<Library>>,
+}
+
+// SAFETY: the ABI contract makes the payload immutable after transfer and
+// requires `release` to accept destruction from any Runtime worker thread.
+unsafe impl Send for ForeignPayloadOwner {}
+
+impl ForeignPayloadOwner {
+    pub fn from_view(
+        view: &OwnedNamedFrameView,
+        library: Option<&Arc<Library>>,
+    ) -> Result<Self, FfiError> {
+        let owner = NonNull::new(view.payload_owner)
+            .ok_or_else(|| invalid("owned emission has no payload owner"))?;
+        let release = view
+            .release_payload
+            .ok_or_else(|| invalid("owned emission has no payload release callback"))?;
+        // Establish the release guard before validating any borrowed frame
+        // fields. From this point onward the host owns the native allocation,
+        // including every error path.
+        let mut result = Self {
+            data: NonNull::dangling(),
+            len: 0,
+            owner,
+            release,
+            _library: library.cloned(),
+        };
+        let bytes = payload_bytes_view(&view.frame)?;
+        let data = if bytes.len == 0 {
+            NonNull::dangling()
+        } else {
+            NonNull::new(bytes.data.cast_mut())
+                .ok_or_else(|| invalid("owned emission has a null payload"))?
+        };
+        result.data = data;
+        result.len = bytes.len;
+        if view.reserved != [0; 2] {
+            return Err(invalid("owned emission reserved fields must be zero"));
+        }
+        if result.len > abi::MAX_COPY_BYTES {
+            return Err(invalid("owned emission exceeds the maximum Frame payload"));
+        }
+        Ok(result)
+    }
+}
+
+impl AsRef<[u8]> for ForeignPayloadOwner {
+    fn as_ref(&self) -> &[u8] {
+        // SAFETY: the native owner guarantees an immutable allocation of `len`
+        // bytes until `release` is called from Drop. Bytes calls AsRef once and
+        // retains this owner for the complete slice lifetime.
+        unsafe { std::slice::from_raw_parts(self.data.as_ptr(), self.len) }
+    }
+}
+
+impl Drop for ForeignPayloadOwner {
+    fn drop(&mut self) {
+        (self.release)(self.owner.as_ptr());
+    }
+}
+
+pub fn adopt_owned_frame(
+    pointer: *const FrameView,
+    owner: ForeignPayloadOwner,
+) -> Result<Frame, FfiError> {
+    if !abi::aligned(pointer) {
+        return Err(invalid("owned frame pointer is null or unaligned"));
+    }
+    let frame = abi::read_copy(pointer).ok_or_else(|| invalid("owned frame is not readable"))?;
+    let expected = u32::try_from(mem::size_of::<abi::FrameHeader>()).unwrap_or(u32::MAX);
+    if frame.header.abi_version != abi::ABI_VERSION || frame.header.struct_size != expected {
+        return Err(FfiError::abi(
+            "owned frame header version or size does not match v1",
+        ));
+    }
+    if frame.header.reserved != [0; 4] {
+        return Err(invalid("owned frame header reserved fields must be zero"));
+    }
+    let clock = match frame.header.clock_kind {
+        1 => ClockKind::Monotonic,
+        2 => ClockKind::MediaRelative,
+        3 => ClockKind::WallClock,
+        _ => return Err(invalid("unknown clock kind")),
+    };
+    let frame_type = match frame.header.frame_type {
+        1 => FrameType::Audio,
+        2 => FrameType::Video,
+        4 => FrameType::Byte,
+        _ => return Err(invalid("owned emission must be Audio, Video, or Byte")),
+    };
+    let header = RustHeader::new(
+        FrameId::new(abi::copy_str(frame.header.frame_id, true).map_err(invalid)?)
+            .map_err(|_| invalid("invalid frame ID"))?,
+        Timestamp::from_nanos(frame.header.timestamp_ns),
+        ClockDomain::new(
+            ClockDomainId::new(abi::copy_str(frame.header.clock_domain_id, true).map_err(invalid)?)
+                .map_err(|_| invalid("invalid clock domain ID"))?,
+            clock,
+        ),
+        SequenceId::new(frame.header.sequence_id),
+        StreamId::new(abi::copy_str(frame.header.stream_id, true).map_err(invalid)?)
+            .map_err(|_| invalid("invalid stream ID"))?,
+        TraceId::new(abi::copy_str(frame.header.trace_id, true).map_err(invalid)?)
+            .map_err(|_| invalid("invalid trace ID"))?,
+        frame_type,
+        Metadata::empty(),
+        Extensions::empty(),
+        Lineage::empty(),
+    )
+    .map_err(|_| invalid("invalid owned frame header"))?;
+
+    let buffer = FrameBuffer::from_owner(owner);
+    let payload = match frame.header.frame_type {
+        1 => {
+            // SAFETY: frame_type selects the initialized audio union member.
+            let value = unsafe { frame.payload.audio };
+            validate_audio_payload(&value, buffer.len())?;
+            RustPayload::Audio(
+                AudioData::new(
+                    buffer,
+                    value.sample_rate_hz,
+                    value.channels,
+                    pcm_sample_format(value.sample_format)?,
+                    audio_layout(value.layout)?,
+                    value.samples_per_channel,
+                )
+                .map_err(|_| invalid("invalid owned audio frame"))?,
+            )
+        }
+        2 => {
+            // SAFETY: frame_type selects the initialized video union member.
+            let value = unsafe { frame.payload.video };
+            validate_video_payload(&value, buffer.len())?;
+            RustPayload::Video(match (value.pixel_format, value.plane_count) {
+                (1, 1) => VideoData::rgba8(
+                    buffer,
+                    value.width,
+                    value.height,
+                    usize::try_from(value.width)
+                        .ok()
+                        .and_then(|width| width.checked_mul(4))
+                        .ok_or_else(|| invalid("invalid RGBA8 video stride"))?,
+                )
+                .map_err(|_| invalid("invalid owned RGBA8 video"))?,
+                (2, 3) => VideoData::yuv420p(
+                    buffer,
+                    value.width,
+                    value.height,
+                    usize::try_from(value.width).map_err(|_| invalid("invalid I420 width"))?,
+                    usize::try_from(value.width / 2)
+                        .map_err(|_| invalid("invalid I420 chroma width"))?,
+                    usize::try_from(value.width / 2)
+                        .map_err(|_| invalid("invalid I420 chroma width"))?,
+                )
+                .map_err(|_| invalid("invalid owned I420 video"))?,
+                _ => return Err(invalid("unsupported owned video layout")),
+            })
+        }
+        4 => {
+            // SAFETY: frame_type selects the initialized byte union member.
+            let value = unsafe { frame.payload.bytes };
+            if value.reserved != [0; 2] {
+                return Err(invalid("byte reserved fields must be zero"));
+            }
+            let media_type = abi::copy_utf8(value.media_type).map_err(invalid)?;
+            RustPayload::Byte(ByteData::new(
+                buffer,
+                (!media_type.is_empty())
+                    .then(|| MediaType::new(media_type))
+                    .transpose()
+                    .map_err(|_| invalid("invalid media type"))?,
+            ))
+        }
+        _ => unreachable!("validated owned frame type"),
+    };
+    Frame::new(header, payload).map_err(|_| invalid("invalid owned frame"))
+}
+
+fn payload_bytes_view(frame: &FrameView) -> Result<abi::BytesView, FfiError> {
+    match frame.header.frame_type {
+        // SAFETY: the frame type selects the initialized union member.
+        1 => Ok(unsafe { frame.payload.audio }.bytes),
+        2 => Ok(unsafe { frame.payload.video }.bytes),
+        4 => Ok(unsafe { frame.payload.bytes }.bytes),
+        _ => Err(invalid("owned emission must be Audio, Video, or Byte")),
+    }
+}
+
+fn validate_audio_payload(value: &abi::AudioPayload, actual_len: usize) -> Result<(), FfiError> {
+    if value.reserved0 != 0 || value.reserved != [0; 2] {
+        return Err(invalid("audio reserved fields must be zero"));
+    }
+    if !(1..=768_000).contains(&value.sample_rate_hz)
+        || !(1..=1_024).contains(&value.channels)
+        || value.samples_per_channel == 0
+    {
+        return Err(invalid("invalid audio shape"));
+    }
+    let widths = [0_u64, 1, 2, 3, 4, 4, 8];
+    let width = *widths
+        .get(usize::from(value.sample_format))
+        .filter(|width| **width != 0)
+        .ok_or_else(|| invalid("invalid PCM format"))?;
+    let expected = value
+        .samples_per_channel
+        .checked_mul(u64::from(value.channels))
+        .and_then(|count| count.checked_mul(width))
+        .and_then(|count| usize::try_from(count).ok())
+        .ok_or_else(|| invalid("audio byte-count arithmetic overflow"))?;
+    if expected != actual_len || !(1..=2).contains(&value.layout) {
+        return Err(invalid("audio byte length or layout is invalid"));
+    }
+    Ok(())
+}
+
+fn validate_video_payload(value: &abi::VideoPayload, actual_len: usize) -> Result<(), FfiError> {
+    if value.reserved != [0; 4] || value.width == 0 || value.height == 0 {
+        return Err(invalid("invalid video payload"));
+    }
+    let pixels = usize::try_from(
+        value
+            .width
+            .checked_mul(value.height)
+            .ok_or_else(|| invalid("video dimension arithmetic overflow"))?,
+    )
+    .map_err(|_| invalid("video dimension arithmetic overflow"))?;
+    let expected =
+        match (value.pixel_format, value.plane_count) {
+            (1, 1) => pixels
+                .checked_mul(4)
+                .ok_or_else(|| invalid("video byte-count arithmetic overflow"))?,
+            (2, 3) if value.width % 2 == 0 && value.height % 2 == 0 => pixels
+                .checked_add(pixels / 2)
+                .ok_or_else(|| invalid("video byte-count arithmetic overflow"))?,
+            _ => return Err(invalid("unsupported video pixel format or plane count")),
+        };
+    if expected != actual_len {
+        return Err(invalid("video byte length does not match its layout"));
+    }
+    Ok(())
+}
+
+fn pcm_sample_format(value: u16) -> Result<PcmSampleFormat, FfiError> {
+    match value {
+        1 => Ok(PcmSampleFormat::U8),
+        2 => Ok(PcmSampleFormat::I16Le),
+        3 => Ok(PcmSampleFormat::I24Le),
+        4 => Ok(PcmSampleFormat::I32Le),
+        5 => Ok(PcmSampleFormat::F32Le),
+        6 => Ok(PcmSampleFormat::F64Le),
+        _ => Err(invalid("invalid PCM format")),
+    }
+}
+
+fn audio_layout(value: u32) -> Result<AudioLayout, FfiError> {
+    match value {
+        1 => Ok(AudioLayout::Interleaved),
+        2 => Ok(AudioLayout::Planar),
+        _ => Err(invalid("invalid audio layout")),
     }
 }
 

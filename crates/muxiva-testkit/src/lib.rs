@@ -20,7 +20,7 @@ mod thread;
 pub use barrier::{GateError, TestGate};
 pub use clock::ManualClock;
 pub use edge::{TestEdgeDisposition, TestEdgePolicy};
-pub use frame::{audio_frame, event_frame, signal_frame, text_frame};
+pub use frame::{audio_frame, event_frame, rgba_video_frame, signal_frame, text_frame};
 pub use graph::TestGraphBuilder;
 pub use leak::{LeakProbe, LeakSnapshot};
 pub use managed::{ManagedOutcome, ScriptedManagedStreamAdapter};

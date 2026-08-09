@@ -72,6 +72,7 @@ class NodeContext {
     this.signals = []
     this.events = []
     this.metrics = []
+    this.nextTickMs = null
   }
 
   emit(port, frame) {
@@ -102,6 +103,14 @@ class NodeContext {
     const metric = { name, operation: 'gauge_set', value: Number(value) }
     if (this.streaming) write({ kind: 'metric', ...metric })
     else this.metrics.push(metric)
+  }
+
+  scheduleNextTick(delayMs) {
+    const value = Number(delayMs)
+    if (!Number.isSafeInteger(value) || value < 1 || value > 60_000) {
+      throw new RangeError('next tick delay must be an integer between 1 and 60000 ms')
+    }
+    this.nextTickMs = value
   }
 }
 
@@ -145,11 +154,11 @@ for await (const line of lines) {
           for (const item of Array.isArray(frames) ? frames : [frames]) context.emit(port, item)
         }
       }
-      response = { ok: true, signals: context.signals, events: context.events, metrics: context.metrics }
+      response = { ok: true, signals: context.signals, events: context.events, metrics: context.metrics, next_tick_ms: context.nextTickMs }
     } else if (command.op === 'signal') {
       const context = new NodeContext(command.node_id, command.input_port, config)
       await invoke('onSignal', decodeFrame(command.signal), context)
-      response = { ok: true, emissions: context.emissions, signals: context.signals, events: context.events, metrics: context.metrics }
+      response = { ok: true, emissions: context.emissions, signals: context.signals, events: context.events, metrics: context.metrics, next_tick_ms: context.nextTickMs }
     } else if (command.op === 'prepare') {
       await invoke('onPrepare', undefined, new NodeContext(command.node_id, undefined, config))
       response = { ok: true }

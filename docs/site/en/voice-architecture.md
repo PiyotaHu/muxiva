@@ -32,23 +32,20 @@ results or business logic can be inserted:
 ```mermaid
 flowchart LR
     IN["Agora Ingress"] --> ASR["Qwen Server VAD + Streaming ASR"]
-    ASR --> FUSION["Turn Context / Policy"]
-    FUSION --> AGENT["Pi TypeScript Agent<br/>Qwen model + tools + session"]
-    CLOCK["20 ms Async Tick"] --> AGENT
-    AGENT --> GATE["Text Cancellation Watermark"]
-    GATE --> TTS["Cancellable Qwen TTS Worker"]
-    CLOCK --> TTS
+    ASR -->|"Final Transcript"| AGENT["Pi TypeScript Agent<br/>Qwen model + tools + session"]
+    AGENT --> TTS["Cancellable Qwen TTS Worker"]
     TTS --> OUT["Agora Egress"]
     ASR -. "speech.started Signal" .-> AGENT
     ASR -. "speech.started Signal" .-> TTS
-    ASR -. "speech.started Signal" .-> GATE
     ASR -. "speech.started Signal" .-> OUT
 ```
 
 Demo 2 uses Qwen ASR for Server VAD and streaming transcription, a project-local Pi
 TypeScript Agent backed by Qwen for conversation state and Tool Calls, and Qwen TTS.
-The generic `interval_tick` lets background Agent/TTS work drain bounded queues in short
-callbacks, keeping `on_signal` responsive. Every stage remains replaceable.
+Agent and TTS request Runtime-managed wakeups through their Node Context and drain bounded
+result queues in short callbacks. Scheduling therefore does not appear as a business Node or a
+`tick_in` Port. The final ASR Text already represents one committed user question, so it flows
+directly into the Agent. Every stage remains replaceable.
 
 ## What each layer owns
 
@@ -87,9 +84,9 @@ sequenceDiagram
 
 Interruption semantics live entirely in Nodes. In the Realtime Graph, Qwen Audio cancels its
 remote response. In Demo 2, Qwen ASR Server VAD emits the same Signal; the Pi driver calls
-`agent.abort()`, Qwen TTS closes the active WebSocket and clears pending text and PCM, text and
-project protocol Nodes advance cancellation watermarks, and Agora Audio Sink clears queued playback and rejects
-late audio. Core understands neither voice, turns, nor a particular Signal name—it routes opaque
+`agent.abort()`, Qwen TTS closes the active WebSocket and clears pending text and PCM. TTS records
+the cancellation sequence itself and rejects stale answer text, while Agora Audio Sink clears
+queued playback and rejects late audio. Core understands neither voice, turns, nor a particular Signal name—it routes opaque
 Signals only.
 
 ## Client data is not Studio telemetry
@@ -110,8 +107,9 @@ session and one configured browser UID. The shared C++ session drops media and m
 other UID rather than accidentally mixing participants.
 
 !!! note "Cascade cancellation boundary"
-    Demo 2 aborts the in-flight Pi model stream and closes the TTS WebSocket, then applies
-    three cancellation watermarks to late results. PCM already inside Agora or the browser's
+    Demo 2 aborts the in-flight Pi model stream and closes the TTS WebSocket. Agent generation,
+    the TTS cancellation sequence, and the Agora playback watermark reject late results. PCM
+    already inside Agora or the browser's
     playback buffer cannot be recalled, so Audio Sink still uses short packets and bounded queues.
     “Hard interruption” means cancelling vendor connections and the local pipeline, not reversing
     media that has already been transmitted.

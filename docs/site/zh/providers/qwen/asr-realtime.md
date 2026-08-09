@@ -17,7 +17,7 @@
 | `speech_out` | 输出 Event | Server VAD 的 `speech.started` / `speech.stopped` |
 | `signal_out` | 输出 Signal | `muxiva.voice.speech.started`，用于 Barge-in |
 | `transcript_preview_out` | 输出 Text | 临时转写 |
-| `text_out` | 输出 Text | 最终 Transcript |
+| `text_out` | 输出 Text | Server VAD 已结束该轮后提交的最终 Transcript |
 | `event_out` | 输出 Event | 转写失败状态 |
 
 ## 配置
@@ -25,6 +25,7 @@
 `model` 默认是 `qwen3-asr-flash-realtime`；`language` 默认是 `zh`；`vad_threshold` 和
 `silence_duration_ms` 用于调整一句话结束判定。需要配置共享的 `dashscope` Connection。
 该 Node 只输出与客户端无关的语义 Frame。Demo 2 会把 Text/Event 分叉给 Graph 内部处理
-Node 和项目级 Voice Room 协议 Node。
+Node 和项目级 Voice Room 协议 Node。即使厂商事件乱序，Node 也会等待 `speech.stopped`
+后才提交 `text_out`，并丢弃 Final 之后迟到的 Preview，因此不需要额外 Turn Context Node。
 
 协议与模型范围以[阿里云 Qwen 实时语音识别文档](https://help.aliyun.com/zh/model-studio/real-time-speech-recognition-user-guide)为准。

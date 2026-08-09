@@ -10,7 +10,7 @@ export interface AgentDriver {
 }
 export interface AgentNodeConfig {
   max_queue_size?: number
-  max_results_per_tick?: number
+  max_results_per_wakeup?: number
   cancel_signals?: string[]
   [key: string]: unknown
 }
@@ -21,6 +21,7 @@ export interface AgentNodeContext {
   inputPort?: string
   emit(port: string, frame: Record<string, unknown>): void
   publishNotification?(topic: string, payload?: Record<string, unknown>): void
+  scheduleNextTick?(delayMs: number): void
 }
 export interface AgentNodeInstance {
   onProcess(frame: Record<string, unknown>, context: AgentNodeContext): void

@@ -64,7 +64,50 @@ Studio 每 5 秒保存一个有界快照，并在会话结束时保存最终快�
 
 同一份数据也通过 Bearer 鉴权 API 提供：`GET /api/v1/observability/history` 返回会话摘要，`GET /api/v1/observability/history/{run_id}` 返回该会话的采样点。
 
-该目录默认被 Git 忽略。历史最多在内存中保留 5,000 个采样点；文件超过 16 MiB 时自动压缩到最近 2,500 个采样点。这里不保存 Frame Payload、用户语音、对话文本或凭据。
+该目录默认被 Git 忽略。历史最多在内存中保留 5,000 个采样点；文件超过 16 MiB 时自动压缩到最近 2,500 个采样点。这份指标历史不会保存 Frame Payload、用户语音、对话文本或凭据。只有显式打开下面介绍的媒体 Dump 开关，才会保存原始音视频。
+
+## 按轮次追踪每一条 Text、Event 和 Signal
+
+打开 **◎ Observe → Semantic trace**，查看 Graph 中实际传播的语义，而不仅是性能计数器。最新 Turn 默认展开，每一行会显示：
+
+- 相对 Runtime 启动时间；
+- Text、Event 或 Signal 类型；
+- 生产或消费它的 Node 与 Port；
+- `OUT →` 或 `→ IN` 边界方向；
+- 文本、Topic/Name 与 Payload 摘要。
+
+点击一行，可以查看有界的完整 Payload，以及 Frame ID、Trace ID、Stream ID 和 Sequence。类型选择器与搜索框可按 Node、Port、Topic、文本片段、Frame 或 Trace 过滤。同一个 Frame ID 先出现在上游输出、再出现在下游输入，表示传播成功；缺少对应输入行，就能直接确定消息消失在哪个边界。
+
+Studio 根据输出语义标记推导展示用 Turn：`muxiva.turn.started`、`muxiva.voice.speech.started`，以及其他 `*.turn.started` / `*.speech.started` 名称。标记本身属于新 Turn。同一标记同时以 Signal 和 Event 表达时，分组会去重，但两条 Trace 记录仍会分别保留。没有 Turn 标记的普通 Graph 会显示为一个 **Session flow**。这是 Studio 的展示逻辑，Runtime Core 不拥有、也不会切换业务 Turn ID。
+
+语义追踪覆盖 Graph 的 Text/Event Frame Port，以及图内 Signal 控制平面，包括 Signal 的发出与送达。它不会把进程内 `NotificationBus` 消息冒充成 Graph Event；NotificationBus 仍通过其显式消费者或日志集成观察。
+
+Trace 有明确上限：内存中保留最近 4 个会话，每个会话最多 10,000 条记录；单条展示 Payload 最多 4 KiB，单会话 Payload 最多 4 MiB。溢出与截断会在页面提示。对话内容在 Studio 重启时清空，不写入可观测性历史文件。鉴权 API 为 `GET /api/v1/observability/traces` 和 `GET /api/v1/observability/traces/<run-id>`。
+
+!!! warning
+    Semantic Trace 包含对话文本以及 Event/Signal 的结构化 Payload；截图和复制出的 JSON 都应按敏感数据处理。
+
+## 检查每个 Node Port 的音频或视频
+
+指标能回答“链路堵在哪里”，媒体 Dump 则能让你直接听到或看到“这个边界实际经过了什么”。打开 **◎ Observe → Node media dumps**，在运行前或运行中开启 **Dump Audio + Video**。Studio 每次启动时，该开关都默认关闭。
+
+开启后，Studio 会按以下组合分别生成文件：
+
+```text
+Node + 输入/输出方向 + Port + 媒体格式
+```
+
+例如，`qwen-input-resampler.audio_out · OUTPUT` 是重采样 Node 实际发出的音频；`qwen-audio-realtime.audio_in · INPUT` 是 Qwen Node 实际收到的音频。对比相邻的两条轨道，就能直接发现数据损坏、静音、采样率错误以及 Node 之间的断点。
+
+- Audio 会被封装成标准 WAV，可在 Observe 中直接播放或下载。
+- RGBA8、YUV420p Video 会保存为带平面与 stride 元数据的原始帧序列，可在 Observe 的 Canvas 中回放或下载。
+- 文件和 manifest 保存在 `.muxiva/observability/media/<run-id>/`，Studio 重启后仍可查看；最多保留最近 4 个会话。
+- 采集使用容量为 256 Frame 的异步有界队列；单文件上限 64 MiB，单会话上限 256 MiB。诊断队列满时只丢弃 Dump 副本，不会丢 Runtime Frame、不会阻塞实时链路；页面会显示丢弃和截断数量。
+
+!!! warning
+    Dump 可能包含隐私敏感的麦克风音频或摄像头画面。只在排障期间开启，用完立即关闭，也不要发布 `.muxiva/observability/media`。项目模板默认 Git Ignore 该目录，但复制或下载后的文件仍需由你负责保护。
+
+对应的鉴权 API 为：`GET /api/v1/observability/media`、`GET /api/v1/observability/media/<run-id>`、`PUT /api/v1/observability/media`（请求体 `{"enabled":true|false}`），以及 `GET /api/v1/observability/media-artifacts/<run-id>/<artifact-id>`。
 
 ## Prometheus 抓取
 
@@ -167,4 +210,7 @@ Runtime 自动测量回调和 Edge，但它无法猜到 SDK 或模型客户端�
 
 - Node 平均处理时间高、输入 Edge 堆积：算子回调慢或在同步等待网络/磁盘。
 - Node 处理很快，但它报告的 `ingress.queue_duration_ms` 高：算子内部 SDK 队列或轮询节奏有 bug。
+- Agora/Qwen 输入 Frame 持续增长，但 `input.audio_peak_pcm16` 和
+  `input.audio_mean_abs_pcm16` 始终接近 0：浏览器发布的是静音或错误输入设备；先修复麦克风，
+  不要排查模型网络。
 - Runtime 所有队列健康，而云端首包仍慢：重点检查厂商服务时延、地域、会话配置与网络；结合厂商侧 request/session ID 排查。

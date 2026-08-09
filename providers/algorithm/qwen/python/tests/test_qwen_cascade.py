@@ -67,7 +67,7 @@ class FakeTransport:
 class Context:
     def __init__(self, input_port=None):
         self.input_port = input_port
-        self.emissions, self.signals, self.events = [], [], []
+        self.emissions, self.signals, self.events, self.scheduled_ticks = [], [], [], []
 
     def emit(self, port, frame):
         self.emissions.append((port, frame))
@@ -77,6 +77,9 @@ class Context:
 
     def publish_notification(self, topic, payload):
         self.events.append((topic, payload))
+
+    def schedule_next_tick(self, delay_ms):
+        self.scheduled_ticks.append(delay_ms)
 
 
 def wait_until(predicate, timeout=1.0):
@@ -122,6 +125,61 @@ class CascadeNodeTests(unittest.TestCase):
         self.assertIn(
             ("muxiva.voice.transcript.completed", {"text": "你好 Muxiva"}),
             ctx.events,
+        )
+
+    def test_asr_drops_late_preview_after_completion_and_reopens_on_next_speech(self):
+        transport = FakeTransport([
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "conversation.item.input_audio_transcription.text", "text": "第一轮预览"},
+            {"type": "input_audio_buffer.speech_stopped"},
+            {"type": "conversation.item.input_audio_transcription.completed", "transcript": "第一轮最终文本"},
+            # Qwen can deliver this buffered preview after the final transcript.
+            {"type": "conversation.item.input_audio_transcription.text", "text": "第一轮最终文本"},
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "conversation.item.input_audio_transcription.text", "text": "第二轮预览"},
+        ])
+        node = asr.QwenAsrRealtimeNode({}, lambda *_: transport)
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        ctx = Context("audio_in")
+
+        node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=1379), ctx)
+
+        self.assertEqual(
+            [frame.text for port, frame in ctx.emissions if port == "transcript_preview_out"],
+            ["第一轮预览", "第二轮预览"],
+        )
+        self.assertEqual(
+            [frame.text for port, frame in ctx.emissions if port == "text_out"],
+            ["第一轮最终文本"],
+        )
+        self.assertEqual(
+            [payload["text"] for topic, payload in ctx.events
+             if topic == "muxiva.voice.transcript.preview"],
+            ["第一轮预览", "第二轮预览"],
+        )
+
+    def test_asr_holds_completed_text_until_server_vad_stops_the_turn(self):
+        transport = FakeTransport([
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "conversation.item.input_audio_transcription.completed", "transcript": "完整问题"},
+            {"type": "input_audio_buffer.speech_stopped"},
+        ])
+        node = asr.QwenAsrRealtimeNode({}, lambda *_: transport)
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        ctx = Context("audio_in")
+
+        node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=55), ctx)
+
+        self.assertEqual(
+            [(port, getattr(frame, "topic", getattr(frame, "text", "")))
+             for port, frame in ctx.emissions],
+            [
+                ("speech_out", "muxiva.voice.speech.started"),
+                ("speech_out", "muxiva.voice.speech.stopped"),
+                ("text_out", "完整问题"),
+            ],
         )
 
     def test_llm_background_stream_drains_sentence_and_preserves_sequence(self):
@@ -236,6 +294,24 @@ class CascadeNodeTests(unittest.TestCase):
         self.assertEqual(ctx.emissions, [])
         node.on_finish()
 
+    def test_tts_rejects_stale_text_after_barge_in_without_a_separate_gate(self):
+        transport = FakeTransport([{"type": "response.done"}])
+        node = tts.QwenTtsRealtimeNode({}, lambda *_: transport)
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+
+        node.on_signal(SignalFrame("muxiva.voice.speech.started", sequence=20))
+        stale = Context("text_in")
+        node.on_process(TextFrame("旧回答", sequence=10), stale)
+        self.assertEqual(stale.scheduled_ticks, [])
+        self.assertTrue(node._jobs.empty())
+
+        current = Context("text_in")
+        node.on_process(TextFrame("新回答", sequence=21), current)
+        self.assertEqual(current.scheduled_ticks, [20])
+        self.assertTrue(wait_until(lambda: not node._jobs.empty() or not node._results.empty()))
+        node.on_finish()
+
     def test_tts_connection_failure_is_reported_on_runtime_tick(self):
         def fail_to_connect(*_):
             raise OSError("connection refused")
@@ -269,7 +345,11 @@ class CascadeNodeTests(unittest.TestCase):
             ports = {port["name"] for port in json.loads(
                 (root / package / "muxiva.node.json").read_text()
             )["ports"]}
-            self.assertTrue({"tick_in", "signal_in"}.issubset(ports))
+            self.assertIn("signal_in", ports)
+        for package in ("qwen_llm_stream", "qwen_tts_realtime"):
+            self.assertNotIn("tick_in", {port["name"] for port in json.loads(
+                (root / package / "muxiva.node.json").read_text()
+            )["ports"]})
 
 
 if __name__ == "__main__":

@@ -1,18 +1,32 @@
-use std::{fmt, sync::Arc};
+use std::fmt;
+
+use bytes::Bytes;
 
 /// Immutable, reference-counted bytes owned by Muxiva.
 #[derive(Clone)]
-pub struct FrameBuffer(Arc<[u8]>);
+pub struct FrameBuffer(Bytes);
 
 impl FrameBuffer {
     /// Moves a vector into immutable shared storage.
     pub fn from_vec(bytes: Vec<u8>) -> Self {
-        Self(Arc::from(bytes))
+        Self(Bytes::from(bytes))
     }
 
     /// Moves a boxed byte slice into immutable shared storage.
     pub fn from_boxed_slice(bytes: Box<[u8]>) -> Self {
-        Self(Arc::from(bytes))
+        Self(Bytes::from(bytes))
+    }
+
+    /// Wraps immutable bytes owned by another Send-compatible allocation.
+    ///
+    /// The owner remains alive until the final [`FrameBuffer`] clone is
+    /// dropped. This is the safe foundation used by language bridges to adopt
+    /// native media buffers without copying them.
+    pub fn from_owner<T>(owner: T) -> Self
+    where
+        T: AsRef<[u8]> + Send + 'static,
+    {
+        Self(Bytes::from_owner(owner))
     }
 
     /// Returns the immutable bytes.
@@ -24,7 +38,7 @@ impl FrameBuffer {
     /// buffer.as_slice()[0] = 9;
     /// ```
     pub fn as_slice(&self) -> &[u8] {
-        &self.0
+        self.0.as_ref()
     }
 
     /// Returns the byte length.
@@ -57,19 +71,40 @@ impl fmt::Debug for FrameBuffer {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
 
     use super::FrameBuffer;
 
     #[test]
     fn allocation_releases_after_last_clone() {
-        let buffer = FrameBuffer::from_vec(vec![1, 2, 3]);
-        let weak = Arc::downgrade(&buffer.0);
+        struct Owner {
+            bytes: Vec<u8>,
+            drops: Arc<AtomicUsize>,
+        }
+        impl AsRef<[u8]> for Owner {
+            fn as_ref(&self) -> &[u8] {
+                &self.bytes
+            }
+        }
+        impl Drop for Owner {
+            fn drop(&mut self) {
+                self.drops.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        let drops = Arc::new(AtomicUsize::new(0));
+        let buffer = FrameBuffer::from_owner(Owner {
+            bytes: vec![1, 2, 3],
+            drops: drops.clone(),
+        });
         let clone = buffer.clone();
         drop(buffer);
-        assert!(weak.upgrade().is_some());
+        assert_eq!(drops.load(Ordering::Relaxed), 0);
         drop(clone);
-        assert!(weak.upgrade().is_none());
+        assert_eq!(drops.load(Ordering::Relaxed), 1);
     }
 
     #[test]

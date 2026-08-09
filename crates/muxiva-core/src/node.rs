@@ -500,7 +500,7 @@ pub struct NodeContext {
     has_signal_routes: bool,
     notification_bus: NotificationBus,
     resources: ResourceStore,
-    next_source_tick: Option<Duration>,
+    next_tick: Option<Duration>,
     metric_observations: Vec<NodeMetricObservation>,
 }
 
@@ -639,7 +639,7 @@ impl NodeContext {
             has_signal_routes,
             notification_bus,
             resources,
-            next_source_tick: None,
+            next_tick: None,
             metric_observations: Vec::new(),
         }
     }
@@ -768,12 +768,13 @@ impl NodeContext {
             })
     }
 
-    /// Requests another source callback after `delay`.
+    /// Requests another callback with no input after `delay`.
     ///
-    /// Only source workers honor this request. Omitting it completes the source,
-    /// which preserves the one-shot source behavior used by existing nodes.
+    /// Sources use this for capture cadence. Transform and Sink Nodes use it to
+    /// drain bounded results produced by background work without adding a clock
+    /// Node or synthetic tick Edge to the application Graph.
     pub fn schedule_next_tick(&mut self, delay: Duration) {
-        self.next_source_tick = Some(delay);
+        self.next_tick = Some(delay);
     }
 
     /// Adds a non-sensitive monotonic counter to this Node's runtime telemetry.
@@ -812,8 +813,8 @@ impl NodeContext {
         self.metric_observations.push(observation);
     }
 
-    pub(crate) fn take_next_source_tick(&mut self) -> Option<Duration> {
-        self.next_source_tick.take()
+    pub(crate) fn take_next_tick(&mut self) -> Option<Duration> {
+        self.next_tick.take()
     }
 
     pub(crate) const fn emission_overflowed(&self) -> bool {

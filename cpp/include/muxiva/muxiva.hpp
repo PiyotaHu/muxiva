@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -275,6 +276,302 @@ class GraphNodeFactory final {
 struct GraphEmission {
   std::string output_port;
   muxiva_frame_view_v1 frame{};
+
+  GraphEmission(std::string port, const muxiva_frame_view_v1& value)
+      : output_port(std::move(port)), frame(value) {
+    own_borrowed_data();
+  }
+
+  GraphEmission(const GraphEmission& other)
+      : output_port(other.output_port), frame(other.frame),
+        frame_id_(other.frame_id_), clock_domain_id_(other.clock_domain_id_),
+        stream_id_(other.stream_id_), trace_id_(other.trace_id_),
+        primary_text_(other.primary_text_), secondary_text_(other.secondary_text_),
+        payload_bytes_(other.payload_bytes_) {
+    rebind();
+  }
+
+  GraphEmission& operator=(const GraphEmission& other) {
+    if (this == &other) return *this;
+    output_port = other.output_port;
+    frame = other.frame;
+    frame_id_ = other.frame_id_;
+    clock_domain_id_ = other.clock_domain_id_;
+    stream_id_ = other.stream_id_;
+    trace_id_ = other.trace_id_;
+    primary_text_ = other.primary_text_;
+    secondary_text_ = other.secondary_text_;
+    payload_bytes_ = other.payload_bytes_;
+    rebind();
+    return *this;
+  }
+
+  GraphEmission(GraphEmission&& other) noexcept
+      : output_port(std::move(other.output_port)), frame(other.frame),
+        frame_id_(std::move(other.frame_id_)),
+        clock_domain_id_(std::move(other.clock_domain_id_)),
+        stream_id_(std::move(other.stream_id_)),
+        trace_id_(std::move(other.trace_id_)),
+        primary_text_(std::move(other.primary_text_)),
+        secondary_text_(std::move(other.secondary_text_)),
+        payload_bytes_(std::move(other.payload_bytes_)) {
+    rebind();
+  }
+
+  GraphEmission& operator=(GraphEmission&& other) noexcept {
+    if (this == &other) return *this;
+    output_port = std::move(other.output_port);
+    frame = other.frame;
+    frame_id_ = std::move(other.frame_id_);
+    clock_domain_id_ = std::move(other.clock_domain_id_);
+    stream_id_ = std::move(other.stream_id_);
+    trace_id_ = std::move(other.trace_id_);
+    primary_text_ = std::move(other.primary_text_);
+    secondary_text_ = std::move(other.secondary_text_);
+    payload_bytes_ = std::move(other.payload_bytes_);
+    rebind();
+    return *this;
+  }
+
+ private:
+  static std::string copy_string(muxiva_str_v1 value) {
+    return value.data == nullptr ? std::string{} : std::string(value.data, value.len);
+  }
+
+  static std::vector<std::uint8_t> copy_bytes(muxiva_bytes_v1 value) {
+    return value.data == nullptr ? std::vector<std::uint8_t>{}
+                                 : std::vector<std::uint8_t>(value.data, value.data + value.len);
+  }
+
+  static muxiva_str_v1 borrow(const std::string& value) noexcept {
+    return {value.data(), value.size()};
+  }
+
+  static muxiva_bytes_v1 borrow(const std::vector<std::uint8_t>& value) noexcept {
+    return {value.data(), value.size()};
+  }
+
+  void own_borrowed_data() {
+    frame_id_ = copy_string(frame.header.frame_id);
+    clock_domain_id_ = copy_string(frame.header.clock_domain_id);
+    stream_id_ = copy_string(frame.header.stream_id);
+    trace_id_ = copy_string(frame.header.trace_id);
+    switch (frame.header.frame_type) {
+      case MUXIVA_FRAME_AUDIO:
+        payload_bytes_ = copy_bytes(frame.payload.audio.bytes);
+        break;
+      case MUXIVA_FRAME_VIDEO:
+        payload_bytes_ = copy_bytes(frame.payload.video.bytes);
+        break;
+      case MUXIVA_FRAME_TEXT:
+        primary_text_ = copy_string(frame.payload.text.text);
+        secondary_text_ = copy_string(frame.payload.text.media_type);
+        break;
+      case MUXIVA_FRAME_BYTE:
+        payload_bytes_ = copy_bytes(frame.payload.bytes.bytes);
+        primary_text_ = copy_string(frame.payload.bytes.media_type);
+        break;
+      case MUXIVA_FRAME_SIGNAL:
+        primary_text_ = copy_string(frame.payload.signal.signal_name);
+        secondary_text_ = copy_string(frame.payload.signal.source_node_id);
+        payload_bytes_ = copy_bytes(frame.payload.signal.value);
+        break;
+      case MUXIVA_FRAME_EVENT:
+        primary_text_ = copy_string(frame.payload.event.topic);
+        payload_bytes_ = copy_bytes(frame.payload.event.value);
+        break;
+      default:
+        break;
+    }
+    rebind();
+  }
+
+  void rebind() noexcept {
+    frame.header.frame_id = borrow(frame_id_);
+    frame.header.clock_domain_id = borrow(clock_domain_id_);
+    frame.header.stream_id = borrow(stream_id_);
+    frame.header.trace_id = borrow(trace_id_);
+    switch (frame.header.frame_type) {
+      case MUXIVA_FRAME_AUDIO:
+        frame.payload.audio.bytes = borrow(payload_bytes_);
+        break;
+      case MUXIVA_FRAME_VIDEO:
+        frame.payload.video.bytes = borrow(payload_bytes_);
+        break;
+      case MUXIVA_FRAME_TEXT:
+        frame.payload.text.text = borrow(primary_text_);
+        frame.payload.text.media_type = borrow(secondary_text_);
+        break;
+      case MUXIVA_FRAME_BYTE:
+        frame.payload.bytes.bytes = borrow(payload_bytes_);
+        frame.payload.bytes.media_type = borrow(primary_text_);
+        break;
+      case MUXIVA_FRAME_SIGNAL:
+        frame.payload.signal.signal_name = borrow(primary_text_);
+        frame.payload.signal.source_node_id = borrow(secondary_text_);
+        frame.payload.signal.value = borrow(payload_bytes_);
+        break;
+      case MUXIVA_FRAME_EVENT:
+        frame.payload.event.topic = borrow(primary_text_);
+        frame.payload.event.value = borrow(payload_bytes_);
+        break;
+      default:
+        break;
+    }
+  }
+
+  std::string frame_id_;
+  std::string clock_domain_id_;
+  std::string stream_id_;
+  std::string trace_id_;
+  std::string primary_text_;
+  std::string secondary_text_;
+  std::vector<std::uint8_t> payload_bytes_;
+};
+
+namespace detail {
+struct OwnedFrameAccess;
+}
+
+/// A move-only Frame whose Audio, Video, or Byte payload can be transferred to
+/// the Runtime without copying. Header strings are copied because they are
+/// small; the potentially large media allocation is moved.
+class OwnedFrame final {
+ public:
+  OwnedFrame(const muxiva_frame_view_v1& value,
+             std::vector<std::uint8_t> payload)
+      : frame_(value), payload_(std::make_unique<std::vector<std::uint8_t>>(
+                           std::move(payload))) {
+    const auto declared = declared_payload_size(frame_);
+    if (declared != payload_->size()) {
+      throw std::invalid_argument(
+          "OwnedFrame payload size must match the Frame view");
+    }
+    frame_id_ = copy_string(frame_.header.frame_id);
+    clock_domain_id_ = copy_string(frame_.header.clock_domain_id);
+    stream_id_ = copy_string(frame_.header.stream_id);
+    trace_id_ = copy_string(frame_.header.trace_id);
+    if (frame_.header.frame_type == MUXIVA_FRAME_BYTE) {
+      media_type_ = copy_string(frame_.payload.bytes.media_type);
+    }
+    rebind();
+  }
+
+  OwnedFrame(const OwnedFrame&) = delete;
+  OwnedFrame& operator=(const OwnedFrame&) = delete;
+
+  OwnedFrame(OwnedFrame&& other) noexcept
+      : frame_(other.frame_), payload_(std::move(other.payload_)),
+        frame_id_(std::move(other.frame_id_)),
+        clock_domain_id_(std::move(other.clock_domain_id_)),
+        stream_id_(std::move(other.stream_id_)),
+        trace_id_(std::move(other.trace_id_)),
+        media_type_(std::move(other.media_type_)) {
+    rebind();
+  }
+
+  OwnedFrame& operator=(OwnedFrame&& other) noexcept {
+    if (this == &other) return *this;
+    frame_ = other.frame_;
+    payload_ = std::move(other.payload_);
+    frame_id_ = std::move(other.frame_id_);
+    clock_domain_id_ = std::move(other.clock_domain_id_);
+    stream_id_ = std::move(other.stream_id_);
+    trace_id_ = std::move(other.trace_id_);
+    media_type_ = std::move(other.media_type_);
+    rebind();
+    return *this;
+  }
+
+  const muxiva_frame_view_v1& view() const noexcept { return frame_; }
+
+ private:
+  friend struct detail::OwnedFrameAccess;
+
+  /// Releases the native payload owner to the ABI bridge. Application Nodes
+  /// should use GraphNodeContext::emit_owned instead of calling this directly.
+  std::vector<std::uint8_t>* release_payload() noexcept {
+    return payload_.release();
+  }
+  static std::string copy_string(muxiva_str_v1 value) {
+    return value.data == nullptr ? std::string{}
+                                 : std::string(value.data, value.len);
+  }
+
+  static muxiva_str_v1 borrow(const std::string& value) noexcept {
+    return {value.data(), value.size()};
+  }
+
+  static muxiva_bytes_v1 borrow(
+      const std::vector<std::uint8_t>& value) noexcept {
+    return {value.data(), value.size()};
+  }
+
+  static std::size_t declared_payload_size(
+      const muxiva_frame_view_v1& frame) {
+    switch (frame.header.frame_type) {
+      case MUXIVA_FRAME_AUDIO:
+        return frame.payload.audio.bytes.len;
+      case MUXIVA_FRAME_VIDEO:
+        return frame.payload.video.bytes.len;
+      case MUXIVA_FRAME_BYTE:
+        return frame.payload.bytes.bytes.len;
+      default:
+        throw std::invalid_argument(
+            "OwnedFrame supports Audio, Video, and Byte payloads");
+    }
+  }
+
+  void rebind() noexcept {
+    frame_.header.frame_id = borrow(frame_id_);
+    frame_.header.clock_domain_id = borrow(clock_domain_id_);
+    frame_.header.stream_id = borrow(stream_id_);
+    frame_.header.trace_id = borrow(trace_id_);
+    if (!payload_) return;
+    switch (frame_.header.frame_type) {
+      case MUXIVA_FRAME_AUDIO:
+        frame_.payload.audio.bytes = borrow(*payload_);
+        break;
+      case MUXIVA_FRAME_VIDEO:
+        frame_.payload.video.bytes = borrow(*payload_);
+        break;
+      case MUXIVA_FRAME_BYTE:
+        frame_.payload.bytes.bytes = borrow(*payload_);
+        frame_.payload.bytes.media_type = borrow(media_type_);
+        break;
+      default:
+        break;
+    }
+  }
+
+  muxiva_frame_view_v1 frame_{};
+  std::unique_ptr<std::vector<std::uint8_t>> payload_;
+  std::string frame_id_;
+  std::string clock_domain_id_;
+  std::string stream_id_;
+  std::string trace_id_;
+  std::string media_type_;
+};
+
+namespace detail {
+struct OwnedFrameAccess {
+  static std::vector<std::uint8_t>* release(OwnedFrame& frame) noexcept {
+    return frame.release_payload();
+  }
+};
+}  // namespace detail
+
+struct OwnedGraphEmission {
+  std::string output_port;
+  OwnedFrame frame;
+
+  OwnedGraphEmission(std::string port, OwnedFrame value)
+      : output_port(std::move(port)), frame(std::move(value)) {}
+
+  OwnedGraphEmission(const OwnedGraphEmission&) = delete;
+  OwnedGraphEmission& operator=(const OwnedGraphEmission&) = delete;
+  OwnedGraphEmission(OwnedGraphEmission&&) noexcept = default;
+  OwnedGraphEmission& operator=(OwnedGraphEmission&&) noexcept = default;
 };
 
 struct GraphMetric {
@@ -285,10 +582,26 @@ struct GraphMetric {
 
 class GraphNodeContext {
  public:
-  explicit GraphNodeContext(std::string_view input_port) : input_port_(input_port) {}
+  explicit GraphNodeContext(std::string_view input_port,
+                            bool supports_owned_emissions = false)
+      : input_port_(input_port),
+        supports_owned_emissions_(supports_owned_emissions) {}
   std::string_view input_port() const noexcept { return input_port_; }
   void emit(std::string output_port, muxiva_frame_view_v1 frame) {
     emissions_.push_back({std::move(output_port), frame});
+  }
+  void emit(GraphEmission emission) {
+    emissions_.push_back(std::move(emission));
+  }
+  /// Transfers a large immutable media payload to the Runtime when supported.
+  /// Older hosts transparently receive the same Frame through the safe-copy
+  /// path, so Node Packs remain backward compatible.
+  void emit_owned(std::string output_port, OwnedFrame frame) {
+    if (supports_owned_emissions_) {
+      owned_emissions_.emplace_back(std::move(output_port), std::move(frame));
+    } else {
+      emit(std::move(output_port), frame.view());
+    }
   }
   void schedule_next_tick(std::chrono::nanoseconds delay) {
     next_source_tick_ns_ = delay.count() > 0
@@ -301,6 +614,9 @@ class GraphNodeContext {
     metrics_.push_back({std::move(name), MUXIVA_NODE_METRIC_GAUGE_SET, value});
   }
   std::vector<GraphEmission> take_emissions() { return std::move(emissions_); }
+  std::vector<OwnedGraphEmission> take_owned_emissions() {
+    return std::move(owned_emissions_);
+  }
   std::vector<GraphMetric> take_metrics() { return std::move(metrics_); }
   std::uint64_t take_next_source_tick_ns() noexcept {
     const auto value = next_source_tick_ns_;
@@ -311,8 +627,10 @@ class GraphNodeContext {
  private:
   std::string_view input_port_;
   std::vector<GraphEmission> emissions_;
+  std::vector<OwnedGraphEmission> owned_emissions_;
   std::vector<GraphMetric> metrics_;
   std::uint64_t next_source_tick_ns_ = 0;
+  bool supports_owned_emissions_ = false;
 };
 
 class MultimodalGraphNode {
@@ -322,7 +640,7 @@ class MultimodalGraphNode {
   virtual void on_process(const muxiva_frame_view_v1* input,
                           GraphNodeContext& context) {
     for (auto& emission : on_process(input, context.input_port())) {
-      context.emit(std::move(emission.output_port), emission.frame);
+      context.emit(std::move(emission));
     }
   }
   // V1 source compatibility. New Nodes should override the context form.
@@ -335,14 +653,27 @@ class MultimodalGraphNode {
 
 namespace detail {
 struct MultimodalNodeBox {
-  explicit MultimodalNodeBox(MultimodalGraphNode* value) : implementation(value) {}
+  explicit MultimodalNodeBox(MultimodalGraphNode* value,
+                             bool supports_owned)
+      : implementation(value), supports_owned_emissions(supports_owned) {}
   std::unique_ptr<MultimodalGraphNode> implementation;
   std::vector<GraphEmission> emissions;
+  std::vector<OwnedGraphEmission> owned_emissions;
   std::vector<muxiva_named_frame_v1> views;
+  std::vector<muxiva_owned_named_frame_v1> owned_views;
   std::vector<GraphMetric> metrics;
   std::vector<muxiva_node_metric_v1> metric_views;
   std::uint64_t next_source_tick_ns = 0;
+  bool supports_owned_emissions = false;
+  bool owned_emissions_taken = true;
 };
+
+inline void release_owned_payload(void* value) noexcept {
+  try {
+    delete static_cast<std::vector<std::uint8_t>*>(value);
+  } catch (...) {
+  }
+}
 inline muxiva_status_v1 multimodal_prepare(void* data, muxiva_error_v1* error) noexcept {
   try { static_cast<MultimodalNodeBox*>(data)->implementation->on_prepare(); return MUXIVA_STATUS_OK; }
   catch (...) { write_exception(error); return MUXIVA_STATUS_FOREIGN_EXCEPTION; }
@@ -356,9 +687,12 @@ inline muxiva_status_v1 multimodal_process(
     auto* box = static_cast<MultimodalNodeBox*>(data);
     const std::string_view port(input_port.data == nullptr ? "" : input_port.data,
                                 input_port.data == nullptr ? 0 : input_port.len);
-    GraphNodeContext context(port);
+    GraphNodeContext context(port, box->supports_owned_emissions);
     box->implementation->on_process(input, context);
     box->emissions = context.take_emissions();
+    box->owned_emissions = context.take_owned_emissions();
+    box->owned_views.clear();
+    box->owned_emissions_taken = false;
     box->metrics = context.take_metrics();
     box->next_source_tick_ns = context.take_next_source_tick_ns();
     box->views.clear();
@@ -370,6 +704,28 @@ inline muxiva_status_v1 multimodal_process(
     *output_count = box->views.size();
     return MUXIVA_STATUS_OK;
   } catch (...) { write_exception(error); return MUXIVA_STATUS_FOREIGN_EXCEPTION; }
+}
+inline void multimodal_take_owned_emissions(
+    void* data, const muxiva_owned_named_frame_v1** output,
+    size_t* output_count) noexcept {
+  if (data == nullptr || output == nullptr || output_count == nullptr) return;
+  auto* box = static_cast<MultimodalNodeBox*>(data);
+  if (box->owned_emissions_taken) {
+    *output = nullptr;
+    *output_count = 0;
+    return;
+  }
+  box->owned_views.clear();
+  box->owned_views.reserve(box->owned_emissions.size());
+  for (auto& emission : box->owned_emissions) {
+    box->owned_views.push_back(
+        {{emission.output_port.data(), emission.output_port.size()},
+         emission.frame.view(), OwnedFrameAccess::release(emission.frame),
+         release_owned_payload, {0, 0}});
+  }
+  box->owned_emissions_taken = true;
+  *output = box->owned_views.empty() ? nullptr : box->owned_views.data();
+  *output_count = box->owned_views.size();
 }
 inline void multimodal_take_metrics(
     void* data, const muxiva_node_metric_v1** output,
@@ -384,7 +740,8 @@ inline void multimodal_take_metrics(
   }
   *output = box->metric_views.empty() ? nullptr : box->metric_views.data();
   *output_count = box->metric_views.size();
-  box->metrics.clear();
+  // Keep the owning strings alive until the next lifecycle call. The Rust host
+  // copies these borrowed views immediately after this callback returns.
 }
 inline muxiva_status_v1 multimodal_finish(void* data, muxiva_error_v1* error) noexcept {
   try { static_cast<MultimodalNodeBox*>(data)->implementation->on_finish(); return MUXIVA_STATUS_OK; }
@@ -411,11 +768,13 @@ inline std::uint64_t multimodal_take_next_source_tick(void* data) noexcept {
   box->next_source_tick_ns = 0;
   return value;
 }
-inline muxiva_graph_node_vtable_v1 multimodal_vtable(MultimodalGraphNode* implementation) {
+inline muxiva_graph_node_vtable_v1 multimodal_vtable(
+    MultimodalGraphNode* implementation, bool supports_owned_emissions) {
   muxiva_graph_node_vtable_v1 table{};
   table.abi_version = MUXIVA_ABI_VERSION_V1;
   table.struct_size = sizeof(table);
-  table.user_data = new MultimodalNodeBox(implementation);
+  table.user_data =
+      new MultimodalNodeBox(implementation, supports_owned_emissions);
   table.on_prepare = multimodal_prepare;
   table.on_process = multimodal_process;
   table.on_signal = multimodal_signal;
@@ -424,6 +783,9 @@ inline muxiva_graph_node_vtable_v1 multimodal_vtable(MultimodalGraphNode* implem
   table.destroy = multimodal_destroy;
   table.take_next_source_tick_ns = multimodal_take_next_source_tick;
   table.take_metrics = multimodal_take_metrics;
+  table.take_owned_emissions = supports_owned_emissions
+                                   ? multimodal_take_owned_emissions
+                                   : nullptr;
   return table;
 }
 }  // namespace detail
@@ -481,7 +843,10 @@ class MultimodalGraphNodeFactory final {
         delete implementation;
         return MUXIVA_STATUS_INVALID_ARGUMENT;
       }
-      auto table = detail::multimodal_vtable(implementation);
+      const bool supports_owned_emissions =
+          caller_size >= sizeof(muxiva_graph_node_vtable_v1);
+      auto table = detail::multimodal_vtable(implementation,
+                                            supports_owned_emissions);
       const auto copied_size = std::min(caller_size, sizeof(table));
       std::memcpy(output, &table, copied_size);
       output->struct_size = static_cast<std::uint32_t>(copied_size);

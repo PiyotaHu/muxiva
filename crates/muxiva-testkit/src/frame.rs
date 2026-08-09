@@ -2,7 +2,7 @@ use muxiva_types::{
     AudioData, AudioLayout, ClockDomain, ClockDomainId, ClockKind, EventData, Extensions, Frame,
     FrameBuffer, FrameHeader, FrameId, FramePayload, FrameType, Lineage, Metadata, NamespacedName,
     NodeId, PcmSampleFormat, SchemaVersion, SequenceId, SignalData, StreamId, TextData, Timestamp,
-    TraceId, Value,
+    TraceId, Value, VideoData,
 };
 fn header(kind: FrameType, sequence: u64) -> FrameHeader {
     FrameHeader::new(
@@ -40,6 +40,23 @@ pub fn audio_frame(sequence: u64) -> Frame {
                 PcmSampleFormat::I16Le,
                 AudioLayout::Interleaved,
                 480,
+            )
+            .unwrap(),
+        ),
+    )
+    .unwrap()
+}
+pub fn rgba_video_frame(sequence: u64, width: u32, height: u32) -> Frame {
+    let stride = usize::try_from(width).unwrap().saturating_mul(4);
+    let length = stride.saturating_mul(usize::try_from(height).unwrap());
+    Frame::new(
+        header(FrameType::Video, sequence),
+        FramePayload::Video(
+            VideoData::rgba8(
+                FrameBuffer::from_vec(vec![sequence as u8; length]),
+                width,
+                height,
+                stride,
             )
             .unwrap(),
         ),

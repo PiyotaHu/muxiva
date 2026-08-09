@@ -1,22 +1,28 @@
 use std::{
     collections::BTreeMap,
     num::NonZeroUsize,
-    sync::{mpsc, Arc, Barrier, Condvar, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc, Arc, Barrier, Condvar, Mutex,
+    },
     thread,
     time::{Duration, Instant},
 };
 
 use muxiva_core::{
     ConcurrentRuntime, ConfigSchema, DrainMode, EdgeDescriptor, EdgePolicies, EdgeQueue,
-    EnabledCondition, EnqueueOutcome, GraphBuilder, LifecycleCapabilities, Node, NodeContext,
-    NodeDescriptor, NodeInstances, NodeKind, NodeTypeName, PortDescriptor, PortDirection, PortName,
-    QueueDropReason, QueueOverflowPolicy, QueuePolicy, QueuePushError, RuntimeOptions,
-    RuntimeWaitError, StopToken, TransformPolicy, ValidationPolicy, VisibilityDescriptor,
+    EnabledCondition, EnqueueOutcome, FrameObservation, FrameObservationDirection, GraphBuilder,
+    LifecycleCapabilities, Node, NodeContext, NodeDescriptor, NodeInstances, NodeKind,
+    NodeTypeName, PortDescriptor, PortDirection, PortName, QueueDropReason, QueueOverflowPolicy,
+    QueuePolicy, QueuePushError, RuntimeObserver, RuntimeOptions, RuntimeWaitError,
+    SignalObservation, SignalObservationDirection, StopToken, TransformPolicy, ValidationPolicy,
+    VisibilityDescriptor,
 };
 use muxiva_types::{
     ClockDomain, ClockDomainId, ClockKind, EdgeId, ErrorCategory, Extensions, Frame, FrameHeader,
-    FrameId, FramePayload, FrameType, Lineage, Metadata, MuxivaError, NodeId, SequenceId, StreamId,
-    TextData, Timestamp, TraceId,
+    FrameId, FramePayload, FrameType, Lineage, Metadata, MuxivaError, NamespacedName, NodeId,
+    SchemaVersion, SequenceId, SignalData, SignalFrame, StreamId, TextData, Timestamp, TraceId,
+    Value,
 };
 
 fn id(value: &str) -> NodeId {
@@ -53,6 +59,39 @@ fn text_frame(sequence: u64) -> Frame {
         FramePayload::Text(TextData::new(sequence.to_string())),
     )
     .unwrap()
+}
+
+fn signal_frame(sequence: u64, source: &str) -> SignalFrame {
+    let header = FrameHeader::new(
+        FrameId::new(format!("signal-{sequence}")).unwrap(),
+        Timestamp::from_nanos(sequence as i64),
+        ClockDomain::new(
+            ClockDomainId::new("test-clock").unwrap(),
+            ClockKind::MediaRelative,
+        ),
+        SequenceId::new(sequence),
+        StreamId::new("signal-stream").unwrap(),
+        TraceId::new("signal-trace").unwrap(),
+        FrameType::Signal,
+        Metadata::empty(),
+        Extensions::empty(),
+        Lineage::empty(),
+    )
+    .unwrap();
+    let frame = Frame::new(
+        header,
+        FramePayload::Signal(SignalData::new(
+            NamespacedName::new("muxiva.voice.speech.started").unwrap(),
+            SchemaVersion::new(1).unwrap(),
+            id(source),
+            Value::Null,
+        )),
+    )
+    .unwrap();
+    let Frame::Signal(signal) = frame else {
+        unreachable!()
+    };
+    signal
 }
 
 #[test]
@@ -341,6 +380,316 @@ fn source_sink_runtime(
             .start()
             .unwrap();
     (runtime, received)
+}
+
+struct DeferredTransform {
+    pending: Option<Frame>,
+}
+
+impl Node for DeferredTransform {
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        if let Some(frame) = input {
+            self.pending = Some(frame);
+            context.schedule_next_tick(Duration::from_millis(5));
+        } else if let Some(frame) = self.pending.take() {
+            context.emit(port("out"), frame)?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn consumer_node_can_schedule_an_internal_callback_without_a_clock_edge() {
+    let mut builder = GraphBuilder::new();
+    builder
+        .add_node(descriptor(
+            "source",
+            NodeKind::Source,
+            &[("out", PortDirection::Output)],
+        ))
+        .unwrap();
+    builder
+        .add_node(descriptor(
+            "deferred",
+            NodeKind::Transform,
+            &[("in", PortDirection::Input), ("out", PortDirection::Output)],
+        ))
+        .unwrap();
+    builder
+        .add_node(descriptor(
+            "sink",
+            NodeKind::Sink,
+            &[("in", PortDirection::Input)],
+        ))
+        .unwrap();
+    connect(
+        &mut builder,
+        "source-deferred",
+        "source",
+        "out",
+        "deferred",
+        "in",
+        2,
+    );
+    connect(
+        &mut builder,
+        "deferred-sink",
+        "deferred",
+        "out",
+        "sink",
+        "in",
+        2,
+    );
+
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let mut nodes: NodeInstances = BTreeMap::new();
+    nodes.insert(
+        id("source"),
+        Box::new(SourceNode {
+            count: 1,
+            thread_ids: None,
+        }),
+    );
+    nodes.insert(
+        id("deferred"),
+        Box::new(DeferredTransform { pending: None }),
+    );
+    nodes.insert(
+        id("sink"),
+        Box::new(SinkNode {
+            received: received.clone(),
+            delay: Duration::ZERO,
+            fail: false,
+            thread_ids: None,
+        }),
+    );
+
+    let runtime = ConcurrentRuntime::new(
+        builder.build().unwrap(),
+        nodes,
+        EdgePolicies::new(),
+        RuntimeOptions::default(),
+    )
+    .unwrap()
+    .start()
+    .unwrap();
+    runtime.wait(Duration::from_secs(1)).unwrap();
+    assert_eq!(*received.lock().unwrap(), vec![0]);
+}
+
+#[derive(Default)]
+struct RecordingFrameObserver {
+    observations: Mutex<Vec<(String, String, FrameObservationDirection, u64)>>,
+    signals: Mutex<Vec<SignalObservationRecord>>,
+}
+
+type SignalObservationRecord = (String, Option<String>, SignalObservationDirection, u64);
+
+impl RuntimeObserver for RecordingFrameObserver {
+    fn observe_frame(&self, observation: FrameObservation<'_>) {
+        self.observations.lock().unwrap().push((
+            observation.node_id().as_str().to_owned(),
+            observation.port().as_str().to_owned(),
+            observation.direction(),
+            observation.frame().header().sequence_id().get(),
+        ));
+    }
+
+    fn observe_signal(&self, observation: SignalObservation<'_>) {
+        self.signals.lock().unwrap().push((
+            observation.node_id().as_str().to_owned(),
+            observation.port().map(|port| port.as_str().to_owned()),
+            observation.direction(),
+            observation.signal().header().sequence_id().get(),
+        ));
+    }
+}
+
+#[test]
+fn frame_observer_sees_each_node_input_and_output_boundary_once() {
+    let mut builder = GraphBuilder::new();
+    builder
+        .add_node(descriptor(
+            "source",
+            NodeKind::Source,
+            &[("out", PortDirection::Output)],
+        ))
+        .unwrap();
+    builder
+        .add_node(descriptor(
+            "sink",
+            NodeKind::Sink,
+            &[("in", PortDirection::Input)],
+        ))
+        .unwrap();
+    connect(&mut builder, "edge", "source", "out", "sink", "in", 4);
+    let mut nodes: NodeInstances = BTreeMap::new();
+    nodes.insert(
+        id("source"),
+        Box::new(SourceNode {
+            count: 3,
+            thread_ids: None,
+        }),
+    );
+    nodes.insert(
+        id("sink"),
+        Box::new(SinkNode {
+            received: Arc::new(Mutex::new(Vec::new())),
+            delay: Duration::ZERO,
+            fail: false,
+            thread_ids: None,
+        }),
+    );
+    let observer = Arc::new(RecordingFrameObserver::default());
+    let runtime = ConcurrentRuntime::new(
+        builder.build().unwrap(),
+        nodes,
+        EdgePolicies::new(),
+        RuntimeOptions::default(),
+    )
+    .unwrap()
+    .with_runtime_observer(observer.clone())
+    .start()
+    .unwrap();
+    runtime.wait(Duration::from_secs(1)).unwrap();
+
+    let observations = observer.observations.lock().unwrap();
+    for sequence in 0..3 {
+        assert_eq!(
+            observations
+                .iter()
+                .filter(|value| {
+                    value
+                        == &&(
+                            "source".into(),
+                            "out".into(),
+                            FrameObservationDirection::Output,
+                            sequence,
+                        )
+                })
+                .count(),
+            1
+        );
+        assert_eq!(
+            observations
+                .iter()
+                .filter(|value| {
+                    value
+                        == &&(
+                            "sink".into(),
+                            "in".into(),
+                            FrameObservationDirection::Input,
+                            sequence,
+                        )
+                })
+                .count(),
+            1
+        );
+    }
+    assert_eq!(observations.len(), 6);
+}
+
+struct SignalSource;
+
+impl Node for SignalSource {
+    fn on_process(
+        &mut self,
+        _: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        context.emit_signal(signal_frame(7, "signal-source"))?;
+        Ok(())
+    }
+}
+
+struct SignalSink {
+    received: Arc<AtomicU64>,
+}
+
+impl Node for SignalSink {
+    fn on_process(&mut self, _: Option<Frame>, _: &mut NodeContext) -> muxiva_types::Result<()> {
+        Ok(())
+    }
+
+    fn on_signal(
+        &mut self,
+        _: muxiva_types::SignalFrame,
+        _: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        self.received.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+#[test]
+fn runtime_observer_sees_signal_emission_and_delivery_boundaries() {
+    let mut builder = GraphBuilder::new();
+    builder
+        .add_node(descriptor(
+            "signal-source",
+            NodeKind::Source,
+            &[("out", PortDirection::Output)],
+        ))
+        .unwrap();
+    builder
+        .add_node(descriptor(
+            "signal-sink",
+            NodeKind::Sink,
+            &[("in", PortDirection::Input)],
+        ))
+        .unwrap();
+    connect(
+        &mut builder,
+        "signal-edge",
+        "signal-source",
+        "out",
+        "signal-sink",
+        "in",
+        2,
+    );
+    let received = Arc::new(AtomicU64::new(0));
+    let mut nodes: NodeInstances = BTreeMap::new();
+    nodes.insert(id("signal-source"), Box::new(SignalSource));
+    nodes.insert(
+        id("signal-sink"),
+        Box::new(SignalSink {
+            received: received.clone(),
+        }),
+    );
+    let observer = Arc::new(RecordingFrameObserver::default());
+    let runtime = ConcurrentRuntime::new(
+        builder.build().unwrap(),
+        nodes,
+        EdgePolicies::new(),
+        RuntimeOptions::default(),
+    )
+    .unwrap()
+    .with_runtime_observer(observer.clone())
+    .start()
+    .unwrap();
+    runtime.wait(Duration::from_secs(1)).unwrap();
+    assert_eq!(received.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        observer.signals.lock().unwrap().as_slice(),
+        &[
+            (
+                "signal-source".into(),
+                None,
+                SignalObservationDirection::Output,
+                7,
+            ),
+            (
+                "signal-sink".into(),
+                Some("in".into()),
+                SignalObservationDirection::Input,
+                7,
+            ),
+        ]
+    );
 }
 
 #[test]

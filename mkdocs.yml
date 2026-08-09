@@ -70,11 +70,13 @@ plugins:
             Node architecture: Node 架构
             CLI, Studio, and web: CLI、Studio 与 Web
             End-to-end voice path: 端到端语音链路
-            Build Nodes: 开发 Node
+            Developer manual: 开发手册
+            Manual overview: 手册概览
+            Agent integration: Agent 集成
+            Pi coding Agent: Pi 编码 Agent
             Node packages: Node Package
             Python: Python
             TypeScript: TypeScript
-            TypeScript Agent and Pi: TypeScript Agent 与 Pi
             Rust: Rust
             C++: C++
             Integrations: 集成
@@ -130,11 +132,12 @@ nav:
       - Node architecture: provider-architecture.md
       - CLI, Studio, and web: developer-surfaces.md
       - End-to-end voice path: voice-architecture.md
-  - Build Nodes:
-      - Node packages: nodes/index.md
+  - Developer manual:
+      - Manual overview: nodes/index.md
+      - Agent integration: nodes/agent-integration.md
+      - Pi coding Agent: nodes/pi-agent.md
       - Python: nodes/python.md
       - TypeScript: nodes/typescript.md
-      - TypeScript Agent and Pi: nodes/pi-agent.md
       - Rust: nodes/rust.md
       - C++: nodes/cpp.md
   - Integrations:

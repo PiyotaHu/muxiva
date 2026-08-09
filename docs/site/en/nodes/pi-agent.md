@@ -1,88 +1,122 @@
-# TypeScript Agent Nodes and Pi
+# Pi coding Agent reference
 
-Demo 2 replaces a single-purpose LLM Node with a stateful TypeScript Agent
-Node powered by [Pi](https://github.com/earendil-works/pi). Pi remains an
-optional project dependency; Rust Core does not import Pi, Qwen, or any Agent
-business logic.
+Demo 2 now consumes the independent
+[PiyotaHu/muxiva-pi-agent](https://github.com/PiyotaHu/muxiva-pi-agent)
+repository. Agent business code is not copied into Rust Core. This models the
+real path where a user owns, tests, and releases an Agent, then deploys a pinned
+version into a Muxiva project.
 
-## The reusable contract
+Read the [Agent integration SOP](agent-integration.md) before adapting another
+Agent. This page documents the Pi reference implementation.
 
-`@muxiva/agent` turns a vendor-specific driver into the same Graph surface:
+## Where the code lives
 
-| Port | Type | Meaning |
+| Content | Location | Owner |
 | --- | --- | --- |
-| `prompt_in` | Text input | A completed user prompt or assembled turn context |
-| `tick_in` | Event input | Gives the Node bounded opportunities to drain background output |
-| `signal_in` | Signal input | Cancels the active run on `muxiva.agent.cancel` or barge-in |
-| `text_out` | Text output | Speech-sized assistant text chunks for TTS and UI |
-| `event_out` | Event output | Agent, turn, Tool Call, completion, cancellation, and failure lifecycle |
+| Pi session, Qwen model, tools, file policy | `PiyotaHu/muxiva-pi-agent` | independent Agent repo |
+| queue, generation, cancellation adapter | `@muxiva/agent` under `bindings/agent` | Muxiva SDK |
+| assembly of those two layers | `.muxiva/nodes/pi_agent/node.ts` | demo project |
+| Ports, configuration, Connection schema | `.muxiva/nodes/pi_agent/muxiva.node.json` | demo project |
+| pinned checkout and dependency install | `examples/voice-agent/setup.sh` | demo deployment |
 
-The adapter owns output bounds, generation IDs, stale-output suppression,
-shutdown, and cancellation. A driver owns only its model harness, transcript,
-and tools:
+The project adapter stays deliberately small:
 
 ```typescript
 import { defineAgentNode } from '@muxiva/agent'
+import { createMuxivaPiAgentDriver } from '@piyotahu/muxiva-pi-agent'
 
-export const MyAgentNode = defineAgentNode({
-  createDriver() {
-    return {
-      async run(prompt, sink, signal) {
-        sink.text(`You said: ${prompt.text}`)
-        sink.event('tool.completed', { name: 'example' })
-      },
-      cancel() {},
-    }
-  },
+export const PiAgentNode = defineAgentNode({
+  createDriver: createMuxivaPiAgentDriver,
 })
 ```
 
-This is the extension point for a Pi agent, another TypeScript agent harness,
-or an application-owned implementation. The Graph and downstream Nodes do not
-change when the driver changes.
+## Capabilities
 
-## Demo 2's Pi implementation
+Release `v0.1.2` provides:
 
-The editable implementation is
-`examples/voice-agent/.muxiva/nodes/pi_agent/node.ts`. It uses:
+| Tool | Behavior |
+| --- | --- |
+| `workspace_info` | report workspace, authority, and resource limits |
+| `list_files` | list a directory, optionally recursively |
+| `read_file` | read a UTF-8 file or line range |
+| `search_files` | exact text search across a bounded file set |
+| `write_file` | create files; overwrite requires explicit intent |
+| `replace_in_file` | exact code replacement with expected match count |
+| `get_current_time` | current time in a requested time zone |
+| `get_current_weather` | live Open-Meteo weather |
 
-- `@earendil-works/pi-agent-core@0.84.1` for session state, streaming events,
-  Tool Calls, and abort;
-- `@earendil-works/pi-ai@0.84.1` with a custom OpenAI-compatible DashScope
-  model definition;
-- Qwen `qwen-flash` as the model, using the same Model Studio connection as
-  ASR and TTS;
-- safe example tools for current time and live weather. Weather data is
-  provided by [Open-Meteo](https://open-meteo.com/).
+Demo 2 is therefore not merely conversational. Ask it to list the workspace,
+read requirements and create `index.html`, perform a precise text edit, or
+search all TODO locations. Files are written to:
 
-Pi's coding tools are deliberately not enabled. A voice assistant should not
-inherit shell, file-edit, or arbitrary process authority merely because the
-underlying library can support them.
+```text
+examples/voice-agent/.muxiva/workspaces/pi-agent/
+```
 
-## Install and verify
+## Why Shell is disabled
 
-Run the normal voice setup. It requires Node.js 22.19 or newer, installs the
-locked npm graph without lifecycle scripts, and type-checks the Node:
+Structured file editing and machine-wide command execution are different
+authority levels. The reference Agent can complete web and source-file tasks,
+but has no Shell, arbitrary process, arbitrary deletion, or workspace-external
+access.
+
+Paths resolve relative to the Graph project. The implementation checks path
+traversal, symlink escape, sensitive paths, and resource bounds. `.env`,
+`.env.*`, `.git`, and `.ssh` are always denied.
+
+If a fork adds a Shell tool, command allowlists, working directory, timeout,
+output limits, network policy, and human confirmation belong to that Agent
+repository's security contract—not Muxiva Core.
+
+## What setup does
 
 ```bash
 ./examples/voice-agent/setup.sh
-muxiva doctor --voice
 ```
 
-Doctor must report `pi-typescript-agent ... dependencies=locked`. In Studio,
-choose **Pi Agent Full-Duplex Cascade (Demo 2)**. Ask for the current time or
-today's weather to exercise a real Tool Call. The Runtime panel exposes
-`muxiva.agent.tool.*` and `muxiva.agent.response.*` events without coupling the
-Agent Node to the browser wire protocol.
+Setup:
 
-## Full-duplex cancellation
+1. checks out `PiyotaHu/muxiva-pi-agent` release `v0.1.2`;
+2. stores it at Git-ignored `.muxiva/agents/muxiva-pi-agent`;
+3. installs `@muxiva/agent`, the external Agent, and Pi through the application
+   lock file;
+4. type-checks both the demo adapter and external Agent;
+5. runs the external Agent's filesystem-policy tests;
+6. creates the default workspace and continues building Qwen and Agora Nodes.
 
-When Qwen Server VAD detects new speech, its Signal reaches the Pi Agent, TTS,
-the text cancellation gate, and Agora audio egress in parallel. The Pi driver
-calls `agent.abort()`, the generic adapter advances its generation ID and drops
-late chunks, and the next final ASR transcript becomes a new prompt in the same
-Agent session.
+Setup prints repository, Tag, resolved Commit, workspace, and permissions. It
+reuses an existing checkout only when the remote matches and the checkout is
+clean; it does not overwrite local Agent edits.
 
-The project-local Voice Room encoder maps generic Agent completion events to
-the application's `muxiva.voice.*` protocol. That mapping does not belong in
-Pi, the TypeScript Host, or Rust Core.
+## Use your own Agent fork
+
+```bash
+MUXIVA_PI_AGENT_REPOSITORY=https://github.com/your-org/your-agent.git \
+MUXIVA_PI_AGENT_REF=v1.0.0 \
+./examples/voice-agent/setup.sh
+```
+
+Keep the `createMuxivaPiAgentDriver` package export, or change the thin demo
+adapter to import your factory. See [Agent integration](agent-integration.md)
+for the general application-owned path.
+
+## Run and accept
+
+```bash
+muxiva doctor --voice
+./examples/voice-agent/run.sh
+```
+
+Choose **Pi Agent Full-Duplex Cascade (Demo 2)** and open Voice Room. Ask:
+
+> Create an `index.html` with a gradient background and the current time in the workspace.
+
+Inspect the real result:
+
+```bash
+ls -la examples/voice-agent/.muxiva/workspaces/pi-agent
+```
+
+Observe should show Tool lifecycle in Semantic Trace, Agent Text flowing into
+TTS, and barge-in Signal cancelling the active Pi Turn. Late output from the
+old generation must not continue to play.

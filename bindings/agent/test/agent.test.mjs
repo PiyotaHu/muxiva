@@ -16,17 +16,25 @@ test('Agent Node streams semantic output and suppresses stale work after cancell
       }
     },
   })
-  const node = new Node({ max_results_per_tick: 32 })
-  node.onProcess({ kind: 'text', text: 'hello', sequence: 7 }, { inputPort: 'prompt_in' })
+  const node = new Node({ max_results_per_wakeup: 32 })
+  const scheduled = []
+  node.onProcess(
+    { kind: 'text', text: 'hello', sequence: 7 },
+    { inputPort: 'prompt_in', scheduleNextTick: (delay) => scheduled.push(delay) },
+  )
   await new Promise((resolve) => setImmediate(resolve))
-  node.onSignal({ name: 'muxiva.voice.speech.started', sequence: 8 })
+  node.onSignal(
+    { name: 'muxiva.voice.speech.started', sequence: 8 },
+    { scheduleNextTick: (delay) => scheduled.push(delay) },
+  )
   release()
   await new Promise((resolve) => setImmediate(resolve))
   const output = []
   node.onProcess(
-    { kind: 'event', topic: 'muxiva.runtime.tick', sequence: 9 },
-    { inputPort: 'tick_in', emit: (port, frame) => output.push({ port, frame }) },
+    undefined,
+    { inputPort: undefined, emit: (port, frame) => output.push({ port, frame }) },
   )
+  assert.deepEqual(scheduled, [20, 1])
   assert.equal(output.some(({ frame }) => frame.text === 'stale'), false)
   assert.equal(output.at(-1).frame.topic, 'muxiva.agent.response.cancelled')
 })

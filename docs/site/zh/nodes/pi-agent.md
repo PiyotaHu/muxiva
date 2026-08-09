@@ -1,77 +1,118 @@
-# TypeScript Agent Node 与 Pi
+# Pi 编码 Agent 参考实现
 
-Demo 2 已将单一用途的 LLM Node 替换为有状态 TypeScript Agent Node，执行内核采用
-[Pi](https://github.com/earendil-works/pi)。Pi 只是可选的项目依赖；Rust Core 不导入
-Pi、Qwen 或任何 Agent 业务逻辑。
+Demo 2 现在使用独立仓库
+[PiyotaHu/muxiva-pi-agent](https://github.com/PiyotaHu/muxiva-pi-agent)。它不是被复制进
+Rust Core 的业务代码，而是模拟最终用户已经拥有、测试并发布自己的 Agent 后，再把
+锁定版本部署到 Muxiva 项目的完整路径。
 
-## 可复用 Agent 契约
+如果你要集成自己的 Agent，请先读 [Agent 集成 SOP](agent-integration.md)。本页只介绍
+这份 Pi 参考实现。
 
-`@muxiva/agent` 将厂商相关 Driver 统一为同一组 Graph Port：
+## 代码放在哪里
 
-| Port | 类型 | 含义 |
+| 内容 | 位置 | 归属 |
 | --- | --- | --- |
-| `prompt_in` | Text 输入 | 完整用户问题，或已经融合的 Turn Context |
-| `tick_in` | Event 输入 | 让 Node 有界地排空后台流式结果 |
-| `signal_in` | Signal 输入 | 收到 `muxiva.agent.cancel` 或用户插话时取消当前运行 |
-| `text_out` | Text 输出 | 适合 TTS 和界面消费的流式回答片段 |
-| `event_out` | Event 输出 | Agent、Turn、Tool Call、完成、取消和失败生命周期 |
+| Pi 会话、Qwen 模型、Tool、文件权限 | `PiyotaHu/muxiva-pi-agent` | 独立 Agent 仓库 |
+| 通用队列、Generation、取消适配 | `bindings/agent` 的 `@muxiva/agent` | Muxiva SDK |
+| 两者装配 | `.muxiva/nodes/pi_agent/node.ts` | Demo 项目 |
+| Port、配置、Connection Schema | `.muxiva/nodes/pi_agent/muxiva.node.json` | Demo 项目 |
+| 拉取版本和依赖安装 | `examples/voice-agent/setup.sh` | Demo 部署 |
 
-通用适配器负责有界队列、Generation ID、过期输出抑制、关闭与取消；Driver 只负责
-模型 Harness、会话记录和工具：
+Demo 中的 `node.ts` 只有薄薄一层：
 
 ```typescript
 import { defineAgentNode } from '@muxiva/agent'
+import { createMuxivaPiAgentDriver } from '@piyotahu/muxiva-pi-agent'
 
-export const MyAgentNode = defineAgentNode({
-  createDriver() {
-    return {
-      async run(prompt, sink, signal) {
-        sink.text(`你说了：${prompt.text}`)
-        sink.event('tool.completed', { name: 'example' })
-      },
-      cancel() {},
-    }
-  },
+export const PiAgentNode = defineAgentNode({
+  createDriver: createMuxivaPiAgentDriver,
 })
 ```
 
-开发者可以在这里接 Pi、其他 TypeScript Agent Harness，或自己实现的 Agent。替换
-Driver 不会改变 Graph 和下游 Node。
+## Agent 能做什么
 
-## Demo 2 的 Pi 实现
+当前 `v0.1.2` 提供：
 
-可编辑源码位于 `examples/voice-agent/.muxiva/nodes/pi_agent/node.ts`，它使用：
+| Tool | 行为 |
+| --- | --- |
+| `workspace_info` | 查看工作区、权限和资源上限 |
+| `list_files` | 列出目录，可选递归 |
+| `read_file` | 读取 UTF-8 文件或行范围 |
+| `search_files` | 在受限数量文件中搜索精确文本 |
+| `write_file` | 创建文件；覆盖已有文件必须显式确认 |
+| `replace_in_file` | 按预期匹配次数做精确代码替换 |
+| `get_current_time` | 查询指定时区当前时间 |
+| `get_current_weather` | 通过 Open-Meteo 查询实时天气 |
 
-- `@earendil-works/pi-agent-core@0.84.1`：会话状态、流式事件、Tool Call 和取消；
-- `@earendil-works/pi-ai@0.84.1`：通过自定义 OpenAI 兼容模型连接百炼；
-- Qwen `qwen-flash`：与 ASR、TTS 复用同一张百炼 Connection；
-- 当前时间与实时天气两个安全示例工具。天气数据来自
-  [Open-Meteo](https://open-meteo.com/)。
+这意味着 Demo 2 不再只是“会聊天”。你可以让它：
 
-这里刻意没有启用 Pi Coding Agent 的 Shell、文件读取和编辑工具。底层库“能够做”
-不等于语音助手“应该自动获得”这些权限。
+- “先列一下工作区都有哪些文件”；
+- “读取需求，然后创建一个单页网站 `index.html`”；
+- “把标题 Muxiva 改成 My Agent，其他内容不要动”；
+- “搜索所有出现 TODO 的位置并告诉我行号”。
 
-## 安装与验证
+文件会真实写入：
 
-沿用语音 Demo 的安装命令。它要求 Node.js 22.19 或更高版本，以禁用生命周期脚本的
-方式安装锁定依赖，并执行严格 TypeScript 检查：
+```text
+examples/voice-agent/.muxiva/workspaces/pi-agent/
+```
+
+## 为什么默认没有 Shell
+
+文件编辑能力与整机命令执行不是同一级别的权限。参考 Agent 默认提供足以完成网页和
+代码文件任务的结构化 Tool，但没有 Shell、任意进程、任意删除或工作区外访问。
+
+所有路径都相对 Graph 项目根目录解析。实现会检查路径穿越、符号链接逃逸、敏感文件
+和资源上限；`.env`、`.env.*`、`.git`、`.ssh` 始终拒绝访问。
+
+如果 Fork 后增加 Shell Tool，应把命令白名单、工作目录、超时、输出上限、网络策略和
+人工确认作为 Agent 仓库自己的安全契约，而不是塞进 Muxiva Core。
+
+## 安装发生了什么
 
 ```bash
 ./examples/voice-agent/setup.sh
-muxiva doctor --voice
 ```
 
-Doctor 必须出现 `pi-typescript-agent ... dependencies=locked`。随后在 Studio 选择
-**Pi Agent Full-Duplex Cascade（Demo 2）**，询问当前时间或今天的天气，即可触发
-真实 Tool Call。Runtime 面板会显示 `muxiva.agent.tool.*` 与
-`muxiva.agent.response.*`，Agent Node 不需要知道浏览器的消息协议。
+脚本依次：
 
-## 全双工打断
+1. 从 GitHub 拉取 `PiyotaHu/muxiva-pi-agent` 的 `v0.1.2`；
+2. 保存到被 Git 忽略的 `.muxiva/agents/muxiva-pi-agent`；
+3. 使用项目 `package-lock.json` 安装 `@muxiva/agent`、外部 Agent 及 Pi 依赖；
+4. 对 Demo 适配器与外部 Agent 分别运行 TypeScript 检查；
+5. 运行外部 Agent 的文件权限测试；
+6. 创建默认工作区，并继续构建 Qwen 与 Agora Node。
 
-Qwen Server VAD 检测到用户重新开口后，同一个 Signal 会并行到达 Pi Agent、TTS、
-文本取消门和 Agora 音频出口。Pi Driver 调用 `agent.abort()`；通用适配器推进
-Generation ID 并丢弃晚到片段；下一条 ASR Final Text 会在同一 Agent Session 中成为
-新问题。
+脚本会打印仓库、Tag、解析后的 Commit、工作区和权限。再次运行时，只有 Remote 一致、
+工作区干净时才会复用；不会覆盖你在外部 Agent Checkout 中的修改。
 
-项目内的 Voice Room Encoder 最后才把通用 Agent 完成事件映射为应用自己的
-`muxiva.voice.*` 协议。这个映射不属于 Pi、TypeScript Host 或 Rust Core。
+## 配置自己的 Agent Fork
+
+```bash
+MUXIVA_PI_AGENT_REPOSITORY=https://github.com/your-org/your-agent.git \
+MUXIVA_PI_AGENT_REF=v1.0.0 \
+./examples/voice-agent/setup.sh
+```
+
+你的仓库需要保持同一个包导出 `createMuxivaPiAgentDriver`，或者同步修改 Demo 的薄适配器
+导入名。更普遍的自有 Agent 接入方式见 [Agent 集成](agent-integration.md)。
+
+## 运行和验收
+
+```bash
+muxiva doctor --voice
+./examples/voice-agent/run.sh
+```
+
+在 Studio 选择 **Pi Agent Full-Duplex Cascade（Demo 2）**，进入 Voice Room。先说：
+
+> 在工作区创建一个有渐变背景、显示当前时间的 `index.html`。
+
+完成后检查真实文件：
+
+```bash
+ls -la examples/voice-agent/.muxiva/workspaces/pi-agent
+```
+
+打开 Observe：Tool 生命周期应出现在 Semantic Trace；`pi-agent` 的 Text 输出进入 TTS；
+用户插话产生的 Signal 会取消当前 Pi Turn，旧 Generation 的晚到输出不会继续播报。

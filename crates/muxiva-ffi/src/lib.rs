@@ -727,7 +727,13 @@ fn release_boundary(operation: impl FnOnce() -> Result<(), FfiError>) -> Status 
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::c_void;
+    use std::{
+        ffi::c_void,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+    };
 
     use super::*;
 
@@ -763,6 +769,81 @@ mod tests {
     fn token_layout_is_stable() {
         assert_eq!(mem::size_of::<Token>(), 16);
         assert_eq!(mem::align_of::<Token>(), 8);
+    }
+
+    #[test]
+    fn owned_native_audio_is_zero_copy_and_released_after_last_frame_clone() {
+        struct NativeOwner {
+            bytes: Vec<u8>,
+            releases: Arc<AtomicUsize>,
+        }
+        impl Drop for NativeOwner {
+            fn drop(&mut self) {
+                self.releases.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        extern "C" fn release_native_owner(owner: *mut c_void) {
+            // SAFETY: the ABI transfers exactly one Box<NativeOwner> to this
+            // callback, and ForeignPayloadOwner invokes it exactly once.
+            unsafe { drop(Box::from_raw(owner.cast::<NativeOwner>())) };
+        }
+        fn string_view(value: &str) -> abi::StrView {
+            abi::StrView {
+                data: value.as_ptr().cast(),
+                len: value.len(),
+            }
+        }
+
+        let releases = Arc::new(AtomicUsize::new(0));
+        let owner = Box::new(NativeOwner {
+            bytes: vec![1, 2, 3, 4],
+            releases: releases.clone(),
+        });
+        let native_pointer = owner.bytes.as_ptr();
+        let owner_pointer = Box::into_raw(owner).cast::<c_void>();
+        let frame_id = String::from("owned-audio");
+        let clock = String::from("native-clock");
+        let stream = String::from("native-stream");
+        let trace = String::from("native-trace");
+        let mut frame = abi::empty_frame_view();
+        frame.header.frame_type = 1;
+        frame.header.clock_kind = 1;
+        frame.header.frame_id = string_view(&frame_id);
+        frame.header.clock_domain_id = string_view(&clock);
+        frame.header.stream_id = string_view(&stream);
+        frame.header.trace_id = string_view(&trace);
+        frame.payload = abi::FramePayload {
+            audio: abi::AudioPayload {
+                sample_rate_hz: 16_000,
+                channels: 1,
+                sample_format: 2,
+                layout: 1,
+                reserved0: 0,
+                samples_per_channel: 2,
+                bytes: abi::BytesView {
+                    data: native_pointer,
+                    len: 4,
+                },
+                reserved: [0; 2],
+            },
+        };
+        let view = abi::OwnedNamedFrameView {
+            output_port: string_view("audio_out"),
+            frame,
+            payload_owner: owner_pointer,
+            release_payload: Some(release_native_owner),
+            reserved: [0; 2],
+        };
+
+        let owner = frame::ForeignPayloadOwner::from_view(&view, None).unwrap();
+        let frame = frame::adopt_owned_frame(std::ptr::from_ref(&view.frame), owner).unwrap();
+        let buffer = frame.as_audio().unwrap().data().buffer();
+        assert_eq!(buffer.as_slice().as_ptr(), native_pointer);
+        let clone = frame.clone();
+        drop(frame);
+        assert_eq!(releases.load(Ordering::Relaxed), 0);
+        drop(clone);
+        assert_eq!(releases.load(Ordering::Relaxed), 1);
     }
 
     #[test]
@@ -875,7 +956,7 @@ mod tests {
             frame::OwnedPayload::Video { bytes, .. } => assert_eq!(bytes, &[7_u8; 24]),
             _ => panic!("video payload expected"),
         }
-        let rust = owned.to_rust().unwrap();
+        let rust = owned.into_rust().unwrap();
         assert_eq!(
             rust.as_video().unwrap().data().pixel_format(),
             muxiva_types::PixelFormat::Yuv420p

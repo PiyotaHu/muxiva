@@ -39,9 +39,10 @@ cargo install --locked --path crates/muxiva-cli
    对应的官方 CDN 下载 RTC Basic 所需 XCFramework；
 2. 对每个压缩包执行 SHA-256 校验；
 3. 创建 `examples/voice-agent/.muxiva/venv` 并安装 `websocket-client`；
-4. 在禁用 Lifecycle Script 的前提下安装精确锁定的 Pi 与 Muxiva Agent npm 依赖，
-   并对项目 Agent Node 执行 TypeScript 类型检查；
-5. 编译 `agora.audio_source`、`agora.audio_sink`、`agora.data_source`、
+4. 拉取独立的 [Pi 编码 Agent 仓库](nodes/pi-agent.md)锁定版本，在禁用 Lifecycle
+   Script 的前提下安装 npm 依赖，并执行适配器、Agent 与文件权限测试；
+5. 创建 Agent 默认编码工作区；
+6. 编译 `agora.audio_source`、`agora.audio_sink`、`agora.data_source`、
    `agora.data_sink` 四个 C++ Node；它们共享一个 RTC Engine 和 Bot UID。
 
 出现以下三行才代表安装完成：
@@ -50,7 +51,8 @@ cargo install --locked --path crates/muxiva-cli
 [MUXIVA][READY] Native, Python, and TypeScript Agent Node Packs are installed.
 [MUXIVA][AGORA] sdk=.../build/vendor/agora-macos-4.6.2
 [MUXIVA][QWEN]  python=.../.muxiva/venv/bin/python (no Qwen SDK download required)
-[MUXIVA][PI]    node=... version=... package=@earendil-works/pi-agent-core@0.84.1
+[MUXIVA][AGENT] repository=https://github.com/PiyotaHu/muxiva-pi-agent.git ref=v0.1.2 commit=...
+[MUXIVA][AGENT] workspace=.../.muxiva/workspaces/pi-agent permissions=list,read,search,create,replace
 ```
 
 如果你已经手动下载 SDK，也可以运行：
@@ -96,7 +98,9 @@ cargo install --locked --path crates/muxiva-cli
 
 这里没有“Qwen SDK 下载”步骤。Muxiva 的 Python Node 直接使用官方 WebSocket/HTTP
 协议。Realtime 图默认使用 `qwen-audio-3.0-realtime-flash`；级联图在 Qwen ASR 与
-Qwen TTS 之间使用由 `qwen-flash` 驱动的 [Pi TypeScript Agent](nodes/pi-agent.md)。
+Qwen TTS 之间使用由 `qwen-flash` 驱动的 [Pi 编码 Agent](nodes/pi-agent.md)。它可以在
+受限工作区真实读取、搜索、创建和修改文件；通用接入方法见
+[Agent 集成 SOP](nodes/agent-integration.md)。
 
 ## 4. 启动并填写 Studio
 
@@ -108,7 +112,8 @@ muxiva doctor --voice
 `doctor` 应显示两个 Agora Node Pack 为 `mode=agora-native`，并显示
 `qwen-python dependency=websocket` 和 `pi-typescript-agent ... dependencies=locked`。
 凭据未配置时它会逐项打印 `MISSING`，这是诊断结果，
-不是可以跳过的提示。然后在 Studio 中：
+不是可以跳过的提示。`run.sh` 还会打印 `[MUXIVA][CLI]`；源码仓库内应指向当前仓库的
+`target/debug/muxiva` 或 `target/release/muxiva`，避免旧的全局 CLI 启动过期 Studio。然后在 Studio 中：
 
 1. 打开 **Connections**。
 2. 在 **Alibaba Cloud Model Studio** 填写 API Key、Workspace ID。
@@ -117,7 +122,7 @@ muxiva doctor --voice
 5. 保存后进入 **Templates**，第一次选择 **Qwen Realtime**。
 6. 在 Studio 点击 **Run**，确认 Runtime 已启动；这是 Studio 的管理动作。
 7. 打开 **Voice Room**，点击 **Start live conversation**，允许麦克风权限。
-8. 自然说话；助手播放时再次开口，验证全双工打断。
+8. 说话时确认 **MIC LEVEL** 明显高于 `0%`；助手播放时再次开口，验证全双工打断。
 
 点击 Save connections 后，值会保存到 `examples/voice-agent/.env`（权限 `0600`、Git
 忽略）。以后再次运行无需重复填写。也可以参考 `.env.example` 手动创建该文件。
@@ -137,11 +142,14 @@ Studio 顶部的 **◎ Observe** 会把 Node、Edge 和内部 SDK 队列放在�
 标记黄/红堵点；指标含义、阈值与日志过滤命令见[可观测性与堵点定位](observability.md)。
 
 1. Voice Room 显示浏览器已加入、麦克风已发布；
-2. 日志出现 `[MUXIVA][AGORA][participant.joined] uid=1001`；
-3. 日志出现 `[MUXIVA][AGORA][audio.received]`，Studio 的 `agora-in.audio_out` 增长；
-4. ASR、`turn-to-agent`、`agent-to-response-gate` 和语义化 Room Message Edge 开始
-   增长；Tool 使用会以 `muxiva.agent.tool.*` 出现在 Runtime Event 中；
-5. `qwen-audio` 和 `agora-out` 增长，浏览器听到回复。
+2. 说话时 **MIC LEVEL** 增长；连续五秒没有语音能量时页面会直接提示检查输入设备；
+3. 日志出现 `[MUXIVA][AGORA][participant.joined] uid=1001`；
+4. 日志出现 `[MUXIVA][AGORA][audio.received]`，Studio 的 `agora-input` 增长；在 Observe
+   点击 `agora-audio-source`，`input.audio_peak_pcm16` 说话时必须明显大于 0；
+5. Demo 1 的 Qwen Realtime Node 先打印 Server VAD 的 `speech_started` / `speech_stopped`，
+   随后出现 ASR 和 `response.created`；Demo 2 则检查
+   `turn-to-agent`、`agent-to-response-gate`；
+6. `qwen-audio` 和 `audio-to-room` 增长，浏览器听到回复。
 
 第一个没有出现的步骤，就是故障所在层。凭据值不会写入日志。
 
@@ -163,10 +171,13 @@ Runtime 启动后关闭 Studio，不会改变 RTC 媒体与消息协议。本地
 | `AgoraRtcKit.xcframework` not found | 手动下载了错误平台或不完整包；使用一键下载命令 |
 | `qwen-python ready=false` | 没运行 `setup.sh`，或项目虚拟环境损坏；重新运行安装 |
 | `pi-typescript-agent ready=false` | 安装 Node.js 22.19+，再运行 `setup.sh` 安装锁定的 Pi 包 |
+| `installed Agora Node Packs are older` | 先停止正在运行的 Studio，执行一次 `./examples/voice-agent/setup.sh`，再重新启动；`run.sh` 会拒绝加载过期 Native 代码，不再静默使用旧产物 |
 | Qwen 返回鉴权/模型错误 | API Key、Workspace ID、模型必须属于华北 2（北京）同一 Workspace |
 | Agora 加入 Channel 失败 | App ID、Channel、UID 必须与生成该 Token 时完全一致，Token 也不能过期 |
 | 页面没有麦克风 | 浏览器未授权；在浏览器站点权限中允许本地 Studio 使用麦克风 |
-| 清晰听到自己的声音 | 更新 Muxiva 并重新运行 `setup.sh` 编译 Agora Node Pack；Bot 本地远端播放日志必须显示 `muted` |
+| 有 RTC Frame 但完全没反应 | 先看 Voice Room `MIC LEVEL`，再看 Observe 的 `input.audio_peak_pcm16`；始终接近 0 表示发布的是静音或选错输入设备 |
+| 顶部没有 `◎ Observe` | 查看启动日志 `[MUXIVA][CLI]`；源码开发必须使用当前仓库 `target/.../muxiva`，重新运行 `setup.sh` 会自动构建并选择它 |
+| 清晰听到自己的声音 | 更新 Muxiva 并重新运行 `setup.sh` 编译 Agora Node Pack；Bot 日志必须显示 `local_remote_playback=silenced-after-mix` |
 | 有文字但没有语音 | 查找 `[MUXIVA][AGORA][audio.published]`；没有该日志说明 Qwen 未产生音频，有日志则检查浏览器是否订阅 Bot 音轨 |
 | 页面没有用户 ASR | 查找 Qwen `input_audio_transcription.completed`；新版页面显示 `text + stash` 实时预览和最终 `transcript` |
 

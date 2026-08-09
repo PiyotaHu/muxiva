@@ -81,6 +81,8 @@ class QwenTtsRealtimeNode:
         self._results: queue.Queue[tuple[int, str, Any, int]] = queue.Queue(maxsize=1024)
         self._lock = threading.Lock()
         self._generation = 0
+        self._pending_jobs = 0
+        self._cancelled_through_sequence = -1
         self._active_transport: Any | None = None
         self._worker: threading.Thread | None = None
         self._closing = threading.Event()
@@ -110,19 +112,38 @@ class QwenTtsRealtimeNode:
         if input_port in (None, "text_in") and hasattr(frame, "text"):
             text = frame.text.strip()
             if text:
+                sequence = int(frame.sequence)
+                with self._lock:
+                    if sequence <= self._cancelled_through_sequence:
+                        self._log(
+                            "text.dropped",
+                            sequence=sequence,
+                            reason="cancelled_turn",
+                        )
+                        return
                 try:
-                    self._jobs.put_nowait((self._current_generation(), text, frame.sequence))
+                    self._jobs.put_nowait((self._current_generation(), text, sequence))
                 except queue.Full as error:
                     raise RuntimeError("Qwen TTS pending text queue is full") from error
+                with self._lock:
+                    self._pending_jobs += 1
+                ctx.schedule_next_tick(20)
             return
-        if input_port == "tick_in":
+        if input_port == "tick_in" or (input_port is None and frame is None):
             self._drain(ctx)
+            if self._has_pending_work():
+                ctx.schedule_next_tick(20)
             return
         raise ValueError(f"Qwen TTS received unsupported input port: {input_port}")
 
     def on_signal(self, signal: Any, _ctx: Any = None) -> None:
         if getattr(signal, "name", "") != "muxiva.voice.speech.started":
             return
+        with self._lock:
+            self._cancelled_through_sequence = max(
+                self._cancelled_through_sequence,
+                int(getattr(signal, "sequence", 0)),
+            )
         cancelled = self._invalidate()
         self._log(
             "synthesis.cancelled",
@@ -253,7 +274,12 @@ class QwenTtsRealtimeNode:
                 self._active_transport = None
 
     def _drain(self, ctx: Any) -> None:
-        maximum = int(self.config.get("max_results_per_tick", 64))
+        maximum = int(
+            self.config.get(
+                "max_results_per_wakeup",
+                self.config.get("max_results_per_tick", 64),
+            )
+        )
         for _ in range(maximum):
             try:
                 generation, kind, value, sequence = self._results.get_nowait()
@@ -272,13 +298,16 @@ class QwenTtsRealtimeNode:
                     ),
                 )
             elif kind == "done":
+                self._complete_job()
                 self._log("synthesis.completed", generation=generation, chars=value)
             elif kind == "error":
+                self._complete_job()
                 raise RuntimeError(f"Qwen TTS failed: {value}")
 
     def _invalidate(self) -> bool:
         with self._lock:
             self._generation += 1
+            self._pending_jobs = 0
             transport = self._active_transport
             self._active_transport = None
         self._clear_queue(self._jobs)
@@ -293,6 +322,14 @@ class QwenTtsRealtimeNode:
     def _current_generation(self) -> int:
         with self._lock:
             return self._generation
+
+    def _complete_job(self) -> None:
+        with self._lock:
+            self._pending_jobs = max(0, self._pending_jobs - 1)
+
+    def _has_pending_work(self) -> bool:
+        with self._lock:
+            return self._pending_jobs > 0 or not self._results.empty()
 
     def _put_result(self, value: tuple[int, str, Any, int]) -> None:
         while not self._closing.is_set() and value[0] == self._current_generation():

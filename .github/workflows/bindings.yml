@@ -44,6 +44,11 @@ jobs:
         working-directory: bindings/node
         run: pnpm fetch --frozen-lockfile
       - run: ./scripts/check-node.sh
+      - name: Check out the pinned application Agent
+        working-directory: examples/voice-agent
+        run: |
+          mkdir -p .muxiva/agents
+          git clone --depth 1 --branch v0.1.2 https://github.com/PiyotaHu/muxiva-pi-agent.git .muxiva/agents/muxiva-pi-agent
       - name: Install locked Pi Agent dependencies without lifecycle scripts
         working-directory: examples/voice-agent
         run: npm ci --ignore-scripts

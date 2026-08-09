@@ -21,6 +21,7 @@ pub mod registered_runtime;
 pub mod registry;
 pub mod resource;
 pub mod runner;
+pub mod runtime_observer;
 mod signal;
 
 pub use admission::{AdmissionError, AdmissionLease, AdmissionSlots, AdmissionSnapshot};
@@ -81,8 +82,8 @@ pub use realtime::{
 };
 pub use registered_runtime::{
     materialize_registered_nodes, start_registered_runtime, start_registered_runtime_with_context,
-    start_registered_runtime_with_resources, GraphMaterializationError,
-    RegisteredRuntimeStartError,
+    start_registered_runtime_with_context_and_observer, start_registered_runtime_with_resources,
+    GraphMaterializationError, RegisteredRuntimeStartError,
 };
 pub use registry::{
     EdgePolicyRegistration, EdgePolicyRegistry, NodeCreateError, NodeCreationStage, NodeFactory,
@@ -93,5 +94,9 @@ pub use resource::{ResourceKey, ResourceStore, ResourceStoreError};
 pub use runner::{
     AbortHookDiagnostic, EdgePolicies, GraphRunSummary, GraphRunner, GraphRunnerBuildError,
     GraphRunnerState, NodeInstances, ObservedEdgeSignal,
+};
+pub use runtime_observer::{
+    FrameObservation, FrameObservationDirection, RuntimeObserver, SignalObservation,
+    SignalObservationDirection,
 };
 pub use signal::{SignalQueuePushError, SignalQueueSnapshot};

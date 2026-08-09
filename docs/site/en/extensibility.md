@@ -77,4 +77,4 @@ Studio, import it into the Library, and place it on the canvas.
 7. Distribute it as a project Node or an official Node Pack.
 
 Choose an implementation language in [multi-language execution](languages.md), then follow the
-[Build Nodes](nodes/index.md) tutorials.
+[developer manual](nodes/index.md).

@@ -186,6 +186,18 @@ pub struct NamedFrameView {
     pub frame: FrameView,
 }
 
+pub type OwnedPayloadReleaseCallback = extern "C" fn(*mut c_void);
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct OwnedNamedFrameView {
+    pub output_port: StrView,
+    pub frame: FrameView,
+    pub payload_owner: *mut c_void,
+    pub release_payload: Option<OwnedPayloadReleaseCallback>,
+    pub reserved: [u64; 2],
+}
+
 pub const NODE_METRIC_COUNTER_ADD: u32 = 1;
 pub const NODE_METRIC_GAUGE_SET: u32 = 2;
 
@@ -223,6 +235,8 @@ pub struct GraphNodeVtable {
     pub reserved: [u64; 3],
     pub take_next_source_tick_ns: Option<extern "C" fn(*mut c_void) -> u64>,
     pub take_metrics: Option<extern "C" fn(*mut c_void, *mut *const NodeMetricView, *mut usize)>,
+    pub take_owned_emissions:
+        Option<extern "C" fn(*mut c_void, *mut *const OwnedNamedFrameView, *mut usize)>,
 }
 
 unsafe impl Send for GraphNodeVtable {}

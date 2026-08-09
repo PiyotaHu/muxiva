@@ -25,7 +25,9 @@ class ClientEvent:
 `ctx.emit(port, frame)` sends data without ending the callback.
 `ctx.emit_signal(name, payload)` sends adjacent graph control, while
 `ctx.publish_notification(topic, payload)` publishes a low-frequency notification to
-the runtime NotificationBus. Returning a Frame or port mapping remains compatibility
+the runtime NotificationBus. `ctx.schedule_next_tick(delay_ms)` requests one input-free
+Runtime callback for bounded background-result draining; no `tick_in` Port or Clock Node is
+needed. Returning a Frame or port mapping remains compatibility
 sugar; new Nodes should prefer explicit context actions.
 
 Declare matching ports:

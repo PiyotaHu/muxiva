@@ -29,22 +29,19 @@ flowchart LR
 ```mermaid
 flowchart LR
     IN["Agora Ingress"] --> ASR["Qwen Server VAD + Streaming ASR"]
-    ASR --> FUSION["Turn Context / Policy"]
-    FUSION --> AGENT["Pi TypeScript Agent<br/>Qwen 模型 + Tool + Session"]
-    CLOCK["20 ms Async Tick"] --> AGENT
-    AGENT --> GATE["文本取消水位"]
-    GATE --> TTS["可取消 Qwen TTS Worker"]
-    CLOCK --> TTS
+    ASR -->|"Final Transcript"| AGENT["Pi TypeScript Agent<br/>Qwen 模型 + Tool + Session"]
+    AGENT --> TTS["可取消 Qwen TTS Worker"]
     TTS --> OUT["Agora Egress"]
     ASR -. "speech.started Signal" .-> AGENT
     ASR -. "speech.started Signal" .-> TTS
-    ASR -. "speech.started Signal" .-> GATE
     ASR -. "speech.started Signal" .-> OUT
 ```
 
 Demo 2 使用 Qwen ASR 完成 Server VAD 与流式转写，项目内 Pi TypeScript Agent 通过
-Qwen 模型管理会话与 Tool Call，再由 Qwen TTS 合成。通用 `interval_tick` 让后台
-Agent/TTS 以短回调排空有界队列，使 `on_signal` 不被长网络请求堵住。各阶段仍可替换。
+Qwen 模型管理会话与 Tool Call，再由 Qwen TTS 合成。Agent 和 TTS 通过 Node Context
+请求 Runtime 内部唤醒，在短回调中排空有界结果队列；调度机制不会显示成业务 Node 或
+`tick_in` Port。最终 ASR Text 已经代表一个提交完成的用户问题，因此直接进入 Agent。
+各阶段仍可替换。
 
 ## 每一层到底做什么
 
@@ -83,7 +80,7 @@ sequenceDiagram
 
 打断语义完全属于 Node。Realtime 图由 Qwen Audio Node 取消远端回答；级联图由 Qwen
 ASR Server VAD 发出同名 Signal，Pi Driver 调用 `agent.abort()`、Qwen TTS 关闭当前 WebSocket
-并清空待合成文本与 PCM，文本门和项目协议 Node 推进取消水位，Agora Audio Sink
+并清空待合成文本与 PCM；TTS 自己记录取消序号并拒绝迟到的旧回答，Agora Audio Sink
 清空播放队列并拒绝迟到音频。Core 不理解语音、Turn 或具体 Signal 名称，只负责路由
 不透明 Signal。
 
@@ -101,8 +98,9 @@ NotificationBus 继续作为进程内日志、指标和 Studio 运维观测设�
 浏览器 UID。共享 C++ Session 会丢弃其他 UID 的媒体与消息，避免错误混合多名参与者。
 
 !!! note "级联取消边界"
-    Demo 2 已能主动中止 Pi 模型流并关闭 TTS WebSocket，再通过三层水位过滤
-    晚到结果。已经发进 Agora 网络或浏览器播放缓冲区的 PCM 无法撤回，因此 Audio Sink
+    Demo 2 已能主动中止 Pi 模型流并关闭 TTS WebSocket，再由 Agent generation、TTS
+    取消序号和 Agora 播放水位过滤晚到结果。已经发进 Agora 网络或浏览器播放缓冲区的
+    PCM 无法撤回，因此 Audio Sink
     仍使用短包和有界队列；“硬打断”指取消服务端连接与本地流水线，不代表逆转已发送媒体。
 
 ## 凭据与部署边界

@@ -4,14 +4,39 @@ set -euo pipefail
 application_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$application_root/../.." && pwd)"
 
-if command -v muxiva >/dev/null 2>&1; then
-  muxiva_binary="$(command -v muxiva)"
-elif [[ -x "$repository_root/target/release/muxiva" ]]; then
-  muxiva_binary="$repository_root/target/release/muxiva"
+if [[ -n "${MUXIVA_BIN:-}" ]]; then
+  if [[ ! -x "$MUXIVA_BIN" ]]; then
+    echo "[MUXIVA][ERROR] MUXIVA_BIN is not executable: $MUXIVA_BIN" >&2
+    exit 2
+  fi
+  muxiva_binary="$MUXIVA_BIN"
 elif [[ -x "$repository_root/target/debug/muxiva" ]]; then
   muxiva_binary="$repository_root/target/debug/muxiva"
+elif [[ -x "$repository_root/target/release/muxiva" ]]; then
+  muxiva_binary="$repository_root/target/release/muxiva"
+elif command -v muxiva >/dev/null 2>&1; then
+  muxiva_binary="$(command -v muxiva)"
 else
   echo "The muxiva binary is not installed. Install a release binary or run: cargo install --path crates/muxiva-cli --locked" >&2
+  exit 2
+fi
+
+case "$(uname -s)" in
+  Darwin) native_extension="dylib" ;;
+  Linux) native_extension="so" ;;
+  *) native_extension="" ;;
+esac
+native_audio_source="$application_root/.muxiva/native/agora_audio_source/libmuxiva_node_pack${native_extension:+.$native_extension}"
+native_audio_source_code="$repository_root/providers/transport/agora/cpp/nodes/agora_audio_source/node.cpp"
+cpp_sdk_header="$repository_root/cpp/include/muxiva/muxiva.hpp"
+c_abi_header="$repository_root/cpp/include/muxiva/muxiva.h"
+if [[ -n "$native_extension" && -f "$native_audio_source" ]] &&
+   [[ "$native_audio_source_code" -nt "$native_audio_source" ||
+      "$cpp_sdk_header" -nt "$native_audio_source" ||
+      "$c_abi_header" -nt "$native_audio_source" ]]; then
+  echo '[MUXIVA][ERROR] The installed Agora Node Packs are older than their source or Muxiva ABI headers.' >&2
+  echo '[MUXIVA][WHY]   Running a stale native library can hide fixes or report an ABI/factory version mismatch.' >&2
+  echo '[MUXIVA][NEXT]  Stop the existing Studio process, then run ./examples/voice-agent/setup.sh once to rebuild every Node Pack.' >&2
   exit 2
 fi
 
@@ -27,6 +52,7 @@ echo '[MUXIVA][STEP 1] Studio opens now. Click Connections in the top toolbar.'
 echo '[MUXIVA][STEP 2] Fill missing Required fields once and click Save connections. Studio persists them in this project .env.'
 echo '[MUXIVA][STEP 3] Do not click Run or Voice Room until both cards show Ready.'
 echo '[MUXIVA][HELP]  https://piyotahu.github.io/muxiva/voice-demo/'
+echo "[MUXIVA][CLI]   $muxiva_binary"
 echo "[MUXIVA][LOG]   $application_root/.muxiva/runtime.log"
 
 studio_args=("$application_root/graph.json" "$@")

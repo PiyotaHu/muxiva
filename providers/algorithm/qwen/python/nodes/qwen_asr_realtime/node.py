@@ -68,6 +68,11 @@ class QwenAsrRealtimeNode:
         self._transport_factory = transport_factory
         self._transport: Any | None = None
         self._speech_active = False
+        self._pending_transcript: tuple[str, int] | None = None
+        # Qwen may deliver a final transcript before an already-buffered preview.
+        # Fence previews at the utterance boundary so a committed transcript can
+        # never be reopened by that late event.
+        self._transcript_committed = False
 
     @staticmethod
     def _log(event: str, **fields: Any) -> None:
@@ -101,6 +106,8 @@ class QwenAsrRealtimeNode:
                 if self._speech_active:
                     continue
                 self._speech_active = True
+                self._transcript_committed = False
+                self._pending_transcript = None
                 self._emit_speech_state(ctx, frame.sequence, True)
                 ctx.emit_signal(
                     "muxiva.voice.speech.started",
@@ -113,10 +120,21 @@ class QwenAsrRealtimeNode:
                 self._speech_active = False
                 self._emit_speech_state(ctx, frame.sequence, False)
                 self._log("speech.stopped", sequence=frame.sequence)
+                if self._pending_transcript is not None:
+                    text, sequence = self._pending_transcript
+                    self._pending_transcript = None
+                    self._emit_completed(ctx, text, sequence)
             elif kind in {
                 "conversation.item.input_audio_transcription.delta",
                 "conversation.item.input_audio_transcription.text",
             }:
+                if self._transcript_committed:
+                    self._log(
+                        "transcript.preview_dropped",
+                        sequence=frame.sequence,
+                        reason="utterance_already_committed",
+                    )
+                    continue
                 text = f"{event.get('text', '')}{event.get('stash', '')}"
                 if text:
                     ctx.emit(
@@ -125,12 +143,28 @@ class QwenAsrRealtimeNode:
                     )
                     ctx.publish_notification("muxiva.voice.transcript.preview", {"text": text})
             elif kind.endswith("input_audio_transcription.completed"):
+                if self._transcript_committed:
+                    self._log(
+                        "transcript.completed_dropped",
+                        sequence=frame.sequence,
+                        reason="duplicate_completion",
+                    )
+                    continue
+                self._transcript_committed = True
                 text = event.get("transcript", event.get("text", "")).strip()
                 if text:
-                    ctx.emit("text_out", muxiva.TextFrame(text, sequence=frame.sequence))
-                    ctx.publish_notification("muxiva.voice.transcript.completed", {"text": text})
-                    self._log("transcript.completed", sequence=frame.sequence, chars=len(text))
+                    if self._speech_active:
+                        self._pending_transcript = (text, frame.sequence)
+                        self._log(
+                            "transcript.pending",
+                            sequence=frame.sequence,
+                            reason="waiting_for_speech_stopped",
+                        )
+                    else:
+                        self._emit_completed(ctx, text, frame.sequence)
             elif kind.endswith("input_audio_transcription.failed"):
+                self._transcript_committed = True
+                self._pending_transcript = None
                 error = event.get("error", {})
                 self._emit_event(
                     ctx,
@@ -171,6 +205,11 @@ class QwenAsrRealtimeNode:
             ),
         )
         ctx.publish_notification(topic, payload)
+
+    def _emit_completed(self, ctx: Any, text: str, sequence: int) -> None:
+        ctx.emit("text_out", muxiva.TextFrame(text, sequence=sequence))
+        ctx.publish_notification("muxiva.voice.transcript.completed", {"text": text})
+        self._log("transcript.completed", sequence=sequence, chars=len(text))
 
     def on_finish(self, _ctx: Any = None) -> None:
         if self._transport is not None:

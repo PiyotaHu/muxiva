@@ -7,6 +7,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <cstring>
 #include <cstdio>
 #include <deque>
 #include <functional>
@@ -120,13 +121,17 @@ public:
                  16000, 1)) != 0) {
           return result;
         }
-        if ((result = engine_->enableAudio()) != 0)
+        // Keep the per-user before-mixing stream at its original level for the
+        // graph, but observe the final mixed playout in read/write mode so we
+        // can silence only the machine's speakers. adjustPlaybackSignalVolume(0)
+        // is deliberately not used here: it changes the remote playback signal
+        // itself and can therefore attenuate the PCM consumed by the bot.
+        if ((result = engine_->setPlaybackAudioFrameParameters(
+                 48000, 1, ::agora::rtc::RAW_AUDIO_FRAME_OP_MODE_READ_WRITE,
+                 480)) != 0) {
           return result;
-        // The Bot consumes remote PCM through the before-mixing observer. It
-        // must never render that remote microphone stream on the machine's
-        // speakers, otherwise a local browser hears a clear acoustic echo.
-        // Muting playout does not disable the registered before-mixing tap.
-        if ((result = engine_->adjustPlaybackSignalVolume(0)) != 0)
+        }
+        if ((result = engine_->enableAudio()) != 0)
           return result;
         ::agora::rtc::AudioTrackConfig audio_config;
         audio_config.enableLocalPlayback = false;
@@ -144,7 +149,7 @@ public:
           std::fprintf(
               stderr,
               "[MUXIVA][AGORA][native.initialized] audio=pcm_s16le/16000/mono "
-              "local_remote_playback=muted\n");
+              "local_remote_playback=silenced-after-mix\n");
         }
         return result;
       });
@@ -308,7 +313,17 @@ private:
   using VideoFrame = ::agora::media::base::VideoFrame;
 
   bool onRecordAudioFrame(const char *, AudioFrame &) override { return true; }
-  bool onPlaybackAudioFrame(const char *, AudioFrame &) override {
+  bool onPlaybackAudioFrame(const char *, AudioFrame &frame) override {
+    // This callback is downstream of the per-user before-mixing callback. The
+    // graph has already copied the original remote PCM, so clearing this final
+    // mixed frame prevents acoustic echo without muting the graph input.
+    if (frame.buffer != nullptr && frame.samplesPerChannel > 0 &&
+        frame.channels > 0 && frame.bytesPerSample > 0) {
+      const auto size = static_cast<std::size_t>(frame.samplesPerChannel) *
+                        static_cast<std::size_t>(frame.channels) *
+                        static_cast<std::size_t>(frame.bytesPerSample);
+      std::memset(frame.buffer, 0, size);
+    }
     return true;
   }
   bool onMixedAudioFrame(const char *, AudioFrame &) override { return true; }
@@ -351,7 +366,8 @@ private:
     }
   }
   int getObservedAudioFramePosition() override {
-    return AUDIO_FRAME_POSITION_BEFORE_MIXING;
+    return AUDIO_FRAME_POSITION_BEFORE_MIXING |
+           AUDIO_FRAME_POSITION_PLAYBACK;
   }
   AudioParams getPlaybackAudioParams() override { return {}; }
   AudioParams getRecordAudioParams() override { return {}; }
