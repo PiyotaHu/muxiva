@@ -1,5 +1,9 @@
 # Muxiva
 
+<p align="center">
+  <img src="assets/brand/muxiva-logo.png" alt="Muxiva Logo" width="320">
+</p>
+
 **一张实时多模态 Graph，一套统一生命周期，让 Rust、C++、Python 与
 TypeScript 共享同一个 Agent Runtime。**
 
