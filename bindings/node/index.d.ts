@@ -67,6 +67,10 @@ export interface GraphNodeContext {
   emit(port:string,frame:GraphFrame):void
   emitSignal(name:string,payload?:unknown):void
   publishNotification(topic:string,payload?:unknown):void
+  /** Add to a monotonically increasing, Node-owned runtime counter shown in Studio Observe. */
+  incrementCounter(name:string,delta?:number):void
+  /** Replace a Node-owned runtime gauge shown in Studio Observe. Values are non-negative integers. */
+  setGauge(name:string,value:number):void
 }
 export type GraphTextFrame = { kind:'text'; sequence:number; text:string }
 export type GraphByteFrame = { kind:'byte'; sequence:number; bytes:number[]; mediaType?:string }

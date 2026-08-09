@@ -6,6 +6,8 @@
   <title>Muxiva Studio</title>
   <link rel="stylesheet" href="/assets/studio.css">
   <link rel="stylesheet" href="/assets/runtime.css">
+  <link rel="stylesheet" href="/assets/observability.css">
+  <link rel="stylesheet" href="/assets/observability-history.css">
   <link rel="stylesheet" href="/assets/node-lab.css">
   <link rel="stylesheet" href="/assets/provider-help.css">
 </head>
@@ -25,6 +27,7 @@
         <button id="raw-toggle" class="button ghost">{ } JSON</button>
         <button id="templates" class="button ghost">◇ Templates</button>
         <button id="providers" class="button ghost">⚙ Connections</button>
+        <button id="observability" class="button ghost">◎ Observe</button>
         <button id="project-demo" class="button ghost hidden">◉ Voice Room</button>
         <button id="validate" class="button ghost"><span class="button-dot"></span> Validate</button>
         <button id="run" class="button run-button">▶ Run</button>
@@ -60,7 +63,7 @@
 
       <section class="canvas-panel">
         <div class="canvas-grid"></div>
-        <svg id="graph-canvas" role="img" aria-label="Graph canvas" viewBox="0 0 1200 760">
+        <svg id="graph-canvas" role="img" aria-label="Graph canvas" viewBox="0 0 1200 760" style="cursor: grab">
           <defs>
             <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
               <path d="M0,0 L8,4 L0,8 Z" class="arrow-head"></path>
@@ -78,7 +81,7 @@
           <button id="zoom-in" aria-label="Zoom in">＋</button>
           <button id="fit-view" title="Fit graph">Fit</button>
         </div>
-        <div class="canvas-hint">Drag a Palette Node onto the canvas · Drag an output port to a matching input</div>
+        <div class="canvas-hint">Drag blank canvas to pan · Scroll to zoom · Drag an output port to connect</div>
         <section id="runtime-panel" class="runtime-panel idle" aria-live="polite">
           <div class="runtime-header">
             <div><span id="runtime-light" class="runtime-light"></span><div><span class="eyebrow">RUNTIME</span><b id="runtime-status">Idle</b></div></div>
@@ -134,6 +137,43 @@
       <div class="raw-header"><div><span class="eyebrow">SOURCE</span><b>Graph v1 JSON</b></div><div><button id="format-json" class="button ghost">Format</button><button id="apply-json" class="button primary">Apply JSON</button><button id="raw-close" class="icon-button">×</button></div></div>
       <textarea id="raw-json" spellcheck="false" aria-label="Graph JSON"></textarea>
       <p id="raw-error" class="field-error"></p>
+    </section>
+
+    <section id="observability-page" class="observability-page hidden" aria-hidden="true">
+      <header class="observe-header">
+        <div class="observe-title"><span class="observe-mark">◎</span><div><span class="eyebrow">LIVE RUNTIME TELEMETRY</span><h1>Observability</h1></div></div>
+        <div class="observe-session"><span id="observe-health" class="health-badge idle">IDLE</span><span id="observe-session">No runtime session</span><button id="observability-close" class="icon-button" aria-label="Close observability">×</button></div>
+      </header>
+      <main class="observe-body">
+        <section class="observe-summary" aria-label="Runtime overview">
+          <article><span>NODE THROUGHPUT</span><b id="observe-node-rate">0/s</b><small>process callbacks</small></article>
+          <article><span>FRAME THROUGHPUT</span><b id="observe-frame-rate">0/s</b><small>across all Edges</small></article>
+          <article><span>QUEUED NOW</span><b id="observe-queued">0</b><small id="observe-queue-detail">0% of capacity</small></article>
+          <article><span>BOTTLENECKS</span><b id="observe-bottlenecks">0</b><small>warning or critical</small></article>
+        </section>
+        <section class="observe-layout">
+          <div class="observe-main">
+            <section class="observe-card">
+              <div class="observe-card-heading"><div><span class="eyebrow">DIAGNOSIS</span><h2>Hotspots</h2></div><small>Calculated from live rates, queues, latency and drops</small></div>
+              <div id="observe-hotspots" class="observe-hotspots"></div>
+            </section>
+            <section class="observe-card">
+              <div class="observe-card-heading"><div><span class="eyebrow">PERSISTED LOCALLY</span><h2>Session history</h2></div><div class="observe-history-actions"><span id="observe-export-status">Prometheus /metrics · OTLP not configured</span><button id="observe-history-refresh" class="mini-button">↻ Refresh</button></div></div>
+              <div class="observe-table-wrap"><table class="observe-table"><thead><tr><th>Session</th><th>Graph</th><th>Duration</th><th>Frames</th><th>Max queued</th><th>Drops</th><th>Slowest Node avg</th><th>Health</th></tr></thead><tbody id="observe-history"></tbody></table></div>
+              <div id="observe-history-trend" class="observe-history-trend hidden"></div>
+            </section>
+            <section class="observe-card">
+              <div class="observe-card-heading"><div><span class="eyebrow">EXECUTION</span><h2>Nodes</h2></div><small>Click a row for callback and custom metric details</small></div>
+              <div class="observe-table-wrap"><table class="observe-table"><thead><tr><th>Node</th><th>Processed</th><th>Rate</th><th>Avg process</th><th>Max process</th><th>Node metrics</th><th>Health</th></tr></thead><tbody id="observe-nodes"></tbody></table></div>
+            </section>
+            <section class="observe-card">
+              <div class="observe-card-heading"><div><span class="eyebrow">BACKPRESSURE</span><h2>Edges</h2></div><small>Queue occupancy is current; watermark is the session peak</small></div>
+              <div class="observe-table-wrap"><table class="observe-table"><thead><tr><th>Edge / route</th><th>Frames</th><th>Rate</th><th>Queue</th><th>Oldest</th><th>Drops</th><th>Media speed</th><th>Health</th></tr></thead><tbody id="observe-edges"></tbody></table></div>
+            </section>
+          </div>
+          <aside id="observe-detail" class="observe-detail"><div class="observe-empty"><span>◎</span><b>Select a Node or Edge</b><p>Inspect the measurements behind its health verdict and get a concrete next action.</p></div></aside>
+        </section>
+      </main>
     </section>
 
     <dialog id="edge-dialog">

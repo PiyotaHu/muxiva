@@ -11,13 +11,14 @@ distribution and several execution Hosts remain incomplete.
 | Python and Node.js SDKs | Experimental | Managed execution domains and hosted text Factories |
 | Studio | Available | Node Lab, typed wiring, validation, Run/Stop, metrics |
 | Studio Python project Host | Experimental | Text Source, Transform, and Sink |
-| Studio TypeScript/Rust/C++ Hosts | Planned | Authoring only today |
+| Studio TypeScript project Host | Experimental | Node.js 22.19+, async lifecycle, bounded subprocess protocol |
+| Studio Rust/C++ build Hosts | Planned | Source authoring exists; project compilation remains external |
 | Agora and FFmpeg | Experimental | Mock and optional official Node paths |
 | Package releases | Planned | No stable public release yet |
 
 ## Near-term priorities
 
-1. Complete the multi-language project Node execution Hosts.
+1. Harden and package the multi-language project Node execution Hosts.
 2. Unify CLI, Runtime, and Studio project Registry and lockfile behavior.
 3. Publish standalone CLI binaries, Python Wheels, npm packages, and C++ SDK
    archives with checksums and provenance.

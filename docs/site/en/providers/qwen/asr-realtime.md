@@ -17,12 +17,15 @@ enters explicit control Edges.
 | `audio_in` | Input Audio | PCM S16LE, 16 kHz, mono, streaming |
 | `speech_out` | Output Event | Server-VAD `speech.started` / `speech.stopped` |
 | `signal_out` | Output Signal | `muxiva.voice.speech.started` for barge-in |
+| `transcript_preview_out` | Output Text | Partial transcript |
 | `text_out` | Output Text | Final transcript |
-| `client_event_out` | Output Event | Speech state plus transcript preview/completion/failure |
+| `event_out` | Output Event | Transcript failure state |
 
 ## Configuration
 
 `model` defaults to `qwen3-asr-flash-realtime`; `language` defaults to `zh`; `vad_threshold` and
 `silence_duration_ms` tune utterance completion. Configure the shared `dashscope` Connection.
+The Node emits provider-neutral semantic Frames only. Demo 2 fans its Text and Event outputs into
+both Graph processing Nodes and the project-local Voice Room protocol Node.
 
 See Alibaba Cloud's [Qwen real-time speech recognition guide](https://help.aliyun.com/en/model-studio/real-time-speech-recognition-user-guide) for the current protocol and model scope.

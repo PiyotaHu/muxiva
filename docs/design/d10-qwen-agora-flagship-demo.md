@@ -55,6 +55,7 @@ Graph JSON, Studio state, and recordings.
 
 ```text
 Muxiva public Node/Frame ABI <- Python Qwen Node Pack
+Muxiva TypeScript Agent API <- project-local Pi Agent Node
 Muxiva public C++ ABI        <- C++ Agora Nodes
 
 Core / Graph / Studio -X-> Qwen, DashScope, or Agora SDK
@@ -93,8 +94,8 @@ When Qwen reports `input_audio_buffer.speech_started`, the owning Node emits
 `muxiva.voice.speech.started`. Core routes the opaque Signal only through
 explicit Graph Edges. In the Realtime profile, the Qwen Audio Node cancels its
 active remote response and rejects late chunks. In Demo 2, Qwen ASR Server VAD
-is the Signal source; cancellable background Qwen LLM/TTS workers close their
-active HTTP SSE/WebSocket connections, generic gates advance sequence
+is the Signal source; the Pi driver aborts its active model run while the Qwen
+TTS worker closes its WebSocket, generic gates advance sequence
 watermarks, and Agora Audio Sink clears pending PCM. No voice Turn identity or
 vendor cancellation logic exists in Core.
 
@@ -126,14 +127,14 @@ Bot token, or an App Certificate. Local development values persist in the Git-ig
 The Voice Graph Gallery exposes two choices:
 
 1. **Qwen Realtime**: Agora ingress, input resampler, one Qwen Audio Realtime
-   Node, captions, output resampler, and Agora Sink. This is the recommended
+   Node, project-local Voice Room event encoder, output resampler, and Agora audio/data Sinks. This is the recommended
    lowest-latency product path.
-2. **Qwen Full-Duplex Cascade (Demo 2)**: Agora ingress, input resampler, Qwen
-   Server VAD + realtime ASR, turn/context fusion, cancellable background Qwen
-   streaming LLM, text cancellation gate, cancellable background Qwen realtime
-   TTS, captions, output resampler, and Agora Sink. A generic interval Node
-   drives short result-drain callbacks without placing vendor scheduling in
-   Core. Every intelligence stage uses Alibaba Cloud but remains replaceable.
+2. **Pi Agent Full-Duplex Cascade (Demo 2)**: Agora ingress, input resampler,
+   Qwen Server VAD + realtime ASR, turn/context fusion, a project-local Pi
+   TypeScript Agent backed by Qwen with safe Tool Calls, text cancellation gate,
+   cancellable Qwen realtime TTS, project-local Voice Room event encoder, output
+   resampler, and Agora audio/data Sinks. A generic interval Node drives short
+   result-drain callbacks without placing Agent or vendor scheduling in Core.
 
 A template is visible before its optional Provider is installed. It can be
 inspected and applied, while validation and Run require every exact Factory
@@ -169,12 +170,17 @@ Implemented after the provider-boundary correction:
   audio append, transcript decode, cancellation, bounds, and secret redaction.
 - a generic C++ dynamic Node Pack loader validates ABI identity and exact
   Manifest port shape while retaining the loaded library for Node lifetimes;
-- Qwen ASR Server VAD emits speech Events, final transcripts, client Events,
+- Qwen ASR Server VAD emits speech Events plus preview/final transcript Text Frames,
   and the explicit interruption Signal;
-- Qwen LLM HTTP SSE and Qwen TTS WebSocket I/O run on cancellable background
-  workers; 20 ms Runtime ticks drain bounded result queues while leaving
-  `on_signal` responsive;
-- the Demo 2 Signal fans out to LLM, TTS, text/client gates, and Agora playback;
+- the managed TypeScript Project Node Host loads exact module entrypoints and
+  awaits async lifecycle callbacks in an isolated subprocess;
+- `@muxiva/agent` provides a vendor-neutral prompt/tick/signal/text/event Port
+  contract, bounded output, cancellation, and stale-generation suppression;
+- the project-local Pi Node owns Agent session state, Tool Calls, and the Qwen
+  model adapter; none of those dependencies enter Rust Core;
+- Pi model streaming and Qwen TTS WebSocket I/O are cancellable background work;
+  20 ms Runtime ticks drain bounded result queues while leaving `on_signal` responsive;
+- the Demo 2 Signal fans out to Agent, TTS, text/project-protocol gates, and Agora playback;
   late outputs retain the originating audio sequence so every watermark rejects
   the same cancelled response;
 - the project Voice Room joins through Agora Web SDK as an independent client;

@@ -27,7 +27,7 @@ or expose it to the browser. See the
 setup and troubleshooting flow.
 
 The flagship **Demo 2** profile uses Qwen ASR Server VAD as its interruption
-source, a cancellable background HTTP SSE worker for Qwen LLM, and a reusable
-cancellable WebSocket worker for Qwen TTS. The Graph routes one opaque
-`muxiva.voice.speech.started` Signal to both workers, stale-output gates, and
-Agora playback; Core contains no Alibaba-specific policy.
+source, a project-local Pi TypeScript Agent backed by Qwen for reasoning and
+Tool Calls, and a reusable cancellable Qwen TTS WebSocket worker. The Graph
+routes one opaque `muxiva.voice.speech.started` Signal to Agent/TTS, stale-output
+gates, and Agora playback; Core contains no Alibaba- or Pi-specific policy.

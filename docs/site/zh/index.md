@@ -20,17 +20,20 @@ Node 提供语音、推理、媒体、传输与业务能力。
 ```mermaid
 flowchart LR
     WEB["浏览器麦克风"] --> AGORA_IN["Agora C++ Ingress"]
-    AGORA_IN --> QWEN["Qwen Realtime 或级联智能层"]
-    QWEN --> AGORA_OUT["Agora C++ Egress"]
+    AGORA_IN --> QWEN["Qwen 语音智能层"]
+    QWEN --> PI["级联图中的 Pi TypeScript Agent"]
+    PI --> AGORA_OUT["Agora C++ Egress"]
+    QWEN --> AGORA_OUT
     AGORA_OUT --> WEB
     QWEN --> DATA["Agora 有序数据流"]
+    PI --> DATA
     DATA --> LIVE["客户端字幕 · 打断状态"]
 ```
 
 这是带真实凭据运行的门面应用：浏览器采集真实麦克风，Agora 传输真实音频，Qwen
 完成语音理解与生成。Studio 可选择低延迟 Realtime 图或可检查的
-全双工 Qwen Server VAD + ASR → 可取消 LLM → 可取消 TTS 图，并持续展示 Node、Frame
-和对话状态。
+全双工 Qwen Server VAD + ASR → 可使用工具的 Pi TypeScript Agent → 可取消 Qwen TTS
+图，并持续展示 Node、Tool Call、Frame 和对话状态。
 
 [运行旗舰语音 Demo](voice-demo.md){ .md-button .md-button--primary }
 [打开 Studio 指南](studio.md){ .md-button }

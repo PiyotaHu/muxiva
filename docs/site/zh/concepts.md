@@ -61,11 +61,23 @@ Muxiva 的可执行扩展只有一个概念：**Node**。所谓“内置集成�
 - **Rust 内置 Node** 适合重采样、VAD、取消门和通用工具等基础能力。
 - **Python Node Host** 适合 Qwen Realtime、ASR、LLM、TTS 和快速迭代的算法逻辑。
 - **C++ ABI Node Pack** 适合 Agora RTC、Codec、设备 SDK 等原生集成。
-- **TypeScript / 项目 Node** 位于 Agent 项目的 `.muxiva/nodes/`，使用同一套 Manifest、
-  Factory 与 Frame 契约。
+- **TypeScript / 项目 Node** 位于 Agent 项目的 `.muxiva/nodes/`，通过受管理的异步 Host
+  运行，并使用同一套 Manifest、Factory 与 Frame 契约。
 
 语言 Host 负责隔离线程、对象和异常；Graph 看见的始终是相同的 Node、Port 与 Frame，
 不会因为实现语言改变运行语义。
+
+#### Agent 是可复用 Node 能力，不是 Core 原语
+
+Agent 在文本模型之上增加长生命周期会话、Tool Call、Steering 和厂商相关流式行为。
+这些策略变化快，不应该写进 Rust Core。Muxiva 因此提供厂商无关的
+`@muxiva/agent` TypeScript 契约，用稳定的 Prompt、Tick、取消、Text 和生命周期
+Event Port 包装不同实现。Driver 可以接 Pi、其他 Agent Harness 或项目代码，而不改变
+Graph。
+
+Demo 2 验证了这条边界：Qwen ASR 输出完整问题，项目内的
+[Pi Agent Node](nodes/pi-agent.md)管理会话与工具，Qwen TTS 消费 Agent Text 输出。Pi
+只是可选 TypeScript 依赖；Runtime 看见的仍是普通 Node。
 
 ### 5. 外部服务与生产边界
 
@@ -142,8 +154,9 @@ Runtime 将它投递给相关模型与播放 Node；模型取消旧生成并丢�
    的 `on_signal`。
 4. Audio Sink 清空尚未发出的 PCM 队列、推进 sequence 取消水位，并拒绝不高于该水位的
    旧音频 Frame。这与 Qwen Node 的晚到分片过滤形成双保险。
-5. `speech.started` / `barge_in` 同时作为客户端 Event Frame，经 Encoder 和 Agora Data
-   Sink 发到远程 Voice Room；`publish_notification` 只进入进程内 NotificationBus，供日志、指标和
+5. `speech.started` / `barge_in` 以语义 Event Frame 离开 Qwen；项目级 Voice Room Encoder
+   把这些 Event 以及转写/回答 Text Frame 映射为应用协议，再由 Agora Data Sink 发到远程
+   Voice Room；`publish_notification` 只进入进程内 NotificationBus，供日志、指标和
    Studio 诊断使用。
 
 需要注意物理边界：已经进入 Agora 网络或浏览器播放器缓冲区的音频无法撤回。因此真正
@@ -156,7 +169,8 @@ Runtime 将它投递给相关模型与播放 Node；模型取消旧生成并丢�
 浏览器麦克风
   → Agora RTC 网络
   → C++ Agora Audio Source Node
-  → Audio Resampler / VAD / Qwen Python Node
+  → Audio Resampler / Qwen ASR
+  → 可选 Pi TypeScript Agent / Qwen TTS
   → 文本与音频 Frame
   → C++ Agora Data / Audio Sink Node
   → 浏览器聊天气泡与扬声器
@@ -180,7 +194,8 @@ Edge、Signal 和生命周期契约协作。
 1. [Rust Core 与核心对象](core-runtime.md)：深入 Frame、Node、Port、Edge、Graph；
 2. [Graph 与类型化 Port](graph.md)：读写 Graph v1；
 3. [实时流控与控制消息](realtime-control.md)：理解背压、Signal、NotificationBus 与打断；
-4. [Node 扩展机制](extensibility.md)与[多语言执行](languages.md)；
+4. [Node 扩展机制](extensibility.md)、[多语言执行](languages.md)与
+   [TypeScript Agent Node](nodes/pi-agent.md)；
 5. [统一 Node 架构](provider-architecture.md)；
 6. [CLI、Studio 与项目 Web](developer-surfaces.md)；
 7. [端到端语音链路](voice-architecture.md)与[可运行语音 Demo](voice-demo.md)。

@@ -16,12 +16,15 @@
 | `audio_in` | 输入 Audio | PCM S16LE、16 kHz、单声道、流式 |
 | `speech_out` | 输出 Event | Server VAD 的 `speech.started` / `speech.stopped` |
 | `signal_out` | 输出 Signal | `muxiva.voice.speech.started`，用于 Barge-in |
+| `transcript_preview_out` | 输出 Text | 临时转写 |
 | `text_out` | 输出 Text | 最终 Transcript |
-| `client_event_out` | 输出 Event | 说话状态、转写预览/完成/失败事件 |
+| `event_out` | 输出 Event | 转写失败状态 |
 
 ## 配置
 
 `model` 默认是 `qwen3-asr-flash-realtime`；`language` 默认是 `zh`；`vad_threshold` 和
 `silence_duration_ms` 用于调整一句话结束判定。需要配置共享的 `dashscope` Connection。
+该 Node 只输出与客户端无关的语义 Frame。Demo 2 会把 Text/Event 分叉给 Graph 内部处理
+Node 和项目级 Voice Room 协议 Node。
 
 协议与模型范围以[阿里云 Qwen 实时语音识别文档](https://help.aliyun.com/zh/model-studio/real-time-speech-recognition-user-guide)为准。

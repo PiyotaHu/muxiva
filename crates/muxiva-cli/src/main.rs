@@ -46,6 +46,8 @@ muxiva run .
 Build a real voice assistant with the flagship guide:
 https://piyotahu.github.io/muxiva/voice-demo/
 "#;
+const PROJECT_GITIGNORE: &str =
+    ".env\n.muxiva/native/\n.muxiva/venv/\n.muxiva/npm-cache/\n.muxiva/observability/\n";
 
 #[derive(Parser)]
 #[command(
@@ -201,6 +203,7 @@ fn init(path: &Path) -> Result<(), String> {
     fs::write(&graph, STARTER).map_err(|error| error.to_string())?;
     if created_root {
         fs::write(path.join("README.md"), PROJECT_README).map_err(|error| error.to_string())?;
+        fs::write(path.join(".gitignore"), PROJECT_GITIGNORE).map_err(|error| error.to_string())?;
     }
     println!(
         "[MUXIVA][INFO][project.created] root={} graph={} credentials=external",
@@ -280,16 +283,37 @@ fn studio(
     let listener = TcpListener::bind((host, requested))
         .map_err(|error| format!("cannot bind {host}:{requested}: {error}"))?;
     let address = listener.local_addr().map_err(|error| error.to_string())?;
-    let token = muxiva_studio::random_token().map_err(|error| error.to_string())?;
+    let token = studio_access_token()?;
     let url = format!("http://{address}/#{token}");
     println!("[MUXIVA][INFO][studio.ready] url={url}");
     println!("[MUXIVA][INFO][studio.graph] path={}", graph.display());
+    println!(
+        "[MUXIVA][INFO][studio.metrics] endpoint=http://{address}/metrics auth=bearer history=.muxiva/observability/history.jsonl"
+    );
     if !no_open {
         if let Err(error) = open_browser(&url) {
             eprintln!("[MUXIVA][WARN][studio.browser-open] {error}");
         }
     }
     muxiva_studio::serve(listener, graph, token).map_err(|error| error.to_string())
+}
+
+fn studio_access_token() -> Result<String, String> {
+    let token = match env::var("MUXIVA_STUDIO_ACCESS_TOKEN") {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => return muxiva_studio::random_token().map_err(|error| error.to_string()),
+    };
+    let valid = (32..=256).contains(&token.len())
+        && token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'));
+    if !valid {
+        return Err(
+            "MUXIVA_STUDIO_ACCESS_TOKEN must be 32-256 ASCII letters, digits, '.', '_' or '-'"
+                .into(),
+        );
+    }
+    Ok(token)
 }
 
 fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(), String> {

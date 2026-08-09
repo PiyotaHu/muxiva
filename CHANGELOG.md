@@ -17,8 +17,22 @@ but must be called out explicitly with migration guidance.
 - Trusted local text Python Node execution Host.
 - Palette drag-to-canvas and typed port-to-port Edge wiring.
 - MkDocs documentation site deployed through GitHub Pages.
+- Managed Studio TypeScript Project Node Host with asynchronous lifecycle,
+  exact module entrypoints, bounded framed output, cancellation, and structured
+  subprocess diagnostics.
+- Vendor-neutral `@muxiva/agent` TypeScript contract for stateful streaming
+  Agent Nodes, plus a project-local Pi Agent integration in Demo 2 with Qwen,
+  Tool Calls, session state, and full-duplex cancellation.
+- Studio **Observe** dashboard with per-Node callback latency and custom
+  counters/gauges, per-Edge queue age/occupancy/throughput, automatic hotspot
+  verdicts, click-through diagnosis, structured runtime summaries, bounded
+  cross-session trend history, authenticated Prometheus scraping, and
+  non-blocking OTLP/HTTP JSON metric export.
 
 ### Changed
+
+- Demo 2 now composes Qwen VAD/ASR, a tool-using Pi TypeScript Agent, and Qwen
+  TTS instead of using the single-purpose Python Qwen LLM Node.
 
 - **Breaking:** renamed the process-local observability `EventBus` to
   `NotificationBus` so it cannot be confused with Graph `EventFrame` output
@@ -49,5 +63,8 @@ but must be called out explicitly with migration guidance.
 
 - Node Worker shutdown now waits for the native execution domain to acknowledge
   closure before terminating the Worker, preventing environment teardown races.
+- Agora audio ingress now drains 10 ms SDK packets at real-time cadence with a
+  bounded catch-up burst instead of forwarding only one packet every 20 ms,
+  which previously created multi-second ASR and TTS latency.
 
 [Unreleased]: https://github.com/PiyotaHu/muxiva/compare/main...HEAD

@@ -120,6 +120,33 @@ fn inspect_voice_project(current: &Path, warnings: &mut usize) -> Option<PathBuf
             "[MUXIVA][DOCTOR][WARN] qwen-python ready=false next=\"./examples/voice-agent/setup.sh\""
         );
     }
+    let node = env::var("MUXIVA_NODE").unwrap_or_else(|_| "node".into());
+    let node_ready = Command::new(&node)
+        .args([
+            "--eval",
+            "const [M,m]=process.versions.node.split('.').map(Number);process.exit(M>22||(M===22&&m>=19)?0:1)",
+        ])
+        .status()
+        .is_ok_and(|status| status.success());
+    let pi_ready = node_ready
+        && project
+            .join("node_modules/@earendil-works/pi-agent-core/package.json")
+            .is_file()
+        && project
+            .join("node_modules/@muxiva/agent/package.json")
+            .is_file();
+    if pi_ready {
+        println!(
+            "[MUXIVA][DOCTOR][PASS] pi-typescript-agent node={} version={} dependencies=locked",
+            node,
+            tool_version(&node).unwrap_or_else(|| "unknown".into())
+        );
+    } else {
+        *warnings += 1;
+        println!(
+            "[MUXIVA][DOCTOR][WARN] pi-typescript-agent ready=false requirement=\"Node.js >=22.19 + locked npm dependencies\" next=\"./examples/voice-agent/setup.sh\""
+        );
+    }
     Some(project)
 }
 

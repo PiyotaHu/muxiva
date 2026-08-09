@@ -33,8 +33,44 @@ class AgoraAudioSourceNode final : public muxiva::MultimodalGraphNode {
   }
 
   void on_process(const muxiva_frame_view_v1*, muxiva::GraphNodeContext& ctx) override {
-    ctx.schedule_next_tick(std::chrono::milliseconds(20));
-    if (!session_ || !session_->try_pop_audio(current_)) return;
+    // Agora delivers 10 ms PCM packets. Poll at that cadence and drain a bounded
+    // burst so scheduler jitter can never turn the SDK callback queue into a
+    // multi-second hidden latency buffer.
+    ctx.schedule_next_tick(std::chrono::milliseconds(10));
+    if (session_) {
+      const auto stats = session_->audio_ingress_stats();
+      if (stats.received_total >= last_received_total_) {
+        ctx.increment_counter("ingress.received_frames",
+                              stats.received_total - last_received_total_);
+      }
+      if (stats.dropped_total >= last_dropped_total_) {
+        ctx.increment_counter("ingress.dropped_frames",
+                              stats.dropped_total - last_dropped_total_);
+      }
+      last_received_total_ = stats.received_total;
+      last_dropped_total_ = stats.dropped_total;
+      ctx.set_gauge("ingress.queue_frames", stats.queued_frames);
+      ctx.set_gauge("ingress.queue_duration_ms",
+                    stats.queued_duration_ns / 1000000ULL);
+    }
+    if (!session_) return;
+    for (std::size_t drained = 0;
+         drained < kMaxDrainPerTick && session_->try_pop_audio(current_);
+         ++drained) {
+      emit_current(ctx);
+    }
+  }
+
+  void on_finish() override {
+    session_.reset();
+  }
+
+  void on_abort(const muxiva_abort_reason_v1&) noexcept override {
+    try { on_finish(); } catch (...) {}
+  }
+
+ private:
+  void emit_current(muxiva::GraphNodeContext& ctx) {
     frame_ = {};
     frame_.header.abi_version = MUXIVA_ABI_VERSION_V1;
     frame_.header.struct_size = sizeof(frame_.header);
@@ -56,6 +92,7 @@ class AgoraAudioSourceNode final : public muxiva::MultimodalGraphNode {
     frame_.payload.audio.samples_per_channel = current_.samples_per_channel;
     frame_.payload.audio.bytes = {current_.bytes.data(), current_.bytes.size()};
     ctx.emit("audio_out", frame_);
+    ctx.increment_counter("output.audio_frames", 1);
     const auto emitted = ++emitted_frames_;
     if (emitted == 1 || emitted % 500 == 0) {
       std::fprintf(stderr,
@@ -65,21 +102,14 @@ class AgoraAudioSourceNode final : public muxiva::MultimodalGraphNode {
                    current_.remote_uid);
     }
   }
-
-  void on_finish() override {
-    session_.reset();
-  }
-
-  void on_abort(const muxiva_abort_reason_v1&) noexcept override {
-    try { on_finish(); } catch (...) {}
-  }
-
- private:
+  static constexpr std::size_t kMaxDrainPerTick = 8;
   std::shared_ptr<muxiva::agora::SharedSession> session_;
   muxiva::agora::OwnedPcm16Frame current_;
   muxiva_frame_view_v1 frame_{};
   std::uint64_t sequence_ = 0;
   std::atomic<std::uint64_t> emitted_frames_{0};
+  std::uint64_t last_received_total_ = 0;
+  std::uint64_t last_dropped_total_ = 0;
   std::string frame_id_;
   std::string clock_domain_ = "agora.remote.monotonic";
   std::string stream_id_;

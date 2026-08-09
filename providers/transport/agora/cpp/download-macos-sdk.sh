@@ -6,6 +6,23 @@ repository_root="$(cd "$script_root/../../.." && pwd)"
 agora_version="4.6.2"
 infra_version="1.3.7"
 destination="${1:-$repository_root/build/vendor/agora-macos-$agora_version}"
+version_marker="$destination/.muxiva-agora-sdk-version"
+legacy_version_marker="$destination/.voxa-agora-sdk-version"
+
+sdk_components_are_present() {
+  local component
+  for component in \
+    AgoraRtcKit \
+    Agorafdkaac \
+    Agoraffmpeg \
+    AgoraSoundTouch \
+    video_dec \
+    aosl; do
+    if [[ ! -f "$destination/$component.xcframework/Info.plist" ]]; then
+      return 1
+    fi
+  done
+}
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "[MUXIVA][ERROR] The automatic Agora SDK installer currently supports macOS only." >&2
@@ -19,13 +36,26 @@ for command_name in curl shasum unzip; do
   fi
 done
 
-if [[ -f "$destination/.muxiva-agora-sdk-version" ]] &&
-   [[ "$(cat "$destination/.muxiva-agora-sdk-version")" == "$agora_version" ]]; then
-  echo "[MUXIVA][AGORA] SDK already verified path=$destination version=$agora_version"
+if [[ -f "$version_marker" ]] &&
+   [[ "$(cat "$version_marker")" == "$agora_version" ]] &&
+   sdk_components_are_present; then
+  echo "[MUXIVA][AGORA][REUSE] SDK is already installed and verified; download skipped."
+  echo "[MUXIVA][AGORA][REUSE] path=$destination version=$agora_version"
+  exit 0
+fi
+if [[ -f "$legacy_version_marker" ]] &&
+   [[ "$(cat "$legacy_version_marker")" == "$agora_version" ]] &&
+   sdk_components_are_present; then
+  printf '%s\n' "$agora_version" > "$version_marker"
+  echo "[MUXIVA][AGORA][REUSE] Existing SDK from the Voxa-to-Muxiva rename is valid; download skipped."
+  echo "[MUXIVA][AGORA][MIGRATE] Added Muxiva verification marker path=$version_marker"
+  echo "[MUXIVA][AGORA][REUSE] path=$destination version=$agora_version"
   exit 0
 fi
 if [[ -e "$destination" ]]; then
-  echo "[MUXIVA][ERROR] Refusing to overwrite existing SDK path: $destination" >&2
+  echo "[MUXIVA][ERROR] Existing Agora SDK directory is incomplete or cannot be verified: $destination" >&2
+  echo "[MUXIVA][HELP]  Keep it as a backup by renaming it, then rerun setup.sh to download a verified copy." >&2
+  echo "[MUXIVA][HELP]  Or pass the absolute path of another complete Agora SDK to setup.sh." >&2
   exit 2
 fi
 

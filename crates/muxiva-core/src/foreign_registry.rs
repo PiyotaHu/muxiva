@@ -4,7 +4,10 @@ use std::{sync::Arc, time::Duration};
 
 use muxiva_types::{EventFrame, Frame, MuxivaError, NodeId, SignalFrame};
 
-use crate::{AbortReason, ConfigMap, Node, NodeContext, NodeFactory, NodeFactoryError, PortName};
+use crate::{
+    AbortReason, ConfigMap, Node, NodeContext, NodeFactory, NodeFactoryError,
+    NodeMetricObservation, PortName,
+};
 
 /// One owned frame emission returned by a language-hosted lifecycle call.
 pub struct ForeignNodeEmission {
@@ -33,6 +36,7 @@ pub struct ForeignNodeCallOutput {
     signals: Vec<SignalFrame>,
     events: Vec<EventFrame>,
     next_source_tick: Option<Duration>,
+    metrics: Vec<NodeMetricObservation>,
 }
 
 impl ForeignNodeCallOutput {
@@ -45,6 +49,7 @@ impl ForeignNodeCallOutput {
             signals: signals.into(),
             events: Vec::new(),
             next_source_tick: None,
+            metrics: Vec::new(),
         }
     }
 
@@ -60,6 +65,11 @@ impl ForeignNodeCallOutput {
 
     pub fn with_signals(mut self, signals: impl Into<Vec<SignalFrame>>) -> Self {
         self.signals = signals.into();
+        self
+    }
+
+    pub fn with_metrics(mut self, metrics: impl Into<Vec<NodeMetricObservation>>) -> Self {
+        self.metrics = metrics.into();
         self
     }
 
@@ -169,6 +179,9 @@ impl ForeignNodeAdapter {
         }
         for event in output.events {
             context.publish_notification(event)?;
+        }
+        for metric in output.metrics {
+            context.observe_metric(metric);
         }
         if let Some(delay) = output.next_source_tick {
             context.schedule_next_tick(delay);

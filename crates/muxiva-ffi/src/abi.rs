@@ -186,6 +186,18 @@ pub struct NamedFrameView {
     pub frame: FrameView,
 }
 
+pub const NODE_METRIC_COUNTER_ADD: u32 = 1;
+pub const NODE_METRIC_GAUGE_SET: u32 = 2;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct NodeMetricView {
+    pub name: StrView,
+    pub operation: u32,
+    pub reserved0: u32,
+    pub value: u64,
+}
+
 pub type GraphProcessCallback = extern "C" fn(
     *mut c_void,
     *const FrameView,
@@ -210,6 +222,7 @@ pub struct GraphNodeVtable {
     pub capabilities: u64,
     pub reserved: [u64; 3],
     pub take_next_source_tick_ns: Option<extern "C" fn(*mut c_void) -> u64>,
+    pub take_metrics: Option<extern "C" fn(*mut c_void, *mut *const NodeMetricView, *mut usize)>,
 }
 
 unsafe impl Send for GraphNodeVtable {}

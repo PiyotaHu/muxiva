@@ -309,6 +309,8 @@ pub struct EdgeMetricsSnapshot {
     full_total: u64,
     blocked_duration_ns: u64,
     oldest_frame_age_ns: Option<u64>,
+    payload_bytes_total: u64,
+    audio_duration_ns_total: u64,
     latest_error_reason: Option<Box<str>>,
 }
 
@@ -333,6 +335,8 @@ impl EdgeMetricsSnapshot {
             full_total: 0,
             blocked_duration_ns: 0,
             oldest_frame_age_ns: None,
+            payload_bytes_total: 0,
+            audio_duration_ns_total: 0,
             latest_error_reason: None,
         }
     }
@@ -350,6 +354,8 @@ impl EdgeMetricsSnapshot {
         full_total: u64,
         blocked_duration_ns: u64,
         oldest_frame_age_ns: Option<u64>,
+        payload_bytes_total: u64,
+        audio_duration_ns_total: u64,
         latest_error_reason: Option<Box<str>>,
     ) -> Self {
         Self {
@@ -364,6 +370,8 @@ impl EdgeMetricsSnapshot {
             full_total,
             blocked_duration_ns,
             oldest_frame_age_ns,
+            payload_bytes_total,
+            audio_duration_ns_total,
             latest_error_reason,
         }
     }
@@ -424,6 +432,16 @@ impl EdgeMetricsSnapshot {
     /// Returns age of the oldest queued frame in nanoseconds when present.
     pub const fn oldest_frame_age_ns(&self) -> Option<u64> {
         self.oldest_frame_age_ns
+    }
+
+    /// Returns cumulative payload bytes accepted by this Edge.
+    pub const fn payload_bytes_total(&self) -> u64 {
+        self.payload_bytes_total
+    }
+
+    /// Returns cumulative audio media duration accepted by this Edge.
+    pub const fn audio_duration_ns_total(&self) -> u64 {
+        self.audio_duration_ns_total
     }
 
     /// Returns the latest non-sensitive error reason.

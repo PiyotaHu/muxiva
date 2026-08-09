@@ -17,7 +17,7 @@ flowchart LR
     AI --> QR["Qwen Audio Realtime<br/>Python · Algorithm"]
     QR --> AO["Agora Audio Egress<br/>C++ · Transport"]
     AO --> S["Browser speaker"]
-    QR --> CE["Client Event Encoder<br/>Rust · Protocol"]
+    QR -->|"transcript/response Text + state Event"| CE["Voice Room Event Encoder<br/>Python · Project"]
     CE --> DO["Agora Data Egress<br/>C++ · Transport"]
     DO --> UI["Independent Voice Client"]
 ```
@@ -33,32 +33,32 @@ results or business logic can be inserted:
 flowchart LR
     IN["Agora Ingress"] --> ASR["Qwen Server VAD + Streaming ASR"]
     ASR --> FUSION["Turn Context / Policy"]
-    FUSION --> LLM["Cancellable Qwen LLM Worker"]
-    CLOCK["20 ms Async Tick"] --> LLM
-    LLM --> GATE["Text Cancellation Watermark / Tool"]
+    FUSION --> AGENT["Pi TypeScript Agent<br/>Qwen model + tools + session"]
+    CLOCK["20 ms Async Tick"] --> AGENT
+    AGENT --> GATE["Text Cancellation Watermark"]
     GATE --> TTS["Cancellable Qwen TTS Worker"]
     CLOCK --> TTS
     TTS --> OUT["Agora Egress"]
-    ASR -. "speech.started Signal" .-> LLM
+    ASR -. "speech.started Signal" .-> AGENT
     ASR -. "speech.started Signal" .-> TTS
     ASR -. "speech.started Signal" .-> GATE
     ASR -. "speech.started Signal" .-> OUT
 ```
 
-Demo 2 uses Alibaba Cloud throughout: Qwen ASR owns both Server VAD and streaming
-transcription. Qwen LLM and Qwen TTS run vendor I/O on background workers; a generic
-`interval_tick` lets each Node drain a bounded result queue in short callbacks, keeping
-`on_signal` responsive during long network calls. Every stage remains replaceable, and
-branching and joining remain normal Graph capabilities.
+Demo 2 uses Qwen ASR for Server VAD and streaming transcription, a project-local Pi
+TypeScript Agent backed by Qwen for conversation state and Tool Calls, and Qwen TTS.
+The generic `interval_tick` lets background Agent/TTS work drain bounded queues in short
+callbacks, keeping `on_signal` responsive. Every stage remains replaceable.
 
 ## What each layer owns
 
 | Layer | Implementation | Owns | Does not own |
 | --- | --- | --- | --- |
 | Project web | HTML/JS + Agora Web SDK | Microphone permission, channel, playback, interaction UI | Model secrets or Runtime scheduling |
+| Project Nodes | Python + TypeScript | Voice Room protocol plus Pi Agent session and tools | Runtime primitives or Agora packet limits |
 | Official Agora Nodes | C++ Node Pack | One shared RTC session, audio ingress/egress, and reliable ordered client messages | ASR, LLM, or Graph scheduling |
 | Runtime Core | Rust | Types, queues, concurrency, opaque Signal routing, shutdown | Vendor requests, voice turns, or product UI |
-| Official Qwen Nodes | Python Node Pack | Realtime or ASR/LLM/TTS streams | RTC channels or Edge queues |
+| Official Qwen Nodes | Python Node Pack | Realtime, ASR, optional LLM, and TTS streams | Agent policy, RTC channels, or Edge queues |
 | Developer tools | CLI + Studio | Create, configure, validate, run, observe | Production end-user UI |
 
 ## Full duplex and barge-in
@@ -86,16 +86,18 @@ sequenceDiagram
 ```
 
 Interruption semantics live entirely in Nodes. In the Realtime Graph, Qwen Audio cancels its
-remote response. In Demo 2, Qwen ASR Server VAD emits the same Signal; Qwen LLM closes its HTTP
-SSE response, Qwen TTS closes the active WebSocket and clears pending text and PCM, text/client
-gates advance cancellation watermarks, and Agora Audio Sink clears queued playback and rejects
+remote response. In Demo 2, Qwen ASR Server VAD emits the same Signal; the Pi driver calls
+`agent.abort()`, Qwen TTS closes the active WebSocket and clears pending text and PCM, text and
+project protocol Nodes advance cancellation watermarks, and Agora Audio Sink clears queued playback and rejects
 late audio. Core understands neither voice, turns, nor a particular Signal name—it routes opaque
 Signals only.
 
 ## Client data is not Studio telemetry
 
-ASR text, assistant text, and speech state leave the Graph through `agora.data_sink`. The browser
-receives `muxiva.client-event/v1` messages from Agora's reliable ordered data stream. It never polls
+ASR text, assistant text, and speech state first pass through the project-local
+`voice_room.event_encoder`, then leave the Graph through `agora.data_sink`. The application Node
+owns `muxiva.client-event/v1`; the Agora Node owns packetization and reliable ordered delivery. The browser
+receives those messages from Agora's data stream. It never polls
 `/api/v1/runtime/events`, and it cannot start or stop the Runtime. NotificationBus remains an in-process
 observability facility for logs and Studio operators; it is not the end-user transport contract.
 
@@ -108,7 +110,7 @@ session and one configured browser UID. The shared C++ session drops media and m
 other UID rather than accidentally mixing participants.
 
 !!! note "Cascade cancellation boundary"
-    Demo 2 actively closes the in-flight LLM HTTP SSE response and TTS WebSocket, then applies
+    Demo 2 aborts the in-flight Pi model stream and closes the TTS WebSocket, then applies
     three cancellation watermarks to late results. PCM already inside Agora or the browser's
     playback buffer cannot be recalled, so Audio Sink still uses short packets and bounded queues.
     “Hard interruption” means cancelling vendor connections and the local pipeline, not reversing

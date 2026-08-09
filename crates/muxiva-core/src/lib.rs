@@ -28,8 +28,8 @@ pub use audio_merge::{merge_audio_prefix, FrameIdSource, MergedAudioFrame};
 pub use cancellation::{Cancellation, StopToken};
 pub use concurrent::{
     ConcurrentRunSummary, ConcurrentRuntime, ConcurrentRuntimeState, GraphRuntime,
-    NodeMetricsSnapshot, RuntimeOptions, RuntimeStartError, RuntimeThreadRole, RuntimeWaitError,
-    ShutdownDiagnostics,
+    NodeCustomMetricSnapshot, NodeMetricsSnapshot, RuntimeOptions, RuntimeStartError,
+    RuntimeThreadRole, RuntimeWaitError, ShutdownDiagnostics,
 };
 pub use edge::{
     EdgeDescriptor, EdgeMetrics, EdgeMetricsSnapshot, EdgePolicyName, EnabledCondition,
@@ -64,8 +64,9 @@ pub use managed_stream::{
 pub use node::{
     AbortCategory, AbortReason, AbortRootContext, AbortStage, ConfigKey, ConfigMap, ConfigSchema,
     DescriptorNameError, DuplicateConfigKey, LifecycleCapabilities, Node, NodeContext,
-    NodeDescriptor, NodeEmission, NodeEmissionError, NodeKind, NodeTypeName, PortDescriptor,
-    PortDirection, PortName, SignalEmissionError,
+    NodeDescriptor, NodeEmission, NodeEmissionError, NodeKind, NodeMetricError, NodeMetricKind,
+    NodeMetricObservation, NodeTypeName, PortDescriptor, PortDirection, PortName,
+    SignalEmissionError,
 };
 pub use notification_bus::{
     NotificationBus, NotificationBusError, NotificationBusStopReport, PublishReport,

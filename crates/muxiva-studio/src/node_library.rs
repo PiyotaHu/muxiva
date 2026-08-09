@@ -10,14 +10,14 @@ use std::{
 
 use muxiva_core::{
     ConfigMap, ConfigSchema, LifecycleCapabilities, Node, NodeContext, NodeDescriptor, NodeFactory,
-    NodeFactoryError, NodeFactoryVersion, NodeKind, NodeLanguage, NodeRegistration, NodeRegistry,
-    NodeTypeName, PortDescriptor, PortDirection, PortName,
+    NodeFactoryError, NodeFactoryVersion, NodeKind, NodeLanguage, NodeMetricObservation,
+    NodeRegistration, NodeRegistry, NodeTypeName, PortDescriptor, PortDirection, PortName,
 };
 use muxiva_types::{
-    AudioData, AudioLayout, ClockDomain, ClockDomainId, ClockKind, ErrorCategory, EventData,
-    Extensions, Frame, FrameBuffer, FrameDerivation, FrameHeader, FrameId, FramePayload, FrameType,
-    Lineage, Metadata, MuxivaError, NamespacedName, NodeId, PcmSampleFormat, SchemaVersion,
-    SequenceId, SignalData, StreamId, TextData, Timestamp, TraceId, TransformOrigin,
+    AudioData, AudioLayout, ByteData, ClockDomain, ClockDomainId, ClockKind, ErrorCategory,
+    EventData, Extensions, Frame, FrameBuffer, FrameDerivation, FrameHeader, FrameId, FramePayload,
+    FrameType, Lineage, MediaType, Metadata, MuxivaError, NamespacedName, NodeId, PcmSampleFormat,
+    SchemaVersion, SequenceId, SignalData, StreamId, TextData, Timestamp, TraceId, TransformOrigin,
 };
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +27,7 @@ const PROVIDER_CONFIG_FORMAT: &str = "muxiva.providers/v1";
 const MAX_CODE_BYTES: usize = 512 * 1024;
 const MAX_PROVIDER_CONFIG_BYTES: u64 = 64 * 1024;
 const MAX_HOST_RESPONSE_BYTES: usize = 1024 * 1024;
+const TYPESCRIPT_HOST: &str = include_str!("typescript_host.mjs");
 static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
 static NEXT_FRAME: AtomicU64 = AtomicU64::new(0);
 
@@ -34,17 +35,25 @@ const PYTHON_HOST: &str = r#"
 import importlib.util, inspect, json, sys, types
 
 class TextFrame:
-    def __init__(self, text, sequence=0): self.text, self.sequence = text, sequence
+    def __init__(self, text, sequence=0, stream_id="", trace_id="", timestamp_ns=0):
+        self.text, self.sequence = text, sequence
+        self.stream_id, self.trace_id, self.timestamp_ns = stream_id, trace_id, timestamp_ns
 
 class AudioFrame:
     def __init__(self, data, sample_rate_hz, channels=1, sequence=0):
         self.data, self.sample_rate_hz = bytes(data), sample_rate_hz
         self.channels, self.sequence = channels, sequence
 
+class ByteFrame:
+    def __init__(self, data, media_type="application/octet-stream", sequence=0):
+        self.data, self.media_type, self.sequence = bytes(data), media_type, sequence
+
 class EventFrame:
-    def __init__(self, topic, payload="", source="python.node", schema_version=1, sequence=0, **_):
+    def __init__(self, topic, payload="", source="python.node", schema_version=1, sequence=0,
+                 stream_id="", trace_id="", timestamp_ns=0, **_):
         self.topic, self.payload, self.source = topic, payload, source
         self.schema_version, self.sequence = schema_version, sequence
+        self.stream_id, self.trace_id, self.timestamp_ns = stream_id, trace_id, timestamp_ns
 
 class SignalFrame:
     def __init__(self, name, payload="", source="runtime.node", schema_version=1, sequence=0, **_):
@@ -54,6 +63,7 @@ class SignalFrame:
 shim = types.ModuleType("muxiva")
 shim.TextFrame = TextFrame
 shim.AudioFrame = AudioFrame
+shim.ByteFrame = ByteFrame
 shim.EventFrame = EventFrame
 shim.SignalFrame = SignalFrame
 
@@ -61,7 +71,7 @@ class NodeContext:
     def __init__(self, node_id, input_port, config, streaming=False):
         self.node_id, self.input_port, self.config = node_id, input_port, config
         self.streaming = streaming
-        self.emissions, self.signals, self.events = [], [], []
+        self.emissions, self.signals, self.events, self.metrics = [], [], [], []
     def emit(self, port, frame):
         emission = {"port":port, "frame":encode_frame(frame)}
         if self.streaming:
@@ -76,6 +86,14 @@ class NodeContext:
         value = {"topic":topic, "payload":payload}
         if self.streaming: print(json.dumps({"kind":"event", **value}), flush=True)
         else: self.events.append(value)
+    def increment_counter(self, name, delta=1):
+        value = {"name":name, "operation":"counter_add", "value":int(delta)}
+        if self.streaming: print(json.dumps({"kind":"metric", **value}), flush=True)
+        else: self.metrics.append(value)
+    def set_gauge(self, name, value):
+        metric = {"name":name, "operation":"gauge_set", "value":int(value)}
+        if self.streaming: print(json.dumps({"kind":"metric", **metric}), flush=True)
+        else: self.metrics.append(metric)
     def __str__(self): return self.input_port or ""
     def __eq__(self, other): return self.input_port == other
 
@@ -102,15 +120,17 @@ def invoke(name, *args):
 
 def decode_frame(value):
     if value is None: return None
-    if value.get("kind") == "text": return TextFrame(value["text"], value.get("sequence", 0))
+    if value.get("kind") == "text": return TextFrame(value["text"], value.get("sequence", 0), value.get("stream_id", ""), value.get("trace_id", ""), value.get("timestamp_ns", 0))
     if value.get("kind") == "audio": return AudioFrame(bytes.fromhex(value["pcm_hex"]), value["sample_rate_hz"], value["channels"], value.get("sequence", 0))
-    if value.get("kind") == "event": return EventFrame(value["topic"], value.get("payload", ""), value.get("source", "runtime.node"), value.get("schema_version", 1), value.get("sequence", 0))
+    if value.get("kind") == "byte": return ByteFrame(bytes.fromhex(value["data_hex"]), value.get("media_type", "application/octet-stream"), value.get("sequence", 0))
+    if value.get("kind") == "event": return EventFrame(value["topic"], value.get("payload", ""), value.get("source", "runtime.node"), value.get("schema_version", 1), value.get("sequence", 0), value.get("stream_id", ""), value.get("trace_id", ""), value.get("timestamp_ns", 0))
     if value.get("kind") == "signal": return SignalFrame(value["name"], value.get("payload", ""), value.get("source", "runtime.node"), value.get("schema_version", 1), value.get("sequence", 0))
     raise ValueError("Studio Python Host received an unsupported Frame")
 
 def encode_frame(value):
     if isinstance(value, TextFrame): return {"kind":"text", "text":value.text, "sequence":value.sequence}
     if isinstance(value, AudioFrame): return {"kind":"audio", "pcm_hex":value.data.hex(), "sample_rate_hz":value.sample_rate_hz, "channels":value.channels, "sequence":value.sequence}
+    if isinstance(value, ByteFrame): return {"kind":"byte", "data_hex":value.data.hex(), "media_type":value.media_type, "sequence":value.sequence}
     if isinstance(value, EventFrame): return {"kind":"event", "topic":value.topic, "payload":value.payload, "source":value.source, "schema_version":value.schema_version, "sequence":value.sequence}
     if isinstance(value, dict) and value.get("kind") == "text": return value
     raise ValueError("Python Node emitted an unsupported Frame")
@@ -129,12 +149,12 @@ for line in sys.stdin:
                 for port, frames in values.items():
                     if not isinstance(frames, list): frames = [frames]
                     for item in frames: ctx.emit(port, item)
-            response = {"ok": True, "signals":ctx.signals, "events":ctx.events}
+            response = {"ok": True, "signals":ctx.signals, "events":ctx.events, "metrics":ctx.metrics}
         elif op == "signal":
             signal = decode_frame(command["signal"])
             ctx = NodeContext(command["node_id"], command.get("input_port"), config, streaming=False)
             invoke("on_signal", signal, ctx)
-            response = {"ok": True, "signals":ctx.signals, "events":ctx.events}
+            response = {"ok": True, "signals":ctx.signals, "events":ctx.events, "metrics":ctx.metrics}
         elif op == "prepare": invoke("on_prepare", NodeContext(command["node_id"], None, config)); response = {"ok": True}
         elif op == "finish": invoke("on_finish", NodeContext(command["node_id"], None, config)); response = {"ok": True}
         elif op == "abort": invoke("on_abort", command.get("reason", "aborted"), NodeContext(command["node_id"], None, config)); response = {"ok": True}
@@ -772,6 +792,9 @@ pub fn register_project_nodes_with_connections(
             "python" if python_host_supported(graph, &package) => {
                 python_registration(graph, &package, connections.clone())?
             }
+            "typescript" if typescript_host_supported(graph, &package.manifest) => {
+                typescript_registration(graph, &package, connections.clone())?
+            }
             "cpp" if cpp_host_supported(graph, &package.manifest) => {
                 cpp_registration(graph, &package.manifest)?
             }
@@ -1108,6 +1131,7 @@ fn read_package(
     };
     let code = fs::read_to_string(directory.join(source_filename(&manifest.language)))?;
     let runtime_available = python_host_supported_manifest(graph, &manifest)
+        || typescript_host_supported(graph, &manifest)
         || (manifest.language == "cpp" && cpp_artifact_path(graph, &manifest.package_id).is_file());
     Ok(NodePackage {
         manifest,
@@ -1343,6 +1367,66 @@ fn python_registration(
     ))
 }
 
+fn typescript_registration(
+    _graph: &Path,
+    package: &NodePackage,
+    connections: ConnectionStore,
+) -> Result<NodeRegistration, String> {
+    let manifest = &package.manifest;
+    let template = NodeId::new(format!("template-{}", manifest.node_type))
+        .map_err(|error| error.to_string())?;
+    let ports = manifest
+        .ports
+        .iter()
+        .map(|port| {
+            Ok(PortDescriptor::new(
+                template.clone(),
+                PortName::new(port.name.clone()).map_err(|error| error.to_string())?,
+                match port.direction.as_str() {
+                    "input" => PortDirection::Input,
+                    "output" => PortDirection::Output,
+                    _ => return Err("invalid project Port direction".into()),
+                },
+                parse_frame_type(&port.frame_type)?,
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let kind = match manifest.kind.as_str() {
+        "source" => NodeKind::Source,
+        "transform" => NodeKind::Transform,
+        "sink" => NodeKind::Sink,
+        _ => return Err("invalid project Node kind".into()),
+    };
+    let descriptor = NodeDescriptor::new(
+        template,
+        NodeTypeName::new(manifest.node_type.clone()).map_err(|error| error.to_string())?,
+        kind,
+        ports,
+        ConfigSchema::new(muxiva_graph_json::value_from_json(&manifest.config_schema)?),
+        LifecycleCapabilities::new(true, true, true, true),
+    );
+    let source = package.source_directory.join(source_filename("typescript"));
+    let default_output = manifest
+        .ports
+        .iter()
+        .find(|port| port.direction == "output")
+        .map(|port| port.name.clone());
+    Ok(NodeRegistration::new(
+        NodeLanguage::TypeScript,
+        descriptor,
+        NodeFactoryVersion::new(manifest.factory_version.clone())
+            .map_err(|error| error.to_string())?,
+        Arc::new(TypeScriptDevFactory {
+            executable: node_executable(),
+            source,
+            entrypoint: manifest.entrypoint.clone(),
+            default_output,
+            connection: package.resolved_connection.clone(),
+            connections,
+        }),
+    ))
+}
+
 fn parse_frame_type(value: &str) -> Result<FrameType, String> {
     match value {
         "audio" => Ok(FrameType::Audio),
@@ -1397,15 +1481,50 @@ fn python_host_supported_manifest(graph: &Path, manifest: &NodePackageManifest) 
             .all(|port| match port.direction.as_str() {
                 "input" => matches!(
                     port.frame_type.as_str(),
-                    "text" | "audio" | "event" | "signal"
+                    "text" | "audio" | "byte" | "event" | "signal"
                 ),
                 "output" => matches!(
                     port.frame_type.as_str(),
-                    "text" | "audio" | "event" | "signal"
+                    "text" | "audio" | "byte" | "event" | "signal"
                 ),
                 _ => false,
             })
         && python_available(graph)
+}
+
+fn node_executable() -> PathBuf {
+    std::env::var_os("MUXIVA_NODE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("node"))
+}
+
+fn node_version() -> Option<(u64, u64)> {
+    let output = Command::new(node_executable())
+        .args(["--eval", "process.stdout.write(process.versions.node)"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let version = String::from_utf8(output.stdout).ok()?;
+    let mut components = version.trim().split('.');
+    Some((
+        components.next()?.parse().ok()?,
+        components.next()?.parse().ok()?,
+    ))
+}
+
+fn typescript_host_supported(_graph: &Path, manifest: &NodePackageManifest) -> bool {
+    manifest.language == "typescript"
+        && manifest.ports.iter().all(|port| {
+            matches!(
+                port.frame_type.as_str(),
+                "text" | "audio" | "byte" | "event" | "signal"
+            )
+        })
+        && node_version().is_some_and(|(major, minor)| major > 22 || (major == 22 && minor >= 19))
 }
 
 struct PythonDevFactory {
@@ -1563,6 +1682,10 @@ impl Node for PythonDevNode {
                 emit_python_signal(&response, input.as_ref(), context)?;
                 continue;
             }
+            if response.get("kind").and_then(serde_json::Value::as_str) == Some("metric") {
+                observe_host_metric(&response, context)?;
+                continue;
+            }
             if response.get("ok") != Some(&serde_json::Value::Bool(true)) {
                 return Err(python_error(
                     response
@@ -1599,6 +1722,14 @@ impl Node for PythonDevNode {
             .flatten()
         {
             emit_python_signal(signal, input.as_ref(), context)?;
+        }
+        for metric in response
+            .get("metrics")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            observe_host_metric(metric, context)?;
         }
         Ok(())
     }
@@ -1708,7 +1839,263 @@ fn emit_python_signal(
     Ok(())
 }
 
+fn observe_host_metric(
+    value: &serde_json::Value,
+    context: &mut NodeContext,
+) -> muxiva_types::Result<()> {
+    let name = value
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| python_error("Node Host metric is missing its name"))?;
+    let amount = value
+        .get("value")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| python_error("Node Host metric value must be a non-negative integer"))?;
+    let metric = match value.get("operation").and_then(serde_json::Value::as_str) {
+        Some("counter_add") => NodeMetricObservation::counter_add(name, amount),
+        Some("gauge_set") => NodeMetricObservation::gauge(name, amount),
+        _ => return Err(python_error("Node Host metric operation is invalid")),
+    }
+    .map_err(|error| python_error(error.to_string()))?;
+    context.observe_metric(metric);
+    Ok(())
+}
+
 impl Drop for PythonDevNode {
+    fn drop(&mut self) {
+        let _ = writeln!(self.input, "{}", serde_json::json!({"op":"close"}));
+        let _ = self.input.flush();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+struct TypeScriptDevFactory {
+    executable: PathBuf,
+    source: PathBuf,
+    entrypoint: String,
+    default_output: Option<String>,
+    connection: Option<ConnectionManifest>,
+    connections: ConnectionStore,
+}
+
+impl NodeFactory for TypeScriptDevFactory {
+    fn create(
+        &self,
+        node_id: &NodeId,
+        config: &ConfigMap,
+    ) -> Result<Box<dyn Node>, NodeFactoryError> {
+        TypeScriptDevNode::spawn(self, config, node_id.clone())
+            .map(|node| Box::new(node) as Box<dyn Node>)
+            .map_err(|message| NodeFactoryError::new("MUXIVA-STUDIO-TYPESCRIPT-HOST", message))
+    }
+}
+
+struct TypeScriptDevNode {
+    child: Child,
+    input: BufWriter<ChildStdin>,
+    output: BufReader<ChildStdout>,
+    default_output: Option<String>,
+    node_id: NodeId,
+}
+
+impl TypeScriptDevNode {
+    fn spawn(
+        factory: &TypeScriptDevFactory,
+        config: &ConfigMap,
+        node_id: NodeId,
+    ) -> Result<Self, String> {
+        let config = serde_json::Value::Object(
+            config
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        key.as_str().to_owned(),
+                        muxiva_graph_json::value_to_json(value),
+                    )
+                })
+                .collect(),
+        );
+        let mut command = Command::new(&factory.executable);
+        command.args([
+            "--no-warnings",
+            "--input-type=module",
+            "--eval",
+            TYPESCRIPT_HOST,
+            factory
+                .source
+                .to_str()
+                .ok_or("TypeScript Node path is not UTF-8")?,
+            &factory.entrypoint,
+            &config.to_string(),
+        ]);
+        factory
+            .connections
+            .apply_to_command(&mut command, factory.connection.as_ref());
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|error| format!("cannot start TypeScript Host: {error}"))?;
+        let input = BufWriter::new(
+            child
+                .stdin
+                .take()
+                .ok_or("TypeScript Host stdin is unavailable")?,
+        );
+        let mut output = BufReader::new(
+            child
+                .stdout
+                .take()
+                .ok_or("TypeScript Host stdout is unavailable")?,
+        );
+        let ready = read_host_response(&mut output)?;
+        if ready.get("ready") != Some(&serde_json::Value::Bool(true)) {
+            return Err("TypeScript Host did not complete package import".into());
+        }
+        Ok(Self {
+            child,
+            input,
+            output,
+            default_output: factory.default_output.clone(),
+            node_id,
+        })
+    }
+
+    fn call(&mut self, command: serde_json::Value) -> Result<serde_json::Value, MuxivaError> {
+        writeln!(self.input, "{command}")
+            .and_then(|_| self.input.flush())
+            .map_err(|error| {
+                typescript_error(format!("cannot send to TypeScript Host: {error}"))
+            })?;
+        let response = read_host_response(&mut self.output).map_err(typescript_error)?;
+        if response.get("ok") == Some(&serde_json::Value::Bool(true)) {
+            Ok(response)
+        } else {
+            Err(typescript_error(
+                response
+                    .get("error")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("TypeScript Node failed")
+                    .to_owned(),
+            ))
+        }
+    }
+}
+
+impl Node for TypeScriptDevNode {
+    fn on_prepare(&mut self, _context: &mut NodeContext) -> muxiva_types::Result<()> {
+        self.call(serde_json::json!({"op":"prepare", "node_id":self.node_id.as_str()}))
+            .map(|_| ())
+    }
+
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        let wire = input.as_ref().map(frame_to_wire).transpose()?;
+        let command = serde_json::json!({
+            "op":"process",
+            "frame":wire,
+            "input_port":context.input_port().map(PortName::as_str),
+            "default_output":self.default_output,
+            "node_id":context.node_id().as_str(),
+        });
+        writeln!(self.input, "{command}")
+            .and_then(|_| self.input.flush())
+            .map_err(|error| {
+                typescript_error(format!("cannot send to TypeScript Host: {error}"))
+            })?;
+        let response = loop {
+            let response = read_host_response(&mut self.output).map_err(typescript_error)?;
+            match response.get("kind").and_then(serde_json::Value::as_str) {
+                Some("emission") => emit_python_frame(&response, input.as_ref(), context)?,
+                Some("event") => publish_python_event(&response, input.as_ref(), context)?,
+                Some("signal") => emit_python_signal(&response, input.as_ref(), context)?,
+                Some("metric") => observe_host_metric(&response, context)?,
+                _ => {
+                    if response.get("ok") != Some(&serde_json::Value::Bool(true)) {
+                        return Err(typescript_error(
+                            response
+                                .get("error")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or("TypeScript Node failed")
+                                .to_owned(),
+                        ));
+                    }
+                    break response;
+                }
+            }
+        };
+        for emission in response
+            .get("emissions")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            emit_python_frame(emission, input.as_ref(), context)?;
+        }
+        for event in response
+            .get("events")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            publish_python_event(event, input.as_ref(), context)?;
+        }
+        for signal in response
+            .get("signals")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            emit_python_signal(signal, input.as_ref(), context)?;
+        }
+        for metric in response
+            .get("metrics")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            observe_host_metric(metric, context)?;
+        }
+        Ok(())
+    }
+
+    fn on_finish(&mut self, _context: &mut NodeContext) -> muxiva_types::Result<()> {
+        self.call(serde_json::json!({"op":"finish", "node_id":self.node_id.as_str()}))
+            .map(|_| ())
+    }
+
+    fn on_signal(
+        &mut self,
+        signal: muxiva_types::SignalFrame,
+        context: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        self.call(serde_json::json!({
+            "op":"signal",
+            "node_id":self.node_id.as_str(),
+            "input_port":context.input_port().map(PortName::as_str),
+            "signal":{
+                "kind":"signal",
+                "name":signal.data().name().as_str(),
+                "payload":muxiva_graph_json::value_to_json(signal.data().payload()),
+                "source":signal.data().source().as_str(),
+                "schema_version":signal.data().schema_version().get(),
+                "sequence":signal.header().sequence_id().get(),
+            }
+        }))
+        .map(|_| ())
+    }
+
+    fn on_abort(&mut self, reason: &muxiva_core::AbortReason, _context: &mut NodeContext) {
+        let _ = self.call(serde_json::json!({"op":"abort", "reason":reason.root().message(), "node_id":self.node_id.as_str()}));
+    }
+}
+
+impl Drop for TypeScriptDevNode {
     fn drop(&mut self) {
         let _ = writeln!(self.input, "{}", serde_json::json!({"op":"close"}));
         let _ = self.input.flush();
@@ -1723,12 +2110,13 @@ fn read_host_response(output: &mut BufReader<ChildStdout>) -> Result<serde_json:
         .read_line(&mut line)
         .map_err(|error| error.to_string())?;
     if line.is_empty() {
-        return Err("Python Host exited without a response".into());
+        return Err("Project Node Host exited without a response".into());
     }
     if line.len() > MAX_HOST_RESPONSE_BYTES {
-        return Err("Python Host response exceeds 1 MiB".into());
+        return Err("Project Node Host response exceeds 1 MiB".into());
     }
-    serde_json::from_str(&line).map_err(|error| format!("invalid Python Host response: {error}"))
+    serde_json::from_str(&line)
+        .map_err(|error| format!("invalid Project Node Host response: {error}"))
 }
 
 fn frame_to_wire(frame: &Frame) -> muxiva_types::Result<serde_json::Value> {
@@ -1737,6 +2125,9 @@ fn frame_to_wire(frame: &Frame) -> muxiva_types::Result<serde_json::Value> {
             "kind":"text",
             "text":text.data().as_str(),
             "sequence":frame.header().sequence_id().get(),
+            "stream_id":frame.header().stream_id().as_str(),
+            "trace_id":frame.header().trace_id().as_str(),
+            "timestamp_ns":frame.header().timestamp().as_nanos(),
         }));
     }
     if let Some(audio) = frame.as_audio() {
@@ -1769,6 +2160,24 @@ fn frame_to_wire(frame: &Frame) -> muxiva_types::Result<serde_json::Value> {
             "payload":muxiva_graph_json::value_to_json(event.data().payload()),
             "source":event.data().source().as_str(),
             "schema_version":event.data().schema_version().get(),
+            "sequence":frame.header().sequence_id().get(),
+            "stream_id":frame.header().stream_id().as_str(),
+            "trace_id":frame.header().trace_id().as_str(),
+            "timestamp_ns":frame.header().timestamp().as_nanos(),
+        }));
+    }
+    if let Some(bytes) = frame.as_byte() {
+        let data_hex = bytes
+            .data()
+            .buffer()
+            .as_slice()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        return Ok(serde_json::json!({
+            "kind":"byte",
+            "data_hex":data_hex,
+            "media_type":bytes.data().media_type().map(MediaType::as_str),
             "sequence":frame.header().sequence_id().get(),
         }));
     }
@@ -1855,6 +2264,33 @@ fn wire_to_frame(
                 samples,
             )?)
         }
+        "byte" => {
+            let hex = wire
+                .get("data_hex")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| python_error("Python byte Frame is missing data"))?;
+            if hex.len() % 2 != 0 || hex.len() > 2 * 4 * 1024 * 1024 {
+                return Err(python_error("Python byte Frame has an invalid size"));
+            }
+            let bytes = hex
+                .as_bytes()
+                .chunks_exact(2)
+                .map(|pair| {
+                    let text = std::str::from_utf8(pair)
+                        .map_err(|_| python_error("Python byte Frame is not hexadecimal"))?;
+                    u8::from_str_radix(text, 16)
+                        .map_err(|_| python_error("Python byte Frame is not hexadecimal"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let media_type = wire
+                .get("media_type")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(MediaType::new)
+                .transpose()
+                .map_err(|error| python_error(error.to_string()))?;
+            FramePayload::Byte(ByteData::new(FrameBuffer::from_vec(bytes), media_type))
+        }
         "event" => FramePayload::Event(EventData::new(
             NamespacedName::new(
                 wire.get("topic")
@@ -1929,6 +2365,14 @@ fn python_error(message: impl Into<Box<str>>) -> MuxivaError {
     )
 }
 
+fn typescript_error(message: impl Into<Box<str>>) -> MuxivaError {
+    MuxivaError::new(
+        ErrorCategory::Internal,
+        "MUXIVA-STUDIO-TYPESCRIPT-HOST",
+        message,
+    )
+}
+
 fn atomic_write(path: &Path, payload: &[u8]) -> io::Result<()> {
     let sequence = NEXT_FILE.fetch_add(1, Ordering::Relaxed);
     let temporary = path.with_extension(format!("studio-{sequence}.tmp"));
@@ -1953,7 +2397,10 @@ mod tests {
         frame_to_wire, list, register_project_nodes_with_connections, save, wire_to_frame,
         ConnectionStore, SaveError,
     };
-    use muxiva_core::{start_registered_runtime, EdgePolicies, RuntimeOptions};
+    use muxiva_core::{
+        start_registered_runtime, ConfigMap, EdgePolicies, NodeContext, NodeFactoryVersion,
+        NodeLanguage, NodeTypeName, PortName, RuntimeOptions,
+    };
     use muxiva_types::NodeId;
     use std::{
         fs,
@@ -2063,12 +2510,31 @@ mod tests {
         .unwrap();
         assert_eq!(emitted.header().sequence_id().get(), 700);
         assert_eq!(emitted.as_text().unwrap().data().as_str(), "async");
+
+        let encoded = wire_to_frame(
+            &serde_json::json!({
+                "kind":"byte",
+                "data_hex":"7b7d",
+                "media_type":"application/json",
+                "sequence":701
+            }),
+            Some(&parent),
+            &NodeId::new("python-async").unwrap(),
+        )
+        .unwrap();
+        let bytes = encoded.as_byte().unwrap().data();
+        assert_eq!(encoded.header().sequence_id().get(), 701);
+        assert_eq!(bytes.buffer().as_slice(), b"{}");
+        assert_eq!(bytes.media_type().unwrap().as_str(), "application/json");
+        let wire = frame_to_wire(&encoded).unwrap();
+        assert_eq!(wire["kind"], "byte");
+        assert_eq!(wire["data_hex"], "7b7d");
     }
 
     #[test]
     fn saved_python_node_registers_and_executes_in_the_real_runtime() {
         let graph_path = graph();
-        let package = r#"{"format":"muxiva.node/v1","package_id":"uppercase_python","display_name":"Uppercase Python","node_type":"example.studio.uppercase","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:MyNode","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"import muxiva\nclass MyNode:\n    def on_process(self, frame, ctx):\n        ctx.emit(\"text_out\", muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence))\n        ctx.publish_notification(\"example.text.uppercased\", {\"sequence\": frame.sequence})\n","runtime_available":false}"#;
+        let package = r#"{"format":"muxiva.node/v1","package_id":"uppercase_python","display_name":"Uppercase Python","node_type":"example.studio.uppercase","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:MyNode","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"import muxiva\nclass MyNode:\n    def on_process(self, frame, ctx):\n        ctx.increment_counter(\"text.frames\")\n        ctx.set_gauge(\"text.last_length\", len(frame.text))\n        ctx.emit(\"text_out\", muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence))\n        ctx.publish_notification(\"example.text.uppercased\", {\"sequence\": frame.sequence})\n","runtime_available":false}"#;
         save(&graph_path, package).unwrap();
         let mut registry = muxiva_graph_json::builtin_registry();
         let connections = ConnectionStore::load(&graph_path).unwrap();
@@ -2086,6 +2552,89 @@ mod tests {
             runtime.wait(Duration::from_secs(5)).unwrap().worker_total(),
             3
         );
+        let metrics = runtime
+            .node_metrics(&NodeId::new("python").unwrap())
+            .unwrap();
+        assert!(metrics
+            .custom_metrics()
+            .iter()
+            .any(|metric| metric.name() == "text.frames" && metric.value() == 1));
+        fs::remove_dir_all(graph_path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn saved_typescript_node_registers_and_executes_async_lifecycle() {
+        let graph_path = graph();
+        let package = r#"{"format":"muxiva.node/v1","package_id":"uppercase_typescript","display_name":"Uppercase TypeScript","node_type":"example.studio.typescript_uppercase","language":"typescript","factory_version":"1.0.0","kind":"transform","entrypoint":"node:node","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"export const node = {\n  async onProcess(frame: { kind: string; text: string; sequence: number }, ctx: { emit(port: string, frame: unknown): void; incrementCounter(name: string, value?: number): void }) {\n    await Promise.resolve()\n    ctx.incrementCounter('text.frames')\n    ctx.emit('text_out', { kind: 'text', text: frame.text.toUpperCase(), sequence: frame.sequence })\n  },\n}\n","runtime_available":false}"#;
+        let saved = save(&graph_path, package).unwrap();
+        if !saved.runtime_available {
+            fs::remove_dir_all(graph_path.parent().unwrap()).unwrap();
+            return;
+        }
+        let mut registry = muxiva_graph_json::builtin_registry();
+        register_project_nodes_with_connections(
+            &graph_path,
+            &mut registry,
+            ConnectionStore::load(&graph_path).unwrap(),
+        )
+        .unwrap();
+        let document = muxiva_graph_json::parse(r#"{"version":"muxiva.graph/v1","graph_id":"studio-typescript","nodes":[{"id":"source","node_type":"builtin.text_source","language":"rust","factory_version":"1.0.0","node_config":{"text":"hello"}},{"id":"typescript","node_type":"example.studio.typescript_uppercase","language":"typescript","factory_version":"1.0.0","node_config":{}},{"id":"sink","node_type":"builtin.text_sink","language":"rust","factory_version":"1.0.0","node_config":{}}],"edges":[{"id":"source-typescript","from":{"node_id":"source","port":"text_out"},"to":{"node_id":"typescript","port":"text_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}},{"id":"typescript-sink","from":{"node_id":"typescript","port":"text_out"},"to":{"node_id":"sink","port":"text_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}}]}"#).unwrap();
+        let graph = muxiva_graph_json::compile_with_registry(&document, &registry).unwrap();
+        let runtime = start_registered_runtime(
+            graph,
+            &registry,
+            EdgePolicies::new(),
+            RuntimeOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            runtime.wait(Duration::from_secs(5)).unwrap().worker_total(),
+            3
+        );
+        let metrics = runtime
+            .node_metrics(&NodeId::new("typescript").unwrap())
+            .unwrap();
+        assert!(metrics
+            .custom_metrics()
+            .iter()
+            .any(|metric| metric.name() == "text.frames" && metric.value() == 1));
+        fs::remove_dir_all(graph_path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn saved_python_node_emits_byte_frames_with_input_port_context() {
+        let graph_path = graph();
+        let package = r#"{"format":"muxiva.node/v1","package_id":"text_to_bytes","display_name":"Text to Bytes","node_type":"example.text_to_bytes","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:MyNode","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"message_out","direction":"output","frame_type":"byte"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"import muxiva\nclass MyNode:\n    def on_process(self, frame, ctx):\n        if ctx.input_port != 'text_in': raise ValueError('wrong input port')\n        ctx.emit('message_out', muxiva.ByteFrame(frame.text.encode('utf-8'), media_type='application/json', sequence=frame.sequence))\n","runtime_available":false}"#;
+        save(&graph_path, package).unwrap();
+        let mut registry = muxiva_graph_json::builtin_registry();
+        register_project_nodes_with_connections(
+            &graph_path,
+            &mut registry,
+            ConnectionStore::load(&graph_path).unwrap(),
+        )
+        .unwrap();
+        let node_id = NodeId::new("encoder").unwrap();
+        let mut node = registry
+            .create(
+                &NodeTypeName::new("example.text_to_bytes").unwrap(),
+                NodeLanguage::Python,
+                &NodeFactoryVersion::new("1.0.0").unwrap(),
+                node_id.clone(),
+                &ConfigMap::empty(),
+            )
+            .unwrap();
+        let mut context = NodeContext::new(
+            node_id,
+            ConfigMap::empty(),
+            Some(PortName::new("text_in").unwrap()),
+        );
+        node.on_prepare(&mut context).unwrap();
+        node.on_process(Some(muxiva_testkit::text_frame(17, "{}")), &mut context)
+            .unwrap();
+        let output = context.emissions()[0].frame().as_byte().unwrap().data();
+        assert_eq!(output.buffer().as_slice(), b"{}");
+        assert_eq!(output.media_type().unwrap().as_str(), "application/json");
+        node.on_finish(&mut context).unwrap();
         fs::remove_dir_all(graph_path.parent().unwrap()).unwrap();
     }
 

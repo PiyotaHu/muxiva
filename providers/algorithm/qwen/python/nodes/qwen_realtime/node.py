@@ -140,7 +140,7 @@ class QwenAudioRealtimeNode:
             elif kind == "response.done":
                 self._response_active = False
                 if not self._discard_response_output:
-                    self._emit_client_event(
+                    self._emit_event(
                         ctx,
                         "muxiva.voice.response.completed",
                         {"text": self._response_text, "audio_bytes": self._response_audio_bytes},
@@ -154,18 +154,18 @@ class QwenAudioRealtimeNode:
                     self._cancel_pending = True
                     self._discard_response_output = True
                 ctx.emit_signal("muxiva.voice.speech.started", {"node": "qwen.audio_realtime"})
-                self._emit_client_event(
+                self._emit_event(
                     ctx, "muxiva.voice.speech.started", {"node": "qwen.audio_realtime"}, frame.sequence
                 )
                 if response_cancelled:
-                    self._emit_client_event(
+                    self._emit_event(
                         ctx,
                         "muxiva.voice.barge_in",
                         {"node": "qwen.audio_realtime", "response_cancelled": True},
                         frame.sequence,
                     )
             elif kind == "input_audio_buffer.speech_stopped":
-                self._emit_client_event(
+                self._emit_event(
                     ctx, "muxiva.voice.speech.stopped", {"node": "qwen.audio_realtime"}, frame.sequence
                 )
             elif kind == "response.audio.delta":
@@ -186,26 +186,20 @@ class QwenAudioRealtimeNode:
                 if text:
                     self._response_text += text
                     ctx.emit("response_text_out", muxiva.TextFrame(text, sequence=frame.sequence))
-                    self._emit_client_event(
-                        ctx, "muxiva.voice.response.delta", {"text": text}, frame.sequence
-                    )
+                    ctx.publish_notification("muxiva.voice.response.delta", {"text": text})
             elif kind == "conversation.item.input_audio_transcription.delta":
                 text = f"{event.get('text', '')}{event.get('stash', '')}"
                 if text:
                     ctx.emit("transcript_preview_out", muxiva.TextFrame(text, sequence=frame.sequence))
-                    self._emit_client_event(
-                        ctx, "muxiva.voice.transcript.preview", {"text": text}, frame.sequence
-                    )
+                    ctx.publish_notification("muxiva.voice.transcript.preview", {"text": text})
             elif kind == "conversation.item.input_audio_transcription.completed":
                 text = event.get("transcript", "")
                 if text:
                     ctx.emit("transcript_out", muxiva.TextFrame(text, sequence=frame.sequence))
-                    self._emit_client_event(
-                        ctx, "muxiva.voice.transcript.completed", {"text": text}, frame.sequence
-                    )
+                    ctx.publish_notification("muxiva.voice.transcript.completed", {"text": text})
             elif kind == "conversation.item.input_audio_transcription.failed":
                 error = event.get("error", {})
-                self._emit_client_event(
+                self._emit_event(
                     ctx,
                     "muxiva.voice.transcript.failed",
                     {"message": str(error.get("message", "ASR transcription failed"))[:512]},
@@ -225,9 +219,9 @@ class QwenAudioRealtimeNode:
                 )
 
     @staticmethod
-    def _emit_client_event(ctx: Any, topic: str, payload: dict[str, Any], sequence: int) -> None:
+    def _emit_event(ctx: Any, topic: str, payload: dict[str, Any], sequence: int) -> None:
         ctx.emit(
-            "client_event_out",
+            "event_out",
             muxiva.EventFrame(
                 topic,
                 json.dumps(payload, separators=(",", ":"), ensure_ascii=False),

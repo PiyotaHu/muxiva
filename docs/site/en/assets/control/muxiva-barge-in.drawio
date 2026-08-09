@@ -101,13 +101,13 @@
             <Array as="points"><mxPoint x="1890" y="1270"/><mxPoint x="1890" y="1300"/></Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="m23" value="client_event_out: speech.started / barge_in" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.7104;entryX=0.5;entryY=0.7104;" edge="1" parent="1" source="qwen" target="runtime">
+        <mxCell id="m23" value="event_out: speech.started / barge_in" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.7104;entryX=0.5;entryY=0.7104;" edge="1" parent="1" source="qwen" target="runtime">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="m24" value="publish_notification: process-local logs/metrics only" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.7377;entryX=0.5;entryY=0.7377;" edge="1" parent="1" source="qwen" target="runtime">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="m25" value="EventFrame → Encoder → ByteFrame" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.765;entryX=0.5;entryY=0.765;" edge="1" parent="1" source="runtime" target="data_sink">
+        <mxCell id="m25" value="Semantic Frames → project encoder → ByteFrame" style="html=1;verticalAlign=bottom;endArrow=block;curved=0;rounded=0;exitX=0.5;exitY=0.765;entryX=0.5;entryY=0.765;" edge="1" parent="1" source="runtime" target="data_sink">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="m26" value="ordered RTC Data Message" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;curved=0;rounded=0;exitX=0.5;exitY=0.7923;entryX=0.5;entryY=0.7923;" edge="1" parent="1" source="data_sink" target="rtc">

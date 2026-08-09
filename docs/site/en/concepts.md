@@ -74,11 +74,24 @@ vendor adapter is a Node that follows the same contract, not another Runtime ent
 - **Rust built-in Nodes** fit resampling, VAD, cancellation gates, and general utilities.
 - The **Python Node Host** fits Qwen Realtime, ASR, LLM, TTS, and fast-moving algorithms.
 - **C++ ABI Node Packs** fit Agora RTC, codecs, device SDKs, and other native integrations.
-- **TypeScript and project Nodes** live under an Agent project's `.muxiva/nodes/` and
-  use the same Manifest, Factory, and Frame contracts.
+- **TypeScript and project Nodes** live under an Agent project's `.muxiva/nodes/`, run
+  through a managed async Host, and use the same Manifest, Factory, and Frame contracts.
 
 Each language Host isolates threads, objects, and exceptions. A Graph always sees
 the same Node, Port, and Frame model, regardless of implementation language.
+
+#### Agent is a reusable Node capability, not a Core primitive
+
+An Agent adds long-lived conversation state, Tool Calls, steering, and model-specific
+streaming above a text model. Those policies vary too quickly to belong in Rust Core.
+Muxiva therefore provides a vendor-neutral `@muxiva/agent` TypeScript contract with
+stable prompt, tick, cancellation, text, and lifecycle Event Ports. A small driver can
+wrap Pi, another Agent harness, or application code without changing the Graph.
+
+Demo 2 proves this boundary: Qwen ASR emits a completed prompt, the project-local
+[Pi Agent Node](nodes/pi-agent.md) owns session state and tools, and Qwen TTS consumes
+the Agent's text output. Pi stays an optional TypeScript dependency; the Runtime sees
+only an ordinary Node.
 
 ### 5. External services and the production boundary
 
@@ -165,8 +178,9 @@ The diagram follows the actual `Qwen Realtime + Agora RTC` Graph:
 4. Audio Sink clears unsent PCM, advances its cancellation sequence watermark, and drops
    old Audio Frames at or below that watermark. This is a second guard after the Qwen
    Node's late-chunk filter.
-5. `speech.started` and `barge_in` also travel as client Event Frames through the Encoder
-   and Agora Data Sink to the remote Voice Room. `publish_notification` only reaches the
+5. `speech.started` and `barge_in` leave Qwen as semantic Event Frames. The project-local
+   Voice Room Encoder maps those Events—and transcript/response Text Frames—before Agora Data
+   Sink sends application bytes to the remote Voice Room. `publish_notification` only reaches the
    process-local NotificationBus for logs, metrics, and Studio diagnostics.
 
 There is a physical boundary: audio already inside the Agora network or browser playback
@@ -180,7 +194,8 @@ switches application Turns nor contains Qwen- or Agora-specific interruption pol
 Browser microphone
   → Agora RTC network
   → C++ Agora Audio Source Node
-  → Audio Resampler / VAD / Qwen Python Node
+  → Audio Resampler / Qwen ASR
+  → optional Pi TypeScript Agent / Qwen TTS
   → text and audio Frames
   → C++ Agora Data / Audio Sink Node
   → browser chat bubbles and speaker
@@ -212,7 +227,8 @@ Signal, and lifecycle contracts.
 2. [Graph and typed Ports](graph.md) for Graph v1;
 3. [Real-time flow and control](realtime-control.md) for backpressure, Signal, NotificationBus,
    and interruption;
-4. [Node extensibility](extensibility.md) and [multi-language execution](languages.md);
+4. [Node extensibility](extensibility.md), [multi-language execution](languages.md),
+   and [TypeScript Agent Nodes](nodes/pi-agent.md);
 5. [the unified Node architecture](provider-architecture.md);
 6. [CLI, Studio, and project web apps](developer-surfaces.md); and
 7. [the end-to-end voice path](voice-architecture.md) and [runnable voice demo](voice-demo.md).

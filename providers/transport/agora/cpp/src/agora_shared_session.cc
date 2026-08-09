@@ -16,10 +16,18 @@ constexpr std::size_t kMaximumDataMessages = 256;
 
 struct SharedSession::Impl final {
   std::unique_ptr<Sdk> sdk;
-  std::mutex mutex;
+  mutable std::mutex mutex;
   std::deque<OwnedPcm16Frame> audio;
   std::deque<OwnedDataMessage> data;
+  std::uint64_t audio_received_total = 0;
+  std::uint64_t audio_dropped_total = 0;
+  std::uint64_t audio_queued_duration_ns = 0;
 };
+
+std::uint64_t audio_duration_ns(const OwnedPcm16Frame& frame) noexcept {
+  if (frame.sample_rate_hz == 0) return 0;
+  return frame.samples_per_channel * 1000000000ULL / frame.sample_rate_hz;
+}
 
 std::shared_ptr<SharedSession> SharedSession::acquire(
     const std::string& app_id, const std::string& token,
@@ -72,7 +80,15 @@ bool SharedSession::try_pop_audio(OwnedPcm16Frame& frame) noexcept {
   if (impl_->audio.empty()) return false;
   frame = std::move(impl_->audio.front());
   impl_->audio.pop_front();
+  impl_->audio_queued_duration_ns -=
+      std::min(impl_->audio_queued_duration_ns, audio_duration_ns(frame));
   return true;
+}
+
+AudioIngressStats SharedSession::audio_ingress_stats() const noexcept {
+  std::lock_guard<std::mutex> lock(impl_->mutex);
+  return {impl_->audio_received_total, impl_->audio_dropped_total,
+          impl_->audio.size(), impl_->audio_queued_duration_ns};
 }
 
 bool SharedSession::try_pop_data(OwnedDataMessage& message) noexcept {
@@ -102,7 +118,14 @@ void SharedSession::on_audio_frame(const Pcm16FrameView& frame) noexcept {
                           frame.samples_per_channel, frame.timestamp_ms,
                           frame.remote_uid};
     std::lock_guard<std::mutex> lock(impl_->mutex);
-    if (impl_->audio.size() == kMaximumAudioFrames) impl_->audio.pop_front();
+    ++impl_->audio_received_total;
+    if (impl_->audio.size() == kMaximumAudioFrames) {
+      impl_->audio_queued_duration_ns -= std::min(
+          impl_->audio_queued_duration_ns, audio_duration_ns(impl_->audio.front()));
+      impl_->audio.pop_front();
+      ++impl_->audio_dropped_total;
+    }
+    impl_->audio_queued_duration_ns += audio_duration_ns(owned);
     impl_->audio.push_back(std::move(owned));
   } catch (...) {
   }

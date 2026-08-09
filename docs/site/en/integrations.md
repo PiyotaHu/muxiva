@@ -11,6 +11,9 @@ Official voice Nodes:
 - `qwen.asr_realtime`: Qwen Server VAD + ASR and the cascade interruption source.
 - `qwen.llm_stream`, `qwen.tts_realtime`: replaceable, tick-drained background Nodes whose
   active vendor connections close on `muxiva.voice.speech.started`.
+- `pi.agent`: Demo 2's project-local TypeScript Agent Node. It replaces
+  `qwen.llm_stream` in that graph, uses Qwen through Pi, owns session and Tool
+  Calls, and follows the reusable [`@muxiva/agent` contract](nodes/pi-agent.md).
 
 Project Nodes live under `.muxiva/nodes/`. Each directory contains `muxiva.node.json` and a language
 entrypoint; Studio shows its source, registers it, and lets developers drag it into a Graph.

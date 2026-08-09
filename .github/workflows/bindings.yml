@@ -35,7 +35,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "22.19.0"
       - uses: pnpm/action-setup@v6
         with:
           version: 10
@@ -44,4 +44,7 @@ jobs:
         working-directory: bindings/node
         run: pnpm fetch --frozen-lockfile
       - run: ./scripts/check-node.sh
-
+      - name: Install locked Pi Agent dependencies without lifecycle scripts
+        working-directory: examples/voice-agent
+        run: npm ci --ignore-scripts
+      - run: ./scripts/check-agent-typescript.sh

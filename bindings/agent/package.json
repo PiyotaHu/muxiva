@@ -1,0 +1,23 @@
+{
+  "name": "@muxiva/agent",
+  "version": "0.1.0",
+  "description": "Vendor-neutral TypeScript Agent Node contract for Muxiva",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PiyotaHu/muxiva.git",
+    "directory": "bindings/agent"
+  },
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    }
+  },
+  "files": ["index.js", "index.d.ts", "README.md"],
+  "engines": { "node": ">=22.19.0" },
+  "scripts": { "test": "node --test test/*.test.mjs" }
+}

@@ -193,12 +193,6 @@ fn builtin_metadata(
             "Emits deterministic interval events that drive polling Sources.",
             &["clock", "event"],
         ),
-        "builtin.client_event_encoder" => (
-            "transport",
-            "client.event.encode",
-            "Encodes typed Graph events into the versioned Muxiva client message protocol.",
-            &["event", "client", "transport"],
-        ),
         "builtin.text_cancellation_gate" => (
             "control",
             "stream.cancel.watermark",

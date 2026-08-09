@@ -404,6 +404,73 @@ pub struct NodeEmission {
     frame: Frame,
 }
 
+/// Aggregation behavior for one bounded, non-sensitive Node metric.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NodeMetricKind {
+    /// Adds the observed value to a monotonic total.
+    Counter,
+    /// Replaces the previously observed value.
+    Gauge,
+}
+
+/// One custom metric observation emitted during a Node lifecycle callback.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodeMetricObservation {
+    name: Box<str>,
+    kind: NodeMetricKind,
+    value: u64,
+}
+
+impl NodeMetricObservation {
+    fn new(
+        name: &str,
+        kind: NodeMetricKind,
+        value: u64,
+    ) -> std::result::Result<Self, NodeMetricError> {
+        let valid = !name.is_empty()
+            && name.len() <= 64
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'));
+        if !valid {
+            return Err(NodeMetricError);
+        }
+        Ok(Self {
+            name: name.into(),
+            kind,
+            value,
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub const fn kind(&self) -> NodeMetricKind {
+        self.kind
+    }
+    pub const fn value(&self) -> u64 {
+        self.value
+    }
+    pub fn counter_add(name: &str, delta: u64) -> std::result::Result<Self, NodeMetricError> {
+        Self::new(name, NodeMetricKind::Counter, delta)
+    }
+    pub fn gauge(name: &str, value: u64) -> std::result::Result<Self, NodeMetricError> {
+        Self::new(name, NodeMetricKind::Gauge, value)
+    }
+}
+
+/// A custom Node metric name was empty, too long, or outside the stable alphabet.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NodeMetricError;
+
+impl fmt::Display for NodeMetricError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("Node metric names must be 1-64 ASCII letters, digits, '.', '_' or '-'")
+    }
+}
+
+impl Error for NodeMetricError {}
+
 impl NodeEmission {
     /// Returns the explicit output port.
     pub fn output_port(&self) -> &PortName {
@@ -434,6 +501,7 @@ pub struct NodeContext {
     notification_bus: NotificationBus,
     resources: ResourceStore,
     next_source_tick: Option<Duration>,
+    metric_observations: Vec<NodeMetricObservation>,
 }
 
 /// Returned when one lifecycle call exceeds its bounded emission budget.
@@ -572,6 +640,7 @@ impl NodeContext {
             notification_bus,
             resources,
             next_source_tick: None,
+            metric_observations: Vec::new(),
         }
     }
 
@@ -705,6 +774,42 @@ impl NodeContext {
     /// which preserves the one-shot source behavior used by existing nodes.
     pub fn schedule_next_tick(&mut self, delay: Duration) {
         self.next_source_tick = Some(delay);
+    }
+
+    /// Adds a non-sensitive monotonic counter to this Node's runtime telemetry.
+    pub fn increment_counter(
+        &mut self,
+        name: &str,
+        delta: u64,
+    ) -> std::result::Result<(), NodeMetricError> {
+        self.metric_observations.push(NodeMetricObservation::new(
+            name,
+            NodeMetricKind::Counter,
+            delta,
+        )?);
+        Ok(())
+    }
+
+    /// Sets a non-sensitive gauge in this Node's runtime telemetry.
+    pub fn set_gauge(
+        &mut self,
+        name: &str,
+        value: u64,
+    ) -> std::result::Result<(), NodeMetricError> {
+        self.metric_observations.push(NodeMetricObservation::new(
+            name,
+            NodeMetricKind::Gauge,
+            value,
+        )?);
+        Ok(())
+    }
+
+    pub(crate) fn take_metric_observations(&mut self) -> Vec<NodeMetricObservation> {
+        std::mem::take(&mut self.metric_observations)
+    }
+
+    pub fn observe_metric(&mut self, observation: NodeMetricObservation) {
+        self.metric_observations.push(observation);
     }
 
     pub(crate) fn take_next_source_tick(&mut self) -> Option<Duration> {

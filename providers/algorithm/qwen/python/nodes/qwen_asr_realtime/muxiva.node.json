@@ -4,7 +4,7 @@
   "display_name": "Qwen Server VAD + Streaming ASR",
   "node_type": "qwen.asr_realtime",
   "language": "python",
-  "factory_version": "1.1.0",
+  "factory_version": "1.2.0",
   "kind": "transform",
   "entrypoint": "node:QwenAsrRealtimeNode",
   "category": "algorithm",
@@ -17,8 +17,9 @@
     { "name": "audio_in", "direction": "input", "frame_type": "audio", "schema": { "encoding": "pcm_s16le", "sample_rate_hz": 16000, "channels": 1, "streaming": true } },
     { "name": "speech_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["speech_started", "speech_stopped"], "detector": "qwen_server_vad", "streaming": true } },
     { "name": "signal_out", "direction": "output", "frame_type": "signal", "schema": { "semantics": ["graph_control", "barge_in"], "streaming": true } },
+    { "name": "transcript_preview_out", "direction": "output", "frame_type": "text", "schema": { "semantics": ["partial_transcript"], "streaming": true } },
     { "name": "text_out", "direction": "output", "frame_type": "text", "schema": { "semantics": ["final_transcript"], "streaming": false } },
-    { "name": "client_event_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["client_realtime_event"], "streaming": true } }
+    { "name": "event_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["transcript_failure"], "streaming": true } }
   ],
   "config_schema": {
     "type": "object",

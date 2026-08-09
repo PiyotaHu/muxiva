@@ -5,25 +5,27 @@
 ## 中文
 
 这是 Muxiva 的真实门面应用，不是 Mock：浏览器通过 Agora Web SDK 采集和播放语音，
-Agora Native C++ Node Pack 负责 RTC，Qwen Python Node Pack 负责智能层，Rust Runtime
-只处理厂商无关的 Frame、Graph、Signal、NotificationBus、Turn 与调度。
+Agora Native C++ Node Pack 负责 RTC，Qwen Python Node 负责实时模型、ASR 与 TTS，
+Pi TypeScript Agent Node 负责 Demo 2 的会话与工具，Rust Runtime 只处理厂商无关的
+Frame、Graph、Signal、NotificationBus、Turn 与调度。
 
 Studio 内置两张可选择的图：
 
 - **Qwen Realtime（推荐）**：Qwen Audio Realtime 端到端语音模型，链路短、延迟低；
-- **Qwen Full-Duplex Cascade（Demo 2）**：阿里云 Qwen Server VAD + Streaming ASR →
-  可取消 Qwen LLM → 可取消 Qwen TTS。用户插话时，`muxiva.voice.speech.started`
-  Signal 会取消旧 LLM/TTS 请求、清除过期文本和客户端事件，并清空 Agora 播放队列。
+- **Pi Agent Full-Duplex Cascade（Demo 2）**：阿里云 Qwen Server VAD + Streaming ASR →
+  Pi TypeScript Agent（Qwen 模型、会话与 Tool Call）→ 可取消 Qwen TTS。用户插话时，
+  `muxiva.voice.speech.started` Signal 会取消旧 Agent/TTS 请求、清除过期文本和客户端
+  事件，并清空 Agora 播放队列。
 
 ### 准备
 
 1. 安装 `muxiva` 发布版二进制，或在源码仓库执行
    `cargo install --path crates/muxiva-cli --locked`。
-2. 从 Agora 官方渠道取得目标平台 Native C++ SDK。
-3. 在阿里云百炼取得 API Key 与 Workspace ID；在 Agora 为同一 Channel 生成三个
-   短期 RTC Token：浏览器 UID、Ingress Bot UID、Egress Bot UID。不要把 App
-   Certificate 放进 Studio 或浏览器。
-4. 构建并安装应用 Node Pack：
+2. 安装 Node.js 22.19 或更高版本；它用于运行 Demo 2 的 TypeScript Agent Node。
+3. 从 Agora 官方渠道取得目标平台 Native C++ SDK。
+4. 在阿里云百炼取得 API Key 与 Workspace ID；在 Agora 为同一 Channel 生成浏览器
+   与 Bot 两个短期 RTC Token。不要把 App Certificate 放进 Studio 或浏览器。
+5. 构建并安装应用 Node Pack 与锁定的 Pi 依赖：
 
 ```sh
 ./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
@@ -61,16 +63,17 @@ Studio 的真实 Registry 编译两张模板。带凭据的实房仍属于发布
 
 This is Muxiva's credentialed flagship application, not a mock. The browser uses
 Agora Web SDK for capture and playback, native C++ Node Packs own RTC, Python
-Node Packs own Qwen intelligence, and the Rust Runtime remains vendor-neutral.
+Nodes own Qwen speech APIs, a TypeScript Pi Agent owns Demo 2 sessions and
+tools, and the Rust Runtime remains vendor-neutral.
 
-Studio offers two graphs: low-latency **Qwen Realtime**, and **Qwen Full-Duplex
-Cascade (Demo 2)**: Alibaba Cloud Qwen Server VAD + Streaming ASR → cancellable
-Qwen LLM → cancellable Qwen TTS. On barge-in, the
-`muxiva.voice.speech.started` Signal cancels the old LLM/TTS work, stale text
-and client events, and Agora playback.
+Studio offers two graphs: low-latency **Qwen Realtime**, and **Pi Agent
+Full-Duplex Cascade (Demo 2)**: Qwen Server VAD + Streaming ASR → a stateful,
+tool-using Pi TypeScript Agent backed by Qwen → cancellable Qwen TTS. On
+barge-in, the `muxiva.voice.speech.started` Signal cancels Agent/TTS work,
+stale text and client events, and Agora playback.
 
-Prepare an Agora Native C++ SDK, DashScope API Key and Workspace ID, plus three
-short-lived RTC tokens for browser, ingress bot, and egress bot identities.
+Prepare Node.js 22.19+, an Agora Native C++ SDK, DashScope API Key and Workspace
+ID, plus short-lived RTC tokens for browser and bot identities.
 Never put an Agora App Certificate in Studio or a browser. Then run:
 
 ```sh

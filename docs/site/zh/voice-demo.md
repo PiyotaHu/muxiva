@@ -10,11 +10,13 @@
 !!! info "你真正需要准备的东西"
     Agora 需要一个账号、App ID 和两个临时 RTC Token。Qwen **不需要下载 SDK**，
     只需要阿里云百炼 API Key 与 Workspace ID。Muxiva 会自动下载并校验 Agora macOS
-    SDK，也会在隔离的 Python 环境中安装 Qwen WebSocket 依赖。
+    SDK、在隔离 Python 环境中安装 Qwen WebSocket 依赖，并为 Demo 2 安装锁定的 Pi
+    TypeScript Agent 包。
 
 ## 0. 当前支持范围
 
 - 一键安装路径已在 Apple Silicon macOS 上验证；Agora macOS SDK 固定为 `4.6.2`。
+- Demo 2 要求 Node.js 22.19 或更高版本，用于受管理的 TypeScript Host 和 Pi。
 - Qwen Node 当前使用阿里云百炼**华北 2（北京）**端点，API Key 和 Workspace
   必须来自同一区域。
 - Windows/其他平台目前需要从 [Agora SDK 官方页面](https://docs.agora.io/en/api-reference/sdks?product=voice)
@@ -22,7 +24,7 @@
 
 ## 1. 安装 Muxiva 与官方 Node
 
-先准备 Git、Rust、Python 3、CMake 3.20+ 与 Xcode Command Line Tools，然后运行：
+先准备 Git、Rust、Python 3、Node.js 22.19+、CMake 3.20+ 与 Xcode Command Line Tools，然后运行：
 
 ```bash
 git clone https://github.com/PiyotaHu/muxiva.git
@@ -37,15 +39,18 @@ cargo install --locked --path crates/muxiva-cli
    对应的官方 CDN 下载 RTC Basic 所需 XCFramework；
 2. 对每个压缩包执行 SHA-256 校验；
 3. 创建 `examples/voice-agent/.muxiva/venv` 并安装 `websocket-client`；
-4. 编译 `agora.audio_source`、`agora.audio_sink`、`agora.data_source`、
+4. 在禁用 Lifecycle Script 的前提下安装精确锁定的 Pi 与 Muxiva Agent npm 依赖，
+   并对项目 Agent Node 执行 TypeScript 类型检查；
+5. 编译 `agora.audio_source`、`agora.audio_sink`、`agora.data_source`、
    `agora.data_sink` 四个 C++ Node；它们共享一个 RTC Engine 和 Bot UID。
 
 出现以下三行才代表安装完成：
 
 ```text
-[MUXIVA][READY] Native and Python Node Packs are installed.
+[MUXIVA][READY] Native, Python, and TypeScript Agent Node Packs are installed.
 [MUXIVA][AGORA] sdk=.../build/vendor/agora-macos-4.6.2
 [MUXIVA][QWEN]  python=.../.muxiva/venv/bin/python (no Qwen SDK download required)
+[MUXIVA][PI]    node=... version=... package=@earendil-works/pi-agent-core@0.84.1
 ```
 
 如果你已经手动下载 SDK，也可以运行：
@@ -90,8 +95,8 @@ cargo install --locked --path crates/muxiva-cli
    指南找到同一 Workspace 的 **Workspace ID**。
 
 这里没有“Qwen SDK 下载”步骤。Muxiva 的 Python Node 直接使用官方 WebSocket/HTTP
-协议，`setup.sh` 已安装唯一的第三方 Python 依赖。Realtime 图默认使用
-`qwen-audio-3.0-realtime-flash`；级联图使用 Qwen ASR、LLM 与 TTS。
+协议。Realtime 图默认使用 `qwen-audio-3.0-realtime-flash`；级联图在 Qwen ASR 与
+Qwen TTS 之间使用由 `qwen-flash` 驱动的 [Pi TypeScript Agent](nodes/pi-agent.md)。
 
 ## 4. 启动并填写 Studio
 
@@ -101,7 +106,8 @@ muxiva doctor --voice
 ```
 
 `doctor` 应显示两个 Agora Node Pack 为 `mode=agora-native`，并显示
-`qwen-python dependency=websocket`。凭据未配置时它会逐项打印 `MISSING`，这是诊断结果，
+`qwen-python dependency=websocket` 和 `pi-typescript-agent ... dependencies=locked`。
+凭据未配置时它会逐项打印 `MISSING`，这是诊断结果，
 不是可以跳过的提示。然后在 Studio 中：
 
 1. 打开 **Connections**。
@@ -116,8 +122,9 @@ muxiva doctor --voice
 点击 Save connections 后，值会保存到 `examples/voice-agent/.env`（权限 `0600`、Git
 忽略）。以后再次运行无需重复填写。也可以参考 `.env.example` 手动创建该文件。
 
-Realtime 跑通后，再切换 **Qwen Full-Duplex Cascade（Demo 2）**，观察阿里云 Qwen
-Server VAD + Streaming ASR → 可取消 LLM → 可取消 TTS 的各阶段。助手播放时重新开口：
+Realtime 跑通后，再切换 **Pi Agent Full-Duplex Cascade（Demo 2）**，观察 Qwen
+Server VAD + Streaming ASR → 有状态 TypeScript Agent 与 Tool Call → 可取消 Qwen TTS。
+可以询问当前时间或今天的天气，强制触发真实 Tool Call。助手播放时重新开口：
 Voice Room 应立即显示打断状态，旧文字停止增长、旧语音停止播放，新一句转写和回答随后
 进入同一会话。会话会持续运行，直到点击 **End session**。
 
@@ -126,10 +133,14 @@ Voice Room 应立即显示打断状态，旧文字停止增长、旧语音停止
 `run.sh` 会同时把终端输出保存到 `examples/voice-agent/.muxiva/runtime.log`。遇到“已经
 连接但没有回复”时，按下面的顺序找第一个没有增长的指标：
 
+Studio 顶部的 **◎ Observe** 会把 Node、Edge 和内部 SDK 队列放在同一个页面，并自动
+标记黄/红堵点；指标含义、阈值与日志过滤命令见[可观测性与堵点定位](observability.md)。
+
 1. Voice Room 显示浏览器已加入、麦克风已发布；
 2. 日志出现 `[MUXIVA][AGORA][participant.joined] uid=1001`；
 3. 日志出现 `[MUXIVA][AGORA][audio.received]`，Studio 的 `agora-in.audio_out` 增长；
-4. `audio-to-qwen`、Qwen Node 调用与字幕开始增长；
+4. ASR、`turn-to-agent`、`agent-to-response-gate` 和语义化 Room Message Edge 开始
+   增长；Tool 使用会以 `muxiva.agent.tool.*` 出现在 Runtime Event 中；
 5. `qwen-audio` 和 `agora-out` 增长，浏览器听到回复。
 
 第一个没有出现的步骤，就是故障所在层。凭据值不会写入日志。
@@ -151,6 +162,7 @@ Runtime 启动后关闭 Studio，不会改变 RTC 媒体与消息协议。本地
 | `Agora SDK directory does not exist` | 路径不是解压目录；macOS 直接重新运行无参数 `setup.sh` |
 | `AgoraRtcKit.xcframework` not found | 手动下载了错误平台或不完整包；使用一键下载命令 |
 | `qwen-python ready=false` | 没运行 `setup.sh`，或项目虚拟环境损坏；重新运行安装 |
+| `pi-typescript-agent ready=false` | 安装 Node.js 22.19+，再运行 `setup.sh` 安装锁定的 Pi 包 |
 | Qwen 返回鉴权/模型错误 | API Key、Workspace ID、模型必须属于华北 2（北京）同一 Workspace |
 | Agora 加入 Channel 失败 | App ID、Channel、UID 必须与生成该 Token 时完全一致，Token 也不能过期 |
 | 页面没有麦克风 | 浏览器未授权；在浏览器站点权限中允许本地 Studio 使用麦克风 |

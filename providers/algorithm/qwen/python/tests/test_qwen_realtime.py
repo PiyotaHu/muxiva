@@ -87,8 +87,10 @@ class QwenNodeTests(unittest.TestCase):
         ports = [port for port, _ in ctx.emissions]
         self.assertNotIn("response_text_out", ports)
         self.assertNotIn("audio_out", ports, "late output from the cancelled response is discarded")
+        self.assertIn("transcript_preview_out", ports)
         self.assertIn("transcript_out", ports)
-        self.assertIn("client_event_out", ports)
+        self.assertIn("event_out", ports)
+        self.assertNotIn("client_event_out", ports)
         self.assertIn(("muxiva.voice.transcript.preview", {"text": "用户说"}), ctx.events)
         self.assertIn(("muxiva.voice.transcript.completed", {"text": "用户说"}), ctx.events)
 
@@ -109,7 +111,8 @@ class QwenNodeTests(unittest.TestCase):
         ports = [port for port, _ in ctx.emissions]
         self.assertIn("response_text_out", ports)
         self.assertIn("audio_out", ports)
-        self.assertIn("client_event_out", ports)
+        self.assertIn("event_out", ports)
+        self.assertNotIn("client_event_out", ports)
         self.assertIn(
             ("muxiva.voice.response.completed", {"text": "你好", "audio_bytes": 4}),
             ctx.events,

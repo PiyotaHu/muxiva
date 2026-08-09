@@ -7,6 +7,8 @@ qwen_provider_root="$repository_root/providers/algorithm/qwen/python"
 agora_provider_root="$repository_root/providers/transport/agora/cpp"
 sdk_root="${1:-${MUXIVA_AGORA_SDK_ROOT:-}}"
 bootstrap_python="${MUXIVA_BOOTSTRAP_PYTHON:-}"
+node_command="${MUXIVA_NODE:-node}"
+npm_command="${MUXIVA_NPM:-npm}"
 
 if [[ "$sdk_root" == "--help" || "$sdk_root" == "-h" ]]; then
   cat <<'EOF'
@@ -19,11 +21,29 @@ Usage:
 
 Qwen does not require a vendor SDK download. This command creates a project
 Python virtual environment and installs the websocket dependency automatically.
+Demo 2 uses Pi as a TypeScript Agent Node. This command also installs its
+locked npm dependencies. Node.js 22.19 or newer is required.
 
 Set MUXIVA_BOOTSTRAP_PYTHON=/absolute/path/to/python3 to override automatic
 Python selection. Muxiva requires Python 3.10 or newer for this demo.
 EOF
   exit 0
+fi
+
+if ! command -v "$node_command" >/dev/null 2>&1; then
+  echo '[MUXIVA][ERROR] Node.js 22.19 or newer is required by the Pi Agent Node.' >&2
+  echo '[MUXIVA][HELP]  Install an active Node.js release from https://nodejs.org/en/download' >&2
+  exit 2
+fi
+if ! "$node_command" --eval 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 19) ? 0 : 1)'; then
+  echo "[MUXIVA][ERROR] Node.js 22.19 or newer is required; found $($node_command --version)." >&2
+  echo '[MUXIVA][HELP]  Upgrade from https://nodejs.org/en/download' >&2
+  exit 2
+fi
+if ! command -v "$npm_command" >/dev/null 2>&1; then
+  echo '[MUXIVA][ERROR] npm is required to install the locked Pi Agent dependencies.' >&2
+  echo '[MUXIVA][HELP]  Install the official Node.js distribution, which includes npm.' >&2
+  exit 2
 fi
 
 if [[ -z "$sdk_root" ]]; then
@@ -61,6 +81,12 @@ echo "[MUXIVA][SETUP] Creating isolated Python environment"
 "$application_root/.muxiva/venv/bin/python" -m pip install \
   --disable-pip-version-check -r "$qwen_provider_root/requirements.txt"
 
+echo "[MUXIVA][SETUP] Installing locked Pi TypeScript Agent dependencies with $($node_command --version)"
+"$npm_command" ci --ignore-scripts \
+  --cache "$application_root/.muxiva/npm-cache" \
+  --prefix "$application_root"
+"$npm_command" run --prefix "$application_root" check:typescript
+
 echo "[MUXIVA][SETUP] Building trusted C++ Agora Node Packs"
 cmake -S "$agora_provider_root" \
   -B "$repository_root/build/voice-agent-provider-v1" \
@@ -70,7 +96,8 @@ cmake -S "$agora_provider_root" \
   -DMUXIVA_NODE_PACK_OUTPUT_ROOT="$application_root/.muxiva/native"
 cmake --build "$repository_root/build/voice-agent-provider-v1" --config Release
 
-echo "[MUXIVA][READY] Native and Python Node Packs are installed."
+echo "[MUXIVA][READY] Native, Python, and TypeScript Agent Node Packs are installed."
 echo "[MUXIVA][AGORA] sdk=$sdk_root"
 echo "[MUXIVA][QWEN]  python=$application_root/.muxiva/venv/bin/python (no Qwen SDK download required)"
+echo "[MUXIVA][PI]    node=$node_command version=$($node_command --version) package=@earendil-works/pi-agent-core@0.84.1"
 echo "[MUXIVA][NEXT]  ./examples/voice-agent/run.sh"

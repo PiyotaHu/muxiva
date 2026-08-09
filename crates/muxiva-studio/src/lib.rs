@@ -1,6 +1,7 @@
 //! Local-only Muxiva Graph Studio server with bundled, dependency-free assets.
 
 mod node_library;
+mod observability;
 
 use std::{
     collections::VecDeque,
@@ -12,6 +13,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
     },
+    thread,
     time::{Duration, Instant},
 };
 
@@ -26,6 +28,8 @@ const MAX_HEADER_BYTES: usize = 16 * 1024;
 const INDEX: &str = include_str!("assets/index.html");
 const STYLES: &str = include_str!("assets/studio.css");
 const RUNTIME_STYLES: &str = include_str!("assets/runtime.css");
+const OBSERVABILITY_STYLES: &str = include_str!("assets/observability.css");
+const OBSERVABILITY_HISTORY_STYLES: &str = include_str!("assets/observability-history.css");
 const NODE_LAB_STYLES: &str = include_str!("assets/node-lab.css");
 const PROVIDER_HELP_STYLES: &str = include_str!("assets/provider-help.css");
 const SCRIPT: &str = include_str!("assets/studio.js");
@@ -33,12 +37,15 @@ static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 
 struct RuntimeSession {
     id: u64,
+    run_id: String,
+    started_at_unix_ms: u64,
     graph_id: String,
     node_ids: Vec<NodeId>,
     edge_ids: Vec<EdgeId>,
     runtime: GraphRuntime,
     started: Instant,
     stop_requested: bool,
+    last_observability_log: Mutex<Instant>,
 }
 
 struct StudioRuntime {
@@ -46,6 +53,7 @@ struct StudioRuntime {
     session: Mutex<Option<RuntimeSession>>,
     connections: node_library::ConnectionStore,
     events: Arc<Mutex<VecDeque<serde_json::Value>>>,
+    observability: observability::ObservabilityStore,
 }
 
 impl StudioRuntime {
@@ -55,6 +63,7 @@ impl StudioRuntime {
             session: Mutex::new(None),
             connections: node_library::ConnectionStore::load(graph)?,
             events: Arc::new(Mutex::new(VecDeque::with_capacity(128))),
+            observability: observability::ObservabilityStore::new(graph),
         })
     }
 }
@@ -66,7 +75,15 @@ pub fn random_token() -> std::io::Result<String> {
 }
 
 pub fn serve(listener: TcpListener, graph: PathBuf, token: String) -> std::io::Result<()> {
-    let runtime = StudioRuntime::new(&graph).map_err(std::io::Error::other)?;
+    let runtime = Arc::new(StudioRuntime::new(&graph).map_err(std::io::Error::other)?);
+    let sampler = Arc::downgrade(&runtime);
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_secs(5));
+        let Some(runtime) = sampler.upgrade() else {
+            break;
+        };
+        let _ = runtime_snapshot_value(&runtime);
+    });
     for stream in listener.incoming() {
         let stream = stream?;
         if let Err(error) = handle_connection(stream, &graph, &token, &runtime) {
@@ -240,6 +257,16 @@ fn route(
             "text/css; charset=utf-8",
             RUNTIME_STYLES.to_owned(),
         ),
+        ("GET", "/assets/observability.css") => (
+            "200 OK",
+            "text/css; charset=utf-8",
+            OBSERVABILITY_STYLES.to_owned(),
+        ),
+        ("GET", "/assets/observability-history.css") => (
+            "200 OK",
+            "text/css; charset=utf-8",
+            OBSERVABILITY_HISTORY_STYLES.to_owned(),
+        ),
         ("GET", "/assets/node-lab.css") => (
             "200 OK",
             "text/css; charset=utf-8",
@@ -393,6 +420,31 @@ fn route(
             Err(errors) => diagnostics_response(errors),
         },
         ("GET", "/api/v1/runtime") => ("200 OK", "application/json", runtime_snapshot(runtime)),
+        ("GET", "/metrics" | "/api/v1/observability/prometheus") => {
+            let snapshot = runtime_snapshot_value(runtime);
+            let current = snapshot["session_id"].is_number().then_some(&snapshot);
+            (
+                "200 OK",
+                "text/plain; version=0.0.4; charset=utf-8",
+                observability::prometheus(current),
+            )
+        }
+        ("GET", "/api/v1/observability/history") => (
+            "200 OK",
+            "application/json",
+            runtime.observability.history_index().to_string(),
+        ),
+        ("GET", path) if path.starts_with("/api/v1/observability/history/") => {
+            let run_id = &path["/api/v1/observability/history/".len()..];
+            match runtime.observability.history_session(run_id) {
+                Some(value) => ("200 OK", "application/json", value.to_string()),
+                None => (
+                    "404 Not Found",
+                    "application/json",
+                    json_message("observability session not found"),
+                ),
+            }
+        }
         ("GET", "/api/v1/runtime/events") => (
             "200 OK",
             "application/json",
@@ -665,20 +717,22 @@ fn start_runtime(
         }
     };
     let id = state.next_session.fetch_add(1, Ordering::Relaxed) + 1;
+    let started_at_unix_ms = observability::unix_time_ms();
     *session = Some(RuntimeSession {
         id,
+        run_id: format!("{started_at_unix_ms}-{id}"),
+        started_at_unix_ms,
         graph_id,
         node_ids,
         edge_ids,
         runtime,
         started: Instant::now(),
         stop_requested: false,
+        last_observability_log: Mutex::new(Instant::now()),
     });
-    (
-        "201 Created",
-        "application/json",
-        session_snapshot(session.as_ref().expect("installed session")).to_string(),
-    )
+    let snapshot = session_snapshot(session.as_ref().expect("installed session"));
+    state.observability.observe(&snapshot);
+    ("201 Created", "application/json", snapshot.to_string())
 }
 
 fn studio_notification_bus(
@@ -699,6 +753,14 @@ fn studio_notification_bus(
         "muxiva.voice.transcript.failed",
         "muxiva.voice.response.delta",
         "muxiva.voice.response.completed",
+        "muxiva.agent.response.started",
+        "muxiva.agent.response.delta",
+        "muxiva.agent.response.completed",
+        "muxiva.agent.response.failed",
+        "muxiva.agent.response.cancelled",
+        "muxiva.agent.tool.started",
+        "muxiva.agent.tool.updated",
+        "muxiva.agent.tool.completed",
     ] {
         let queue = events.clone();
         bus.subscribe(
@@ -739,19 +801,26 @@ fn stop_runtime(state: &StudioRuntime) -> (&'static str, &'static str, String) {
     let accepted = session.runtime.stop();
     session.stop_requested = true;
     let mut snapshot = session_snapshot(session);
+    state.observability.observe(&snapshot);
     snapshot["accepted"] = accepted.into();
     ("200 OK", "application/json", snapshot.to_string())
 }
 
 fn runtime_snapshot(state: &StudioRuntime) -> String {
+    runtime_snapshot_value(state).to_string()
+}
+
+fn runtime_snapshot_value(state: &StudioRuntime) -> serde_json::Value {
     let session = state
         .session
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    session.as_ref().map_or_else(
-        || serde_json::json!({"status": "idle", "session_id": null}).to_string(),
-        |session| session_snapshot(session).to_string(),
-    )
+    let snapshot = session.as_ref().map_or_else(
+        || serde_json::json!({"status": "idle", "session_id": null}),
+        session_snapshot,
+    );
+    state.observability.observe(&snapshot);
+    snapshot
 }
 
 fn runtime_events(state: &StudioRuntime) -> serde_json::Value {
@@ -832,6 +901,13 @@ fn session_snapshot(session: &RuntimeSession) -> serde_json::Value {
                 "panic_total": metrics.panic_total(),
                 "callback_duration_ns": metrics.callback_duration_ns(),
                 "max_callback_duration_ns": metrics.max_callback_duration_ns(),
+                "process_duration_ns": metrics.process_duration_ns(),
+                "max_process_duration_ns": metrics.max_process_duration_ns(),
+                "custom_metrics": metrics.custom_metrics().iter().map(|metric| serde_json::json!({
+                    "name": metric.name(),
+                    "kind": format!("{:?}", metric.kind()).to_lowercase(),
+                    "value": metric.value(),
+                })).collect::<Vec<_>>(),
             })
         })
         .collect::<Vec<_>>();
@@ -852,12 +928,17 @@ fn session_snapshot(session: &RuntimeSession) -> serde_json::Value {
                 "full_total": metrics.full_total(),
                 "blocked_duration_ns": metrics.blocked_duration_ns(),
                 "oldest_frame_age_ns": metrics.oldest_frame_age_ns(),
+                "payload_bytes_total": metrics.payload_bytes_total(),
+                "audio_duration_ns_total": metrics.audio_duration_ns_total(),
                 "latest_error_reason": metrics.latest_error_reason(),
             })
         })
         .collect::<Vec<_>>();
+    log_observability_snapshot(session, status, &nodes, &edges);
     serde_json::json!({
         "session_id": session.id,
+        "run_id": session.run_id,
+        "started_at_unix_ms": session.started_at_unix_ms,
         "graph_id": session.graph_id,
         "status": status,
         "runtime_state": format!("{:?}", session.runtime.state()).to_lowercase(),
@@ -869,6 +950,101 @@ fn session_snapshot(session: &RuntimeSession) -> serde_json::Value {
         "edges": edges,
         "terminal": terminal,
     })
+}
+
+fn log_observability_snapshot(
+    session: &RuntimeSession,
+    status: &str,
+    nodes: &[serde_json::Value],
+    edges: &[serde_json::Value],
+) {
+    if !matches!(status, "running" | "stopping") {
+        return;
+    }
+    let mut last = session
+        .last_observability_log
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if last.elapsed() < Duration::from_secs(5) {
+        return;
+    }
+    *last = Instant::now();
+    let queued = edges
+        .iter()
+        .filter_map(|edge| edge["queue_len"].as_u64())
+        .sum::<u64>();
+    let drops = edges
+        .iter()
+        .filter_map(|edge| edge["drop_total"].as_u64())
+        .sum::<u64>();
+    let mut bottlenecks = 0_u64;
+    for edge in edges {
+        let id = edge["edge_id"].as_str().unwrap_or("unknown");
+        let len = edge["queue_len"].as_u64().unwrap_or(0);
+        let capacity = edge["queue_capacity"].as_u64().unwrap_or(0);
+        let age_ms = edge["oldest_frame_age_ns"].as_u64().unwrap_or(0) / 1_000_000;
+        let edge_drops = edge["drop_total"].as_u64().unwrap_or(0);
+        let fullness = if capacity == 0 {
+            0.0
+        } else {
+            len as f64 / capacity as f64
+        };
+        let level = if edge_drops > 0 || fullness >= 0.8 || age_ms >= 1_000 {
+            Some("CRITICAL")
+        } else if fullness >= 0.4 || age_ms >= 200 {
+            Some("WARN")
+        } else {
+            None
+        };
+        if let Some(level) = level {
+            bottlenecks += 1;
+            eprintln!(
+                "[MUXIVA][OBSERVE][EDGE][{level}] edge={id} queue={len}/{capacity} oldest_ms={age_ms} drops={edge_drops}"
+            );
+        }
+    }
+    for node in nodes {
+        let id = node["node_id"].as_str().unwrap_or("unknown");
+        let process_total = node["process_total"].as_u64().unwrap_or(0);
+        let average_ms = if process_total == 0 {
+            0.0
+        } else {
+            node["process_duration_ns"].as_u64().unwrap_or(0) as f64
+                / process_total as f64
+                / 1_000_000.0
+        };
+        let queue_ms = node["custom_metrics"]
+            .as_array()
+            .and_then(|metrics| {
+                metrics
+                    .iter()
+                    .find(|metric| metric["name"].as_str() == Some("ingress.queue_duration_ms"))
+            })
+            .and_then(|metric| metric["value"].as_u64())
+            .unwrap_or(0);
+        let level = if queue_ms >= 1_000 || average_ms >= 50.0 {
+            Some("CRITICAL")
+        } else if queue_ms >= 200 || average_ms >= 10.0 {
+            Some("WARN")
+        } else {
+            None
+        };
+        if let Some(level) = level {
+            bottlenecks += 1;
+            eprintln!(
+                "[MUXIVA][OBSERVE][NODE][{level}] node={id} avg_process_ms={average_ms:.2} ingress_queue_ms={queue_ms}"
+            );
+        }
+    }
+    eprintln!(
+        "[MUXIVA][OBSERVE][SUMMARY] session={} nodes={} edges={} queued={} drops={} bottlenecks={} dashboard=Studio/Observe",
+        session.id,
+        nodes.len(),
+        edges.len(),
+        queued,
+        drops,
+        bottlenecks
+    );
 }
 
 fn diagnostics_response(errors: Vec<GraphDiagnostic>) -> (&'static str, &'static str, String) {
@@ -1027,12 +1203,20 @@ mod tests {
         assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
         assert!(response.contains("script-src 'self'"));
         assert!(response.contains("/assets/studio.js"));
+        assert!(response.contains("/assets/observability.css"));
+        assert!(response.contains("/assets/observability-history.css"));
+        assert!(response.contains("◎ Observe"));
         assert!(!response.contains("<script>"));
     }
 
     #[test]
     fn graph_api_rejects_missing_and_forged_bearer_tokens() {
-        for path in ["/api/v1/graph", "/api/v1/runtime"] {
+        for path in [
+            "/api/v1/graph",
+            "/api/v1/runtime",
+            "/api/v1/observability/history",
+            "/metrics",
+        ] {
             for authorization in ["", "Authorization: Bearer forged\r\n"] {
                 let graph = graph_path();
                 let Some(response) = request(
@@ -1149,7 +1333,10 @@ mod tests {
                 assert_eq!(value["nodes"].as_array().unwrap().len(), 3);
                 assert_eq!(value["edges"].as_array().unwrap().len(), 2);
                 assert_eq!(value["edges"][0]["enqueue_total"], 1);
+                assert!(value["edges"][0]["payload_bytes_total"].as_u64().unwrap() > 0);
                 assert_eq!(value["nodes"][0]["prepare_total"], 1);
+                assert!(value["nodes"][0]["process_duration_ns"].is_number());
+                assert!(value["nodes"][0]["custom_metrics"].is_array());
                 break;
             }
             assert!(
@@ -1158,6 +1345,38 @@ mod tests {
             );
             thread::yield_now();
         }
+        let metrics_request = HttpRequest {
+            method: "GET".into(),
+            path: "/metrics".into(),
+            authorization: None,
+            body: String::new(),
+        };
+        let (status, content_type, payload) = route(&metrics_request, &graph, true, &runtime);
+        assert_eq!(status, "200 OK");
+        assert!(content_type.starts_with("text/plain"));
+        assert!(payload.contains("muxiva_node_process_total"));
+        assert!(payload.contains("muxiva_edge_queue_length"));
+
+        let history_request = HttpRequest {
+            method: "GET".into(),
+            path: "/api/v1/observability/history".into(),
+            authorization: None,
+            body: String::new(),
+        };
+        let (_, _, payload) = route(&history_request, &graph, true, &runtime);
+        let history: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(history["sessions"].as_array().unwrap().len(), 1);
+        assert_eq!(history["sessions"][0]["status"], "completed");
+        let run_id = history["sessions"][0]["run_id"].as_str().unwrap();
+        let details_request = HttpRequest {
+            method: "GET".into(),
+            path: format!("/api/v1/observability/history/{run_id}"),
+            authorization: None,
+            body: String::new(),
+        };
+        let (_, _, payload) = route(&details_request, &graph, true, &runtime);
+        let details: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert!(!details["samples"].as_array().unwrap().is_empty());
         fs::remove_file(graph).unwrap();
     }
 
