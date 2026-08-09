@@ -129,7 +129,15 @@ class VoiceRoomProtocolTests(unittest.TestCase):
                     for edge in graph["edges"]
                 }
                 self.assertIn(("qwen-vad-asr", "pi-agent"), routes)
-                self.assertIn(("pi-agent", "qwen-tts"), routes)
+                self.assertIn(("pi-agent", "speech-formatter"), routes)
+                self.assertIn(("speech-formatter", "qwen-tts"), routes)
+                self.assertIn(("qwen-vad-asr", "speech-formatter"), routes)
+                vad = next(node for node in graph["nodes"] if node["id"] == "qwen-vad-asr")
+                self.assertEqual(vad["node_config"]["vad_threshold"], 0.35)
+                formatter = next(
+                    node for node in graph["nodes"] if node["id"] == "speech-formatter"
+                )
+                self.assertEqual(formatter["node_type"], "builtin.speech_formatter")
 
 
 if __name__ == "__main__":

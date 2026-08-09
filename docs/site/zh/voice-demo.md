@@ -129,10 +129,16 @@ muxiva doctor --voice
 忽略）。以后再次运行无需重复填写。也可以参考 `.env.example` 手动创建该文件。
 
 Realtime 跑通后，再切换 **Pi Agent Full-Duplex Cascade（Demo 2）**，观察 Qwen
-Server VAD + Streaming ASR → 有状态 TypeScript Agent 与 Tool Call → 可取消 Qwen TTS。
+Server VAD + Streaming ASR → 有状态 TypeScript Agent 与 Tool Call → Speech Formatter →
+可取消 Qwen TTS。聊天框保留 Agent 原始 Markdown，TTS 只接收不含强调符号、裸 URL、
+代码块和表格的自然播报文本。
 可以询问当前时间或今天的天气，强制触发真实 Tool Call。助手播放时重新开口：
 Voice Room 应立即显示打断状态，旧文字停止增长、旧语音停止播放，新一句转写和回答随后
 进入同一会话。会话会持续运行，直到点击 **End session**。
+
+Demo 2 默认使用 `vad_threshold: 0.35`。需要适配麦克风或房间时，在画布选择
+`qwen-vad-asr`，修改 **Configuration** 中的数值，然后点击 **Validate** 和
+**Save graph**。数值越低越灵敏，越高越能过滤低能量声音。
 
 ## 运行日志与链路定位
 
@@ -149,8 +155,8 @@ Studio 顶部的 **◎ Observe** 会把 Node、Edge 和内部 SDK 队列放在�
    点击 `agora-audio-source`，`input.audio_peak_pcm16` 说话时必须明显大于 0；
 5. Demo 1 的 Qwen Realtime Node 先打印 Server VAD 的 `speech_started` / `speech_stopped`，
    随后出现 ASR 和 `response.created`；Demo 2 则检查
-   `turn-to-agent`、`agent-to-response-gate`；
-6. `qwen-audio` 和 `audio-to-room` 增长，浏览器听到回复。
+   `transcript-to-agent`、`agent-to-speech-formatter`、`speech-formatter-to-tts`；
+6. `tts-audio` 和 `audio-to-room` 增长，浏览器听到回复。
 
 第一个没有出现的步骤，就是故障所在层。凭据值不会写入日志。
 

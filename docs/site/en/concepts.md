@@ -89,9 +89,9 @@ stable prompt, tick, cancellation, text, and lifecycle Event Ports. A small driv
 wrap Pi, another Agent harness, or application code without changing the Graph.
 
 Demo 2 proves this boundary: Qwen ASR emits a completed prompt, the project-local
-[Pi Agent Node](nodes/pi-agent.md) owns session state and tools, and Qwen TTS consumes
-the Agent's text output. Pi stays an optional TypeScript dependency; the Runtime sees
-only an ordinary Node.
+[Pi Agent Node](nodes/pi-agent.md) owns session state and tools, the original Markdown branches
+to the client, and `builtin.speech_formatter` derives natural plain text for Qwen TTS. Pi stays an
+optional TypeScript dependency; the Runtime sees only ordinary Nodes.
 
 ### 5. External services and the production boundary
 

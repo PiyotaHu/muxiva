@@ -76,8 +76,9 @@ Event Port 包装不同实现。Driver 可以接 Pi、其他 Agent Harness 或�
 Graph。
 
 Demo 2 验证了这条边界：Qwen ASR 输出完整问题，项目内的
-[Pi Agent Node](nodes/pi-agent.md)管理会话与工具，Qwen TTS 消费 Agent Text 输出。Pi
-只是可选 TypeScript 依赖；Runtime 看见的仍是普通 Node。
+[Pi Agent Node](nodes/pi-agent.md)管理会话与工具，原始 Markdown 分叉到客户端，
+`builtin.speech_formatter` 再为 Qwen TTS 派生自然纯文本。Pi 只是可选 TypeScript
+依赖；Runtime 看见的仍是一组普通 Node。
 
 ### 5. 外部服务与生产边界
 
