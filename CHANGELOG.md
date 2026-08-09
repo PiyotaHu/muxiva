@@ -24,7 +24,8 @@ but must be called out explicitly with migration guidance.
   Agent Nodes, plus an independently versioned
   [`PiyotaHu/muxiva-pi-agent`](https://github.com/PiyotaHu/muxiva-pi-agent)
   reference Agent with Qwen, workspace-scoped file/coding tools, session state,
-  resource limits, and full-duplex cancellation.
+  resource limits, explicit Bailian live web search with source records, and
+  full-duplex cancellation.
 - Bilingual Developer Manual and application-owned Agent integration SOP,
   covering repository boundaries, the `AgentDriver` interface, Port mapping,
   pinned deployment, permissions, interruption, and acceptance testing.

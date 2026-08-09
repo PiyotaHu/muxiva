@@ -20,6 +20,11 @@ fn tool_version(command: &str) -> Option<String> {
         .map(|line| line.trim().to_owned())
 }
 
+fn package_version(path: &Path) -> Option<String> {
+    let document: serde_json::Value = serde_json::from_str(&fs::read_to_string(path).ok()?).ok()?;
+    document.get("version")?.as_str().map(ToOwned::to_owned)
+}
+
 fn check_tool(label: &str, commands: &[&str], warnings: &mut usize) {
     for command in commands {
         if let Some(version) = tool_version(command) {
@@ -128,21 +133,22 @@ fn inspect_voice_project(current: &Path, warnings: &mut usize) -> Option<PathBuf
         ])
         .status()
         .is_ok_and(|status| status.success());
+    let installed_agent_package =
+        project.join("node_modules/@piyotahu/muxiva-pi-agent/package.json");
+    let agent_source = project.join(".muxiva/agents/muxiva-pi-agent");
     let pi_ready = node_ready
-        && project
-            .join("node_modules/@piyotahu/muxiva-pi-agent/package.json")
-            .is_file()
+        && installed_agent_package.is_file()
         && project
             .join("node_modules/@muxiva/agent/package.json")
             .is_file()
-        && project
-            .join(".muxiva/agents/muxiva-pi-agent/src/index.ts")
-            .is_file();
+        && agent_source.join("src/index.ts").is_file()
+        && agent_source.join("src/web-search.ts").is_file();
     if pi_ready {
         println!(
-            "[MUXIVA][DOCTOR][PASS] pi-typescript-agent node={} version={} source=.muxiva/agents/muxiva-pi-agent dependencies=locked workspace=.muxiva/workspaces/pi-agent",
+            "[MUXIVA][DOCTOR][PASS] pi-typescript-agent node={} version={} release={} source=.muxiva/agents/muxiva-pi-agent dependencies=locked workspace=.muxiva/workspaces/pi-agent capabilities=files,coding,bailian-web-search",
             node,
-            tool_version(&node).unwrap_or_else(|| "unknown".into())
+            tool_version(&node).unwrap_or_else(|| "unknown".into()),
+            package_version(&installed_agent_package).unwrap_or_else(|| "unknown".into())
         );
     } else {
         *warnings += 1;

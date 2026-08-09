@@ -32,7 +32,7 @@ export const PiAgentNode = defineAgentNode({
 
 ## Capabilities
 
-Release `v0.1.2` provides:
+Release `v0.2.1` provides:
 
 | Tool | Behavior |
 | --- | --- |
@@ -42,12 +42,13 @@ Release `v0.1.2` provides:
 | `search_files` | exact text search across a bounded file set |
 | `write_file` | create files; overwrite requires explicit intent |
 | `replace_in_file` | exact code replacement with expected match count |
+| `web_search` | real Bailian web search with synthesis, titles, sites, and source URLs |
 | `get_current_time` | current time in a requested time zone |
 | `get_current_weather` | live Open-Meteo weather |
 
 Demo 2 is therefore not merely conversational. Ask it to list the workspace,
-read requirements and create `index.html`, perform a precise text edit, or
-search all TODO locations. Files are written to:
+read requirements and create `index.html`, perform a precise text edit, search
+all TODO locations, or find today's Qwen changes with citations. Files are written to:
 
 ```text
 examples/voice-agent/.muxiva/workspaces/pi-agent/
@@ -76,7 +77,7 @@ repository's security contract—not Muxiva Core.
 
 Setup:
 
-1. checks out `PiyotaHu/muxiva-pi-agent` release `v0.1.2`;
+1. checks out `PiyotaHu/muxiva-pi-agent` release `v0.2.1`;
 2. stores it at Git-ignored `.muxiva/agents/muxiva-pi-agent`;
 3. installs `@muxiva/agent`, the external Agent, and Pi through the application
    lock file;
@@ -120,3 +121,10 @@ ls -la examples/voice-agent/.muxiva/workspaces/pi-agent
 Observe should show Tool lifecycle in Semantic Trace, Agent Text flowing into
 TTS, and barge-in Signal cancelling the active Pi Turn. Late output from the
 old generation must not continue to play.
+
+Then ask a question that requires the live web, such as “Search for today's
+Qwen announcements and cite the sources.” Observe should show
+`web_search` `tool.started/completed`; Tool details contain `duration_ms`,
+`search_strategy`, `search_calls`, and structured `sources`. Search reuses the
+Model Studio Key and Workspace ID from Connections, so it needs no third
+credential, but Alibaba Cloud bills the search call.

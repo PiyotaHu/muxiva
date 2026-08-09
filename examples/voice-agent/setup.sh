@@ -11,7 +11,7 @@ node_command="${MUXIVA_NODE:-node}"
 npm_command="${MUXIVA_NPM:-npm}"
 cargo_command="${MUXIVA_CARGO:-cargo}"
 pi_agent_repository="${MUXIVA_PI_AGENT_REPOSITORY:-https://github.com/PiyotaHu/muxiva-pi-agent.git}"
-pi_agent_ref="${MUXIVA_PI_AGENT_REF:-v0.1.2}"
+pi_agent_ref="${MUXIVA_PI_AGENT_REF:-v0.2.1}"
 pi_agent_root="$application_root/.muxiva/agents/muxiva-pi-agent"
 
 if [[ "$sdk_root" == "--help" || "$sdk_root" == "-h" ]]; then
@@ -27,7 +27,7 @@ Qwen does not require a vendor SDK download. This command creates a project
 Python virtual environment and installs the websocket dependency automatically.
 Demo 2 integrates the independently versioned PiyotaHu/muxiva-pi-agent
 repository as a TypeScript Agent Node. This command checks out the locked
-v0.1.2 release and installs its dependencies. Node.js 22.19 or newer is
+v0.2.1 release and installs its dependencies. Node.js 22.19 or newer is
 required.
 
 Advanced application integration:
@@ -163,5 +163,5 @@ echo "[MUXIVA][READY] Native, Python, and TypeScript Agent Node Packs are instal
 echo "[MUXIVA][AGORA] sdk=$sdk_root"
 echo "[MUXIVA][QWEN]  python=$application_root/.muxiva/venv/bin/python (no Qwen SDK download required)"
 echo "[MUXIVA][AGENT] repository=$pi_agent_repository ref=$pi_agent_ref commit=$pi_agent_commit"
-echo "[MUXIVA][AGENT] workspace=$application_root/.muxiva/workspaces/pi-agent permissions=list,read,search,create,replace"
+echo "[MUXIVA][AGENT] workspace=$application_root/.muxiva/workspaces/pi-agent permissions=list,read,search,create,replace,web-search"
 echo "[MUXIVA][NEXT]  ./examples/voice-agent/run.sh"
