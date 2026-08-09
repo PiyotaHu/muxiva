@@ -46,7 +46,7 @@ Studio 内置两张可选择的图：
 3. **Voice Room**（会先自动保存当前有效图）；
 4. 点击 **Start live conversation**，允许麦克风权限，然后自然说话、在助手说话时插话。
 
-Cascade 默认使用 `vad_threshold: 0.35`。在 Studio 画布选择 `qwen-vad-asr`，即可在
+Cascade 默认使用 `vad_threshold: 0.45`。在 Studio 画布选择 `qwen-vad-asr`，即可在
 **Configuration** 中修改灵敏度；修改后点击 **Validate** 和 **Save graph**。
 
 Voice Room 会持续运行，直到点击 **End session**；页面实时展示 Graph、Node 调用、
@@ -92,7 +92,7 @@ In Studio choose **Templates**, fill **Connections**, open **Voice Room**, and
 select **Start live conversation**. The room remains live until you end it and
 shows graph, callback, frame, and pipeline activity in real time.
 
-Cascade defaults to `vad_threshold: 0.35`. Select `qwen-vad-asr` on the Studio canvas to edit
+Cascade defaults to `vad_threshold: 0.45`. Select `qwen-vad-asr` on the Studio canvas to edit
 the value in **Configuration**, then select **Validate** and **Save graph**.
 
 Run `./scripts/check-provider-boundaries.sh` and

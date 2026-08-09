@@ -23,7 +23,7 @@
 ## 配置
 
 `model` 默认是 `qwen3-asr-flash-realtime`，`language` 默认是 `zh`。Demo 2 默认把
-`vad_threshold` 设为 `0.35`：数值越低越容易触发，越高越能过滤低能量声音；
+`vad_threshold` 设为 `0.45`：数值越低越容易触发，越高越能过滤低能量声音；
 `silence_duration_ms` 用于调整一句话结束判定。需要调节时，在 Studio 画布选择
 `qwen-vad-asr`，修改 **Configuration** 中的 `vad_threshold`，再点击 **Validate** 和
 **Save graph**。需要配置共享的 `dashscope` Connection。

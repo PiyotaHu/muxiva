@@ -36,7 +36,7 @@
         "language": "zh",
         "model": "qwen3-asr-flash-realtime",
         "silence_duration_ms": 500,
-        "vad_threshold": 0.35
+        "vad_threshold": 0.45
       }
     },
     {

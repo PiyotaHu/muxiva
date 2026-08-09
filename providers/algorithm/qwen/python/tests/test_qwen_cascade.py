@@ -104,10 +104,10 @@ class CascadeNodeTests(unittest.TestCase):
         node = asr.QwenAsrRealtimeNode({}, connect)
         with mock.patch.dict(os.environ, self.credentials):
             node.on_prepare()
-        self.assertEqual(sessions[0]["session"]["turn_detection"]["threshold"], 0.35)
+        self.assertEqual(sessions[0]["session"]["turn_detection"]["threshold"], 0.45)
         manifest = json.loads((root / "qwen_asr_realtime" / "muxiva.node.json").read_text())
         threshold = manifest["config_schema"]["properties"]["vad_threshold"]
-        self.assertEqual(threshold["default"], 0.35)
+        self.assertEqual(threshold["default"], 0.45)
         self.assertIn("Studio", threshold["description"])
 
     def test_asr_server_vad_emits_speech_signal_state_and_completed_transcript(self):
