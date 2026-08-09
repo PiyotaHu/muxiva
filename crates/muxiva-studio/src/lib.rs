@@ -30,6 +30,7 @@ use muxiva_types::{EdgeId, NamespacedName, NodeId};
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const INDEX: &str = include_str!("assets/index.html");
 const STYLES: &str = include_str!("assets/studio.css");
+const BRAND_STYLES: &str = include_str!("assets/brand.css");
 const RUNTIME_STYLES: &str = include_str!("assets/runtime.css");
 const OBSERVABILITY_STYLES: &str = include_str!("assets/observability.css");
 const OBSERVABILITY_HISTORY_STYLES: &str = include_str!("assets/observability-history.css");
@@ -38,6 +39,7 @@ const SEMANTIC_TRACE_STYLES: &str = include_str!("assets/semantic-trace.css");
 const NODE_LAB_STYLES: &str = include_str!("assets/node-lab.css");
 const PROVIDER_HELP_STYLES: &str = include_str!("assets/provider-help.css");
 const SCRIPT: &str = include_str!("assets/studio.js");
+const LOGO: &[u8] = include_bytes!("assets/muxiva-logo.png");
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 
 struct RuntimeSession {
@@ -257,6 +259,9 @@ fn handle_connection(
             )
         }
     };
+    if request.method == "GET" && request.path == "/assets/muxiva-logo.png" {
+        return write_response_bytes(&mut stream, "200 OK", "image/png", LOGO, false);
+    }
     let authorized = request.authorization.as_deref() == Some(&format!("Bearer {token}"));
     if authorized
         && request.method == "GET"
@@ -302,6 +307,9 @@ fn route(
     match (request.method.as_str(), request.path.as_str()) {
         ("GET", "/") => ("200 OK", "text/html; charset=utf-8", INDEX.to_owned()),
         ("GET", "/assets/studio.css") => ("200 OK", "text/css; charset=utf-8", STYLES.to_owned()),
+        ("GET", "/assets/brand.css") => {
+            ("200 OK", "text/css; charset=utf-8", BRAND_STYLES.to_owned())
+        }
         ("GET", "/assets/runtime.css") => (
             "200 OK",
             "text/css; charset=utf-8",
@@ -1266,7 +1274,8 @@ fn write_response_bytes(
 #[cfg(test)]
 mod tests {
     use super::{
-        handle_connection, project_templates, route, validate, HttpRequest, StudioRuntime, SCRIPT,
+        handle_connection, project_templates, route, validate, HttpRequest, StudioRuntime, LOGO,
+        SCRIPT,
     };
     use std::{
         fs,
@@ -1352,10 +1361,13 @@ mod tests {
         assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
         assert!(response.contains("script-src 'self'"));
         assert!(response.contains("/assets/studio.js"));
+        assert!(response.contains("/assets/brand.css"));
         assert!(response.contains("/assets/observability.css"));
         assert!(response.contains("/assets/observability-history.css"));
         assert!(response.contains("/assets/media-dump.css"));
         assert!(response.contains("/assets/semantic-trace.css"));
+        assert!(response.contains("/assets/muxiva-logo.png"));
+        assert!(LOGO.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(response.contains("Node media dumps"));
         assert!(response.contains("Semantic trace"));
         assert!(response.contains("◎ Observe"));

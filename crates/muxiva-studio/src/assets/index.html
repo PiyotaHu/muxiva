@@ -4,7 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Muxiva Studio</title>
+  <link rel="icon" type="image/png" href="/assets/muxiva-logo.png">
   <link rel="stylesheet" href="/assets/studio.css">
+  <link rel="stylesheet" href="/assets/brand.css">
   <link rel="stylesheet" href="/assets/runtime.css">
   <link rel="stylesheet" href="/assets/observability.css">
   <link rel="stylesheet" href="/assets/observability-history.css">
@@ -16,7 +18,7 @@
 <body>
   <div id="app" class="app-shell">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark">V</span><span>Muxiva <b>Studio</b></span></div>
+      <div class="brand"><img class="brand-logo" src="/assets/muxiva-logo.png" alt="Muxiva"><span>Muxiva <b>Studio</b></span></div>
       <div class="graph-title">
         <span class="eyebrow">GRAPH</span>
         <input id="graph-id" aria-label="Graph ID" spellcheck="false">
@@ -246,7 +248,7 @@
     </dialog>
 
     <div id="toast" class="toast" role="status"></div>
-    <div id="fatal" class="fatal hidden"><div><span class="brand-mark">V</span><h1>Studio could not start</h1><p id="fatal-message"></p><p>Launch Studio again from <code>muxiva studio &lt;graph.json&gt;</code>.</p></div></div>
+    <div id="fatal" class="fatal hidden"><div><img class="brand-logo fatal-logo" src="/assets/muxiva-logo.png" alt="Muxiva"><h1>Studio could not start</h1><p id="fatal-message"></p><p>Launch Studio again from <code>muxiva studio &lt;graph.json&gt;</code>.</p></div></div>
   </div>
   <script src="/assets/studio.js" defer></script>
 </body>

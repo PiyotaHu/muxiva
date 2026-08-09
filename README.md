@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://piyotahu.github.io/muxiva/">
+    <img src="docs/site/en/assets/brand/muxiva-logo.png" alt="Muxiva logo" width="320">
+  </a>
+</p>
+
 # Muxiva
 
 > A Rust-native, real-time multimodal agent runtime with one graph and lifecycle contract across Rust, C++, Python, and TypeScript.

@@ -1,5 +1,9 @@
 # Muxiva
 
+<p align="center">
+  <img src="assets/brand/muxiva-logo.png" alt="Muxiva logo" width="320">
+</p>
+
 **A real-time multimodal agent runtime with one graph and lifecycle contract
 across Rust, C++, Python, and TypeScript.**
 

@@ -1,0 +1,17 @@
+.brand-logo {
+  width: 36px;
+  height: 36px;
+  display: block;
+  object-fit: cover;
+  border: 1px solid #39626a;
+  border-radius: 9px;
+  background: #ffe15c;
+  box-shadow: 0 0 16px #164c7a66;
+}
+
+.fatal-logo {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 18px;
+  border-radius: 16px;
+}

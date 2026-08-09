@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://piyotahu.github.io/muxiva/zh/">
+    <img src="docs/site/zh/assets/brand/muxiva-logo.png" alt="Muxiva Logo" width="320">
+  </a>
+</p>
+
 # Muxiva
 
 > 一个以 Rust 为核心的实时多模态 Agent Runtime，让 Rust、C++、Python 与 TypeScript 共享同一套图、生命周期和安全边界。
