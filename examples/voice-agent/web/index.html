@@ -4,23 +4,34 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Muxiva Live Voice Room</title>
-  <link rel="stylesheet" href="/project/app.css">
-  <link rel="stylesheet" href="/project/conversation.css">
-  <link rel="stylesheet" href="/project/diagnostics.css">
+  <link rel="stylesheet" href="./app.css">
+  <link rel="stylesheet" href="./conversation.css">
+  <link rel="stylesheet" href="./diagnostics.css">
 </head>
 <body>
   <main>
     <header>
-      <a class="brand" href="/"><span>V</span> MUXIVA</a>
+      <a class="brand" href="./"><span>V</span> MUXIVA</a>
       <div id="runtime-pill" class="pill"><i></i><b>Runtime idle</b></div>
     </header>
+    <section class="backend-card" aria-labelledby="backend-title">
+      <div>
+        <small>HEADLESS RUNTIME</small>
+        <b id="backend-title">Connect this browser to Muxiva</b>
+        <p>The page and Runtime are independent deployments. Enter the HTTP Bootstrap API printed by <code>muxiva serve</code>.</p>
+      </div>
+      <label>Backend URL<input id="backend-url" type="url" placeholder="http://127.0.0.1:8080" spellcheck="false"></label>
+      <label>Client API token <em>only for remote servers</em><input id="client-token" type="password" autocomplete="off" placeholder="MUXIVA_CLIENT_API_TOKEN"></label>
+      <button id="test-backend" class="secondary" type="button">Test connection</button>
+      <span id="backend-state" role="status">Not tested</span>
+    </section>
     <section class="hero">
       <p class="eyebrow">FULL-DUPLEX MULTIMODAL AGENT</p>
       <h1>Talk naturally.<br><em>Interrupt anytime.</em></h1>
       <p class="lead">Your microphone travels through Agora C++, a typed Muxiva graph, and one of two Qwen Python intelligence architectures.</p>
       <button id="launch">Start live conversation</button>
       <button id="leave" class="secondary" hidden>End session</button>
-      <p id="hint">Choose a graph in Studio, save it, start the Runtime, then open this independent RTC client.</p>
+      <p id="hint">The Runtime must already be running. Studio is not required.</p>
     </section>
 
     <section class="orb-stage">
@@ -62,6 +73,6 @@
     <section id="error" class="error" hidden></section>
   </main>
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js" defer></script>
-  <script src="/project/app.js" defer></script>
+  <script src="./app.js" defer></script>
 </body>
 </html>

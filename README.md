@@ -99,12 +99,18 @@ a browser microphone, and real workspace-scoped file tools:
 
 ```bash
 ./examples/voice-agent/setup.sh       # macOS: downloads and verifies Agora SDK
+cp examples/voice-agent/.env.example examples/voice-agent/.env
+# Fill the local .env once, then start the Graph without Studio:
 ./examples/voice-agent/run.sh
+# In a second terminal, start the independent browser client:
+cd examples/voice-agent && npm run voice-room
 ```
 
-Choose a graph in Studio, fill **Connections**, click **Run**, then open **Voice Room**. The
-full setup, two-identity shared-session RTC model, security boundary, and offline gates
-are documented in the [flagship voice demo guide](https://piyotahu.github.io/muxiva/voice-demo/).
+Open `http://127.0.0.1:4173`, test the default Backend URL
+`http://127.0.0.1:8080`, then start the conversation. The Linux Runtime, HTTP Bootstrap API,
+standalone web deployment, two-identity RTC model, and remote/Docker paths are documented in the
+[headless deployment guide](https://piyotahu.github.io/muxiva/headless-deployment/) and
+[flagship voice demo guide](https://piyotahu.github.io/muxiva/voice-demo/).
 
 ### Create, validate, and run a graph
 
@@ -112,6 +118,7 @@ are documented in the [flagship voice demo guide](https://piyotahu.github.io/mux
 muxiva init my-agent
 muxiva validate my-agent
 muxiva run my-agent
+muxiva serve my-realtime-agent
 ```
 
 `muxiva init` creates a complete project directory. `muxiva validate` is side-effect free: it never creates or starts a Node. `muxiva run`
@@ -119,6 +126,8 @@ compiles the graph against the built-in Registry, materializes every exact
 Factory selection, and executes it through the concurrent Runtime. Runs have a
 30-second default deadline; use `--timeout-ms` and `--shutdown-timeout-ms` to
 set bounded execution and cleanup waits.
+`muxiva serve` is the long-running, headless contract for real-time Graphs. It exposes only a
+health endpoint and browser RTC bootstrap endpoint; Studio is not required.
 
 ### Start the local visual Studio
 
@@ -149,8 +158,8 @@ These scripts build real installable packages, run integration tests, and execut
 
 The real-voice Realtime and Cascade templates live under
 [`examples/voice-agent/.muxiva/templates/`](examples/voice-agent/.muxiva/templates/).
-Start Studio with `./examples/voice-agent/run.sh` to select, inspect, and edit
-either graph.
+The checked-in `examples/voice-agent/graph.json` runs headlessly; use optional Studio only to
+select, inspect, edit, and save another template before deployment.
 
 Graph JSON is declarative configuration. It cannot contain executable code, dynamic scripts, credentials, or arbitrary remote resources. See the [Graph and typed ports guide](https://piyotahu.github.io/muxiva/graph/).
 

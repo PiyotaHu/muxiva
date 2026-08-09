@@ -47,9 +47,10 @@ directly and provides:
 Studio is a local development tool, not a production control plane to expose to the internet.
 See [Muxiva Studio](studio.md) for the complete workflow.
 
-## Project web pages: the end-user entry point
+## Standalone web applications: the end-user entry point
 
-A project can provide a page under `.muxiva/web/`. The Voice Room, for example:
+Web applications deploy independently from Studio and the Runtime. The repository's Voice Room
+lives in `examples/voice-agent/web/` and:
 
 1. asks for browser microphone permission;
 2. joins a channel with the Agora Web SDK;
@@ -58,17 +59,19 @@ A project can provide a page under `.muxiva/web/`. The Voice Room, for example:
 
 The page does not execute Python model code or hold a Qwen API key. Media and live interaction
 events travel through Transport Nodes; the page neither polls NotificationBus nor controls Runtime
-lifecycle. The local Studio endpoint only bootstraps explicitly `client_exposed` connection fields.
-Production deployments replace it with an application backend and short-lived token service.
+lifecycle. The minimal `muxiva serve` Bootstrap API returns only explicitly `client_exposed`
+fields. Production deployments replace it with an application backend and short-lived token
+service. See [Headless Runtime and standalone web client](headless-deployment.md).
 
 ## How the entry points work together
 
 A typical development loop is:
 
 ```text
-muxiva init → muxiva studio → connect/write Nodes → Validate → Run → open the project web experience
-                         └────────── the same Graph v1 ──────────┘
+muxiva init → optional Studio design → muxiva validate → muxiva serve
+                                                    ├─ Runtime / Nodes (server)
+                                                    └─ standalone web (user device)
 ```
 
 After commit, CI repeats the same contract checks with `muxiva validate` and tests. Deployment can
-use `muxiva run` or embed the Runtime in a service without shipping Studio.
+use `muxiva serve` for a real-time Graph without shipping Studio.

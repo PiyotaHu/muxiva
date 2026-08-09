@@ -63,10 +63,9 @@ Manifest 身份、版本、角色与 Port 后加载。TypeScript 与 Rust 项目
 以及点击下钻详情。完整用法见[可观测性与堵点定位](observability.md)。Run 使用当前
 画布快照，不要求预先保存。
 
-若项目提供 `.muxiva/web/index.html`，工具栏会出现 **Voice Room** 等项目体验入口。
-Studio 会先保存当前有效图，再打开项目页面。项目页面只能通过本地 Bearer Token
-访问；连接 Manifest 只有显式声明 `client_exposed: true` 的短期字段才能被读取，
-其余 API Key、Bot Token 和服务端凭据不会返回浏览器。
+Studio 不再托管 Voice Room 或其他最终用户页面。部署时使用 `muxiva serve` 运行 Graph，
+并单独托管 `examples/voice-agent/web/`。这样用户设备上的麦克风页面不依赖开发机上的
+Studio；完整路径见[Headless Runtime 与独立网页](headless-deployment.md)。
 
 ## 安全边界
 

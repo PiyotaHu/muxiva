@@ -9,13 +9,19 @@ use std::{
     net::{IpAddr, TcpListener},
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
+mod bootstrap_server;
 mod doctor;
 
 const DEFAULT_RUN_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS: u64 = 5_000;
+const DEFAULT_CLIENT_API_PORT: u16 = 8080;
 const MAX_CLI_TIMEOUT_MS: u64 = 60 * 60 * 1_000;
 
 const STARTER: &str = r#"{
@@ -39,8 +45,9 @@ This project contains a typed Muxiva Graph and project-owned Node packages.
 
 ```sh
 muxiva validate .
-muxiva studio .
 muxiva run .
+muxiva serve .
+muxiva studio . # optional visual editor
 ```
 
 Build a real voice assistant with the flagship guide:
@@ -54,8 +61,8 @@ const PROJECT_GITIGNORE: &str =
     name = "muxiva",
     version,
     about = "Build and run real-time multimodal agent graphs",
-    long_about = "Muxiva is a real-time multimodal Agent Runtime for typed, concurrent graphs.\n\nStart Studio without arguments, create a project, or inspect your environment with doctor.",
-    after_help = "Start here:\n  muxiva studio          Open or create a local Studio workspace\n  muxiva init my-agent   Create a complete Muxiva project\n  muxiva doctor --voice  Check flagship voice-demo prerequisites\n\nReal voice guide: https://piyotahu.github.io/muxiva/voice-demo/"
+    long_about = "Muxiva is a real-time multimodal Agent Runtime for typed, concurrent graphs.\n\nUse serve for a long-running headless Graph, run for a finite Graph, and Studio only when you want the visual editor.",
+    after_help = "Start here:\n  muxiva serve graph.json   Run a long-lived Graph without Studio\n  muxiva run graph.json     Execute a finite Graph to completion\n  muxiva studio graph.json  Open the optional visual editor\n  muxiva doctor --voice     Check flagship voice-demo prerequisites\n\nReal voice guide: https://piyotahu.github.io/muxiva/voice-demo/"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -97,6 +104,23 @@ enum Command {
         #[arg(long, default_value_t = DEFAULT_RUN_TIMEOUT_MS)]
         timeout_ms: u64,
         /// Bounded cleanup wait after a run timeout.
+        #[arg(long, default_value_t = DEFAULT_SHUTDOWN_TIMEOUT_MS)]
+        shutdown_timeout_ms: u64,
+    },
+    /// Run a long-lived Graph headlessly with a minimal browser bootstrap API.
+    Serve {
+        /// Project directory or Graph JSON.
+        graph: PathBuf,
+        /// Client API bind address. Use 0.0.0.0 only behind a firewall or reverse proxy.
+        #[arg(long, default_value = "127.0.0.1")]
+        host: IpAddr,
+        /// Client API TCP port.
+        #[arg(long, default_value_t = DEFAULT_CLIENT_API_PORT)]
+        port: u16,
+        /// Browser origin allowed to call the client API; repeat for multiple frontends.
+        #[arg(long = "allow-origin")]
+        allowed_origins: Vec<String>,
+        /// Bounded cleanup wait after SIGINT/SIGTERM.
         #[arg(long, default_value_t = DEFAULT_SHUTDOWN_TIMEOUT_MS)]
         shutdown_timeout_ms: u64,
     },
@@ -210,7 +234,7 @@ fn init(path: &Path) -> Result<(), String> {
         path.display(),
         graph.display()
     );
-    println!("[MUXIVA][NEXT] muxiva studio {}", path.display());
+    println!("[MUXIVA][NEXT] muxiva validate {}", path.display());
     Ok(())
 }
 
@@ -303,16 +327,7 @@ fn studio_access_token() -> Result<String, String> {
         Ok(value) if !value.trim().is_empty() => value,
         _ => return muxiva_studio::random_token().map_err(|error| error.to_string()),
     };
-    let valid = (32..=256).contains(&token.len())
-        && token
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'));
-    if !valid {
-        return Err(
-            "MUXIVA_STUDIO_ACCESS_TOKEN must be 32-256 ASCII letters, digits, '.', '_' or '-'"
-                .into(),
-        );
-    }
+    validate_access_token("MUXIVA_STUDIO_ACCESS_TOKEN", &token)?;
     Ok(token)
 }
 
@@ -330,6 +345,189 @@ fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(
         timeout_ms,
         None,
     )
+}
+
+fn serve_graph(
+    graph_path: &Path,
+    host: IpAddr,
+    port: u16,
+    mut allowed_origins: Vec<String>,
+    shutdown_timeout_ms: u64,
+) -> Result<(), String> {
+    let shutdown_timeout = cli_timeout("shutdown-timeout-ms", shutdown_timeout_ms)?;
+    let graph_path = resolve_graph_path(graph_path)?;
+    let graph_path = fs::canonicalize(&graph_path)
+        .map_err(|error| format!("cannot resolve {}: {error}", graph_path.display()))?;
+    let registry = muxiva_studio::project_registry(&graph_path)?;
+    let graph = load(&graph_path, &registry)?;
+    let graph_id = graph.graph_id().as_str().to_owned();
+    let client_session = muxiva_studio::project_client_session(&graph_path)?;
+    if allowed_origins.is_empty() {
+        allowed_origins.extend([
+            "http://127.0.0.1:4173".to_owned(),
+            "http://localhost:4173".to_owned(),
+        ]);
+    }
+    validate_origins(&allowed_origins)?;
+    let access_token = env::var("MUXIVA_CLIENT_API_TOKEN")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| project_env_value(&graph_path, "MUXIVA_CLIENT_API_TOKEN"));
+    if !host.is_loopback() && access_token.is_none() {
+        return Err(
+            "non-loopback client API requires MUXIVA_CLIENT_API_TOKEN; set a random 32+ character value in the server environment"
+                .into(),
+        );
+    }
+    if let Some(token) = access_token.as_deref() {
+        validate_access_token("MUXIVA_CLIENT_API_TOKEN", token)?;
+    }
+    let client_api_requires_auth = access_token.is_some();
+    let stop_requested = Arc::new(AtomicBool::new(false));
+    let signal_stop = Arc::clone(&stop_requested);
+    ctrlc::set_handler(move || signal_stop.store(true, Ordering::Release))
+        .map_err(|error| format!("cannot install shutdown signal handler: {error}"))?;
+    let listener = TcpListener::bind((host, port))
+        .map_err(|error| format!("cannot bind client API at {host}:{port}: {error}"))?;
+
+    let node_total = graph.nodes().len();
+    let edge_total = graph.edges().len();
+    println!("[MUXIVA][INFO][graph.loaded] id={graph_id} nodes={node_total} edges={edge_total}");
+    println!("[MUXIVA][GRAPH] human-readable DSL");
+    print!("{}", graph.render_human_dsl());
+    let runtime = start_registered_runtime(
+        graph,
+        &registry,
+        EdgePolicies::new(),
+        RuntimeOptions::default(),
+    )
+    .map_err(|error| format!("cannot start graph `{graph_id}`: {error}"))?;
+    let mut client_api = match bootstrap_server::BootstrapServer::start(
+        listener,
+        graph_id.clone(),
+        client_session,
+        allowed_origins.clone(),
+        access_token,
+    ) {
+        Ok(server) => server,
+        Err(error) => {
+            runtime.stop();
+            let _ = runtime.wait(shutdown_timeout);
+            return Err(error);
+        }
+    };
+    let address = client_api.address();
+    println!("[MUXIVA][INFO][runtime.started] mode=headless graph={graph_id}");
+    println!(
+        "[MUXIVA][INFO][client-api.ready] base_url=http://{address} auth={} cors={}",
+        if client_api_requires_auth {
+            "bearer"
+        } else {
+            "none-loopback-only"
+        },
+        allowed_origins.join(",")
+    );
+    println!("[MUXIVA][INFO][client-api.health] url=http://{address}/healthz");
+    println!(
+        "[MUXIVA][NEXT] Start the independent Voice Room, then set Backend URL to http://{address}"
+    );
+    println!("[MUXIVA][INFO][runtime.control] stop=Ctrl-C studio=not-required");
+
+    loop {
+        match runtime.wait(Duration::from_millis(250)) {
+            Ok(summary) => {
+                client_api.stop();
+                println!(
+                    "[MUXIVA][INFO][runtime.completed] status=success workers={}",
+                    summary.worker_total()
+                );
+                return Ok(());
+            }
+            Err(RuntimeWaitError::Aborted(reason)) => {
+                client_api.stop();
+                return Err(format!(
+                    "graph `{graph_id}` aborted: code={} node={} message={}",
+                    reason.root().code(),
+                    reason
+                        .node_id()
+                        .map(|node_id| node_id.as_str())
+                        .unwrap_or("<runtime>"),
+                    reason.root().message()
+                ));
+            }
+            Err(RuntimeWaitError::Timeout(_)) if stop_requested.load(Ordering::Acquire) => {
+                println!("[MUXIVA][INFO][runtime.stopping] reason=signal");
+                runtime.stop();
+                client_api.stop();
+                return match runtime.wait(shutdown_timeout) {
+                    Err(RuntimeWaitError::Timeout(diagnostics)) => Err(format!(
+                        "graph `{graph_id}` did not stop within {shutdown_timeout_ms} ms; active nodes [{}]",
+                        diagnostics
+                            .active_nodes()
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    )),
+                    _ => {
+                        println!("[MUXIVA][INFO][runtime.stopped] status=success");
+                        Ok(())
+                    }
+                };
+            }
+            Err(RuntimeWaitError::Timeout(_)) => {}
+        }
+    }
+}
+
+fn project_env_value(graph: &Path, key: &str) -> Option<String> {
+    let content = fs::read_to_string(graph.parent()?.join(".env")).ok()?;
+    content.lines().find_map(|line| {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            return None;
+        }
+        let (candidate, value) = line.split_once('=')?;
+        (candidate.trim() == key)
+            .then(|| value.trim().trim_matches(['\'', '"']).to_owned())
+            .filter(|value| !value.is_empty())
+    })
+}
+
+fn validate_origins(origins: &[String]) -> Result<(), String> {
+    for origin in origins {
+        if origin == "*" {
+            return Err(
+                "--allow-origin '*' is not accepted; list each trusted frontend origin".into(),
+            );
+        }
+        let authority = origin
+            .strip_prefix("http://")
+            .or_else(|| origin.strip_prefix("https://"));
+        if authority.is_none_or(|authority| authority.is_empty() || authority.contains('/'))
+            || origin.contains(['\r', '\n'])
+            || origin.ends_with('/')
+        {
+            return Err(format!(
+                "invalid --allow-origin `{origin}`; use an exact origin such as http://127.0.0.1:4173"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_access_token(name: &str, token: &str) -> Result<(), String> {
+    let valid = (32..=256).contains(&token.len())
+        && token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'));
+    if valid {
+        Ok(())
+    } else {
+        Err(format!(
+            "{name} must be 32-256 ASCII letters, digits, '.', '_' or '-'"
+        ))
+    }
 }
 
 fn simulate(scenario: SimulationScenario, turns: u16, interval_ms: u64) -> Result<(), String> {
@@ -514,9 +712,11 @@ fn welcome() {
     println!("[MUXIVA] Real-time multimodal Agent Runtime");
     println!();
     println!("Start here:");
-    println!("  muxiva studio          Open or create a local Studio workspace");
-    println!("  muxiva init my-agent   Create a complete Muxiva project");
-    println!("  muxiva doctor --voice  Check flagship voice-demo prerequisites");
+    println!("  muxiva init my-agent      Create a complete Muxiva project");
+    println!("  muxiva serve graph.json   Run a long-lived Graph headlessly");
+    println!("  muxiva run graph.json     Execute a finite Graph to completion");
+    println!("  muxiva studio graph.json  Open the optional visual editor");
+    println!("  muxiva doctor --voice     Check flagship voice-demo prerequisites");
     println!();
     println!("Real voice guide: {FLAGSHIP_GUIDE}");
     println!("Run `muxiva --help` for every command.");
@@ -542,6 +742,13 @@ fn main() {
             timeout_ms,
             shutdown_timeout_ms,
         }) => run(&graph, timeout_ms, shutdown_timeout_ms),
+        Some(Command::Serve {
+            graph,
+            host,
+            port,
+            allowed_origins,
+            shutdown_timeout_ms,
+        }) => serve_graph(&graph, host, port, allowed_origins, shutdown_timeout_ms),
         Some(Command::Doctor { voice, strict }) => doctor::run(voice, strict),
         Some(Command::Simulate {
             scenario,

@@ -244,10 +244,11 @@ fn report_credentials(project: &Path, warnings: &mut usize) {
             }
         }
         println!(
-            "[MUXIVA][DOCTOR][NEXT] run=\"./run.sh\" then=\"Studio -> Connections -> fill missing Required fields once -> Save to project .env\""
+            "[MUXIVA][DOCTOR][NEXT] edit=\"{}\" source=\".env.example\" then=\"./run.sh\" studio=optional",
+            project.join(".env").display()
         );
         println!(
-            "[MUXIVA][DOCTOR][NOTE] Studio persists values in {} with mode 0600; the file is Git ignored and loaded automatically",
+            "[MUXIVA][DOCTOR][NOTE] Save credentials once in {}; the file is Git ignored and loaded automatically by headless run and Studio",
             project.join(".env").display()
         );
     }

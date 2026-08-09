@@ -1,8 +1,16 @@
+.observe-session-browser { display: grid; grid-template-columns: minmax(190px,.8fr) minmax(320px,1.35fr) minmax(220px,1fr); gap: 12px 18px; align-items: end; margin-bottom: 16px; padding: 16px 18px; border: 1px solid #2c4051; border-radius: 12px; background: linear-gradient(135deg,#12202b,#101720); box-shadow: 0 10px 35px #03070b40; }
+.observe-session-copy h2 { margin: 3px 0 2px; font-size: 14px; }
+.observe-session-copy p { margin: 0; color: #6d7a8e; font-size: 9px; }
+.observe-session-browser label > span { display: block; margin-bottom: 6px; color: #748399; font-size: 8px; font-weight: 800; letter-spacing: 1px; }
+.observe-session-browser select { width: 100%; height: 38px; padding: 0 34px 0 11px; border: 1px solid #385168; border-radius: 8px; background: #0b131c; color: #e4edf5; font: 600 10px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.observe-session-meta { min-height: 38px; padding: 7px 10px; border: 1px solid #243342; border-radius: 8px; background: #0d151e; color: #8795a8; font-size: 9px; line-height: 1.45; }
+.observe-session-meta b { color: #dce7f0; }
 .observe-history-actions { display: flex; align-items: center; gap: 10px; }
+.observe-session-browser > .observe-history-actions { grid-column: 1 / -1; justify-content: flex-end; padding-top: 9px; border-top: 1px solid #22303e; }
 .observe-history-actions > span { font-size: 9px; color: #6e7c90; }
 .observe-history-actions > span.ready { color: var(--green); }
 .observe-history-actions > span.warning { color: var(--orange); }
-.observe-history-trend { padding: 14px 16px 17px; border-top: 1px solid #202b38; background: #0e151e; }
+.observe-history-trend { grid-column: 1 / -1; padding: 14px 0 2px; border-top: 1px solid #202b38; background: transparent; }
 .history-trend-header { display: flex; align-items: start; justify-content: space-between; margin-bottom: 12px; }
 .history-trend-header b, .history-trend-header small { display: block; }
 .history-trend-header b { font-size: 11px; }
@@ -19,6 +27,8 @@
 .history-spark.green polyline { stroke: var(--green); }
 .history-spark line { stroke: #263443; stroke-width: 1; vector-effect: non-scaling-stroke; }
 @media (max-width: 900px) {
+  .observe-session-browser { grid-template-columns: 1fr; align-items: stretch; }
+  .observe-session-browser > .observe-history-actions, .observe-history-trend { grid-column: auto; }
   .history-trend-grid { grid-template-columns: 1fr 1fr; }
   .observe-history-actions > span { display: none; }
 }

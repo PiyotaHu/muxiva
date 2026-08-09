@@ -101,18 +101,20 @@ API Key 和 Workspace ID 若跨地域或跨业务空间组合，WebSocket 会鉴
 
 ```bash
 cd /你的路径/Muxiva
+cp examples/voice-agent/.env.example examples/voice-agent/.env
+# 使用文本编辑器填写下面列出的值
 ./examples/voice-agent/run.sh
 ```
 
-1. Studio 打开后，点击顶部 **Connections**。
-2. 填完两张卡片，点击 **Save connections**。
-3. 两张卡片都显示 **Ready** 后，点击 **Templates → Qwen Realtime**。
-4. 点击 **Run**，等待 Studio 显示 Runtime 已运行。
-5. 点击 **Voice Room → Start live conversation**，允许麦克风权限。
-6. 说一句完整的话，然后停顿约一秒，等待首次回复。
+1. 将 Agora 与百炼字段保存到项目 `.env`。
+2. 运行 `muxiva doctor --voice`，确认没有 `MISSING`。
+3. 运行 `run.sh`，等待 `runtime.started mode=headless`。
+4. 另开终端执行 `cd examples/voice-agent && npm run voice-room`。
+5. 打开 `http://127.0.0.1:4173`，测试 Backend URL 后开始通话。
+6. 允许麦克风权限，说一句完整的话并停顿约一秒。
 
-保存后，凭据写入 `examples/voice-agent/.env`，权限为 `0600`，并已被 Git 忽略；下次
-启动会自动读取，不需要重复填写。文件形状如下，值不要提交：
+凭据只写入 `examples/voice-agent/.env`，并已被 Git 忽略；下次启动会自动读取，
+不需要重复填写。文件形状如下，值不要提交：
 
 ```dotenv
 MUXIVA_AGORA_APP_ID="..."

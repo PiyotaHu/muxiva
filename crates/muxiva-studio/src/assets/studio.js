@@ -12,7 +12,7 @@ const state = {
   history: [], future: [], dirty: false, zoom: 1, validating: null,
   viewport: { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }, suppressCanvasClick: false,
   runtime: { status: 'idle', nodes: [], edges: [] }, runtimeTimer: null,
-  telemetry: { previous: null, nodeRates: new Map(), edgeRates: new Map(), selection: null, history: { sessions: [], selected: null, samples: [], loaded: false, export: null } },
+  telemetry: { previous: null, nodeRates: new Map(), edgeRates: new Map(), selection: null, history: { sessions: [], selected: null, samples: [], nodeRates: new Map(), edgeRates: new Map(), loaded: false, export: null } },
   mediaDump: { enabled: false, session: null, dropped_frames: 0, limits: {}, refreshing: false, lastRefresh: 0, selectedRunId: null, renderSignature: '' },
   semanticTrace: { session: null, limits: {}, refreshing: false, lastRefresh: 0, selectedRunId: null, kind: 'all', query: '', dirty: true, expanded: new Set(), turnDisclosure: new Map(), renderSignature: '', interactionUntil: 0, renderTimer: null },
   connection: null, editingEdge: null,
@@ -64,13 +64,6 @@ async function loadStudio() {
     renderPalette()
     $('#graph-path').textContent = metadata.graph_path
     $('#connection-status').textContent = metadata.writable ? 'Local runtime · writable' : 'Local runtime · read only'
-    if (metadata.project_demo) {
-      $('#project-demo').classList.remove('hidden')
-      $('#project-demo').addEventListener('click', async () => {
-        if (state.dirty && !await saveGraph()) return
-        window.open(`/project/index.html#${state.token}`, '_blank', 'noopener,noreferrer')
-      })
-    }
     seedPositions()
     bindEvents()
     renderAll()
@@ -195,6 +188,7 @@ function bindEvents() {
   $('#providers').addEventListener('click', openProviders)
   $('#observability').addEventListener('click', () => openObservability())
   $('#observability-close').addEventListener('click', closeObservability)
+  $('#observe-session-select').addEventListener('change', (event) => selectObservationSession(event.target.value))
   $('#observe-history-refresh').addEventListener('click', () => refreshObservabilityHistory(false))
   $('#media-dump-enabled').addEventListener('change', toggleMediaDump)
   $('#semantic-trace-refresh').addEventListener('click', () => refreshSemanticTraces(false))
@@ -930,8 +924,12 @@ async function startRuntime() {
     const runtime = await api('/api/v1/runtime/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state.graph) })
     ingestRuntimeSnapshot(runtime)
     state.runtime = runtime
+    state.telemetry.history.selected = runtime.run_id || null
+    state.telemetry.history.samples = []
+    state.telemetry.history.nodeRates = new Map()
+    state.telemetry.history.edgeRates = new Map()
     toast('Graph runtime started')
-    renderRuntime(); updateCanvasRuntime(); scheduleRuntimePoll()
+    renderRuntime(); updateCanvasRuntime(); refreshObservabilityHistory(true); scheduleRuntimePoll()
   } catch (error) {
     state.runtime = { status: 'idle', nodes: [], edges: [] }
     if (error.status === 412) { toast(error.message, true); await openProviders() }
@@ -1017,10 +1015,17 @@ function edgeRoute(edgeId) {
   const edge = graphEdge(edgeId)
   return edge ? `${edge.from.node_id}.${edge.from.port} → ${edge.to.node_id}.${edge.to.port}` : edgeId
 }
+function observedRuntime() {
+  const history = state.telemetry.history
+  if (!history.selected || history.selected === state.runtime?.run_id) return state.runtime || { status: 'idle', nodes: [], edges: [] }
+  return history.samples.at(-1) || { status: 'idle', nodes: [], edges: [], run_id: history.selected }
+}
+function observedNodeRates() { return state.telemetry.history.selected && state.telemetry.history.selected !== state.runtime?.run_id ? state.telemetry.history.nodeRates : state.telemetry.nodeRates }
+function observedEdgeRates() { return state.telemetry.history.selected && state.telemetry.history.selected !== state.runtime?.run_id ? state.telemetry.history.edgeRates : state.telemetry.edgeRates }
 function severityRank(value) { return { idle: 0, healthy: 1, warning: 2, critical: 3 }[value] || 0 }
 function worstSeverity(...values) { return values.reduce((worst, value) => severityRank(value) > severityRank(worst) ? value : worst, 'healthy') }
 function edgeVerdict(edge) {
-  const rate = state.telemetry.edgeRates.get(edge.edge_id) || {}
+  const rate = observedEdgeRates().get(edge.edge_id) || {}
   const ratio = edge.queue_capacity ? edge.queue_len / edge.queue_capacity : 0
   const ageMs = (edge.oldest_frame_age_ns || 0) / 1e6
   if (edge.latest_error_reason || edge.drop_total > 0 || ratio >= .8 || ageMs >= 1000) return { severity: 'critical', reason: edge.latest_error_reason || (edge.drop_total > 0 ? `${edge.drop_total} frame(s) dropped` : ratio >= .8 ? `queue ${Math.round(ratio * 100)}% full` : `oldest frame waiting ${formatDuration(ageMs)}`) }
@@ -1031,7 +1036,7 @@ function nodeVerdict(node) {
   const averageMs = node.process_total ? node.process_duration_ns / node.process_total / 1e6 : 0
   const queueMs = Number(customMetric(node, 'ingress.queue_duration_ms') || 0)
   const ingressDrops = Number(customMetric(node, 'ingress.dropped_frames') || 0)
-  const connected = (state.runtime.edges || []).filter((edge) => {
+  const connected = (observedRuntime().edges || []).filter((edge) => {
     const graph = graphEdge(edge.edge_id)
     return graph && (graph.from.node_id === node.node_id || graph.to.node_id === node.node_id)
   }).map((edge) => edgeVerdict(edge).severity)
@@ -1045,9 +1050,9 @@ function nodeVerdict(node) {
   if (severity !== own) reason = 'a connected Edge is under backpressure'
   return { severity, reason }
 }
-function overallHealth() {
-  if (!state.runtime?.session_id) return 'idle'
-  return [...(state.runtime.nodes || []).map((node) => nodeVerdict(node).severity), ...(state.runtime.edges || []).map((edge) => edgeVerdict(edge).severity)].reduce(worstSeverity, 'healthy')
+function overallHealth(runtime = observedRuntime()) {
+  if (!runtime?.run_id && !runtime?.session_id) return 'idle'
+  return [...(runtime.nodes || []).map((node) => nodeVerdict(node).severity), ...(runtime.edges || []).map((edge) => edgeVerdict(edge).severity)].reduce(worstSeverity, 'healthy')
 }
 function openObservability(kind = null, id = null) {
   if (kind && id) state.telemetry.selection = { kind, id }
@@ -1063,19 +1068,20 @@ function closeObservability() {
   $('#observability-page').setAttribute('aria-hidden', 'true')
 }
 function renderObservability() {
-  const runtime = state.runtime || { nodes: [], edges: [] }, nodes = runtime.nodes || [], edges = runtime.edges || []
-  const nodeRate = nodes.reduce((total, node) => total + (state.telemetry.nodeRates.get(node.node_id)?.process || 0), 0)
-  const frameRate = edges.reduce((total, edge) => total + (state.telemetry.edgeRates.get(edge.edge_id)?.frames || 0), 0)
+  const runtime = observedRuntime(), nodes = runtime.nodes || [], edges = runtime.edges || [], nodeRates = observedNodeRates(), edgeRates = observedEdgeRates()
+  const nodeRate = nodes.reduce((total, node) => total + (nodeRates.get(node.node_id)?.process || 0), 0)
+  const frameRate = edges.reduce((total, edge) => total + (edgeRates.get(edge.edge_id)?.frames || 0), 0)
   const queued = edges.reduce((total, edge) => total + edge.queue_len, 0), capacity = edges.reduce((total, edge) => total + edge.queue_capacity, 0)
   const verdicts = [...nodes.map((node) => ({ kind: 'node', id: node.node_id, ...nodeVerdict(node) })), ...edges.map((edge) => ({ kind: 'edge', id: edge.edge_id, ...edgeVerdict(edge) }))]
   const unhealthy = verdicts.filter((value) => severityRank(value.severity) >= severityRank('warning'))
-  const health = overallHealth(), badge = $('#observe-health')
+  const health = overallHealth(runtime), badge = $('#observe-health')
   badge.className = `health-badge ${health}`; badge.textContent = health.toUpperCase()
-  $('#observe-session').textContent = runtime.session_id == null ? 'No runtime session · press Run to collect telemetry' : `Session #${runtime.session_id} · ${runtime.status} · ${formatDuration(runtime.elapsed_ms || 0)}`
+  const summary = selectedSessionSummary(), sessionId = runtime.session_id || summary?.session_id || sessionIdFromRunId(runtime.run_id)
+  $('#observe-session').textContent = !runtime.run_id && !runtime.session_id ? 'No runtime session · press Run to collect telemetry' : `Session #${sessionId || '?'} · ${runtime.status || summary?.status || 'unknown'} · ${summary?.channel || runtime.channel || 'no channel'}`
   $('#observe-node-rate').textContent = `${formatRate(nodeRate)}/s`; $('#observe-frame-rate').textContent = `${formatRate(frameRate)}/s`
   $('#observe-queued').textContent = queued; $('#observe-queue-detail').textContent = capacity ? `${Math.round(queued / capacity * 100)}% of ${capacity} slots` : 'No Edge queues'
   $('#observe-bottlenecks').textContent = unhealthy.length
-  renderHotspots(unhealthy); renderSemanticTraces(); renderMediaDumps(); renderObservationHistory(); renderObserveNodes(nodes); renderObserveEdges(edges); renderObserveDetail()
+  renderHotspots(unhealthy, runtime); renderSemanticTraces(); renderMediaDumps(); renderObservationSessionPicker(); renderObserveNodes(nodes); renderObserveEdges(edges); renderObserveDetail(runtime)
   if (Date.now() - state.mediaDump.lastRefresh > 1200) refreshMediaDumps(true)
   if (Date.now() - state.semanticTrace.lastRefresh > 750) refreshSemanticTraces(true)
 }
@@ -1315,8 +1321,8 @@ function renderRawVideoFrame(canvas, source, details) {
   canvas.getContext('2d').putImageData(new ImageData(output, width, height), 0, 0)
 }
 
-function renderHotspots(unhealthy) {
-  if (!unhealthy.length) { const empty = document.createElement('div'); empty.className = 'hotspot-empty'; empty.textContent = state.runtime?.session_id ? '✓ No bottleneck detected in this session.' : 'Run the Graph to begin bottleneck detection.'; $('#observe-hotspots').replaceChildren(empty); return }
+function renderHotspots(unhealthy, runtime = observedRuntime()) {
+  if (!unhealthy.length) { const empty = document.createElement('div'); empty.className = 'hotspot-empty'; empty.textContent = runtime?.run_id || runtime?.session_id ? '✓ No bottleneck detected in this session.' : 'Run the Graph to begin bottleneck detection.'; $('#observe-hotspots').replaceChildren(empty); return }
   const values = unhealthy.sort((a, b) => severityRank(b.severity) - severityRank(a.severity)).slice(0, 6)
   $('#observe-hotspots').replaceChildren(...values.map((value) => {
     const item = document.createElement('div'); item.className = `hotspot ${value.severity}`
@@ -1328,29 +1334,38 @@ function renderHotspots(unhealthy) {
 async function refreshObservabilityHistory(silent = true) {
   try {
     const value = await api('/api/v1/observability/history')
-    state.telemetry.history.sessions = value.sessions || []
-    state.telemetry.history.export = value.export || null
-    state.telemetry.history.loaded = true
-    renderObservationHistory()
+    const history = state.telemetry.history
+    history.sessions = value.sessions || []
+    history.export = value.export || null
+    history.loaded = true
+    const known = history.sessions.some((session) => session.run_id === history.selected)
+    const preferred = known ? history.selected : history.sessions.some((session) => session.run_id === state.runtime?.run_id) ? state.runtime.run_id : history.sessions[0]?.run_id || null
+    renderObservationSessionPicker()
+    if (preferred) await selectObservationSession(preferred, true)
   } catch (error) {
     if (!silent) toast(`Session history unavailable: ${error.message}`, true)
   }
 }
-async function selectObservationHistory(runId) {
+async function selectObservationSession(runId, silent = false) {
+  if (!runId) return
   try {
     const value = await api(`/api/v1/observability/history/${encodeURIComponent(runId)}`)
-    state.telemetry.history.selected = runId
-    state.telemetry.history.samples = value.samples || []
+    const history = state.telemetry.history
+    history.selected = runId
+    history.samples = value.samples || []
+    const rates = historicalObservationRates(history.samples)
+    history.nodeRates = rates.nodeRates
+    history.edgeRates = rates.edgeRates
     state.mediaDump.selectedRunId = runId
     state.semanticTrace.selectedRunId = runId
-    refreshMediaDumps(true, runId)
-    refreshSemanticTraces(true, runId)
-    renderObservationHistory()
-  } catch (error) { toast(`Historical telemetry unavailable: ${error.message}`, true) }
+    state.telemetry.selection = null
+    await Promise.all([refreshMediaDumps(true, runId), refreshSemanticTraces(true, runId)])
+    renderObservability()
+  } catch (error) { if (!silent) toast(`Session telemetry unavailable: ${error.message}`, true) }
 }
-function renderObservationHistory() {
-  const history = state.telemetry.history, container = $('#observe-history')
-  if (!container) return
+function renderObservationSessionPicker() {
+  const history = state.telemetry.history, select = $('#observe-session-select'), meta = $('#observe-session-meta')
+  if (!select || !meta) return
   const status = $('#observe-export-status'), exporter = history.export
   if (exporter?.configured) {
     status.className = exporter.last_error ? 'warning' : 'ready'
@@ -1361,15 +1376,38 @@ function renderObservationHistory() {
   } else {
     status.className = ''; status.textContent = 'Prometheus /metrics · OTLP not configured'
   }
-  if (!history.loaded) return replaceWithEmptyRow(container, 8, 'Loading persisted sessions…')
-  if (!history.sessions.length) return replaceWithEmptyRow(container, 8, 'No persisted session yet. Start a Graph run to create one.')
-  container.replaceChildren(...history.sessions.map((session) => {
-    const row = document.createElement('tr'); row.className = session.health || 'healthy'
-    if (history.selected === session.run_id) row.classList.add('selected')
-    row.append(entityCell(`#${session.run_id.split('-').at(-1)}`, formatWallTime(session.started_at_unix_ms)), textCell(session.graph_id), textCell(formatDuration(session.duration_ms || 0)), textCell(formatNumber(session.frame_total)), textCell(formatNumber(session.max_queued)), textCell(formatNumber(session.drops_total)), textCell(`${Number(session.max_node_process_ms || 0).toFixed(2)}ms`), statusCell({ severity: session.health || 'healthy', reason: `${session.samples} persisted samples · ${session.status}` }))
-    row.addEventListener('click', () => selectObservationHistory(session.run_id)); return row
+  if (!history.loaded) {
+    const option = document.createElement('option'); option.value = ''; option.textContent = 'Loading recorded sessions…'; select.replaceChildren(option); select.disabled = true; meta.textContent = 'Reading .muxiva/observability/history.jsonl'; return
+  }
+  if (!history.sessions.length) {
+    const option = document.createElement('option'); option.value = ''; option.textContent = 'No recorded session'; select.replaceChildren(option); select.disabled = true; meta.textContent = 'Start a Graph to collect telemetry.'; renderHistoryTrend(); return
+  }
+  select.disabled = false
+  select.replaceChildren(...history.sessions.map((session) => {
+    const option = document.createElement('option'); option.value = session.run_id; option.textContent = `Session #${session.session_id || sessionIdFromRunId(session.run_id) || '?'} · ${formatWallTime(session.started_at_unix_ms)} · ${session.channel || 'no channel'}`; return option
   }))
+  if (history.selected && history.sessions.some((session) => session.run_id === history.selected)) select.value = history.selected
+  const selected = selectedSessionSummary()
+  if (selected) {
+    const graph = document.createElement('b'), detail = document.createElement('span'); graph.textContent = selected.graph_id || 'unknown graph'; detail.textContent = `${selected.status || 'unknown'} · ${formatDuration(selected.duration_ms || 0)} · ${formatNumber(selected.frame_total)} frames · ${formatNumber(selected.drops_total)} drops`; meta.replaceChildren(graph, document.createElement('br'), detail)
+  } else meta.textContent = 'Select a Session ID to scope every panel below.'
   renderHistoryTrend()
+}
+function selectedSessionSummary() { return state.telemetry.history.sessions.find((session) => session.run_id === state.telemetry.history.selected) || null }
+function sessionIdFromRunId(runId) { const value = String(runId || '').split('-').at(-1), number = Number(value); return Number.isSafeInteger(number) && number >= 0 ? number : null }
+function historicalObservationRates(samples) {
+  const nodeRates = new Map(), edgeRates = new Map()
+  if (samples.length < 2) return { nodeRates, edgeRates }
+  const previous = samples.at(-2), next = samples.at(-1)
+  const elapsedSeconds = Math.max(.001, ((next.elapsed_ms || 0) - (previous.elapsed_ms || 0)) / 1000)
+  const previousNodes = new Map((previous.nodes || []).map((node) => [node.node_id, node]))
+  for (const node of next.nodes || []) { const old = previousNodes.get(node.node_id); nodeRates.set(node.node_id, { process: old ? positiveDelta(node.process_total, old.process_total) / elapsedSeconds : 0, processDuration: old ? positiveDelta(node.process_duration_ns, old.process_duration_ns) : 0 }) }
+  const previousEdges = new Map((previous.edges || []).map((edge) => [edge.edge_id, edge]))
+  for (const edge of next.edges || []) {
+    const old = previousEdges.get(edge.edge_id), audioNs = old ? positiveDelta(edge.audio_duration_ns_total, old.audio_duration_ns_total) : 0
+    edgeRates.set(edge.edge_id, { frames: old ? positiveDelta(edge.enqueue_total, old.enqueue_total) / elapsedSeconds : 0, bytes: old ? positiveDelta(edge.payload_bytes_total, old.payload_bytes_total) / elapsedSeconds : 0, blockedNs: old ? positiveDelta(edge.blocked_duration_ns, old.blocked_duration_ns) : 0, drops: old ? positiveDelta(edge.drop_total, old.drop_total) : 0, mediaRatio: audioNs / (elapsedSeconds * 1e9) })
+  }
+  return { nodeRates, edgeRates }
 }
 function renderHistoryTrend() {
   const history = state.telemetry.history, container = $('#observe-history-trend')
@@ -1379,9 +1417,8 @@ function renderHistoryTrend() {
   const selected = history.sessions.find((session) => session.run_id === history.selected)
   const header = document.createElement('div'); header.className = 'history-trend-header'
   const copy = document.createElement('div'), title = document.createElement('b'), detail = document.createElement('small')
-  title.textContent = `Session #${history.selected.split('-').at(-1)} trend`; detail.textContent = `${samples.length} persisted samples · ${selected?.status || 'unknown'} · ${formatDuration(selected?.duration_ms || 0)}`; copy.append(title, detail)
-  const close = document.createElement('button'); close.className = 'mini-button'; close.textContent = 'Close trend'; close.addEventListener('click', () => { history.selected = null; history.samples = []; state.mediaDump.selectedRunId = null; state.semanticTrace.selectedRunId = null; refreshMediaDumps(true); refreshSemanticTraces(true); renderObservationHistory() })
-  header.append(copy, close)
+  title.textContent = `Session #${selected?.session_id || sessionIdFromRunId(history.selected) || '?'} trend`; detail.textContent = `${samples.length} persisted samples · ${selected?.channel || 'no channel'} · ${selected?.status || 'unknown'} · ${formatDuration(selected?.duration_ms || 0)}`; copy.append(title, detail)
+  header.append(copy)
   const series = [
     ['Queued frames', samples.map((sample) => sumField(sample.edges, 'queue_len')), '', (value) => formatNumber(value)],
     ['Slowest Node avg', samples.map(maxNodeAverageMs), 'orange', (value) => `${value.toFixed(2)}ms`],
@@ -1406,7 +1443,7 @@ function formatWallTime(milliseconds) { if (!milliseconds) return 'Unknown start
 function renderObserveNodes(nodes) {
   if (!nodes.length) return replaceWithEmptyRow($('#observe-nodes'), 7, 'No Node telemetry. Run the Graph first.')
   $('#observe-nodes').replaceChildren(...nodes.map((node) => {
-    const rate = state.telemetry.nodeRates.get(node.node_id)?.process || 0, verdict = nodeVerdict(node), graph = graphNode(node.node_id), average = node.process_total ? node.process_duration_ns / node.process_total : 0
+    const rate = observedNodeRates().get(node.node_id)?.process || 0, verdict = nodeVerdict(node), graph = graphNode(node.node_id), average = node.process_total ? node.process_duration_ns / node.process_total : 0
     const row = document.createElement('tr'); row.className = verdict.severity; row.dataset.observeKind = 'node'; row.dataset.observeId = node.node_id
     if (state.telemetry.selection?.kind === 'node' && state.telemetry.selection.id === node.node_id) row.classList.add('selected')
     row.append(entityCell(node.node_id, graph?.node_type || 'runtime Node'), textCell(formatNumber(node.process_total)), textCell(`${formatRate(rate)}/s`), textCell(formatNanos(average)), textCell(formatNanos(node.max_process_duration_ns || 0)), textCell(formatCustomMetricSummary(node)), statusCell(verdict))
@@ -1416,7 +1453,7 @@ function renderObserveNodes(nodes) {
 function renderObserveEdges(edges) {
   if (!edges.length) return replaceWithEmptyRow($('#observe-edges'), 8, 'No Edge telemetry. Run the Graph first.')
   $('#observe-edges').replaceChildren(...edges.map((edge) => {
-    const rate = state.telemetry.edgeRates.get(edge.edge_id) || {}, verdict = edgeVerdict(edge), row = document.createElement('tr'); row.className = verdict.severity; row.dataset.observeKind = 'edge'; row.dataset.observeId = edge.edge_id
+    const rate = observedEdgeRates().get(edge.edge_id) || {}, verdict = edgeVerdict(edge), row = document.createElement('tr'); row.className = verdict.severity; row.dataset.observeKind = 'edge'; row.dataset.observeId = edge.edge_id
     if (state.telemetry.selection?.kind === 'edge' && state.telemetry.selection.id === edge.edge_id) row.classList.add('selected')
     row.append(entityCell(edge.edge_id, edgeRoute(edge.edge_id)), textCell(formatNumber(edge.enqueue_total)), textCell(`${formatRate(rate.frames || 0)}/s`), queueCell(edge), textCell(formatNanos(edge.oldest_frame_age_ns || 0)), textCell(formatNumber(edge.drop_total)), textCell(edge.audio_duration_ns_total ? `${(rate.mediaRatio || 0).toFixed(2)}×` : '—'), statusCell(verdict))
     row.addEventListener('click', () => { state.telemetry.selection = { kind: 'edge', id: edge.edge_id }; renderObservability() }); return row
@@ -1428,29 +1465,29 @@ function textCell(value) { const cell = document.createElement('td'); cell.textC
 function statusCell(verdict) { const cell = document.createElement('td'), pill = document.createElement('span'); pill.className = `status-pill ${verdict.severity}`; pill.textContent = verdict.severity; pill.title = verdict.reason; cell.append(pill); return cell }
 function queueCell(edge) { const cell = document.createElement('td'); cell.className = 'queue-cell'; const label = document.createElement('div'); label.className = 'queue-label'; label.textContent = `${edge.queue_len} / ${edge.queue_capacity}`; const meter = document.createElement('div'); meter.className = 'queue-meter'; const fill = document.createElement('i'); fill.style.width = `${Math.min(100, edge.queue_capacity ? edge.queue_len / edge.queue_capacity * 100 : 0)}%`; meter.append(fill); cell.append(label, meter); return cell }
 function formatCustomMetricSummary(node) { const metrics = node.custom_metrics || []; if (!metrics.length) return '—'; return metrics.slice(0, 2).map((metric) => `${metric.name}=${formatNumber(metric.value)}`).join(' · ') + (metrics.length > 2 ? ` +${metrics.length - 2}` : '') }
-function renderObserveDetail() {
+function renderObserveDetail(runtime = observedRuntime()) {
   const selected = state.telemetry.selection, target = $('#observe-detail')
   if (!selected) { target.innerHTML = '<div class="observe-empty"><span>◎</span><b>Select a Node or Edge</b><p>Inspect the measurements behind its health verdict and get a concrete next action.</p></div>'; return }
   if (selected.kind === 'node') {
-    const node = (state.runtime.nodes || []).find((value) => value.node_id === selected.id)
+    const node = (runtime.nodes || []).find((value) => value.node_id === selected.id)
     if (!node) { state.telemetry.selection = null; return renderObserveDetail() }
     target.replaceChildren(buildNodeDetail(node)); return
   }
-  const edge = (state.runtime.edges || []).find((value) => value.edge_id === selected.id)
+  const edge = (runtime.edges || []).find((value) => value.edge_id === selected.id)
   if (!edge) { state.telemetry.selection = null; return renderObserveDetail() }
   target.replaceChildren(buildEdgeDetail(edge))
 }
 function buildNodeDetail(node) {
-  const root = document.createElement('div'), verdict = nodeVerdict(node), rate = state.telemetry.nodeRates.get(node.node_id) || {}, graph = graphNode(node.node_id)
+  const root = document.createElement('div'), verdict = nodeVerdict(node), rate = observedNodeRates().get(node.node_id) || {}, graph = graphNode(node.node_id)
   root.append(detailHeader('NODE', node.node_id, graph?.node_type || 'runtime Node', verdict), detailDiagnosis(verdict, nodeRecommendation(node, verdict)), detailMetrics([
     ['Process callbacks', formatNumber(node.process_total)], ['Current rate', `${formatRate(rate.process || 0)}/s`], ['Average process', formatNanos(node.process_total ? node.process_duration_ns / node.process_total : 0)], ['Maximum process', formatNanos(node.max_process_duration_ns || 0)], ['Signals', formatNumber(node.signal_total)], ['Errors / panics', `${node.error_total} / ${node.panic_total}`],
   ]))
   root.append(detailList('NODE-REPORTED METRICS', (node.custom_metrics || []).map((metric) => [metric.name, `${formatNumber(metric.value)} (${metric.kind})`]), 'This Node has not reported internal metrics.'))
-  const connected = (state.runtime.edges || []).filter((edge) => { const item = graphEdge(edge.edge_id); return item && (item.from.node_id === node.node_id || item.to.node_id === node.node_id) }).map((edge) => [edge.edge_id, `${edge.queue_len}/${edge.queue_capacity} · ${edgeVerdict(edge).severity}`])
+  const connected = (observedRuntime().edges || []).filter((edge) => { const item = graphEdge(edge.edge_id); return item && (item.from.node_id === node.node_id || item.to.node_id === node.node_id) }).map((edge) => [edge.edge_id, `${edge.queue_len}/${edge.queue_capacity} · ${edgeVerdict(edge).severity}`])
   root.append(detailList('CONNECTED EDGES', connected, 'No connected Edges.')); return root
 }
 function buildEdgeDetail(edge) {
-  const root = document.createElement('div'), verdict = edgeVerdict(edge), rate = state.telemetry.edgeRates.get(edge.edge_id) || {}, graph = graphEdge(edge.edge_id)
+  const root = document.createElement('div'), verdict = edgeVerdict(edge), rate = observedEdgeRates().get(edge.edge_id) || {}, graph = graphEdge(edge.edge_id)
   root.append(detailHeader('EDGE', edge.edge_id, edgeRoute(edge.edge_id), verdict), detailDiagnosis(verdict, edgeRecommendation(edge, verdict)), detailMetrics([
     ['Queue now', `${edge.queue_len} / ${edge.queue_capacity}`], ['Session high watermark', `${edge.high_watermark} / ${edge.queue_capacity}`], ['Frame rate', `${formatRate(rate.frames || 0)}/s`], ['Payload throughput', `${formatBytes(rate.bytes || 0)}/s`], ['Oldest frame', formatNanos(edge.oldest_frame_age_ns || 0)], ['Blocked total', formatNanos(edge.blocked_duration_ns || 0)], ['Dropped / full', `${edge.drop_total} / ${edge.full_total}`], ['Audio media speed', edge.audio_duration_ns_total ? `${(rate.mediaRatio || 0).toFixed(2)}× real time` : 'not an Audio Edge'],
   ]))

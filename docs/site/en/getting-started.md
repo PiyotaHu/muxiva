@@ -26,15 +26,16 @@ workspace through `cargo run` for normal workflows.
 
 ## CLI entry point
 
-Running `muxiva` alone shows three recommended entry points. `muxiva --help`
+Running `muxiva` alone leads with the headless Runtime entry point. `muxiva --help`
 explains every command:
 
 | Command | Purpose |
 | --- | --- |
-| `muxiva studio [project or graph]` | Open Studio; auto-discover or create a workspace when omitted |
 | `muxiva init [directory]` | Create a complete project with `graph.json` and `.muxiva/` |
 | `muxiva validate <project or graph>` | Validate without creating or executing Nodes |
-| `muxiva run <project or graph>` | Execute a Graph with the concurrent Runtime |
+| `muxiva run <project or graph>` | Execute a finite Graph to completion |
+| `muxiva serve <project or graph>` | Run a real-time Graph and minimal Client API without Studio |
+| `muxiva studio [project or graph]` | Optional visual design and local debugging tool |
 | `muxiva doctor [--voice]` | Check tools, project discovery, and real-voice readiness |
 | `muxiva simulate` | Run synthetic, network-free Runtime fixtures; not a product demo |
 
@@ -48,7 +49,10 @@ tokens, Model Studio API Key, and Workspace ID.
 
 ```bash
 ./examples/voice-agent/setup.sh
+cp examples/voice-agent/.env.example examples/voice-agent/.env
 ./examples/voice-agent/run.sh
+# In another terminal:
+cd examples/voice-agent && npm run voice-room
 ```
 
 ## Create and run a graph
@@ -57,13 +61,16 @@ tokens, Model Studio API Key, and Workspace ID.
 muxiva init my-agent
 muxiva validate my-agent
 muxiva run my-agent
+muxiva serve my-realtime-agent
 ```
 
 `init` creates `my-agent/graph.json`, `.muxiva/nodes/`, `.muxiva/templates/`, and a
 project README. `validate` is side-effect free. `run` compiles the Graph against
 the exact Node Registry, materializes selected Factories, and executes them
 through the concurrent Runtime with bounded execution and shutdown deadlines.
-The older single-`.json` form remains compatible.
+The older single-`.json` form remains compatible. Use `serve` for a real-time
+service: it stays alive until the Graph completes or receives Ctrl-C/SIGTERM and
+exposes the minimal HTTP API needed by a standalone web client.
 
 ## Open Studio
 

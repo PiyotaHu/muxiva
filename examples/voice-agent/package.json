@@ -4,6 +4,7 @@
   "type": "module",
   "engines": { "node": ">=22.19.0" },
   "scripts": {
+    "voice-room": "node web/server.mjs",
     "check:typescript": "tsc --noEmit -p tsconfig.json",
     "test:agent": "node --test tests/*.test.mjs"
   },

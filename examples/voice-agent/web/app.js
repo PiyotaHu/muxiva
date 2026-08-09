@@ -1,12 +1,12 @@
 'use strict'
 
-const tokenKey = 'muxiva.voice.token'
-const fragment = location.hash.slice(1)
-if (fragment) sessionStorage.setItem(tokenKey, fragment)
-history.replaceState(null, '', location.pathname)
-const token = fragment || sessionStorage.getItem(tokenKey) || ''
-const headers = () => ({ Authorization: `Bearer ${token}` })
+const backendKey = 'muxiva.voice.backend'
+const clientTokenKey = 'muxiva.voice.client-token'
+const queryBackend = new URLSearchParams(location.search).get('backend')
+const initialBackend = queryBackend || localStorage.getItem(backendKey) || 'http://127.0.0.1:8080'
 const $ = (selector) => document.querySelector(selector)
+$('#backend-url').value = initialBackend
+$('#client-token').value = sessionStorage.getItem(clientTokenKey) || ''
 let client = null
 let microphone = null
 let remoteAudioTrack = null
@@ -38,7 +38,14 @@ for (let index = 0; index < 32; index += 1) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, { ...options, headers: { ...headers(), ...(options.headers || {}) } })
+  const backend = $('#backend-url').value.trim().replace(/\/$/, '')
+  if (!/^https?:\/\//.test(backend)) throw new Error('Backend URL must start with http:// or https://')
+  const token = $('#client-token').value.trim()
+  const authorization = token ? { Authorization: `Bearer ${token}` } : {}
+  const response = await fetch(new URL(path, `${backend}/`), {
+    ...options,
+    headers: { ...authorization, ...(options.headers || {}) },
+  })
   const text = await response.text()
   let body = text
   try { body = JSON.parse(text) } catch (_) {}
@@ -135,7 +142,7 @@ function diagnostic(text, error = false, warning = false) {
 
 function showError(error) {
   $('#error').hidden = false
-  $('#error').textContent = `${error.message}\n\nOpen Studio → Connections and verify the browser and Muxiva Bot RTC identities plus DashScope credentials. Runtime details are saved in .muxiva/runtime.log.`
+  $('#error').textContent = `${error.message}\n\nVerify the Backend URL, MUXIVA_CLIENT_API_TOKEN (remote deployments), Agora browser identity, and the headless Runtime log.`
   if (error.message !== lastErrorMessage) {
     diagnostic(`ERROR · ${error.message}`, true)
     lastErrorMessage = error.message
@@ -150,7 +157,7 @@ async function join() {
     resetConversation()
     showBargeState('', 'VOICE CONTROL READY')
   try {
-    if (!token) throw new Error('Studio access token is missing. Open Voice Room from Studio.')
+    saveBackendConfiguration()
     if (!window.AgoraRTC) throw new Error('Agora Web SDK could not be loaded.')
     const connection = (await api('/api/v1/client/session')).agora || {}
     for (const field of ['app_id', 'channel', 'bot_uid', 'web_uid', 'web_token']) {
@@ -212,6 +219,34 @@ async function join() {
   } catch (error) {
     $('#launch').disabled = false
     showError(error)
+  }
+}
+
+function saveBackendConfiguration() {
+  const backend = $('#backend-url').value.trim().replace(/\/$/, '')
+  localStorage.setItem(backendKey, backend)
+  const token = $('#client-token').value.trim()
+  if (token) sessionStorage.setItem(clientTokenKey, token)
+  else sessionStorage.removeItem(clientTokenKey)
+}
+
+async function testBackend() {
+  const state = $('#backend-state')
+  state.className = ''
+  state.textContent = 'Testing…'
+  $('#test-backend').disabled = true
+  try {
+    saveBackendConfiguration()
+    const health = await api('/healthz')
+    const session = await api('/api/v1/client/session')
+    if (!session.agora) throw new Error('Runtime responded, but Agora browser configuration is missing')
+    state.className = 'ready'
+    state.textContent = `Connected · Graph ${health.graph_id} · Channel ${session.agora.channel || 'not configured'}`
+  } catch (error) {
+    state.className = 'failed'
+    state.textContent = `Connection failed · ${error.message}`
+  } finally {
+    $('#test-backend').disabled = false
   }
 }
 
@@ -354,6 +389,7 @@ async function leave() {
 
 $('#launch').addEventListener('click', join)
 $('#leave').addEventListener('click', leave)
+$('#test-backend').addEventListener('click', testBackend)
 $('#copy-log').addEventListener('click', async () => {
   const text = [...$('#diagnostic-log').children].map(item => item.textContent).join('\n')
   try {

@@ -47,6 +47,7 @@ fn help_and_bare_command_lead_with_actionable_product_entry_points() {
         "init      Create a Muxiva project with graph.json and project Node directories",
         "validate  Validate a project or Graph without executing any Node",
         "run       Execute a project or Graph with the concurrent Runtime",
+        "serve     Run a long-lived Graph headlessly with a minimal browser bootstrap API",
         "doctor    Check local tools, project discovery, and optional voice-demo readiness",
         "simulate  Run synthetic, network-free Runtime fixtures for engineering checks",
     ] {
@@ -59,7 +60,8 @@ fn help_and_bare_command_lead_with_actionable_product_entry_points() {
     assert!(welcome.status.success());
     let welcome = String::from_utf8(welcome.stdout).unwrap();
     assert!(welcome.starts_with("[MUXIVA] Real-time multimodal Agent Runtime\n"));
-    assert!(welcome.contains("muxiva studio"));
+    assert!(welcome.contains("muxiva serve graph.json"));
+    assert!(welcome.contains("muxiva studio graph.json"));
     assert!(welcome.contains("muxiva init my-agent"));
     assert!(welcome.contains("muxiva doctor --voice"));
 }
@@ -247,6 +249,40 @@ fn run_rejects_unbounded_or_zero_wait_configuration_before_loading() {
             .unwrap()
             .contains("must be between 1 and 3600000 milliseconds"));
     }
+}
+
+#[test]
+fn headless_serve_requires_explicit_remote_security_boundaries() {
+    let directory = TestDirectory::new("serve-security");
+    let project = directory.0.join("agent");
+    assert!(muxiva(&["init", project.to_str().unwrap()], &directory.0)
+        .status
+        .success());
+
+    let public = muxiva(
+        &[
+            "serve",
+            project.to_str().unwrap(),
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "0",
+        ],
+        &directory.0,
+    );
+    assert!(!public.status.success());
+    assert!(String::from_utf8(public.stderr)
+        .unwrap()
+        .contains("non-loopback client API requires MUXIVA_CLIENT_API_TOKEN"));
+
+    let wildcard = muxiva(
+        &["serve", project.to_str().unwrap(), "--allow-origin", "*"],
+        &directory.0,
+    );
+    assert!(!wildcard.status.success());
+    assert!(String::from_utf8(wildcard.stderr)
+        .unwrap()
+        .contains("--allow-origin '*' is not accepted"));
 }
 
 #[test]

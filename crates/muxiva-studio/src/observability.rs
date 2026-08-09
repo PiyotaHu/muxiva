@@ -61,8 +61,10 @@ struct ExportAttempt {
 
 #[derive(Default, Serialize)]
 struct SessionSummary {
+    session_id: u64,
     run_id: String,
     graph_id: String,
+    channel: Option<String>,
     started_at_unix_ms: u64,
     ended_at_unix_ms: u64,
     duration_ms: u64,
@@ -137,6 +139,23 @@ impl ObservabilityStore {
         self.exporter.maybe_export(record);
     }
 
+    pub(crate) fn latest_session_id(&self) -> u64 {
+        self.records
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .iter()
+            .filter_map(|record| {
+                record["session_id"].as_u64().or_else(|| {
+                    record["run_id"]
+                        .as_str()
+                        .and_then(|run_id| run_id.rsplit('-').next())
+                        .and_then(|value| value.parse().ok())
+                })
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
     fn append_record(&self, record: serde_json::Value) {
         let mut records = self
             .records
@@ -181,8 +200,16 @@ impl ObservabilityStore {
             let entry = sessions
                 .entry(run_id.clone())
                 .or_insert_with(|| SessionSummary {
+                    session_id: record["session_id"].as_u64().unwrap_or_else(|| {
+                        run_id
+                            .rsplit('-')
+                            .next()
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or(0)
+                    }),
                     run_id,
                     graph_id: record["graph_id"].as_str().unwrap_or("unknown").to_owned(),
+                    channel: record["channel"].as_str().map(ToOwned::to_owned),
                     started_at_unix_ms: record["started_at_unix_ms"].as_u64().unwrap_or(observed),
                     ..SessionSummary::default()
                 });
@@ -936,7 +963,7 @@ mod tests {
 
     fn snapshot(status: &str, run_id: &str) -> serde_json::Value {
         serde_json::json!({
-            "run_id": run_id, "graph_id":"test", "started_at_unix_ms":1, "status":status,
+            "session_id":7, "run_id": run_id, "graph_id":"test", "channel":"test-room", "started_at_unix_ms":1, "status":status,
             "elapsed_ms":100, "nodes":[{"node_id":"a","process_total":2,"process_duration_ns":4_000_000,"max_process_duration_ns":3_000_000,"error_total":0,"panic_total":0,"custom_metrics":[]}],
             "edges":[{"edge_id":"a-b","queue_len":1,"queue_capacity":8,"high_watermark":2,"enqueue_total":3,"dequeue_total":2,"drop_total":0,"full_total":0,"payload_bytes_total":12,"blocked_duration_ns":0,"oldest_frame_age_ns":20_000_000,"audio_duration_ns_total":0}]
         })
@@ -1014,8 +1041,11 @@ mod tests {
         drop(store);
 
         let restored = ObservabilityStore::new(&graph);
+        assert_eq!(restored.latest_session_id(), 7);
         let index = restored.history_index();
         assert_eq!(index["sessions"][0]["run_id"], "persisted-1");
+        assert_eq!(index["sessions"][0]["session_id"], 7);
+        assert_eq!(index["sessions"][0]["channel"], "test-room");
         assert_eq!(index["sessions"][0]["status"], "completed");
         fs::remove_dir_all(directory).unwrap();
     }

@@ -25,14 +25,15 @@ Workspace。
 
 ## CLI 入口
 
-直接运行 `muxiva` 会显示三个推荐入口；`muxiva --help` 会解释每个命令：
+直接运行 `muxiva` 会优先显示 Headless Runtime 入口；`muxiva --help` 会解释每个命令：
 
 | 命令 | 作用 |
 | --- | --- |
-| `muxiva studio [项目或图]` | 打开 Studio；省略参数时自动发现或创建工作区 |
 | `muxiva init [目录]` | 创建包含 `graph.json` 与 `.muxiva/` 的完整项目 |
 | `muxiva validate <项目或图>` | 只校验，不创建或执行 Node |
-| `muxiva run <项目或图>` | 使用并发 Runtime 执行 Graph |
+| `muxiva run <项目或图>` | 执行会自然结束的有限 Graph |
+| `muxiva serve <项目或图>` | 不依赖 Studio，长期运行实时 Graph 和最小 Client API |
+| `muxiva studio [项目或图]` | 可选的可视化设计与本地调试工具 |
 | `muxiva doctor [--voice]` | 检查工具链、项目和真实语音 Demo 就绪状态 |
 | `muxiva simulate` | 运行无网络的合成 Runtime 测试夹具，不是产品 Demo |
 
@@ -45,7 +46,10 @@ SDK。两个短期 RTC Token、API Key 与 Workspace ID 的申请步骤见
 
 ```bash
 ./examples/voice-agent/setup.sh
+cp examples/voice-agent/.env.example examples/voice-agent/.env
 ./examples/voice-agent/run.sh
+# 另一个终端
+cd examples/voice-agent && npm run voice-room
 ```
 
 ## 创建并运行 Graph
@@ -54,12 +58,14 @@ SDK。两个短期 RTC Token、API Key 与 Workspace ID 的申请步骤见
 muxiva init my-agent
 muxiva validate my-agent
 muxiva run my-agent
+muxiva serve my-realtime-agent
 ```
 
 `init` 会创建 `my-agent/graph.json`、`.muxiva/nodes/`、`.muxiva/templates/` 与项目
 README。`validate` 不产生副作用。`run` 使用精确 Node Registry 编译 Graph、实例化
 Factory，并通过并发 Runtime 在有界执行与关闭期限内运行。传入单个 `.json` 文件的
-旧用法仍然兼容。
+旧用法仍然兼容。实时服务使用 `serve`，它会持续运行直到 Graph 自然结束或收到
+Ctrl-C/SIGTERM，并提供与独立网页连接所需的最小 HTTP API。
 
 ## 打开 Studio
 
