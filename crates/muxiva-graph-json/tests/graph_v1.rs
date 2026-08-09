@@ -129,7 +129,7 @@ fn schema_is_machine_readable_and_declares_exact_factory_fields() {
 #[test]
 fn studio_catalog_is_derived_from_registry_descriptors_and_schemas() {
     let catalog = builtin_node_catalog();
-    assert_eq!(catalog.len(), 16);
+    assert_eq!(catalog.len(), 17);
     let json = serde_json::to_value(catalog).unwrap();
     let source = json
         .as_array()
@@ -145,6 +145,17 @@ fn studio_catalog_is_derived_from_registry_descriptors_and_schemas() {
         .unwrap()
         .iter()
         .all(|entry| { entry["node_type"] != "builtin.client_event_encoder" }));
+    let speech_formatter = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["node_type"] == "builtin.speech_formatter")
+        .unwrap();
+    assert_eq!(speech_formatter["capability"], "text.speech_format");
+    assert_eq!(
+        speech_formatter["config_schema"]["properties"]["strip_urls"]["default"],
+        true
+    );
 }
 
 #[test]

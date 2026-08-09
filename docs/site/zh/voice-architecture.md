@@ -30,7 +30,9 @@ flowchart LR
 flowchart LR
     IN["Agora Ingress"] --> ASR["Qwen Server VAD + Streaming ASR"]
     ASR -->|"Final Transcript"| AGENT["Pi TypeScript Agent<br/>Qwen 模型 + Tool + Session"]
-    AGENT --> TTS["可取消 Qwen TTS Worker"]
+    AGENT -->|"原始 Markdown"| UI["Voice Room 聊天框"]
+    AGENT --> FORMAT["Speech Formatter<br/>Markdown → 播报文本"]
+    FORMAT --> TTS["可取消 Qwen TTS Worker"]
     TTS --> OUT["Agora Egress"]
     ASR -. "speech.started Signal" .-> AGENT
     ASR -. "speech.started Signal" .-> TTS
@@ -38,7 +40,10 @@ flowchart LR
 ```
 
 Demo 2 使用 Qwen ASR 完成 Server VAD 与流式转写，项目内 Pi TypeScript Agent 通过
-Qwen 模型管理会话与 Tool Call，再由 Qwen TTS 合成。Agent 和 TTS 通过 Node Context
+Qwen 模型管理会话与 Tool Call，再由 Qwen TTS 合成。Agent 原始 Markdown 会进入聊天
+分支；另一条分支先经过厂商无关的 Rust Speech Formatter，
+删除不适合朗读的格式、URL、代码块和表格后才进入 TTS，因此屏幕展示和自然播报不再互相
+妥协。Agent 和 TTS 通过 Node Context
 请求 Runtime 内部唤醒，在短回调中排空有界结果队列；调度机制不会显示成业务 Node 或
 `tick_in` Port。最终 ASR Text 已经代表一个提交完成的用户问题，因此直接进入 Agent。
 各阶段仍可替换。

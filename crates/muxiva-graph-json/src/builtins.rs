@@ -25,6 +25,7 @@ pub const TEXT_SOURCE: &str = "builtin.text_source";
 pub const UPPERCASE: &str = "builtin.uppercase";
 pub const TEXT_SINK: &str = "builtin.text_sink";
 pub const STDOUT_TEXT_SINK: &str = "builtin.stdout_text_sink";
+pub const SPEECH_FORMATTER: &str = "builtin.speech_formatter";
 pub const AUDIO_RESAMPLER: &str = "builtin.audio_resampler";
 pub const INTERVAL_TICK: &str = "builtin.interval_tick";
 pub const AUDIO_VAD: &str = "builtin.audio_vad";
@@ -86,6 +87,20 @@ pub fn registry() -> NodeRegistry {
             empty_schema(),
         ),
         Arc::new(StdoutTextSinkFactory),
+    );
+    register(
+        &mut registry,
+        typed_descriptor(
+            SPEECH_FORMATTER,
+            NodeKind::Transform,
+            &[
+                (TEXT_INPUT, PortDirection::Input, FrameType::Text),
+                ("signal_in", PortDirection::Input, FrameType::Signal),
+                (TEXT_OUTPUT, PortDirection::Output, FrameType::Text),
+            ],
+            speech_formatter_schema(),
+        ),
+        Arc::new(SpeechFormatterFactory),
     );
     register_demo_nodes(&mut registry);
     register_audio_nodes(&mut registry);
@@ -821,6 +836,60 @@ fn empty_schema() -> ConfigSchema {
     ]))
 }
 
+fn speech_formatter_schema() -> ConfigSchema {
+    ConfigSchema::new(map([
+        ("type", Value::String("object".into())),
+        (
+            "properties",
+            map([
+                (
+                    "code_block_message",
+                    map([
+                        ("type", Value::String("string".into())),
+                        ("minLength", Value::Integer(1)),
+                        ("maxLength", Value::Integer(512)),
+                        (
+                            "default",
+                            Value::String("Code is available in the chat.".into()),
+                        ),
+                    ]),
+                ),
+                (
+                    "table_message",
+                    map([
+                        ("type", Value::String("string".into())),
+                        ("minLength", Value::Integer(1)),
+                        ("maxLength", Value::Integer(512)),
+                        (
+                            "default",
+                            Value::String("The detailed table is available in the chat.".into()),
+                        ),
+                    ]),
+                ),
+                (
+                    "strip_urls",
+                    map([
+                        ("type", Value::String("boolean".into())),
+                        ("default", Value::Bool(true)),
+                    ]),
+                ),
+            ]),
+        ),
+        (
+            "required",
+            Value::List(
+                vec![
+                    Value::String("code_block_message".into()),
+                    Value::String("table_message".into()),
+                    Value::String("strip_urls".into()),
+                ]
+                .into_boxed_slice(),
+            ),
+        ),
+        ("additionalProperties", Value::Bool(false)),
+    ]))
+}
+
 fn demo_microphone_schema() -> ConfigSchema {
     ConfigSchema::new(map([
         ("type", Value::String("object".into())),
@@ -1524,6 +1593,344 @@ impl Node for Uppercase {
     }
 }
 
+struct SpeechFormatterFactory;
+
+impl NodeFactory for SpeechFormatterFactory {
+    fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
+        let valid_message = |name: &str| matches!(config.get(name), Some(Value::String(value)) if !value.trim().is_empty() && value.len() <= 512);
+        if config.len() == 3
+            && valid_message("code_block_message")
+            && valid_message("table_message")
+            && matches!(config.get("strip_urls"), Some(Value::Bool(_)))
+        {
+            Ok(())
+        } else {
+            Err(config_error(
+                "speech formatter requires bounded code_block_message, table_message, and strip_urls values",
+            ))
+        }
+    }
+
+    fn create(
+        &self,
+        _node_id: &NodeId,
+        config: &ConfigMap,
+    ) -> Result<Box<dyn Node>, NodeFactoryError> {
+        let message = |name: &str| match config.get(name) {
+            Some(Value::String(value)) => value.clone(),
+            _ => unreachable!("validated speech formatter configuration"),
+        };
+        let strip_urls = match config.get("strip_urls") {
+            Some(Value::Bool(value)) => *value,
+            _ => unreachable!("validated speech formatter configuration"),
+        };
+        Ok(Box::new(SpeechFormatter {
+            code_block_message: message("code_block_message"),
+            table_message: message("table_message"),
+            strip_urls,
+            in_fenced_code: false,
+            in_table: false,
+            pending_backticks: 0,
+            in_bare_url: false,
+            active_sequence: None,
+        }))
+    }
+}
+
+/// Converts display-oriented Markdown into short, deterministic TTS input.
+///
+/// This Node deliberately sits between an Agent and a TTS Node. The original
+/// Agent Text can still fan out to a rich client while only the derived plain
+/// Text reaches speech synthesis. It is stateful because fenced code markers
+/// and tables can span streaming Text Frames.
+struct SpeechFormatter {
+    code_block_message: Box<str>,
+    table_message: Box<str>,
+    strip_urls: bool,
+    in_fenced_code: bool,
+    in_table: bool,
+    pending_backticks: usize,
+    in_bare_url: bool,
+    active_sequence: Option<u64>,
+}
+
+impl SpeechFormatter {
+    fn begin_sequence(&mut self, sequence: u64) {
+        if self.active_sequence == Some(sequence) {
+            return;
+        }
+        self.active_sequence = Some(sequence);
+        self.in_fenced_code = false;
+        self.in_table = false;
+        self.pending_backticks = 0;
+        self.in_bare_url = false;
+    }
+
+    fn format_chunk(&mut self, input: &str) -> String {
+        let mut combined = "`".repeat(self.pending_backticks);
+        combined.push_str(input);
+        self.pending_backticks = 0;
+
+        let trailing_backticks = combined
+            .as_bytes()
+            .iter()
+            .rev()
+            .take_while(|byte| **byte == b'`')
+            .count();
+        let retained = if trailing_backticks < 3 {
+            trailing_backticks
+        } else {
+            0
+        };
+        if retained > 0 {
+            combined.truncate(combined.len() - retained);
+            self.pending_backticks = retained;
+        }
+
+        let mut output = String::new();
+        let mut cursor = 0;
+        while cursor < combined.len() {
+            let Some(relative) = combined[cursor..].find('`') else {
+                if !self.in_fenced_code {
+                    self.append_markdown_text(&combined[cursor..], &mut output);
+                }
+                break;
+            };
+            let marker = cursor + relative;
+            if !self.in_fenced_code {
+                self.append_markdown_text(&combined[cursor..marker], &mut output);
+            }
+            let run = combined.as_bytes()[marker..]
+                .iter()
+                .take_while(|byte| **byte == b'`')
+                .count();
+            if run >= 3 {
+                self.in_fenced_code = !self.in_fenced_code;
+                self.in_table = false;
+                if self.in_fenced_code {
+                    append_phrase(&mut output, &self.code_block_message);
+                }
+            }
+            // One or two backticks are inline-code formatting. Their content
+            // remains speakable, while the formatting markers are discarded.
+            cursor = marker + run;
+        }
+        collapse_spoken_whitespace(&output)
+    }
+
+    fn append_markdown_text(&mut self, input: &str, output: &mut String) {
+        for line in input.split_inclusive('\n') {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                self.in_table = false;
+                continue;
+            }
+            if looks_like_markdown_table(trimmed) {
+                if !self.in_table {
+                    append_phrase(output, &self.table_message);
+                }
+                self.in_table = true;
+                continue;
+            }
+            self.in_table = false;
+            let without_prefix = strip_markdown_prefix(trimmed);
+            let linked = replace_markdown_links(without_prefix);
+            let without_urls = if self.strip_urls {
+                self.remove_bare_urls(&linked)
+            } else {
+                linked
+            };
+            let plain = without_urls
+                .chars()
+                .filter(|character| {
+                    !matches!(
+                        character,
+                        '*' | '_' | '~' | '`' | '[' | ']' | '(' | ')' | '{' | '}'
+                    )
+                })
+                .collect::<String>();
+            append_phrase(output, plain.trim());
+        }
+    }
+
+    fn remove_bare_urls(&mut self, input: &str) -> String {
+        let mut output = String::new();
+        let mut rest = input;
+        loop {
+            if self.in_bare_url {
+                let end = rest
+                    .char_indices()
+                    .find_map(|(index, character)| is_url_delimiter(character).then_some(index));
+                let Some(end) = end else {
+                    return output;
+                };
+                self.in_bare_url = false;
+                rest = &rest[end..];
+            }
+            let start = ["https://", "http://", "www."]
+                .iter()
+                .filter_map(|prefix| rest.find(prefix))
+                .min();
+            let Some(start) = start else {
+                output.push_str(rest);
+                return output;
+            };
+            output.push_str(&rest[..start]);
+            let url = &rest[start..];
+            let end = url.char_indices().find_map(|(index, character)| {
+                (index > 0 && is_url_delimiter(character)).then_some(index)
+            });
+            let Some(end) = end else {
+                self.in_bare_url = true;
+                return output;
+            };
+            rest = &url[end..];
+        }
+    }
+}
+
+impl Node for SpeechFormatter {
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        let input = required_type(input, FrameType::Text, "speech formatter requires text")?;
+        self.begin_sequence(input.header().sequence_id().get());
+        let source = input
+            .as_text()
+            .expect("validated text frame")
+            .data()
+            .as_str();
+        let spoken = self.format_chunk(source);
+        if !spoken.is_empty() {
+            context.emit(
+                PortName::new(TEXT_OUTPUT).expect("valid built-in port"),
+                derive_payload(
+                    &input,
+                    context.node_id(),
+                    "speech-formatter",
+                    FramePayload::Text(TextData::new(spoken)),
+                )?,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn on_signal(
+        &mut self,
+        _signal: muxiva_types::SignalFrame,
+        _context: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        self.active_sequence = None;
+        self.in_fenced_code = false;
+        self.in_table = false;
+        self.pending_backticks = 0;
+        self.in_bare_url = false;
+        Ok(())
+    }
+}
+
+fn append_phrase(output: &mut String, phrase: &str) {
+    if phrase.is_empty() {
+        return;
+    }
+    if !output.is_empty() && !output.chars().last().is_some_and(char::is_whitespace) {
+        output.push(' ');
+    }
+    output.push_str(phrase);
+}
+
+fn strip_markdown_prefix(mut line: &str) -> &str {
+    line = line.trim_start_matches(|character: char| character.is_whitespace());
+    line = line.trim_start_matches('#').trim_start();
+    line = line.trim_start_matches('>').trim_start();
+    if let Some(rest) = line
+        .strip_prefix("- ")
+        .or_else(|| line.strip_prefix("+ "))
+        .or_else(|| line.strip_prefix("* "))
+    {
+        return rest;
+    }
+    let digits = line
+        .bytes()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    if digits > 0
+        && line
+            .get(digits..)
+            .is_some_and(|rest| rest.starts_with(". ") || rest.starts_with(") "))
+    {
+        return &line[digits + 2..];
+    }
+    line
+}
+
+fn looks_like_markdown_table(line: &str) -> bool {
+    let pipes = line.bytes().filter(|byte| *byte == b'|').count();
+    pipes >= 2
+        || (pipes >= 1
+            && line
+                .chars()
+                .all(|character| matches!(character, '|' | '-' | ':' | ' ' | '\t')))
+}
+
+fn replace_markdown_links(input: &str) -> String {
+    let mut output = String::new();
+    let mut rest = input;
+    while let Some(open) = rest.find('[') {
+        let Some(close_relative) = rest[open + 1..].find(']') else {
+            break;
+        };
+        let close = open + 1 + close_relative;
+        let after_label = &rest[close + 1..];
+        if !after_label.starts_with('(') {
+            output.push_str(&rest[..=close]);
+            rest = after_label;
+            continue;
+        }
+        let Some(target_end) = after_label[1..].find(')') else {
+            break;
+        };
+        let before = &rest[..open];
+        output.push_str(before.strip_suffix('!').unwrap_or(before));
+        output.push_str(&rest[open + 1..close]);
+        rest = &after_label[target_end + 2..];
+    }
+    output.push_str(rest);
+    output
+}
+
+fn is_url_delimiter(character: char) -> bool {
+    character.is_whitespace()
+        || matches!(
+            character,
+            ',' | '!' | '?' | ';' | ')' | ']' | '}' | '，' | '。' | '！' | '？' | '；' | '、'
+        )
+}
+
+fn collapse_spoken_whitespace(input: &str) -> String {
+    let mut output = String::new();
+    let mut whitespace = false;
+    for character in input.chars() {
+        if character.is_whitespace() {
+            whitespace = !output.is_empty();
+        } else {
+            if whitespace
+                && !matches!(
+                    character,
+                    ',' | '.' | '!' | '?' | ':' | ';' | '，' | '。' | '！' | '？' | '：' | '；'
+                )
+            {
+                output.push(' ');
+            }
+            whitespace = false;
+            output.push(character);
+        }
+    }
+    output.trim().to_owned()
+}
+
 struct TextSinkFactory;
 
 impl NodeFactory for TextSinkFactory {
@@ -1731,6 +2138,76 @@ fn derive_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn speech_formatter() -> SpeechFormatter {
+        SpeechFormatter {
+            code_block_message: "代码已经生成，请在聊天窗口查看。".into(),
+            table_message: "详细表格请在聊天窗口查看。".into(),
+            strip_urls: true,
+            in_fenced_code: false,
+            in_table: false,
+            pending_backticks: 0,
+            in_bare_url: false,
+            active_sequence: None,
+        }
+    }
+
+    #[test]
+    fn speech_formatter_preserves_meaning_without_reading_markdown_or_urls() {
+        let mut formatter = speech_formatter();
+        assert_eq!(
+            formatter.format_chunk(
+                "## **结果**\n- 查看[使用文档](https://example.com/guide)，或访问 https://example.com。"
+            ),
+            "结果 查看使用文档，或访问。"
+        );
+    }
+
+    #[test]
+    fn speech_formatter_handles_streamed_code_fences_and_tables() {
+        let mut formatter = speech_formatter();
+        assert_eq!(formatter.format_chunk("下面是实现：\n`"), "下面是实现：");
+        assert_eq!(
+            formatter.format_chunk("``typescript\nconst answer = 42;\n"),
+            "代码已经生成，请在聊天窗口查看。"
+        );
+        assert_eq!(formatter.format_chunk("``"), "");
+        assert_eq!(formatter.format_chunk("`\n运行完成。"), "运行完成。");
+        assert_eq!(
+            formatter.format_chunk("| 名称 | 结果 |\n"),
+            "详细表格请在聊天窗口查看。"
+        );
+        assert_eq!(formatter.format_chunk("| --- | --- |\n"), "");
+        assert_eq!(formatter.format_chunk("结论正常。"), "结论正常。");
+    }
+
+    #[test]
+    fn speech_formatter_suppresses_urls_split_across_agent_chunks() {
+        let mut formatter = speech_formatter();
+        assert_eq!(
+            formatter.format_chunk("查看[使用文档](https://example."),
+            "查看使用文档"
+        );
+        assert_eq!(
+            formatter.format_chunk("com/guide)，然后继续。"),
+            "，然后继续。"
+        );
+    }
+
+    #[test]
+    fn speech_formatter_resets_incomplete_markdown_at_a_new_turn() {
+        let mut formatter = speech_formatter();
+        formatter.begin_sequence(10);
+        assert_eq!(
+            formatter.format_chunk("```rust\nlet stale = true;"),
+            "代码已经生成，请在聊天窗口查看。"
+        );
+        formatter.begin_sequence(11);
+        assert_eq!(
+            formatter.format_chunk("下一轮仍然可以正常播报。"),
+            "下一轮仍然可以正常播报。"
+        );
+    }
 
     #[test]
     fn pcm16_resampler_preserves_duration_in_both_demo_directions() {

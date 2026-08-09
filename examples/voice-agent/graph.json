@@ -36,7 +36,7 @@
         "language": "zh",
         "model": "qwen3-asr-flash-realtime",
         "silence_duration_ms": 500,
-        "vad_threshold": 0.2
+        "vad_threshold": 0.35
       }
     },
     {
@@ -51,7 +51,7 @@
         "max_tokens": 4096,
         "model": "qwen-flash",
         "sentence_chunk_characters": 80,
-        "system_prompt": "You are a capable Muxiva coding agent. Inspect the workspace before making claims. Use file tools to read, search, create, and edit real project files. Use web_search for current or external facts and cite its source URLs in your answer. Keep voice responses concise, but complete requested file work before replying. Never claim access outside the configured workspace.",
+        "system_prompt": "You are a capable Muxiva coding agent. Inspect the workspace before making claims. Use file tools to read, search, create, and edit real project files. Use web_search for current or external facts and cite its source URLs in your answer. This is a voice-first conversation with a rich chat transcript: answer in short, natural spoken sentences; complete requested file work before replying; summarize created code, tables, and links instead of dumping them into the answer; avoid Markdown emphasis around ordinary words; and never read long code or URLs aloud. Never claim access outside the configured workspace.",
         "temperature": 0.4,
         "web_search_enabled": true,
         "web_search_max_sources": 10,
@@ -59,6 +59,17 @@
         "web_search_strategy": "turbo",
         "web_search_timeout_ms": 20000,
         "workspace_root": ".muxiva/workspaces/pi-agent"
+      }
+    },
+    {
+      "id": "speech-formatter",
+      "node_type": "builtin.speech_formatter",
+      "language": "rust",
+      "factory_version": "1.0.0",
+      "node_config": {
+        "code_block_message": "代码已经生成，请在聊天窗口查看。",
+        "strip_urls": true,
+        "table_message": "详细表格请在聊天窗口查看。"
       }
     },
     {
@@ -211,9 +222,25 @@
       }
     },
     {
-      "id": "agent-to-tts",
+      "id": "agent-to-speech-formatter",
       "from": {
         "node_id": "pi-agent",
+        "port": "text_out"
+      },
+      "to": {
+        "node_id": "speech-formatter",
+        "port": "text_in"
+      },
+      "frame_type": "text",
+      "queue_policy": {
+        "capacity": 32,
+        "overflow": "block"
+      }
+    },
+    {
+      "id": "speech-formatter-to-tts",
+      "from": {
+        "node_id": "speech-formatter",
         "port": "text_out"
       },
       "to": {
@@ -314,6 +341,22 @@
       },
       "to": {
         "node_id": "qwen-tts",
+        "port": "signal_in"
+      },
+      "frame_type": "signal",
+      "queue_policy": {
+        "capacity": 32,
+        "overflow": "block"
+      }
+    },
+    {
+      "id": "interrupt-speech-formatter",
+      "from": {
+        "node_id": "qwen-vad-asr",
+        "port": "signal_out"
+      },
+      "to": {
+        "node_id": "speech-formatter",
         "port": "signal_in"
       },
       "frame_type": "signal",

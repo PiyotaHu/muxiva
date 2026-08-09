@@ -94,7 +94,7 @@ knowledge of the Rust workspace.
 
 The flagship application offers Qwen Audio Realtime plus **Demo 2**, an
 inspectable full-duplex Qwen Server VAD + ASR → independently versioned Pi
-TypeScript coding Agent → cancellable Qwen TTS graph, with Agora C++ transport,
+TypeScript coding Agent → Speech Formatter → cancellable Qwen TTS graph, with Agora C++ transport,
 a browser microphone, and real workspace-scoped file tools:
 
 ```bash

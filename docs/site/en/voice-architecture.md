@@ -33,7 +33,9 @@ results or business logic can be inserted:
 flowchart LR
     IN["Agora Ingress"] --> ASR["Qwen Server VAD + Streaming ASR"]
     ASR -->|"Final Transcript"| AGENT["Pi TypeScript Agent<br/>Qwen model + tools + session"]
-    AGENT --> TTS["Cancellable Qwen TTS Worker"]
+    AGENT -->|"Original Markdown"| UI["Voice Room chat"]
+    AGENT --> FORMAT["Speech Formatter<br/>Markdown → spoken text"]
+    FORMAT --> TTS["Cancellable Qwen TTS Worker"]
     TTS --> OUT["Agora Egress"]
     ASR -. "speech.started Signal" .-> AGENT
     ASR -. "speech.started Signal" .-> TTS
@@ -42,6 +44,9 @@ flowchart LR
 
 Demo 2 uses Qwen ASR for Server VAD and streaming transcription, a project-local Pi
 TypeScript Agent backed by Qwen for conversation state and Tool Calls, and Qwen TTS.
+The Agent's original Markdown goes to the chat branch. The vendor-neutral Rust Speech Formatter
+removes speech-hostile formatting, URLs, code blocks, and tables before the other branch reaches
+TTS, so display fidelity and natural speech no longer compete.
 Agent and TTS request Runtime-managed wakeups through their Node Context and drain bounded
 result queues in short callbacks. Scheduling therefore does not appear as a business Node or a
 `tick_in` Port. The final ASR Text already represents one committed user question, so it flows

@@ -94,6 +94,22 @@ def wait_until(predicate, timeout=1.0):
 class CascadeNodeTests(unittest.TestCase):
     credentials = {"DASHSCOPE_API_KEY": "secret", "DASHSCOPE_WORKSPACE_ID": "workspace-1"}
 
+    def test_asr_default_vad_threshold_is_demo_safe_and_manifest_visible(self):
+        sessions = []
+
+        def connect(_endpoint, _key, session):
+            sessions.append(session)
+            return FakeTransport()
+
+        node = asr.QwenAsrRealtimeNode({}, connect)
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        self.assertEqual(sessions[0]["session"]["turn_detection"]["threshold"], 0.35)
+        manifest = json.loads((root / "qwen_asr_realtime" / "muxiva.node.json").read_text())
+        threshold = manifest["config_schema"]["properties"]["vad_threshold"]
+        self.assertEqual(threshold["default"], 0.35)
+        self.assertIn("Studio", threshold["description"])
+
     def test_asr_server_vad_emits_speech_signal_state_and_completed_transcript(self):
         transport = FakeTransport([
             {"type": "input_audio_buffer.speech_started"},

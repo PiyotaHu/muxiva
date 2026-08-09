@@ -7,6 +7,7 @@ Builtin 是编译进 Muxiva 的厂商无关 Factory。即使它们共享 Rust Ru
 | --- | --- | --- | --- |
 | `builtin.audio_resampler` | Media | `audio.resample` | PCM S16LE Audio 输入，指定采样率 Audio 输出 |
 | `builtin.audio_vad` | Algorithm | `speech.vad` | PCM Audio 输入，语音活动 Event 输出 |
+| `builtin.speech_formatter` | Algorithm | `text.speech_format` | 流式 Markdown Text 与取消 Signal 输入，适合 TTS 的纯文本输出 |
 | `builtin.voice_turn_context` | Control | `conversation.turn_context` | Transcript 与语音 Event 输入，轮次上下文 Text 输出 |
 | `builtin.interval_tick` | Control | `clock.interval` | 周期 Event 输出 |
 | `builtin.text_source` | Utility | `text.source` | 配置的 UTF-8 Text 输出 |
@@ -21,3 +22,10 @@ Builtin 是编译进 Muxiva 的厂商无关 Factory。即使它们共享 Rust Ru
 不兼容时应连接 `builtin.audio_resampler`，Edge 不会偷偷转换格式。
 这个通用 Node 通过 `input` 与 `output` 配置对象声明 `sample_format`、`sample_rate_hz`
 和 `channels`，因此输入 16 kHz 与输出 48 kHz 不再是两种专用 Node Type。
+
+`builtin.speech_formatter` 让 Agent 原始 Markdown 继续分叉到富文本聊天界面，只把派生的
+纯文本送入 TTS。它会删除强调符号和裸 URL、保留链接标题，并把跨 Frame 的代码围栏和
+Markdown 表格替换为可配置的播报提示。`code_block_message`、`table_message` 和
+`strip_urls` 都能在 Studio 的 Node Configuration 中修改。解析器会跨 Text Frame 保存
+代码围栏和表格状态，因此不会把半截 Markdown 控制符送进 TTS。
+打断 Signal 或新的 Sequence 会重置这些状态，未闭合的旧 Markdown 不会导致下一轮静音。

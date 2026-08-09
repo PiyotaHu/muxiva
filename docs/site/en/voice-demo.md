@@ -140,10 +140,16 @@ Future runs load it automatically. You can also create it manually from `.env.ex
 
 After Realtime works, switch to **Pi Agent Full-Duplex Cascade (Demo 2)** to inspect
 Qwen Server VAD + Streaming ASR → a stateful TypeScript Agent with Tool Calls →
-cancellable Qwen TTS. Ask for the current time or today's weather to force a
+Speech Formatter → cancellable Qwen TTS. The chat keeps the Agent's original Markdown, while
+TTS receives plain spoken text without emphasis markers, raw URLs, code blocks, or tables.
+Ask for the current time or today's weather to force a
 real tool execution. Speak again during playback: Voice Room should enter interruption state,
 old text and audio should stop, and the next transcript and answer should remain
 in the same session. The session stays live until you select **End session**.
+
+Demo 2 starts with `vad_threshold: 0.35`. To tune it for a microphone or room, select
+`qwen-vad-asr` on the canvas, edit the number in **Configuration**, then select **Validate** and
+**Save graph**. Lower values are more sensitive; higher values reject more low-energy sounds.
 
 ## Runtime logs and pipeline diagnosis
 
@@ -162,8 +168,8 @@ for metric definitions, thresholds, and log filters.
    `agora-audio-source`; `input.audio_peak_pcm16` must rise clearly above zero while speaking.
 5. In Demo 1, the Qwen Realtime Node first logs Server VAD `speech_started` / `speech_stopped`,
    followed by ASR and `response.created`. In Demo 2, inspect
-   `turn-to-agent` and `agent-to-response-gate`.
-6. `qwen-audio` and `audio-to-room` advance and the browser plays the response.
+   `transcript-to-agent`, `agent-to-speech-formatter`, and `speech-formatter-to-tts`.
+6. `tts-audio` and `audio-to-room` advance and the browser plays the response.
 
 The first missing signal identifies the failing layer. Credential values are never logged.
 

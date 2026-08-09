@@ -89,7 +89,8 @@ muxiva --version
 ### 运行真实语音助手
 
 门面应用同时提供 Qwen Audio Realtime 与 **Demo 2**：可检查的全双工阿里云 Server
-VAD + ASR → 独立发布、具有真实文件编码能力的 Pi TypeScript Agent → 可取消 Qwen TTS
+VAD + ASR → 独立发布、具有真实文件编码能力的 Pi TypeScript Agent → Speech Formatter →
+可取消 Qwen TTS
 图，使用 Agora C++ Transport 和浏览器麦克风：
 
 ```bash

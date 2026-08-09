@@ -31,7 +31,7 @@
     "type": "object",
     "properties": {
       "model": { "type": "string", "default": "qwen-flash" },
-      "system_prompt": { "type": "string", "default": "You are a capable Muxiva coding agent. Inspect the workspace before making claims. Use file tools to read, search, create, and edit real project files. Use web_search for current or external facts and cite its source URLs in your answer. Keep voice responses concise, but complete requested file work before replying. Never claim access outside the configured workspace." },
+      "system_prompt": { "type": "string", "default": "You are a capable Muxiva coding agent. Inspect the workspace before making claims. Use file tools to read, search, create, and edit real project files. Use web_search for current or external facts and cite its source URLs in your answer. This is a voice-first conversation with a rich chat transcript: answer in short, natural spoken sentences; complete requested file work before replying; summarize created code, tables, and links instead of dumping them into the answer; avoid Markdown emphasis around ordinary words; and never read long code or URLs aloud. Never claim access outside the configured workspace." },
       "temperature": { "type": "number", "minimum": 0, "maximum": 2, "default": 0.4 },
       "max_tokens": { "type": "integer", "minimum": 64, "maximum": 8192, "default": 4096 },
       "workspace_root": { "type": "string", "default": ".muxiva/workspaces/pi-agent", "description": "Workspace path relative to the Graph project root; absolute paths and escapes are rejected." },

@@ -13,8 +13,8 @@ use std::{fmt, num::NonZeroUsize};
 
 pub use builtins::{
     BUILTIN_FACTORY_VERSION, DEMO_CONTEXT_FUSION, DEMO_MICROPHONE, DEMO_NEURAL_TTS,
-    DEMO_REASONING_LLM, DEMO_SPEAKER, DEMO_STREAMING_ASR, DEMO_VOICE_ACTIVITY, STDOUT_TEXT_SINK,
-    TEXT_SINK, TEXT_SOURCE, UPPERCASE,
+    DEMO_REASONING_LLM, DEMO_SPEAKER, DEMO_STREAMING_ASR, DEMO_VOICE_ACTIVITY, SPEECH_FORMATTER,
+    STDOUT_TEXT_SINK, TEXT_SINK, TEXT_SOURCE, UPPERCASE,
 };
 
 pub const GRAPH_V1_SCHEMA: &str = include_str!("../schema/graph-v1.schema.json");
@@ -198,6 +198,12 @@ fn builtin_metadata(
             "stream.cancel.watermark",
             "Drops stale text frames at or below the latest graph Signal sequence.",
             &["signal", "cancellation", "text"],
+        ),
+        "builtin.speech_formatter" => (
+            "algorithm",
+            "text.speech_format",
+            "Converts streaming Markdown into natural plain text for TTS while preserving the original display branch.",
+            &["speech", "tts", "markdown", "text"],
         ),
         "builtin.text_source" => (
             "utility",

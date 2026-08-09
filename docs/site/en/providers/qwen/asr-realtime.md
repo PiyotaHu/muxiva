@@ -23,8 +23,11 @@ enters explicit control Edges.
 
 ## Configuration
 
-`model` defaults to `qwen3-asr-flash-realtime`; `language` defaults to `zh`; `vad_threshold` and
-`silence_duration_ms` tune utterance completion. Configure the shared `dashscope` Connection.
+`model` defaults to `qwen3-asr-flash-realtime`; `language` defaults to `zh`. Demo 2 uses a
+`vad_threshold` of `0.35`: lower values trigger speech more easily, while higher values reject
+more low-energy sounds. `silence_duration_ms` tunes utterance completion. To tune sensitivity,
+select `qwen-vad-asr` on the Studio canvas, change `vad_threshold` in **Configuration**, then
+select **Validate** and **Save graph**. Configure the shared `dashscope` Connection.
 The Node emits provider-neutral semantic Frames only. Demo 2 fans its Text and Event outputs into
 both Graph processing Nodes and the project-local Voice Room protocol Node. If vendor events are
 reordered, the Node waits for `speech.stopped` before committing `text_out` and drops previews that
