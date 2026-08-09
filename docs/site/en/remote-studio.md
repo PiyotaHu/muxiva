@@ -30,11 +30,11 @@ For the flagship voice demo in the repository:
 
 ```bash
 cd /srv/Muxiva
-./examples/voice-agent/run.sh --host 127.0.0.1 --port 5678 --no-open
+./examples/voice-agent/run.sh --studio --host 127.0.0.1 --port 5678 --no-open
 ```
 
-When neither `DISPLAY` nor `WAYLAND_DISPLAY` exists, `run.sh` automatically disables browser
-opening. It prints a URL like:
+Linux defaults to Headless Runtime, so a remote Studio requires explicit `--studio --no-open`.
+It prints a URL like:
 
 ```text
 [MUXIVA][INFO][studio.ready] url=http://127.0.0.1:5678/#<ACCESS_TOKEN>
@@ -74,7 +74,7 @@ Use `tmux` or `systemd`. A minimal `tmux` workflow is:
 
 ```bash
 tmux new -s muxiva
-./examples/voice-agent/run.sh --host 127.0.0.1 --port 5678 --no-open
+./examples/voice-agent/run.sh --studio --host 127.0.0.1 --port 5678 --no-open
 ```
 
 Press `Ctrl-b`, then `d` to detach. Reconnect later with:
@@ -135,7 +135,7 @@ firewall. Prefer SSH forwarding for individual development.
 
 | Symptom | Resolution |
 | --- | --- |
-| Server reports an `xdg-open` failure | Add `--no-open`; current `run.sh` adds it automatically on headless Linux |
+| Server reports an `xdg-open` failure | Use `run.sh --studio ... --no-open` |
 | Local browser refuses connection | Keep Studio and the SSH tunnel running and use the same `5678` port |
 | Access token is invalid | Copy the complete URL from the current launch, including the fragment |
 | Studio opens but microphone is unavailable | Use the tunneled local `127.0.0.1` URL, not remote plain HTTP |

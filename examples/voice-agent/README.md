@@ -33,15 +33,20 @@ Studio 内置两张可选择的图：
 ./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
 ```
 
-### Headless 体验（Linux/macOS）
+### 启动模式
 
 ```sh
 cp examples/voice-agent/.env.example examples/voice-agent/.env
 # 填写一次 .env
+# macOS 默认启动 Studio；Windows Git Bash 可使用 --studio
 ./examples/voice-agent/run.sh
+# Linux、Docker、服务器
+./examples/voice-agent/run.sh --headless
 ```
 
-`run.sh` 调用 `muxiva serve graph.json`，不启动 Studio。看到
+`run.sh` 在 macOS/Windows Shell 默认进入 Studio，在 Linux 默认调用
+`muxiva serve graph.json`。`--studio` 与 `--headless` 可以显式覆盖平台默认值。
+Headless 模式看到
 `runtime.started mode=headless` 和 `client-api.ready` 后，在另一个终端启动独立网页：
 
 ```sh
@@ -53,7 +58,8 @@ npm run voice-room
 **Test connection**，再点击 **Start live conversation**。Windows PowerShell 使用相同的
 `npm run voice-room`，然后执行 `Start-Process http://127.0.0.1:4173`。
 
-Studio 只用于可选的模板选择、Graph 编辑和本地 Observe，不再承担 Runtime 或网页托管。
+Studio 模式用于模板选择、Graph 编辑、本地 Run/Stop 与 Observe；项目 Voice Room 网页始终
+保持独立，不由 Studio 托管。生产 Runtime 使用 Headless 模式。
 无 GUI Linux、SSH、公网、HTTPS 与 Docker 部署见
 [Headless 部署指南](https://piyotahu.github.io/muxiva/zh/headless-deployment/)。
 
@@ -61,7 +67,7 @@ Cascade 默认使用 `vad_threshold: 0.45`。在 Studio 画布选择 `qwen-vad-a
 **Configuration** 中修改灵敏度；修改后点击 **Validate** 和 **Save graph**。
 
 Voice Room 会持续运行，直到点击 **End session**；页面实时展示 Graph、Node 调用、
-Frame 数和各阶段活动状态。Secret 只保留在本地 Studio 进程内存；只有 Manifest
+Frame 数和各阶段活动状态。Secret 只保留在本地 Runtime/Studio 进程；只有 Manifest
 显式标记为浏览器必需的 App ID、Channel、Web UID 和短期 Web Token 才能通过本地
 鉴权接口交给 Voice Room。
 
@@ -96,13 +102,19 @@ Never put an Agora App Certificate in Studio or a browser. Then run:
 
 ```sh
 ./examples/voice-agent/setup.sh /absolute/path/to/agora-native-sdk
+cp examples/voice-agent/.env.example examples/voice-agent/.env
+# macOS: Studio by default
 ./examples/voice-agent/run.sh
+# Linux / Docker / server
+./examples/voice-agent/run.sh --headless
 ```
 
-Save credentials once in `.env`, run `./examples/voice-agent/run.sh`, then run
-`npm run voice-room` in a second terminal. Open `http://127.0.0.1:4173`, test the
-default backend `http://127.0.0.1:8080`, and start the conversation. Studio is
-optional and no longer owns Runtime startup or web hosting.
+`run.sh` defaults to Studio in macOS/Windows shells and Headless Runtime on
+Linux; pass `--studio` or `--headless` to override that choice. For headless
+mode, run `npm run voice-room` in a second terminal, open
+`http://127.0.0.1:4173`, test backend `http://127.0.0.1:8080`, and start the
+conversation. Studio provides local Run/Stop and Observe, but never hosts the
+independent project web application.
 
 Cascade defaults to `vad_threshold: 0.45`. Select `qwen-vad-asr` on the Studio canvas to edit
 the value in **Configuration**, then select **Validate** and **Save graph**.

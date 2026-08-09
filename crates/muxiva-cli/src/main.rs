@@ -337,6 +337,7 @@ fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(
     let graph_path = resolve_graph_path(graph_path)?;
     let registry = muxiva_studio::project_registry(&graph_path)?;
     let graph = load(&graph_path, &registry)?;
+    preflight_project_connections(&graph_path, &graph)?;
     run_graph(
         graph,
         &registry,
@@ -360,6 +361,7 @@ fn serve_graph(
         .map_err(|error| format!("cannot resolve {}: {error}", graph_path.display()))?;
     let registry = muxiva_studio::project_registry(&graph_path)?;
     let graph = load(&graph_path, &registry)?;
+    preflight_project_connections(&graph_path, &graph)?;
     let graph_id = graph.graph_id().as_str().to_owned();
     let client_session = muxiva_studio::project_client_session(&graph_path)?;
     if allowed_origins.is_empty() {
@@ -478,6 +480,26 @@ fn serve_graph(
             Err(RuntimeWaitError::Timeout(_)) => {}
         }
     }
+}
+
+fn preflight_project_connections(
+    graph_path: &Path,
+    graph: &muxiva_core::GraphDefinition,
+) -> Result<(), String> {
+    let missing = muxiva_studio::project_missing_required_connections(graph_path, graph)?;
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let project = graph_path.parent().unwrap_or_else(|| Path::new("."));
+    let env_path = project.join(".env");
+    let example_path = project.join(".env.example");
+    Err(format!(
+        "required project credentials are missing:\n  - {}\n[MUXIVA][CONFIG] expected={}\n[MUXIVA][NEXT] copy {} to {} and fill the missing values once; Studio is optional",
+        missing.join("\n  - "),
+        env_path.display(),
+        example_path.display(),
+        env_path.display(),
+    ))
 }
 
 fn project_env_value(graph: &Path, key: &str) -> Option<String> {

@@ -100,9 +100,11 @@ a browser microphone, and real workspace-scoped file tools:
 ```bash
 ./examples/voice-agent/setup.sh       # macOS: downloads and verifies Agora SDK
 cp examples/voice-agent/.env.example examples/voice-agent/.env
-# Fill the local .env once, then start the Graph without Studio:
+# macOS local development: opens Studio by default
 ./examples/voice-agent/run.sh
-# In a second terminal, start the independent browser client:
+# Linux, Docker, or a production-style local test:
+./examples/voice-agent/run.sh --headless
+# With headless mode running, start the independent browser client:
 cd examples/voice-agent && npm run voice-room
 ```
 
@@ -158,8 +160,9 @@ These scripts build real installable packages, run integration tests, and execut
 
 The real-voice Realtime and Cascade templates live under
 [`examples/voice-agent/.muxiva/templates/`](examples/voice-agent/.muxiva/templates/).
-The checked-in `examples/voice-agent/graph.json` runs headlessly; use optional Studio only to
-select, inspect, edit, and save another template before deployment.
+`run.sh` defaults to Studio on macOS/Windows shells and Headless Runtime on Linux. Use
+`--studio` or `--headless` to select explicitly. The checked-in
+`examples/voice-agent/graph.json` is shared by both modes.
 
 Graph JSON is declarative configuration. It cannot contain executable code, dynamic scripts, credentials, or arbitrary remote resources. See the [Graph and typed ports guide](https://piyotahu.github.io/muxiva/graph/).
 

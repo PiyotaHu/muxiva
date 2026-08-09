@@ -103,7 +103,7 @@ Qwen TTS 之间使用由 `qwen-flash` 驱动的 [Pi 编码 Agent](nodes/pi-agent
 来源；通用接入方法见
 [Agent 集成 SOP](nodes/agent-integration.md)。
 
-## 4. 启动 Headless Runtime 与独立 Voice Room
+## 4. 选择 Studio 或 Headless 启动方式
 
 先从示例创建本地凭据文件并填一次。它被 Git 忽略，之后 CLI 和 Studio 都会自动读取：
 
@@ -116,10 +116,18 @@ muxiva doctor --voice
 `doctor` 应显示 Agora Node Pack 为 `mode=agora-native`，并显示 Qwen Python 与 Pi
 TypeScript Agent 已就绪。出现 `MISSING` 表示 `.env` 仍缺必填值，不是可以跳过的提示。
 
-终端 A 启动 Graph。`run.sh` 现在调用 `muxiva serve`，不会启动 Studio：
+macOS 本地开发直接运行以下命令，默认打开 Studio；Windows Git Bash 使用相同命令，
+PowerShell 可执行 `muxiva studio examples/voice-agent/graph.json`：
 
 ```bash
 ./examples/voice-agent/run.sh
+```
+
+在 Studio 中选择模板、点击 **Run**，并通过 **◎ Observe** 调试 Node 与 Edge。
+在 Linux、Docker、SSH，或者需要验收前后端分离链路时，终端 A 显式启动 Headless Runtime：
+
+```bash
+./examples/voice-agent/run.sh --headless
 ```
 
 终端 B 只启动网页静态文件：
@@ -133,9 +141,10 @@ npm run voice-room
 `http://127.0.0.1:8080`，点击 **Test connection**，再开始通话。网页和 Runtime 是两个
 独立进程；网页关闭不会停止 Graph，Graph 停止也不会由网页静态服务器接管。
 
-macOS、Windows、无 GUI Linux、SSH、公网和 Docker 的完整命令见
-[Headless Runtime 与独立网页](headless-deployment.md)。Studio 仍可用于修改 Graph 和 VAD
-配置，但不再参与启动与通话。
+`run.sh` 在 macOS/Windows Shell 默认 Studio、Linux 默认 Headless；`--studio` 和
+`--headless` 可显式覆盖。无 GUI Linux、SSH、公网和 Docker 的完整命令见
+[Headless Runtime 与独立网页](headless-deployment.md)。项目 Voice Room 始终独立于 Studio；
+完整浏览器通话使用 Headless 模式提供的 Client API。
 
 Realtime 跑通后，再切换 **Pi Agent Full-Duplex Cascade（Demo 2）**，观察 Qwen
 Server VAD + Streaming ASR → 有状态 TypeScript Agent 与 Tool Call → Speech Formatter →

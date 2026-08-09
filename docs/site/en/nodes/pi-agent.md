@@ -105,7 +105,7 @@ for the general application-owned path.
 
 ```bash
 muxiva doctor --voice
-./examples/voice-agent/run.sh
+./examples/voice-agent/run.sh --studio
 ```
 
 Choose **Pi Agent Full-Duplex Cascade (Demo 2)** and open Voice Room. Ask:

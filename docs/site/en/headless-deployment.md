@@ -33,7 +33,11 @@ muxiva doctor --voice
 muxiva serve examples/voice-agent/graph.json
 ```
 
-`./examples/voice-agent/run.sh` is a convenience wrapper around `muxiva serve`; it no longer starts or opens Studio. A successful start prints `runtime.started mode=headless`, the Client API base URL, and `studio=not-required`. Ctrl-C and container SIGTERM perform bounded shutdown. Logs remain in `.muxiva/runtime.log`.
+`./examples/voice-agent/run.sh --headless` is the portable convenience wrapper around
+`muxiva serve`; Linux also selects this mode by default. macOS/Windows shells default to Studio,
+so deployment automation should always include `--headless`. A successful start prints
+`runtime.started mode=headless`, the Client API base URL, and `studio=not-required`. Ctrl-C and
+container SIGTERM perform bounded shutdown. Logs remain in `.muxiva/runtime.log`.
 
 ## Start the standalone Voice Room
 

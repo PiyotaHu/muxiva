@@ -3,6 +3,42 @@ set -euo pipefail
 
 application_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$application_root/../.." && pwd)"
+platform="$(uname -s)"
+
+case "$platform" in
+  Darwin|MINGW*|MSYS*|CYGWIN*) launch_mode="studio" ;;
+  *) launch_mode="headless" ;;
+esac
+case "${1:-}" in
+  --studio)
+    launch_mode="studio"
+    shift
+    ;;
+  --headless)
+    launch_mode="headless"
+    shift
+    ;;
+  --help|-h)
+    cat <<'EOF'
+Usage:
+  ./examples/voice-agent/run.sh [--studio | --headless] [MODE OPTIONS]
+
+Modes:
+  --studio    Open Muxiva Studio for visual Run, Observe, and Graph editing.
+  --headless  Run the Graph with `muxiva serve` and its minimal Client API.
+
+Defaults:
+  macOS and Windows shells: --studio
+  Linux, containers, and other Unix systems: --headless
+
+Examples:
+  ./examples/voice-agent/run.sh
+  ./examples/voice-agent/run.sh --studio --port 5678
+  ./examples/voice-agent/run.sh --headless --host 0.0.0.0 --allow-origin https://voice.example.com
+EOF
+    exit 0
+    ;;
+esac
 
 if [[ -n "${MUXIVA_BIN:-}" ]]; then
   if [[ ! -x "$MUXIVA_BIN" ]]; then
@@ -21,7 +57,7 @@ else
   exit 2
 fi
 
-case "$(uname -s)" in
+case "$platform" in
   Darwin) native_extension="dylib" ;;
   Linux) native_extension="so" ;;
   *) native_extension="" ;;
@@ -53,15 +89,33 @@ if [[ ! -f "$graph_path" ]]; then
   exit 2
 fi
 
-echo '[MUXIVA][WELCOME] Starting the voice Graph as a headless Runtime. Studio is not involved.'
-echo "[MUXIVA][GRAPH]  $graph_path"
-echo '[MUXIVA][CLIENT] In another terminal: cd examples/voice-agent && npm run voice-room'
-echo '[MUXIVA][CLIENT] Open http://127.0.0.1:4173 and use Backend URL http://127.0.0.1:8080'
-echo '[MUXIVA][HELP]  https://piyotahu.github.io/muxiva/voice-demo/'
-echo "[MUXIVA][CLI]   $muxiva_binary"
-echo "[MUXIVA][LOG]   $application_root/.muxiva/runtime.log"
+print_context() {
+  echo "[MUXIVA][GRAPH]  $graph_path"
+  echo '[MUXIVA][HELP]  https://piyotahu.github.io/muxiva/voice-demo/'
+  echo "[MUXIVA][CLI]   $muxiva_binary"
+  echo "[MUXIVA][CONFIG] environment or $application_root/.env (project-local, loaded automatically)"
+  echo "[MUXIVA][LOG]   $application_root/.muxiva/runtime.log"
+}
 
 mkdir -p "$application_root/.muxiva"
+if [[ "$launch_mode" == "studio" ]]; then
+  echo '[MUXIVA][WELCOME] Starting the visual Studio development experience.'
+  echo '[MUXIVA][MODE]  studio · use Run and ◎ Observe in the browser'
+  print_context
+  echo '[MUXIVA][NEXT]  Use --headless instead for Linux servers, Docker, and production-style deployment.'
+  set +e
+  "$muxiva_binary" studio "$graph_path" "$@" 2>&1 \
+    | tee "$application_root/.muxiva/runtime.log"
+  status=${PIPESTATUS[0]}
+  set -e
+  exit "$status"
+fi
+
+echo '[MUXIVA][WELCOME] Starting the voice Graph as a headless Runtime. Studio is not involved.'
+echo '[MUXIVA][MODE]  headless · use --studio on a GUI development machine'
+print_context
+echo '[MUXIVA][CLIENT] In another terminal: cd examples/voice-agent && npm run voice-room'
+echo '[MUXIVA][CLIENT] Open http://127.0.0.1:4173 and use Backend URL http://127.0.0.1:8080'
 run_lock="$application_root/.muxiva/runtime.lock"
 if ! mkdir "$run_lock" 2>/dev/null; then
   existing_pid="$(sed -n '1p' "$run_lock/pid" 2>/dev/null || true)"

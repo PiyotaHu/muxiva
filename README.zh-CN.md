@@ -95,10 +95,15 @@ VAD + ASR → 独立发布、具有真实文件编码能力的 Pi TypeScript Age
 
 ```bash
 ./examples/voice-agent/setup.sh       # macOS：自动下载并校验 Agora SDK
+cp examples/voice-agent/.env.example examples/voice-agent/.env
+# macOS 默认打开 Studio
 ./examples/voice-agent/run.sh
+# Linux、Docker、服务器显式使用 Headless Runtime
+./examples/voice-agent/run.sh --headless
 ```
 
-在 Studio 选择图、填写 **Connections**、点击 **Run**，然后打开 **Voice Room**。完整安装流程、
+macOS/Windows 图形开发使用 Studio，Linux 与部署环境使用 Headless Runtime；也可以用
+`--studio` / `--headless` 显式覆盖。完整安装流程、
 双身份共享 RTC Session 模型、安全边界和离线门禁见
 [旗舰语音 Demo 指南](https://piyotahu.github.io/muxiva/zh/voice-demo/)。
 
@@ -143,7 +148,8 @@ Token。详见 [Studio 指南](https://piyotahu.github.io/muxiva/zh/studio/)和
 
 真实语音应用的 Realtime 与 Cascade 模板位于
 [`examples/voice-agent/.muxiva/templates/`](examples/voice-agent/.muxiva/templates/)。
-通过 `./examples/voice-agent/run.sh` 启动 Studio 后，可以直接选择、查看和编辑两张图。
+macOS 通过 `./examples/voice-agent/run.sh` 启动 Studio 后，可以直接选择、查看和编辑两张图；
+Linux 使用 `./examples/voice-agent/run.sh --headless` 运行同一个 Graph。
 
 Graph JSON 只用于声明式配置，不能包含可执行代码、动态脚本、凭据或任意远程资源。详见 [Graph 与类型化端口](https://piyotahu.github.io/muxiva/zh/graph/)。
 

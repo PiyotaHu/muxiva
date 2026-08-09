@@ -134,7 +134,7 @@ Use a fixed port and private token for a stable local scrape target:
 
 ```bash
 export MUXIVA_STUDIO_ACCESS_TOKEN="$(openssl rand -hex 32)"
-./examples/voice-agent/run.sh --port 5678
+./examples/voice-agent/run.sh --studio --port 5678
 ```
 
 Example Prometheus configuration:
@@ -161,7 +161,7 @@ Connect a local OpenTelemetry Collector:
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318"
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/json"
 export OTEL_METRIC_EXPORT_INTERVAL="10000"
-./examples/voice-agent/run.sh
+./examples/voice-agent/run.sh --studio
 ```
 
 Use the signal-specific variable for a complete vendor Metrics URL; no path is appended:

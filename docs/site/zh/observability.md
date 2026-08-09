@@ -133,7 +133,7 @@ curl -H "Authorization: Bearer $MUXIVA_STUDIO_ACCESS_TOKEN" \
 
 ```bash
 export MUXIVA_STUDIO_ACCESS_TOKEN="$(openssl rand -hex 32)"
-./examples/voice-agent/run.sh --port 5678
+./examples/voice-agent/run.sh --studio --port 5678
 ```
 
 Prometheus 配置示例：
@@ -160,7 +160,7 @@ OTLP 导出器位于 Studio 应用层，不会把 OpenTelemetry SDK 或网络客
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318"
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/json"
 export OTEL_METRIC_EXPORT_INTERVAL="10000"
-./examples/voice-agent/run.sh
+./examples/voice-agent/run.sh --studio
 ```
 
 厂商提供完整 Metrics URL 时使用 signal-specific 配置；它不会自动追加路径：

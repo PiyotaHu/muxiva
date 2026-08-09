@@ -47,10 +47,16 @@ SDK。两个短期 RTC Token、API Key 与 Workspace ID 的申请步骤见
 ```bash
 ./examples/voice-agent/setup.sh
 cp examples/voice-agent/.env.example examples/voice-agent/.env
+# macOS：默认打开 Studio
 ./examples/voice-agent/run.sh
-# 另一个终端
+# Linux / Docker：启动 Headless Runtime
+./examples/voice-agent/run.sh --headless
+# Headless 模式的另一个终端
 cd examples/voice-agent && npm run voice-room
 ```
+
+`run.sh` 在 macOS 和 Windows Shell 默认选择 Studio，在 Linux 默认选择 Headless；
+`--studio` 与 `--headless` 可以在任何平台显式覆盖。
 
 ## 创建并运行 Graph
 

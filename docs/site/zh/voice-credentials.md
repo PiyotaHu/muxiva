@@ -4,9 +4,10 @@
 两个 RTC Token、百炼 API Key、百炼 Workspace ID。Channel 和两个 UID 使用 Muxiva 的
 预设值即可。
 
-!!! warning "先别点击 Run"
-    先让 Studio **Connections** 中的 Agora RTC 与 Alibaba Cloud Model Studio 两张卡片
-    都显示 **Ready**，再选择图并进入 Voice Room。
+!!! warning "先完成项目级 `.env`"
+    Headless Runtime 不依赖 Studio。先把凭据写入当前仓库副本的
+    `examples/voice-agent/.env`，再运行 `muxiva doctor --voice`；Studio Connections
+    只是编辑同一个文件的可选图形界面。
 
 ## 一眼看懂：什么填到哪里
 
@@ -31,7 +32,8 @@ Agora **App Certificate 不填入 Muxiva**。它只在 Token Builder 中生成 T
 2. 进入 [Projects](https://console.agora.io/legacy/project-management)，点击 **Create New**。
 3. 填写项目名称；Authentication mechanism 选择
    **Secured mode: APP ID + Token (Recommended)**。
-4. 创建完成后，在项目列表的 **App ID** 列点击复制。这就是 Studio 的 **App ID**。
+4. 创建完成后，在项目列表的 **App ID** 列点击复制。这就是 `.env` 的
+   `MUXIVA_AGORA_APP_ID`。
 
 Agora 官方的[账号和项目指南](https://docs.agora.io/en/realtime-media/voice/manage-agora-account)
 也给出了相同流程。
@@ -55,7 +57,7 @@ Agora 官方的[账号和项目指南](https://docs.agora.io/en/realtime-media/v
 | User ID / UID | `1001` | `2001` |
 | Token expiration time | `3600`（首次测试一小时） | `3600` |
 | Channel name | `muxiva-demo` | `muxiva-demo` |
-| 生成结果填入 Studio | Browser Token | Muxiva Bot Token |
+| 生成结果填入 `.env` | `MUXIVA_AGORA_WEB_TOKEN` | `MUXIVA_AGORA_BOT_TOKEN` |
 
 !!! important "Channel 不需要提前创建"
     `muxiva-demo` 只是双方约定的房间名。它区分大小写；Token Builder、Studio 和所有客户端
@@ -78,7 +80,7 @@ Agora Console 也提供 **Generate Temp Token**。为了让 Muxiva 的浏览器�
 1. 在百炼控制台进入 **API Key** 页面，点击 **创建 API Key**。
 2. “归属业务空间”第一次建议选择**默认业务空间**；权限选择“全部”。
 3. 创建后立即复制完整 Key。关闭弹窗后通常不能再次查看明文；丢失时应重置或新建。
-4. 将它填入 Studio 的 **Alibaba Cloud Model Studio → API Key**。
+4. 将它填入 `.env` 的 `DASHSCOPE_API_KEY`。
 
 官方步骤：[如何获取 API Key](https://help.aliyun.com/zh/model-studio/get-api-key/)。Muxiva
 需要的是百炼按量付费 API Key，不是 Coding Plan 或 Token Plan 的专用 Key。
@@ -89,7 +91,7 @@ Agora Console 也提供 **Generate Temp Token**。为了让 Muxiva 的浏览器�
 2. 点击控制台右上角的业务空间入口，在当前空间信息中复制 **Workspace ID**；也可进入
    “业务空间管理”，从 Workspace ID 列复制。
 3. 确认这个 Workspace 正是上一步 API Key 的“归属业务空间”。
-4. 将它填入 Studio 的 **Workspace ID**。
+4. 将它填入 `.env` 的 `DASHSCOPE_WORKSPACE_ID`。
 
 官方步骤：[获取 Workspace ID](https://help.aliyun.com/zh/model-studio/obtain-the-app-id-and-workspace-id)。
 API Key 和 Workspace ID 若跨地域或跨业务空间组合，WebSocket 会鉴权失败。
@@ -103,18 +105,26 @@ API Key 和 Workspace ID 若跨地域或跨业务空间组合，WebSocket 会鉴
 cd /你的路径/Muxiva
 cp examples/voice-agent/.env.example examples/voice-agent/.env
 # 使用文本编辑器填写下面列出的值
+# macOS 默认打开 Studio
 ./examples/voice-agent/run.sh
+# Linux / Docker / 服务器使用 Headless Runtime
+./examples/voice-agent/run.sh --headless
 ```
 
 1. 将 Agora 与百炼字段保存到项目 `.env`。
 2. 运行 `muxiva doctor --voice`，确认没有 `MISSING`。
-3. 运行 `run.sh`，等待 `runtime.started mode=headless`。
-4. 另开终端执行 `cd examples/voice-agent && npm run voice-room`。
-5. 打开 `http://127.0.0.1:4173`，测试 Backend URL 后开始通话。
-6. 允许麦克风权限，说一句完整的话并停顿约一秒。
+3. macOS/Windows 本地开发运行 `run.sh`（或显式 `--studio`），在浏览器进入 Studio。
+4. Linux/部署环境运行 `run.sh --headless`，等待 `runtime.started mode=headless`。
+5. Headless 模式另开终端执行 `cd examples/voice-agent && npm run voice-room`。
+6. 打开 `http://127.0.0.1:4173`，测试 Backend URL 后开始通话。
+7. 允许麦克风权限，说一句完整的话并停顿约一秒。
 
 凭据只写入 `examples/voice-agent/.env`，并已被 Git 忽略；下次启动会自动读取，
 不需要重复填写。文件形状如下，值不要提交：
+
+`.env` 是**当前项目副本本地**的配置。新 clone、另一台机器或另一个工作目录不会自动
+共享它；请显式复制旧项目的 `.env`，或从 `.env.example` 新建一次。Muxiva 遇到缺失项时
+会在创建任何 Node Host 前列出字段和它实际读取的绝对路径。
 
 ```dotenv
 MUXIVA_AGORA_APP_ID="..."

@@ -21,7 +21,7 @@ use std::{
 
 use muxiva_core::{
     start_registered_runtime_with_context_and_observer, EdgePolicies, FrameObservation,
-    GraphRuntime, NotificationBus, ResourceStore, RuntimeObserver, RuntimeOptions,
+    GraphDefinition, GraphRuntime, NotificationBus, ResourceStore, RuntimeObserver, RuntimeOptions,
     RuntimeWaitError, SignalObservation,
 };
 use muxiva_graph_json::{GraphDiagnostic, GraphDocument, MAX_DOCUMENT_BYTES};
@@ -608,6 +608,30 @@ pub fn project_registry(graph: &Path) -> Result<muxiva_core::NodeRegistry, Strin
     let mut registry = muxiva_graph_json::builtin_registry();
     node_library::register_project_nodes_with_connections(graph, &mut registry, connections)?;
     Ok(registry)
+}
+
+/// Reports required connection fields that are missing for the Node types used
+/// by a compiled project Graph. Values are loaded from the process environment
+/// first and the project-local `.env` second; secret values are never returned.
+pub fn project_missing_required_connections(
+    graph_path: &Path,
+    graph: &GraphDefinition,
+) -> Result<Vec<String>, String> {
+    let used_node_types = graph
+        .nodes()
+        .iter()
+        .map(|node| node.descriptor().node_type().as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let required_connections = node_library::list(graph_path)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(|package| used_node_types.contains(package.manifest.node_type.as_str()))
+        .filter_map(|package| package.resolved_connection_id().map(str::to_owned))
+        .collect::<std::collections::BTreeSet<_>>();
+    Ok(
+        node_library::ConnectionStore::load(graph_path)?
+            .missing_required_for(&required_connections),
+    )
 }
 
 /// Returns only fields explicitly marked `client_exposed` by Node manifests.

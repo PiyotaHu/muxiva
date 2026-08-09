@@ -36,10 +36,10 @@ muxiva doctor --voice
 muxiva serve examples/voice-agent/graph.json
 ```
 
-也可以用示例脚本；它现在调用的是 `muxiva serve`，不会启动或打开 Studio：
+也可以用示例脚本显式选择 Headless；Linux 即使不写参数也默认该模式：
 
 ```bash
-./examples/voice-agent/run.sh
+./examples/voice-agent/run.sh --headless
 ```
 
 成功后应看到：
