@@ -133,7 +133,7 @@ class VoiceRoomProtocolTests(unittest.TestCase):
                 self.assertIn(("speech-formatter", "qwen-tts"), routes)
                 self.assertIn(("qwen-vad-asr", "speech-formatter"), routes)
                 vad = next(node for node in graph["nodes"] if node["id"] == "qwen-vad-asr")
-                self.assertEqual(vad["node_config"]["vad_threshold"], 0.35)
+                self.assertEqual(vad["node_config"]["vad_threshold"], 0.45)
                 formatter = next(
                     node for node in graph["nodes"] if node["id"] == "speech-formatter"
                 )

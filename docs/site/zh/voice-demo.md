@@ -136,7 +136,7 @@ Server VAD + Streaming ASR → 有状态 TypeScript Agent 与 Tool Call → Spee
 Voice Room 应立即显示打断状态，旧文字停止增长、旧语音停止播放，新一句转写和回答随后
 进入同一会话。会话会持续运行，直到点击 **End session**。
 
-Demo 2 默认使用 `vad_threshold: 0.35`。需要适配麦克风或房间时，在画布选择
+Demo 2 默认使用 `vad_threshold: 0.45`。需要适配麦克风或房间时，在画布选择
 `qwen-vad-asr`，修改 **Configuration** 中的数值，然后点击 **Validate** 和
 **Save graph**。数值越低越灵敏，越高越能过滤低能量声音。
 

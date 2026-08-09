@@ -147,7 +147,7 @@ real tool execution. Speak again during playback: Voice Room should enter interr
 old text and audio should stop, and the next transcript and answer should remain
 in the same session. The session stays live until you select **End session**.
 
-Demo 2 starts with `vad_threshold: 0.35`. To tune it for a microphone or room, select
+Demo 2 starts with `vad_threshold: 0.45`. To tune it for a microphone or room, select
 `qwen-vad-asr` on the canvas, edit the number in **Configuration**, then select **Validate** and
 **Save graph**. Lower values are more sensitive; higher values reject more low-energy sounds.
 

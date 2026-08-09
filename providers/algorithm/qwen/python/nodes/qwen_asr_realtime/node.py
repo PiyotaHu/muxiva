@@ -232,7 +232,7 @@ def session_update(config: dict[str, Any]) -> dict[str, Any]:
             "input_audio_transcription": {"language": config.get("language", "zh")},
             "turn_detection": {
                 "type": "server_vad",
-                "threshold": float(config.get("vad_threshold", 0.35)),
+                "threshold": float(config.get("vad_threshold", 0.45)),
                 "silence_duration_ms": int(config.get("silence_duration_ms", 500)),
             },
         },

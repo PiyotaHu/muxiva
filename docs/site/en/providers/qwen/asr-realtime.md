@@ -24,7 +24,7 @@ enters explicit control Edges.
 ## Configuration
 
 `model` defaults to `qwen3-asr-flash-realtime`; `language` defaults to `zh`. Demo 2 uses a
-`vad_threshold` of `0.35`: lower values trigger speech more easily, while higher values reject
+`vad_threshold` of `0.45`: lower values trigger speech more easily, while higher values reject
 more low-energy sounds. `silence_duration_ms` tunes utterance completion. To tune sensitivity,
 select `qwen-vad-asr` on the Studio canvas, change `vad_threshold` in **Configuration**, then
 select **Validate** and **Save graph**. Configure the shared `dashscope` Connection.

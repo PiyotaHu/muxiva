@@ -26,7 +26,7 @@
     "properties": {
       "model": { "type": "string", "default": "qwen3-asr-flash-realtime" },
       "language": { "type": "string", "default": "zh" },
-      "vad_threshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.35, "description": "Server VAD sensitivity. Lower values trigger more easily; tune this value in the Studio Node configuration." },
+      "vad_threshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.45, "description": "Server VAD sensitivity. Lower values trigger more easily; tune this value in the Studio Node configuration." },
       "silence_duration_ms": { "type": "integer", "minimum": 200, "maximum": 6000, "default": 500 }
     },
     "required": ["model", "language"],
