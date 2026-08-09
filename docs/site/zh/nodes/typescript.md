@@ -16,16 +16,20 @@ export const node: GraphNodeImplementation = {
 Worker Context 提供 `emit`、`emitSignal` 与 `publishNotification`。返回值仍作为兼容
 写法保留；显式发送允许一次生命周期回调执行多个互不排斥的动作。
 
-独立 `@muxiva/core` SDK 会在专用 Worker 中执行 Hosted TypeScript Node。跨边界
-数据必须兼容 Structured Clone，V1 回调保持同步。
+独立 `@muxiva/core` SDK 会在专用 Worker 中执行 Hosted TypeScript Node。Studio
+中的项目 Node 则运行在受管理的 Node.js 子进程里：Runtime 加载真实模块、等待异步
+生命周期、接收 Context 的显式输出，并在关闭时终止进程。
 
-## 当前 Studio 边界
+## Studio 运行契约
 
-Studio 项目 Package 执行尚未启用。保存后 Package 可以被发现，但不能进入可
-运行 Graph。后续 Host 必须：
+Node.js 22.19 或更高版本可用时，Studio 会激活 TypeScript Package。Host 会：
 
-1. 解析锁定版本的 `@muxiva/core`；
-2. 对 Package 执行类型检查；
-3. 在 Worker 中加载精确导出入口；
-4. 强制生命周期、取消、Payload 与关闭上限；
-5. 向 Studio 返回结构化诊断。
+1. 从 `node.ts` 加载 Manifest 指定的精确导出；
+2. 把 Manifest 配置和当前输入 Port 传给每个回调；
+3. 支持返回 Promise 的五个生命周期回调；
+4. 通过有界 JSON Lines 协议传递类型化 Frame 和 NotificationBus 发布；
+5. 将 stdout 专用于 Host 协议，把业务日志经 stderr 写进 Studio 的 `runtime.log`。
+
+长时间的厂商流不能一直阻塞 `onProcess`。Node 应启动后台请求，将结果放入有界队列，
+再由 Tick 输入排空；这样 `onSignal` 才能立刻取消请求。可复用的
+[`@muxiva/agent` 契约](pi-agent.md)已经为 Agent Node 实现了这套策略。

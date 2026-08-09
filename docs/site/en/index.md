@@ -22,18 +22,21 @@ reasoning, media, transport, and business logic.
 ```mermaid
 flowchart LR
     WEB["Browser microphone"] --> AGORA_IN["Agora C++ ingress"]
-    AGORA_IN --> QWEN["Qwen Realtime or cascade intelligence"]
-    QWEN --> AGORA_OUT["Agora C++ egress"]
+    AGORA_IN --> QWEN["Qwen speech intelligence"]
+    QWEN --> PI["Pi TypeScript Agent when cascaded"]
+    PI --> AGORA_OUT["Agora C++ egress"]
+    QWEN --> AGORA_OUT
     AGORA_OUT --> WEB
     QWEN --> DATA["Agora ordered data stream"]
+    PI --> DATA
     DATA --> LIVE["Client transcript · barge-in state"]
 ```
 
 This credentialed flagship application captures a real microphone in the
 browser, transports real audio through Agora, and uses Qwen for speech
 understanding and generation. Studio offers a low-latency Realtime graph and an
-inspectable full-duplex Qwen Server VAD + ASR → cancellable LLM → cancellable
-TTS graph with live Node, Frame, and conversation state.
+inspectable full-duplex Qwen Server VAD + ASR → tool-using Pi TypeScript Agent →
+cancellable Qwen TTS graph with live Node, Tool Call, Frame, and conversation state.
 
 [Run the flagship voice demo](voice-demo.md){ .md-button .md-button--primary }
 [Open the Studio guide](studio.md){ .md-button }

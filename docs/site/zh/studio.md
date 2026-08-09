@@ -58,8 +58,10 @@ Manifest 身份、版本、角色与 Port 后加载。TypeScript 与 Rust 项目
 
 ## Runtime 可观测性
 
-Runtime 面板展示回调次数与耗时、活跃或失败 Node、Edge 吞吐、队列占用、丢帧
-以及最终结果。Run 使用当前画布快照，不要求预先保存。
+紧凑 Runtime 面板展示会话总量。点击顶部 **◎ Observe** 可进入专门的实时诊断页：
+逐 Node 吞吐与处理耗时、逐 Edge 速率与队列等待、Node 内部 SDK 缓冲、自动热点判定
+以及点击下钻详情。完整用法见[可观测性与堵点定位](observability.md)。Run 使用当前
+画布快照，不要求预先保存。
 
 若项目提供 `.muxiva/web/index.html`，工具栏会出现 **Voice Room** 等项目体验入口。
 Studio 会先保存当前有效图，再打开项目页面。项目页面只能通过本地 Bearer Token

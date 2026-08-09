@@ -35,6 +35,9 @@ tests/reports/benchmarks/*.json
 *.dwo
 **/.muxiva/native/
 **/.muxiva/venv/
+**/.muxiva/npm-cache/
+**/.muxiva/observability/
+**/.muxiva/studio.lock/
 
 # Native build directories and generated files
 build/

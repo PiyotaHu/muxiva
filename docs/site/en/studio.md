@@ -64,8 +64,10 @@ Factory identity and a link to the authoritative Rust implementation.
 
 ## Runtime observability
 
-The Runtime panel reports callback counts and duration, active and failed
-Nodes, Edge throughput, queue occupancy, drops, and retained terminal outcome.
+The compact Runtime panel reports session totals. Open **◎ Observe** for the
+dedicated live dashboard: per-Node throughput and process latency, per-Edge
+rates and queue age, Node-owned SDK buffers, automatic hotspot verdicts, and
+click-through details. See [Observability and bottleneck diagnosis](observability.md).
 Run uses the current canvas snapshot; saving first is not required.
 
 When a project provides `.muxiva/web/index.html`, the toolbar exposes its project

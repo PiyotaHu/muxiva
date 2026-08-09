@@ -130,6 +130,8 @@ struct QueueState {
     signal_total: u64,
     full_total: u64,
     blocked_duration_ns: u64,
+    payload_bytes_total: u64,
+    audio_duration_ns_total: u64,
     latest_error_reason: Option<Box<str>>,
 }
 
@@ -160,6 +162,8 @@ impl EdgeQueue {
                     signal_total: 0,
                     full_total: 0,
                     blocked_duration_ns: 0,
+                    payload_bytes_total: 0,
+                    audio_duration_ns_total: 0,
                     latest_error_reason: None,
                 }),
                 not_empty: Condvar::new(),
@@ -295,6 +299,8 @@ impl EdgeQueue {
             state.full_total,
             state.blocked_duration_ns,
             state.enqueued_at.front().map(|at| nanos(at.elapsed())),
+            state.payload_bytes_total,
+            state.audio_duration_ns_total,
             state.latest_error_reason.clone(),
         )
     }
@@ -329,10 +335,41 @@ impl EdgeQueue {
 }
 
 fn enqueue(state: &mut QueueState, frame: Frame) {
+    let (payload_bytes, audio_duration_ns) = frame_measurement(&frame);
     state.frames.push_back(frame);
     state.enqueued_at.push_back(Instant::now());
     state.enqueue_total = state.enqueue_total.saturating_add(1);
+    state.payload_bytes_total = state.payload_bytes_total.saturating_add(payload_bytes);
+    state.audio_duration_ns_total = state
+        .audio_duration_ns_total
+        .saturating_add(audio_duration_ns);
     state.high_watermark = state.high_watermark.max(state.frames.len());
+}
+
+fn frame_measurement(frame: &Frame) -> (u64, u64) {
+    if let Some(audio) = frame.as_audio() {
+        let data = audio.data();
+        let bytes = u64::try_from(data.buffer().as_slice().len()).unwrap_or(u64::MAX);
+        let duration = data
+            .samples_per_channel()
+            .saturating_mul(1_000_000_000)
+            .checked_div(u64::from(data.sample_rate_hz()))
+            .unwrap_or(0);
+        return (bytes, duration);
+    }
+    if let Some(bytes) = frame.as_byte() {
+        return (
+            u64::try_from(bytes.data().buffer().as_slice().len()).unwrap_or(u64::MAX),
+            0,
+        );
+    }
+    if let Some(text) = frame.as_text() {
+        return (
+            u64::try_from(text.data().as_str().len()).unwrap_or(u64::MAX),
+            0,
+        );
+    }
+    (0, 0)
 }
 
 fn dequeue(state: &mut QueueState) -> Option<Frame> {

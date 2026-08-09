@@ -113,13 +113,16 @@ class CascadeNodeTests(unittest.TestCase):
             [frame.text for port, frame in ctx.emissions if port == "text_out"],
             ["你好 Muxiva"],
         )
-        client_topics = [
-            frame.topic for port, frame in ctx.emissions if port == "client_event_out"
-        ]
-        self.assertIn("muxiva.voice.transcript.preview", client_topics)
-        self.assertIn("muxiva.voice.transcript.completed", client_topics)
-        self.assertIn("muxiva.voice.speech.started", client_topics)
-        self.assertIn("muxiva.voice.speech.stopped", client_topics)
+        self.assertEqual(
+            [frame.text for port, frame in ctx.emissions if port == "transcript_preview_out"],
+            ["你好"],
+        )
+        self.assertFalse(any(port == "client_event_out" for port, _ in ctx.emissions))
+        self.assertIn(("muxiva.voice.transcript.preview", {"text": "你好"}), ctx.events)
+        self.assertIn(
+            ("muxiva.voice.transcript.completed", {"text": "你好 Muxiva"}),
+            ctx.events,
+        )
 
     def test_llm_background_stream_drains_sentence_and_preserves_sequence(self):
         class Client:
@@ -142,6 +145,11 @@ class CascadeNodeTests(unittest.TestCase):
             ["你好，我是 Muxiva。"],
         )
         self.assertEqual(ctx.emissions[0][1].sequence, 301)
+        self.assertEqual(
+            [frame.topic for port, frame in ctx.emissions if port == "event_out"],
+            ["muxiva.voice.response.completed"],
+        )
+        self.assertFalse(any(port == "client_event_out" for port, _ in ctx.emissions))
         self.assertTrue(client.request[2]["stream"])
         self.assertEqual(ctx.events[0][0], "muxiva.voice.response.delta")
         self.assertEqual(ctx.events[-1][0], "muxiva.voice.response.completed")
@@ -249,10 +257,14 @@ class CascadeNodeTests(unittest.TestCase):
             self.assertNotIn("provider_id", manifest)
             self.assertEqual(manifest["connection_id"], "dashscope")
             self.assertNotIn("connection", manifest)
+            self.assertNotIn("client_event_out", {port["name"] for port in manifest["ports"]})
         asr_ports = {port["name"] for port in json.loads(
             (root / "qwen_asr_realtime" / "muxiva.node.json").read_text()
         )["ports"]}
-        self.assertTrue({"speech_out", "signal_out", "text_out"}.issubset(asr_ports))
+        self.assertTrue(
+            {"speech_out", "signal_out", "transcript_preview_out", "text_out", "event_out"}
+            .issubset(asr_ports)
+        )
         for package in ("qwen_llm_stream", "qwen_tts_realtime"):
             ports = {port["name"] for port in json.loads(
                 (root / package / "muxiva.node.json").read_text()

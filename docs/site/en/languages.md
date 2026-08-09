@@ -45,8 +45,10 @@ by a Factory or Host. This separates reviewable topology from the executable sup
 
 - Agora Transport Nodes use C++ close to the official native SDK, audio callbacks, and RTC
   lifecycle.
-- Qwen Algorithm Nodes use Python close to model APIs, streaming events, and rapid algorithm
-  iteration.
+- Qwen speech Algorithm Nodes use Python close to model APIs, streaming events, and rapid
+  algorithm iteration.
+- Demo 2's Pi Agent uses the managed TypeScript Host and the reusable `@muxiva/agent`
+  contract for session state, tools, streaming output, and cancellation.
 - The Rust Core sees only standard Frames and lifecycle callbacks; it imports no Agora or Qwen
   business code.
 

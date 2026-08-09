@@ -129,7 +129,7 @@ fn schema_is_machine_readable_and_declares_exact_factory_fields() {
 #[test]
 fn studio_catalog_is_derived_from_registry_descriptors_and_schemas() {
     let catalog = builtin_node_catalog();
-    assert_eq!(catalog.len(), 17);
+    assert_eq!(catalog.len(), 16);
     let json = serde_json::to_value(catalog).unwrap();
     let source = json
         .as_array()
@@ -140,6 +140,11 @@ fn studio_catalog_is_derived_from_registry_descriptors_and_schemas() {
     assert_eq!(source["factory_version"], "1.0.0");
     assert_eq!(source["config_schema"]["required"][0], "text");
     assert_eq!(source["ports"][0]["name"], "text_out");
+    assert!(json
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|entry| { entry["node_type"] != "builtin.client_event_encoder" }));
 }
 
 #[test]

@@ -11,13 +11,14 @@ Muxiva 当前为 pre-alpha。基础阶段已经实现，但公开 Package 发布
 | Python 与 Node.js SDK | 实验性 | 受管执行域与 Hosted Text Factory |
 | Studio | 可用 | Node Lab、类型化连线、校验、Run/Stop、指标 |
 | Studio Python 项目 Host | 实验性 | Text Source、Transform 与 Sink |
-| Studio TypeScript/Rust/C++ Host | 规划中 | 当前仅支持编辑保存 |
+| Studio TypeScript 项目 Host | 实验性 | Node.js 22.19+、异步生命周期、有界子进程协议 |
+| Studio Rust/C++ Build Host | 规划中 | 已支持源码编辑，项目编译仍由外部工具完成 |
 | Agora 与 FFmpeg | 实验性 | Mock 与可选官方 Node 路径 |
 | Package Release | 规划中 | 尚无稳定公开版本 |
 
 ## 近期优先级
 
-1. 完成多语言项目 Node 执行 Host。
+1. 加固并发布多语言项目 Node 执行 Host。
 2. 统一 CLI、Runtime 与 Studio 的项目 Registry 和 Lockfile 行为。
 3. 发布带校验和与 Provenance 的独立 CLI、Python Wheel、npm Package 和 C++
    SDK 压缩包。

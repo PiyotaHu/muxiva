@@ -10,12 +10,11 @@
     "nodes": [
       { "id": "agora-audio-source", "node_type": "agora.audio_source", "language": "cpp", "factory_version": "1.1.0", "node_config": {} },
       { "id": "qwen-input-resampler", "node_type": "builtin.audio_resampler", "language": "rust", "factory_version": "1.0.0", "node_config": { "input": { "sample_format": "pcm_s16le", "sample_rate_hz": 16000, "channels": 1 }, "output": { "sample_format": "pcm_s16le", "sample_rate_hz": 16000, "channels": 1 } } },
-      { "id": "qwen-audio-realtime", "node_type": "qwen.audio_realtime", "language": "python", "factory_version": "1.0.0", "node_config": { "model": "qwen-audio-3.0-realtime-flash", "voice": "longanqian", "instructions": "You are a concise, helpful realtime voice assistant.", "turn_detection": "server_vad", "vad_threshold": 0.35, "silence_duration_ms": 1000 } },
+      { "id": "qwen-audio-realtime", "node_type": "qwen.audio_realtime", "language": "python", "factory_version": "1.1.0", "node_config": { "model": "qwen-audio-3.0-realtime-flash", "voice": "longanqian", "instructions": "You are a concise, helpful realtime voice assistant.", "turn_detection": "server_vad", "vad_threshold": 0.35, "silence_duration_ms": 1000 } },
       { "id": "agora-output-resampler", "node_type": "builtin.audio_resampler", "language": "rust", "factory_version": "1.0.0", "node_config": { "input": { "sample_format": "pcm_s16le", "sample_rate_hz": 24000, "channels": 1 }, "output": { "sample_format": "pcm_s16le", "sample_rate_hz": 48000, "channels": 1 } } },
       { "id": "agora-audio-sink", "node_type": "agora.audio_sink", "language": "cpp", "factory_version": "1.0.0", "node_config": {} },
-      { "id": "client-event-encoder", "node_type": "builtin.client_event_encoder", "language": "rust", "factory_version": "1.0.0", "node_config": {} },
-      { "id": "agora-data-sink", "node_type": "agora.data_sink", "language": "cpp", "factory_version": "1.0.0", "node_config": {} },
-      { "id": "captions", "node_type": "builtin.stdout_text_sink", "language": "rust", "factory_version": "1.0.0", "node_config": {} }
+      { "id": "voice-room-events", "node_type": "voice_room.event_encoder", "language": "python", "factory_version": "1.0.0", "node_config": {} },
+      { "id": "agora-data-sink", "node_type": "agora.data_sink", "language": "cpp", "factory_version": "1.0.0", "node_config": {} }
     ],
     "edges": [
       { "id": "agora-input", "from": { "node_id": "agora-audio-source", "port": "audio_out" }, "to": { "node_id": "qwen-input-resampler", "port": "audio_in" }, "frame_type": "audio", "queue_policy": { "capacity": 32, "overflow": "block" } },
@@ -23,9 +22,12 @@
       { "id": "qwen-audio", "from": { "node_id": "qwen-audio-realtime", "port": "audio_out" }, "to": { "node_id": "agora-output-resampler", "port": "audio_in" }, "frame_type": "audio", "queue_policy": { "capacity": 32, "overflow": "block" } },
       { "id": "audio-to-room", "from": { "node_id": "agora-output-resampler", "port": "audio_out" }, "to": { "node_id": "agora-audio-sink", "port": "audio_in" }, "frame_type": "audio", "queue_policy": { "capacity": 32, "overflow": "block" } },
       { "id": "qwen-interrupt", "from": { "node_id": "qwen-audio-realtime", "port": "signal_out" }, "to": { "node_id": "agora-audio-sink", "port": "signal_in" }, "frame_type": "signal", "queue_policy": { "capacity": 32, "overflow": "block" } },
-      { "id": "qwen-client-events", "from": { "node_id": "qwen-audio-realtime", "port": "client_event_out" }, "to": { "node_id": "client-event-encoder", "port": "event_in" }, "frame_type": "event", "queue_policy": { "capacity": 64, "overflow": "block" } },
-      { "id": "client-events-to-room", "from": { "node_id": "client-event-encoder", "port": "message_out" }, "to": { "node_id": "agora-data-sink", "port": "message_in" }, "frame_type": "byte", "queue_policy": { "capacity": 64, "overflow": "block" } },
-      { "id": "qwen-captions", "from": { "node_id": "qwen-audio-realtime", "port": "response_text_out" }, "to": { "node_id": "captions", "port": "text_in" }, "frame_type": "text", "queue_policy": { "capacity": 32, "overflow": "block" } }
+      { "id": "interrupt-room-events", "from": { "node_id": "qwen-audio-realtime", "port": "signal_out" }, "to": { "node_id": "voice-room-events", "port": "signal_in" }, "frame_type": "signal", "queue_policy": { "capacity": 32, "overflow": "block" } },
+      { "id": "transcript-preview-to-room", "from": { "node_id": "qwen-audio-realtime", "port": "transcript_preview_out" }, "to": { "node_id": "voice-room-events", "port": "transcript_preview_in" }, "frame_type": "text", "queue_policy": { "capacity": 64, "overflow": "block" } },
+      { "id": "transcript-to-room", "from": { "node_id": "qwen-audio-realtime", "port": "transcript_out" }, "to": { "node_id": "voice-room-events", "port": "transcript_in" }, "frame_type": "text", "queue_policy": { "capacity": 64, "overflow": "block" } },
+      { "id": "response-text-to-room", "from": { "node_id": "qwen-audio-realtime", "port": "response_text_out" }, "to": { "node_id": "voice-room-events", "port": "response_text_in" }, "frame_type": "text", "queue_policy": { "capacity": 64, "overflow": "block" } },
+      { "id": "state-to-room", "from": { "node_id": "qwen-audio-realtime", "port": "event_out" }, "to": { "node_id": "voice-room-events", "port": "event_in" }, "frame_type": "event", "queue_policy": { "capacity": 64, "overflow": "block" } },
+      { "id": "client-events-to-room", "from": { "node_id": "voice-room-events", "port": "message_out" }, "to": { "node_id": "agora-data-sink", "port": "message_in" }, "frame_type": "byte", "queue_policy": { "capacity": 64, "overflow": "block" } }
     ]
   }
 }

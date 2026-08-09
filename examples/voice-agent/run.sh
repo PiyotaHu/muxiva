@@ -18,6 +18,9 @@ fi
 if [[ -x "$application_root/.muxiva/venv/bin/python" ]]; then
   export MUXIVA_PYTHON="$application_root/.muxiva/venv/bin/python"
 fi
+if [[ -n "${MUXIVA_NODE:-}" ]]; then
+  export MUXIVA_NODE
+fi
 
 echo '[MUXIVA][WELCOME] Real voice setup requires two connection cards: Agora RTC and Alibaba Cloud Model Studio.'
 echo '[MUXIVA][STEP 1] Studio opens now. Click Connections in the top toolbar.'

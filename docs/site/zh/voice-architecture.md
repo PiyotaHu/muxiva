@@ -15,7 +15,7 @@ flowchart LR
     AI --> QR["Qwen Audio Realtime<br/>Python · Algorithm"]
     QR --> AO["Agora Audio Egress<br/>C++ · Transport"]
     AO --> S["浏览器扬声器"]
-    QR --> CE["客户端事件编码<br/>Rust · Protocol"]
+    QR -->|"转写/回答 Text + 状态 Event"| CE["Voice Room 事件编码<br/>Python · 项目层"]
     CE --> DO["Agora Data Egress<br/>C++ · Transport"]
     DO --> UI["独立 Voice Client"]
 ```
@@ -30,31 +30,31 @@ flowchart LR
 flowchart LR
     IN["Agora Ingress"] --> ASR["Qwen Server VAD + Streaming ASR"]
     ASR --> FUSION["Turn Context / Policy"]
-    FUSION --> LLM["可取消 Qwen LLM Worker"]
-    CLOCK["20 ms Async Tick"] --> LLM
-    LLM --> GATE["文本取消水位 / Tool"]
+    FUSION --> AGENT["Pi TypeScript Agent<br/>Qwen 模型 + Tool + Session"]
+    CLOCK["20 ms Async Tick"] --> AGENT
+    AGENT --> GATE["文本取消水位"]
     GATE --> TTS["可取消 Qwen TTS Worker"]
     CLOCK --> TTS
     TTS --> OUT["Agora Egress"]
-    ASR -. "speech.started Signal" .-> LLM
+    ASR -. "speech.started Signal" .-> AGENT
     ASR -. "speech.started Signal" .-> TTS
     ASR -. "speech.started Signal" .-> GATE
     ASR -. "speech.started Signal" .-> OUT
 ```
 
-Demo 2 默认全部使用阿里云模型：Qwen ASR 会同时执行 Server VAD 和流式转写；Qwen LLM
-与 Qwen TTS 的厂商 I/O 在各自后台 Worker 中运行，通用 `interval_tick` 只负责让 Node
-以短回调排空有界结果队列，使 `on_signal` 不会被长网络请求堵住。各阶段仍可替换，分支
-与汇合是 Graph 的正常能力，不是只能运行 `A → B → C` 的线性 Pipeline。
+Demo 2 使用 Qwen ASR 完成 Server VAD 与流式转写，项目内 Pi TypeScript Agent 通过
+Qwen 模型管理会话与 Tool Call，再由 Qwen TTS 合成。通用 `interval_tick` 让后台
+Agent/TTS 以短回调排空有界队列，使 `on_signal` 不被长网络请求堵住。各阶段仍可替换。
 
 ## 每一层到底做什么
 
 | 层 | 实现 | 职责 | 不负责 |
 | --- | --- | --- | --- |
 | 项目 Web | HTML/JS + Agora Web SDK | 麦克风权限、频道、播放、交互 UI | 模型密钥与 Runtime 调度 |
+| 项目 Node | Python + TypeScript | Voice Room 协议、Pi Agent 会话与工具 | Runtime 原语或 Agora 单包限制 |
 | Agora 官方 Node | C++ Node Pack | 单一共享 RTC Session、音频收发、可靠有序客户端消息 | ASR、LLM、Graph 调度 |
 | Runtime Core | Rust | 类型、队列、并发、透明 Signal 路由、关闭 | 厂商请求、语音 Turn 或产品 UI |
-| Qwen 官方 Node | Python Node Pack | Realtime 或 ASR/LLM/TTS 流 | RTC 频道与 Edge Queue |
+| Qwen 官方 Node | Python Node Pack | Realtime、ASR、可选 LLM 与 TTS 流 | Agent 策略、RTC 频道与 Edge Queue |
 | 开发工具 | CLI + Studio | 创建、配置、校验、运行、观测 | 生产用户界面 |
 
 ## 全双工与 Barge-in
@@ -82,15 +82,16 @@ sequenceDiagram
 ```
 
 打断语义完全属于 Node。Realtime 图由 Qwen Audio Node 取消远端回答；级联图由 Qwen
-ASR Server VAD 发出同名 Signal，Qwen LLM 关闭 HTTP SSE、Qwen TTS 关闭当前 WebSocket
-并清空待合成文本与 PCM，文本门和客户端事件编码器推进取消水位，Agora Audio Sink
+ASR Server VAD 发出同名 Signal，Pi Driver 调用 `agent.abort()`、Qwen TTS 关闭当前 WebSocket
+并清空待合成文本与 PCM，文本门和项目协议 Node 推进取消水位，Agora Audio Sink
 清空播放队列并拒绝迟到音频。Core 不理解语音、Turn 或具体 Signal 名称，只负责路由
 不透明 Signal。
 
 ## 客户端数据不是 Studio 遥测
 
-ASR、Agent 文字和说话状态都从 Graph 进入 `agora.data_sink`。浏览器从 Agora 可靠有序
-数据流接收 `muxiva.client-event/v1`，不再轮询 `/api/v1/runtime/events`，也不能启停 Runtime。
+ASR、Agent 文字和说话状态先进入项目内的 `voice_room.event_encoder`，再从 Graph 进入
+`agora.data_sink`。应用 Node 负责 `muxiva.client-event/v1`，Agora Node 负责分片和可靠有序
+传输。浏览器从 Agora 数据流接收消息，不再轮询 `/api/v1/runtime/events`，也不能启停 Runtime。
 NotificationBus 继续作为进程内日志、指标和 Studio 运维观测设施，但不是终端用户协议。
 
 本地 `/api/v1/client/session` 只负责给浏览器提供临时 RTC 启动配置。生产部署应替换为
@@ -100,7 +101,7 @@ NotificationBus 继续作为进程内日志、指标和 Studio 运维观测设�
 浏览器 UID。共享 C++ Session 会丢弃其他 UID 的媒体与消息，避免错误混合多名参与者。
 
 !!! note "级联取消边界"
-    Demo 2 已能主动关闭进行中的 LLM HTTP SSE 与 TTS WebSocket，并通过三层水位过滤
+    Demo 2 已能主动中止 Pi 模型流并关闭 TTS WebSocket，再通过三层水位过滤
     晚到结果。已经发进 Agora 网络或浏览器播放缓冲区的 PCM 无法撤回，因此 Audio Sink
     仍使用短包和有界队列；“硬打断”指取消服务端连接与本地流水线，不代表逆转已发送媒体。
 

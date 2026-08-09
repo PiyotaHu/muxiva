@@ -2,7 +2,7 @@
 
 > A Rust-native, real-time multimodal agent runtime with one graph and lifecycle contract across Rust, C++, Python, and TypeScript.
 
-[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/muxiva/) · [Architecture](https://piyotahu.github.io/muxiva/concepts/) · [Flagship voice demo](https://piyotahu.github.io/muxiva/voice-demo/) · [Build Nodes](https://piyotahu.github.io/muxiva/nodes/) · [Studio](https://piyotahu.github.io/muxiva/studio/) · [Graph v1](https://piyotahu.github.io/muxiva/graph/) · [Testing](https://piyotahu.github.io/muxiva/testing/)
+[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/muxiva/) · [Architecture](https://piyotahu.github.io/muxiva/concepts/) · [Flagship voice demo](https://piyotahu.github.io/muxiva/voice-demo/) · [Build Nodes](https://piyotahu.github.io/muxiva/nodes/) · [Studio](https://piyotahu.github.io/muxiva/studio/) · [Observability](https://piyotahu.github.io/muxiva/observability/) · [Graph v1](https://piyotahu.github.io/muxiva/graph/) · [Testing](https://piyotahu.github.io/muxiva/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -69,7 +69,7 @@ or open the [editable Draw.io source](docs/site/en/assets/architecture/muxiva-sy
 - Rust stable, as pinned by [`rust-toolchain.toml`](rust-toolchain.toml)
 - A C11/C++17 compiler and CMake 3.20+ for the native SDK checks
 - Optional: CPython 3.13 with maturin for Python bindings
-- Optional: Node.js 22 and pnpm for Node-API bindings
+- Optional: Node.js 22 and pnpm for Node-API bindings; Demo 2's Pi Agent requires Node.js 22.19+
 
 ### Install the `muxiva` CLI once
 
@@ -87,7 +87,7 @@ knowledge of the Rust workspace.
 ### Run the real voice assistant
 
 The flagship application offers Qwen Audio Realtime plus **Demo 2**, an
-inspectable full-duplex Alibaba Cloud Server VAD + ASR → cancellable Qwen LLM →
+inspectable full-duplex Qwen Server VAD + ASR → tool-using Pi TypeScript Agent →
 cancellable Qwen TTS graph, with Agora C++ transport and a browser microphone:
 
 ```bash
@@ -121,11 +121,12 @@ muxiva studio
 
 With no argument, Studio discovers the current project; from the Muxiva source
 root it opens the flagship Voice Agent. Studio opens a bundled visual Graph v1 editor. Drag Nodes from the Palette,
-wire compatible typed ports, inspect live runtime metrics, or open **Create
+wire compatible typed ports, open **◎ Observe** to identify slow Nodes and backed-up Edges, or open **Create
 Node** to edit and register a project Node without leaving the browser. Text
 Python project Nodes run through the trusted local development Host. Studio
 listens on `127.0.0.1` by default and generates a local access token. See the
-[Studio guide](https://piyotahu.github.io/muxiva/studio/).
+[Studio guide](https://piyotahu.github.io/muxiva/studio/) and
+[observability guide](https://piyotahu.github.io/muxiva/observability/).
 
 ### Build and test the language SDKs
 
@@ -161,6 +162,7 @@ muxiva/
 │   ├── muxiva-node/        # Node-API native module
 │   └── muxiva-testkit/     # Deterministic test harnesses
 ├── bindings/node/        # @muxiva/core package
+├── bindings/agent/       # Vendor-neutral @muxiva/agent TypeScript contract
 ├── cpp/                  # Public C/C++ SDK
 ├── providers/            # Vendor integrations: Qwen/Python and Agora/C++
 ├── examples/             # Rust, graph, Python, TypeScript and C++ examples
@@ -202,7 +204,7 @@ Near-term priorities:
 
 1. Stabilize public Rust, C++, Python, and TypeScript SDK contracts.
 2. Stabilize the new schema-driven multimodal Source, Transform, Sink, and named multi-output foreign Factory APIs.
-3. Stabilize Studio live runtime metrics and execution-control contracts.
+3. Stabilize Studio observability thresholds and certify Prometheus/OTLP compatibility with hosted backends.
 4. Run and retain D09 Agora live-room certification on each release platform; extend D08 into compressed codec/device providers.
 5. Implement versioned Python process isolation and TypeScript Promise support.
 6. Publish packages, compatibility matrices, performance baselines, and release artifacts.

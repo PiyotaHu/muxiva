@@ -11,6 +11,8 @@ bash -n \
   "$repository_root/examples/voice-agent/setup.sh" \
   "$repository_root/examples/voice-agent/run.sh"
 
+"$repository_root/scripts/check-agent-typescript.sh"
+
 cxx_system=()
 if [[ "$(uname -s)" == "Darwin" ]]; then
   sdk_path="$(xcrun --show-sdk-path)"
@@ -19,6 +21,8 @@ fi
 
 python3 -m unittest discover \
   -s "$repository_root/providers/algorithm/qwen/python/tests" -v
+python3 -m unittest discover \
+  -s "$repository_root/examples/voice-agent/tests" -v
 
 for package in agora_audio_source agora_audio_sink agora_data_source agora_data_sink; do
   "$cxx" -std=c++17 -Wall -Wextra -Wpedantic -Werror \

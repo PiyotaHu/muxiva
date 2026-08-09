@@ -2,7 +2,7 @@
 
 > 一个以 Rust 为核心的实时多模态 Agent Runtime，让 Rust、C++、Python 与 TypeScript 共享同一套图、生命周期和安全边界。
 
-[English](README.md) · [中文文档](https://piyotahu.github.io/muxiva/zh/) · [系统架构](https://piyotahu.github.io/muxiva/zh/concepts/) · [旗舰语音 Demo](https://piyotahu.github.io/muxiva/zh/voice-demo/) · [开发 Node](https://piyotahu.github.io/muxiva/zh/nodes/) · [Studio](https://piyotahu.github.io/muxiva/zh/studio/) · [Graph v1](https://piyotahu.github.io/muxiva/zh/graph/) · [测试体系](https://piyotahu.github.io/muxiva/zh/testing/)
+[English](README.md) · [中文文档](https://piyotahu.github.io/muxiva/zh/) · [系统架构](https://piyotahu.github.io/muxiva/zh/concepts/) · [旗舰语音 Demo](https://piyotahu.github.io/muxiva/zh/voice-demo/) · [开发 Node](https://piyotahu.github.io/muxiva/zh/nodes/) · [Studio](https://piyotahu.github.io/muxiva/zh/studio/) · [可观测性](https://piyotahu.github.io/muxiva/zh/observability/) · [Graph v1](https://piyotahu.github.io/muxiva/zh/graph/) · [测试体系](https://piyotahu.github.io/muxiva/zh/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -116,10 +116,11 @@ muxiva studio
 
 无参数时会自动发现当前项目；在 Muxiva 仓库根目录会直接打开旗舰 Voice Agent。
 Studio 会打开内置 Graph v1 可视化编辑器。开发者可以把 Node 从 Palette
-拖进画布，在类型兼容的端口之间直接拉线，也可以点击 **Create Node**，在网页里
+拖进画布，在类型兼容的端口之间直接拉线，点击 **◎ Observe** 定位慢 Node 和积压 Edge，也可以点击 **Create Node**，在网页里
 编辑代码、声明端口并保存注册到项目 Node Library。当前文本 Python Node 可由
 可信本地开发 Host 直接运行。Studio 默认只监听 `127.0.0.1` 并生成本地访问
-Token。详见 [Studio 指南](https://piyotahu.github.io/muxiva/zh/studio/)。
+Token。详见 [Studio 指南](https://piyotahu.github.io/muxiva/zh/studio/)和
+[可观测性指南](https://piyotahu.github.io/muxiva/zh/observability/)。
 
 ### 构建并测试多语言 SDK
 
@@ -195,7 +196,7 @@ muxiva/
 
 1. 稳定 Rust、C++、Python 和 TypeScript 公开 SDK 契约。
 2. 将外语 Graph Factory 从空配置文本 Transform 扩展到 Schema 驱动的多模态 Source、Transform 与 Sink。
-3. 为可视化 Studio 增加实时 Runtime 指标和执行控制。
+3. 稳定 Studio 可观测性阈值，并对托管 Prometheus/OTLP 后端执行兼容性认证。
 4. 在每个发布平台执行并留存 D09 Agora 实房长稳认证，并将 D08 扩展到压缩 Codec 与设备 Provider。
 5. 实现版本化 Python 进程隔离与 TypeScript Promise 支持。
 6. 发布多语言包、兼容矩阵、性能基线和 Release Artifact。

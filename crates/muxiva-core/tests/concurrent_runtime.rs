@@ -355,6 +355,62 @@ fn block_policy_backpressures_a_slow_sink() {
     assert!(metrics.full_total() > 0);
     assert!(metrics.blocked_duration_ns() > 0);
     assert!(metrics.high_watermark() <= 2);
+    assert!(metrics.payload_bytes_total() > 0);
+}
+
+#[test]
+fn node_reported_counters_and_gauges_are_visible_in_runtime_metrics() {
+    struct InstrumentedSource;
+    impl Node for InstrumentedSource {
+        fn on_process(
+            &mut self,
+            _: Option<Frame>,
+            context: &mut NodeContext,
+        ) -> muxiva_types::Result<()> {
+            context.increment_counter("input.frames", 3).unwrap();
+            context.increment_counter("input.frames", 2).unwrap();
+            context.set_gauge("input.queue_duration_ms", 740).unwrap();
+            context.set_gauge("input.queue_duration_ms", 120).unwrap();
+            Ok(())
+        }
+    }
+
+    let mut builder = GraphBuilder::new();
+    builder
+        .add_node(descriptor("source", NodeKind::Source, &[]))
+        .unwrap();
+    let mut nodes: NodeInstances = BTreeMap::new();
+    nodes.insert(id("source"), Box::new(InstrumentedSource));
+    let runtime = ConcurrentRuntime::new(
+        builder.build().unwrap(),
+        nodes,
+        EdgePolicies::new(),
+        RuntimeOptions::default(),
+    )
+    .unwrap()
+    .start()
+    .unwrap();
+    runtime.wait(Duration::from_secs(1)).unwrap();
+
+    let metrics = runtime.node_metrics(&id("source")).unwrap();
+    let values = metrics
+        .custom_metrics()
+        .iter()
+        .map(|metric| (metric.name(), metric.kind(), metric.value()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        values,
+        vec![
+            ("input.frames", muxiva_core::NodeMetricKind::Counter, 5),
+            (
+                "input.queue_duration_ms",
+                muxiva_core::NodeMetricKind::Gauge,
+                120
+            ),
+        ]
+    );
+    assert_eq!(metrics.process_total(), 1);
+    assert!(metrics.process_duration_ns() > 0);
 }
 
 #[test]

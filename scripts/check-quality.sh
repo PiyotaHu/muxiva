@@ -21,6 +21,8 @@ else
   echo "SKIP Node binding gate: Stage 9 check script is not present"
 fi
 
+./scripts/check-agent-typescript.sh
+
 ./scripts/check-provider-boundaries.sh
 python3 ./scripts/check-provider-catalog.py
 ./scripts/check-voice-node-packs.sh

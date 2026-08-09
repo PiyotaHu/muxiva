@@ -21,9 +21,10 @@ use crate::{
     AbortCategory, AbortHookDiagnostic, AbortReason, AbortRootContext, AbortStage, ConfigKey,
     ConfigMap, DrainMode, EdgeAction, EdgeContext, EdgeDescriptor, EdgeMetricsSnapshot,
     EdgePolicies, EdgePolicy, EnabledCondition, EnqueueOutcome, GraphDefinition,
-    GraphRunnerBuildError, Node, NodeContext, NodeEmission, NodeInstances, NodeKind, PortDirection,
-    PortName, QueuePushError, ResourceStore, SignalQueuePushError, StopToken, TransformPolicy,
-    ValidationDecision, ValidationFailureAction, ValidationPolicy,
+    GraphRunnerBuildError, Node, NodeContext, NodeEmission, NodeInstances, NodeKind,
+    NodeMetricKind, NodeMetricObservation, PortDirection, PortName, QueuePushError, ResourceStore,
+    SignalQueuePushError, StopToken, TransformPolicy, ValidationDecision, ValidationFailureAction,
+    ValidationPolicy,
 };
 use crate::{NotificationBus, SignalQueueSnapshot};
 
@@ -119,6 +120,29 @@ pub struct NodeMetricsSnapshot {
     panic_total: u64,
     callback_duration_ns: u64,
     max_callback_duration_ns: u64,
+    process_duration_ns: u64,
+    max_process_duration_ns: u64,
+    custom_metrics: Box<[NodeCustomMetricSnapshot]>,
+}
+
+/// One aggregated custom metric reported through a NodeContext.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NodeCustomMetricSnapshot {
+    name: Box<str>,
+    kind: NodeMetricKind,
+    value: u64,
+}
+
+impl NodeCustomMetricSnapshot {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub const fn kind(&self) -> NodeMetricKind {
+        self.kind
+    }
+    pub const fn value(&self) -> u64 {
+        self.value
+    }
 }
 
 impl NodeMetricsSnapshot {
@@ -152,6 +176,15 @@ impl NodeMetricsSnapshot {
     pub const fn max_callback_duration_ns(&self) -> u64 {
         self.max_callback_duration_ns
     }
+    pub const fn process_duration_ns(&self) -> u64 {
+        self.process_duration_ns
+    }
+    pub const fn max_process_duration_ns(&self) -> u64 {
+        self.max_process_duration_ns
+    }
+    pub fn custom_metrics(&self) -> &[NodeCustomMetricSnapshot] {
+        &self.custom_metrics
+    }
 }
 
 struct NodeMetrics {
@@ -165,8 +198,12 @@ struct NodeMetrics {
     panic_total: AtomicU64,
     callback_duration_ns: AtomicU64,
     max_callback_duration_ns: AtomicU64,
+    process_duration_ns: AtomicU64,
+    max_process_duration_ns: AtomicU64,
+    custom_metrics: Mutex<BTreeMap<Box<str>, (NodeMetricKind, u64)>>,
 }
 
+#[derive(Clone, Copy)]
 enum NodeCallbackKind {
     Prepare,
     Process,
@@ -188,6 +225,9 @@ impl NodeMetrics {
             panic_total: AtomicU64::new(0),
             callback_duration_ns: AtomicU64::new(0),
             max_callback_duration_ns: AtomicU64::new(0),
+            process_duration_ns: AtomicU64::new(0),
+            max_process_duration_ns: AtomicU64::new(0),
+            custom_metrics: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -211,9 +251,26 @@ impl NodeMetrics {
             .fetch_add(nanos, Ordering::Relaxed);
         self.max_callback_duration_ns
             .fetch_max(nanos, Ordering::Relaxed);
+        if matches!(kind, NodeCallbackKind::Process) {
+            self.process_duration_ns.fetch_add(nanos, Ordering::Relaxed);
+            self.max_process_duration_ns
+                .fetch_max(nanos, Ordering::Relaxed);
+        }
     }
 
     fn snapshot(&self) -> NodeMetricsSnapshot {
+        let custom_metrics = self
+            .custom_metrics
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .iter()
+            .map(|(name, (kind, value))| NodeCustomMetricSnapshot {
+                name: name.clone(),
+                kind: *kind,
+                value: *value,
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
         NodeMetricsSnapshot {
             node_id: self.node_id.clone(),
             prepare_total: self.prepare_total.load(Ordering::Relaxed),
@@ -225,6 +282,29 @@ impl NodeMetrics {
             panic_total: self.panic_total.load(Ordering::Relaxed),
             callback_duration_ns: self.callback_duration_ns.load(Ordering::Relaxed),
             max_callback_duration_ns: self.max_callback_duration_ns.load(Ordering::Relaxed),
+            process_duration_ns: self.process_duration_ns.load(Ordering::Relaxed),
+            max_process_duration_ns: self.max_process_duration_ns.load(Ordering::Relaxed),
+            custom_metrics,
+        }
+    }
+
+    fn record_custom_metrics(&self, observations: Vec<NodeMetricObservation>) {
+        if observations.is_empty() {
+            return;
+        }
+        let mut metrics = self
+            .custom_metrics
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        for observation in observations {
+            let entry = metrics
+                .entry(observation.name().into())
+                .or_insert((observation.kind(), 0));
+            entry.0 = observation.kind();
+            match observation.kind() {
+                NodeMetricKind::Counter => entry.1 = entry.1.saturating_add(observation.value()),
+                NodeMetricKind::Gauge => entry.1 = observation.value(),
+            }
         }
     }
 }
@@ -1358,16 +1438,14 @@ fn coordinate(
             shared.control.lifecycle_enter(node_id.clone());
             let started = Instant::now();
             let outcome = catch_unwind(AssertUnwindSafe(|| node.on_abort(&reason, &mut context)));
-            shared
-                .node_metrics
-                .get(node_id)
-                .expect("node metrics")
-                .record(
-                    NodeCallbackKind::Abort,
-                    started.elapsed(),
-                    outcome.is_err(),
-                    outcome.is_err(),
-                );
+            let metrics = shared.node_metrics.get(node_id).expect("node metrics");
+            metrics.record_custom_metrics(context.take_metric_observations());
+            metrics.record(
+                NodeCallbackKind::Abort,
+                started.elapsed(),
+                outcome.is_err(),
+                outcome.is_err(),
+            );
             if let Err(payload) = outcome {
                 diagnostics.lock().unwrap_or_else(|e| e.into_inner()).push(
                     AbortHookDiagnostic::new(node_id.clone(), panic_message(payload.as_ref())),
@@ -1406,6 +1484,7 @@ fn call_prepare(
     let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_prepare(&mut context)));
     let overflowed = context.emission_overflowed();
+    metrics.record_custom_metrics(context.take_metric_observations());
     metrics.record(
         NodeCallbackKind::Prepare,
         started.elapsed(),
@@ -1453,6 +1532,7 @@ fn call_process(
     let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_process(input, &mut context)));
     let overflowed = context.emission_overflowed();
+    metrics.record_custom_metrics(context.take_metric_observations());
     metrics.record(
         NodeCallbackKind::Process,
         started.elapsed(),
@@ -1504,6 +1584,7 @@ fn call_signal(
     let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_signal(signal, &mut context)));
     let overflowed = context.emission_overflowed();
+    metrics.record_custom_metrics(context.take_metric_observations());
     metrics.record(
         NodeCallbackKind::Signal,
         started.elapsed(),
@@ -1551,6 +1632,7 @@ fn call_finish(
     let started = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| node.on_finish(&mut context)));
     let overflowed = context.emission_overflowed();
+    metrics.record_custom_metrics(context.take_metric_observations());
     metrics.record(
         NodeCallbackKind::Finish,
         started.elapsed(),

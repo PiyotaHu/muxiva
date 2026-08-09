@@ -119,26 +119,20 @@ class QwenAsrRealtimeNode:
             }:
                 text = f"{event.get('text', '')}{event.get('stash', '')}"
                 if text:
-                    self._emit_client_event(
-                        ctx,
-                        "muxiva.voice.transcript.preview",
-                        {"text": text},
-                        frame.sequence,
+                    ctx.emit(
+                        "transcript_preview_out",
+                        muxiva.TextFrame(text, sequence=frame.sequence),
                     )
+                    ctx.publish_notification("muxiva.voice.transcript.preview", {"text": text})
             elif kind.endswith("input_audio_transcription.completed"):
                 text = event.get("transcript", event.get("text", "")).strip()
                 if text:
                     ctx.emit("text_out", muxiva.TextFrame(text, sequence=frame.sequence))
-                    self._emit_client_event(
-                        ctx,
-                        "muxiva.voice.transcript.completed",
-                        {"text": text},
-                        frame.sequence,
-                    )
+                    ctx.publish_notification("muxiva.voice.transcript.completed", {"text": text})
                     self._log("transcript.completed", sequence=frame.sequence, chars=len(text))
             elif kind.endswith("input_audio_transcription.failed"):
                 error = event.get("error", {})
-                self._emit_client_event(
+                self._emit_event(
                     ctx,
                     "muxiva.voice.transcript.failed",
                     {"message": str(error.get("message", "ASR transcription failed"))[:512]},
@@ -163,12 +157,12 @@ class QwenAsrRealtimeNode:
                 sequence=sequence,
             ),
         )
-        self._emit_client_event(ctx, topic, payload, sequence)
+        ctx.publish_notification(topic, payload)
 
     @staticmethod
-    def _emit_client_event(ctx: Any, topic: str, payload: dict[str, Any], sequence: int) -> None:
+    def _emit_event(ctx: Any, topic: str, payload: dict[str, Any], sequence: int) -> None:
         ctx.emit(
-            "client_event_out",
+            "event_out",
             muxiva.EventFrame(
                 topic,
                 json.dumps(payload, separators=(",", ":"), ensure_ascii=False),

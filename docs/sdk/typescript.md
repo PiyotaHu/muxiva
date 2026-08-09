@@ -59,3 +59,12 @@ Source receives `undefined`; a Sink simply omits `ctx.emit`. One callback may
 call `emit` repeatedly, so sending an Event or Signal does not end processing.
 Returned port mappings remain compatibility sugar. The Worker still rejects
 Promise results and Graph JSON never evaluates or imports JavaScript by itself.
+
+## Studio project Host
+
+The Studio project-package path is a separate execution boundary from
+`runGraph`. With Node.js 22.19 or newer, Studio imports the exact `node.ts`
+entrypoint in a managed subprocess and awaits asynchronous lifecycle methods.
+This is the path used by long-lived integrations such as the Pi Agent Node.
+Provider streams still run in the background and drain bounded output on a
+Tick input so cancellation callbacks remain responsive.

@@ -1,8 +1,9 @@
 # TypeScript Node development
 
 Use **Studio → Create Node → TypeScript** to create `node.ts` and a project
-Manifest. The published SDK's hosted TypeScript Nodes run in a dedicated
-Worker and must return structured-clone-compatible, synchronous values in V1.
+Manifest. The standalone SDK's hosted TypeScript Nodes run in a dedicated
+Worker and keep synchronous callback semantics. Studio project Nodes use a
+managed Node.js 22.19+ subprocess and may implement asynchronous lifecycle methods.
 
 ```ts
 import type { GraphNodeImplementation } from '@muxiva/core'
@@ -14,14 +15,15 @@ export const node: GraphNodeImplementation = {
 }
 ```
 
-Studio project-package execution is **not active yet**. Saving registers the
-package for authoring and discovery, but Studio keeps it out of runnable Graphs
-until the planned Host can resolve `@muxiva/core`, type-check the package, and
-load the exact exported entrypoint. Use the programmatic SDK path documented in
-the [TypeScript SDK reference](../sdk/typescript.md) meanwhile.
+Studio loads the exact `node.ts` export, passes configuration and input-Port
+context, streams explicit emissions over a bounded Host protocol, and turns
+module/process failures into structured Runtime diagnostics. Long-running
+provider work should use a background task plus Tick-drained bounded output so
+`onSignal` remains responsive. See the
+[TypeScript SDK reference](../sdk/typescript.md).
 
 ## 中文
 
-Studio 会生成 `node.ts` 与 Manifest，但项目包执行 Host 尚未接通，因此只会保存
-和展示，不会允许加入可运行 Graph。现有 TypeScript SDK 的 Node 在独立 Worker
-运行；V1 暂不接受返回 Promise 的回调。
+Studio 会生成 `node.ts` 与 Manifest，并通过 Node.js 22.19+ 的受管理子进程把项目
+Package 注册到可运行 Graph。项目 Host 支持异步生命周期；独立 `@muxiva/core`
+Worker SDK 仍保持同步回调契约。

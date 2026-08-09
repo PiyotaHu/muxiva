@@ -76,6 +76,13 @@ struct OwnedDataMessage final {
   std::uint64_t sent_timestamp_ms = 0;
 };
 
+struct AudioIngressStats final {
+  std::uint64_t received_total = 0;
+  std::uint64_t dropped_total = 0;
+  std::size_t queued_frames = 0;
+  std::uint64_t queued_duration_ns = 0;
+};
+
 struct RtcStatsSnapshot final {
   std::uint32_t duration_seconds = 0;
   std::uint64_t tx_bytes = 0;
@@ -134,6 +141,7 @@ class SharedSession final : private SdkObserver {
   SharedSession& operator=(const SharedSession&) = delete;
 
   bool try_pop_audio(OwnedPcm16Frame& frame) noexcept;
+  AudioIngressStats audio_ingress_stats() const noexcept;
   bool try_pop_data(OwnedDataMessage& message) noexcept;
   int send_audio(const Pcm16FrameView& frame) noexcept;
   int send_data(const std::uint8_t* data, std::size_t size) noexcept;

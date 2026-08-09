@@ -15,8 +15,9 @@ use muxiva_core::{
     EnabledCondition, ForeignNodeCallOutput, ForeignNodeConstructor, ForeignNodeFactoryAdapter,
     ForeignNodeInstance, GraphBuilder, GraphRunner, LifecycleCapabilities, Node, NodeContext,
     NodeDescriptor, NodeFactoryError, NodeFactoryVersion, NodeInstances, NodeKind, NodeLanguage,
-    NodeRegistration, NodeTypeName, PortDescriptor, PortDirection, PortName, QueuePolicy,
-    RuntimeOptions, RuntimeWaitError, TransformPolicy, ValidationPolicy, VisibilityDescriptor,
+    NodeMetricObservation, NodeRegistration, NodeTypeName, PortDescriptor, PortDirection, PortName,
+    QueuePolicy, RuntimeOptions, RuntimeWaitError, TransformPolicy, ValidationPolicy,
+    VisibilityDescriptor,
 };
 use muxiva_types::{EdgeId, ErrorCategory, Frame, FrameType, MuxivaError, NodeId, SignalFrame};
 
@@ -247,6 +248,7 @@ impl ForeignNodeConstructor for CppMultimodalNodeConstructor {
             capabilities: 0,
             reserved: [0; 3],
             take_next_source_tick_ns: None,
+            take_metrics: None,
         };
         let mut output = empty_error();
         let config_json = muxiva_graph_json::config_map_to_json(config).to_string();
@@ -264,13 +266,20 @@ impl ForeignNodeConstructor for CppMultimodalNodeConstructor {
         // `take_next_source_tick_ns` is an additive, trailing ABI field. Keep loading
         // Node packs compiled against the previous v1 header; the zero-initialized
         // callback above makes them behave exactly as before.
-        let legacy_expected = u32::try_from(
+        let tick_only_expected = u32::try_from(
             mem::size_of::<GraphNodeVtable>()
+                - mem::size_of::<
+                    Option<extern "C" fn(*mut c_void, *mut *const abi::NodeMetricView, *mut usize)>,
+                >(),
+        )
+        .unwrap_or(u32::MAX);
+        let legacy_expected = u32::try_from(
+            usize::try_from(tick_only_expected).unwrap_or(0)
                 - mem::size_of::<Option<extern "C" fn(*mut c_void) -> u64>>(),
         )
         .unwrap_or(u32::MAX);
         if table.abi_version != abi::ABI_VERSION
-            || (table.struct_size != expected && table.struct_size != legacy_expected)
+            || ![expected, tick_only_expected, legacy_expected].contains(&table.struct_size)
             || table.reserved != [0; 3]
             || table.on_process.is_none()
         {
@@ -378,6 +387,64 @@ impl ForeignNodeInstance for CppMultimodalInstance {
             if delay_ns != 0 {
                 output = output.with_next_source_tick(Duration::from_nanos(delay_ns));
             }
+        }
+        if let Some(callback) = self.table.take_metrics {
+            let mut metrics = std::ptr::null();
+            let mut metric_count = 0_usize;
+            callback(self.table.user_data, &mut metrics, &mut metric_count);
+            if metric_count > 256 || (metric_count != 0 && !abi::aligned(metrics)) {
+                return Err(foreign_error(
+                    abi::INVALID_ARGUMENT,
+                    "MUXIVA-FFI-NODE-METRICS",
+                    "C++ callback returned an invalid metric array",
+                ));
+            }
+            let views = if metric_count == 0 {
+                &[]
+            } else {
+                // SAFETY: the callback contract retains this borrowed array until
+                // the next foreign lifecycle call; values are copied immediately.
+                unsafe { std::slice::from_raw_parts(metrics, metric_count) }
+            };
+            let mut observations = Vec::with_capacity(views.len());
+            for metric in views {
+                if metric.reserved0 != 0 {
+                    return Err(foreign_error(
+                        abi::INVALID_ARGUMENT,
+                        "MUXIVA-FFI-NODE-METRICS",
+                        "C++ metric reserved field must be zero",
+                    ));
+                }
+                let name = abi::copy_str(metric.name, true).map_err(|_| {
+                    foreign_error(
+                        abi::INVALID_ARGUMENT,
+                        "MUXIVA-FFI-NODE-METRICS",
+                        "C++ metric name is invalid",
+                    )
+                })?;
+                let observation = match metric.operation {
+                    abi::NODE_METRIC_COUNTER_ADD => {
+                        NodeMetricObservation::counter_add(&name, metric.value)
+                    }
+                    abi::NODE_METRIC_GAUGE_SET => NodeMetricObservation::gauge(&name, metric.value),
+                    _ => {
+                        return Err(foreign_error(
+                            abi::INVALID_ARGUMENT,
+                            "MUXIVA-FFI-NODE-METRICS",
+                            "C++ metric operation is invalid",
+                        ));
+                    }
+                }
+                .map_err(|error| {
+                    foreign_error(
+                        abi::INVALID_ARGUMENT,
+                        "MUXIVA-FFI-NODE-METRICS",
+                        &error.to_string(),
+                    )
+                })?;
+                observations.push(observation);
+            }
+            output = output.with_metrics(observations);
         }
         Ok(output)
     }

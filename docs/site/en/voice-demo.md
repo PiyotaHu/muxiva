@@ -12,12 +12,14 @@ plays it back.
 !!! info "What you actually need"
     Agora requires an account, App ID, and two temporary RTC tokens. Qwen
     requires **no SDK download**—only an Alibaba Cloud Model Studio API Key and
-    Workspace ID. Muxiva downloads and verifies the Agora macOS SDK and installs
-    the Qwen WebSocket dependency in an isolated Python environment.
+    Workspace ID. Muxiva downloads and verifies the Agora macOS SDK, installs
+    Qwen's Python WebSocket dependency, and installs the locked Pi TypeScript
+    Agent packages for Demo 2.
 
 ## 0. Current support boundary
 
 - The one-command path is verified on Apple Silicon macOS and pins Agora macOS SDK `4.6.2`.
+- Demo 2 requires Node.js 22.19 or newer for the managed TypeScript Node Host and Pi.
 - Qwen Nodes currently use the China (Beijing) endpoint. The API Key and
   Workspace ID must come from that same region.
 - On Windows or another platform, download the SDK from the
@@ -26,7 +28,7 @@ plays it back.
 
 ## 1. Install Muxiva and the official Nodes
 
-Install Git, Rust, Python 3, CMake 3.20+, and Xcode Command Line Tools, then run:
+Install Git, Rust, Python 3, Node.js 22.19+, CMake 3.20+, and Xcode Command Line Tools, then run:
 
 ```bash
 git clone https://github.com/PiyotaHu/muxiva.git
@@ -41,15 +43,18 @@ The final command:
    [official macOS SDK repository](https://github.com/AgoraIO/AgoraRtcEngine_macOS/tree/4.6.2);
 2. verifies every archive with SHA-256;
 3. creates `examples/voice-agent/.muxiva/venv` and installs `websocket-client`;
-4. builds the four C++ Nodes `agora.audio_source`, `agora.audio_sink`,
+4. installs the exact Pi and Muxiva Agent npm dependency graph with lifecycle
+   scripts disabled, then type-checks the project Agent Node;
+5. builds the four C++ Nodes `agora.audio_source`, `agora.audio_sink`,
    `agora.data_source`, and `agora.data_sink`. They share one RTC Engine and Bot UID.
 
 Installation is complete only after these lines appear:
 
 ```text
-[MUXIVA][READY] Native and Python Node Packs are installed.
+[MUXIVA][READY] Native, Python, and TypeScript Agent Node Packs are installed.
 [MUXIVA][AGORA] sdk=.../build/vendor/agora-macos-4.6.2
 [MUXIVA][QWEN]  python=.../.muxiva/venv/bin/python (no Qwen SDK download required)
+[MUXIVA][PI]    node=... version=... package=@earendil-works/pi-agent-core@0.84.1
 ```
 
 To use a manually downloaded SDK instead:
@@ -96,9 +101,9 @@ The key and Workspace ID must be a matching pair from the same China (Beijing) w
    to locate the **Workspace ID** in the same Workspace.
 
 There is no Qwen SDK download step. Muxiva's Python Node talks directly to
-the documented WebSocket/HTTP protocols; `setup.sh` installs its only external
-Python dependency. Realtime defaults to `qwen-audio-3.0-realtime-flash`; the
-cascade uses Qwen ASR, LLM, and TTS.
+the documented WebSocket/HTTP protocols. Realtime defaults to
+`qwen-audio-3.0-realtime-flash`; the cascade uses Qwen ASR and TTS around a
+[Pi TypeScript Agent](nodes/pi-agent.md) backed by `qwen-flash`.
 
 ## 4. Start Studio and enter the credentials
 
@@ -107,8 +112,9 @@ muxiva doctor --voice
 ./examples/voice-agent/run.sh
 ```
 
-`doctor` should report both Agora packs as `mode=agora-native` and report
-`qwen-python dependency=websocket`. With no credentials it now prints every `MISSING` value;
+`doctor` should report both Agora packs as `mode=agora-native`, report
+`qwen-python dependency=websocket`, and report
+`pi-typescript-agent ... dependencies=locked`. With no credentials it prints every `MISSING` value;
 that is a blocking diagnosis, not an optional hint. In Studio:
 
 1. Open **Connections**.
@@ -123,9 +129,10 @@ that is a blocking diagnosis, not an optional hint. In Studio:
 Save connections writes values to `examples/voice-agent/.env` (mode `0600`, Git ignored).
 Future runs load it automatically. You can also create it manually from `.env.example`.
 
-After Realtime works, switch to **Qwen Full-Duplex Cascade (Demo 2)** to inspect
-Alibaba Cloud Qwen Server VAD + Streaming ASR → cancellable LLM → cancellable
-TTS. Speak again during playback: Voice Room should enter interruption state,
+After Realtime works, switch to **Pi Agent Full-Duplex Cascade (Demo 2)** to inspect
+Qwen Server VAD + Streaming ASR → a stateful TypeScript Agent with Tool Calls →
+cancellable Qwen TTS. Ask for the current time or today's weather to force a
+real tool execution. Speak again during playback: Voice Room should enter interruption state,
 old text and audio should stop, and the next transcript and answer should remain
 in the same session. The session stays live until you select **End session**.
 
@@ -134,10 +141,15 @@ in the same session. The session stays live until you select **End session**.
 `run.sh` mirrors terminal output to `examples/voice-agent/.muxiva/runtime.log`. If both clients
 look connected but there is no response, find the first signal that does not advance:
 
+Open **◎ Observe** in Studio to correlate Nodes, Edges, and SDK-internal queues and highlight
+yellow/red bottlenecks automatically. See [Observability and bottleneck diagnosis](observability.md)
+for metric definitions, thresholds, and log filters.
+
 1. Voice Room reports that the browser joined and published the microphone.
 2. The log reports `[MUXIVA][AGORA][participant.joined] uid=1001`.
 3. The log reports `[MUXIVA][AGORA][audio.received]` and `agora-in.audio_out` advances in Studio.
-4. `audio-to-qwen`, Qwen Node calls, and captions advance.
+4. ASR, `turn-to-agent`, `agent-to-response-gate`, and the semantic room-message
+   Edges advance; Tool use appears as `muxiva.agent.tool.*` in Runtime events.
 5. `qwen-audio` and `agora-out` advance and the browser plays the response.
 
 The first missing signal identifies the failing layer. Credential values are never logged.
@@ -161,6 +173,7 @@ exposes Studio's Graph or Runtime management APIs.
 | `Agora SDK directory does not exist` | The path is not an extracted SDK; on macOS rerun `setup.sh` without arguments |
 | `AgoraRtcKit.xcframework` not found | The manual package is for the wrong platform or incomplete; use the automatic installer |
 | `qwen-python ready=false` | Run `setup.sh` again to recreate the project virtual environment |
+| `pi-typescript-agent ready=false` | Install Node.js 22.19+ and rerun `setup.sh` to install the locked Pi packages |
 | Qwen authentication/model error | Key, Workspace ID, and model must belong to the same China (Beijing) Workspace |
 | Agora cannot join | App ID, channel, and UID must exactly match token generation and the token must be unexpired |
 | No microphone input | Allow microphone access for the local Studio page in browser site permissions |

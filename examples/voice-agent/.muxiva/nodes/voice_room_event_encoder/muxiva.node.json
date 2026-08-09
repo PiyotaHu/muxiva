@@ -1,0 +1,57 @@
+{
+  "format": "muxiva.node/v1",
+  "package_id": "voice_room_event_encoder",
+  "display_name": "Voice Room Event Encoder",
+  "node_type": "voice_room.event_encoder",
+  "language": "python",
+  "factory_version": "1.0.0",
+  "kind": "transform",
+  "entrypoint": "node:VoiceRoomEventEncoderNode",
+  "category": "utility",
+  "capability": "voice-room.protocol.encode",
+  "summary": "Maps this application's typed voice events into the Voice Room browser protocol.",
+  "tags": ["application", "voice-room", "protocol", "client"],
+  "ports": [
+    {
+      "name": "transcript_preview_in",
+      "direction": "input",
+      "frame_type": "text",
+      "schema": { "semantics": ["user_transcript_partial"], "streaming": true }
+    },
+    {
+      "name": "transcript_in",
+      "direction": "input",
+      "frame_type": "text",
+      "schema": { "semantics": ["user_transcript_final"], "streaming": false }
+    },
+    {
+      "name": "response_text_in",
+      "direction": "input",
+      "frame_type": "text",
+      "schema": { "semantics": ["assistant_transcript"], "streaming": true }
+    },
+    {
+      "name": "event_in",
+      "direction": "input",
+      "frame_type": "event",
+      "schema": { "semantics": ["speech_state", "response_state", "failure"], "streaming": true }
+    },
+    {
+      "name": "signal_in",
+      "direction": "input",
+      "frame_type": "signal",
+      "schema": { "semantics": ["graph_control"], "streaming": true }
+    },
+    {
+      "name": "message_out",
+      "direction": "output",
+      "frame_type": "byte",
+      "schema": {
+        "media_type": "application/vnd.muxiva.client-event+json",
+        "protocol": "muxiva.client-event/v1",
+        "streaming": true
+      }
+    }
+  ],
+  "config_schema": { "type": "object", "properties": {}, "additionalProperties": false }
+}

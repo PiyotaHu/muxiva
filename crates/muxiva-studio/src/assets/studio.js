@@ -1,12 +1,18 @@
 'use strict'
 
 const NS = 'http://www.w3.org/2000/svg'
+const VIEWPORT_WIDTH = 1200
+const VIEWPORT_HEIGHT = 760
+const MIN_ZOOM = .4
+const MAX_ZOOM = 2.5
 const catalog = new Map()
 let nodePackages = []
 const state = {
   token: '', graph: null, selected: null, positions: {}, diagnostics: [],
   history: [], future: [], dirty: false, zoom: 1, validating: null,
+  viewport: { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }, suppressCanvasClick: false,
   runtime: { status: 'idle', nodes: [], edges: [] }, runtimeTimer: null,
+  telemetry: { previous: null, nodeRates: new Map(), edgeRates: new Map(), selection: null, history: { sessions: [], selected: null, samples: [], loaded: false, export: null } },
   connection: null, editingEdge: null,
 }
 
@@ -49,6 +55,7 @@ async function loadStudio() {
       api('/api/v1/graph'), api('/api/v1/studio'), api('/api/v1/registry/nodes'), api('/api/v1/node-library'), api('/api/v1/runtime'),
     ])
     state.graph = migrateGraph(typeof graph === 'string' ? JSON.parse(graph) : graph)
+    ingestRuntimeSnapshot(runtime)
     state.runtime = runtime
     nodePackages = packages
     installCatalog([...registrations, ...packages.map(packageCatalogEntry)])
@@ -184,6 +191,9 @@ function bindEvents() {
   $('#redo').addEventListener('click', redo)
   $('#raw-toggle').addEventListener('click', openRaw)
   $('#providers').addEventListener('click', openProviders)
+  $('#observability').addEventListener('click', () => openObservability())
+  $('#observability-close').addEventListener('click', closeObservability)
+  $('#observe-history-refresh').addEventListener('click', () => refreshObservabilityHistory(false))
   $('#provider-close').addEventListener('click', closeProviders)
   $('#provider-cancel').addEventListener('click', closeProviders)
   $('#provider-form').addEventListener('submit', saveProviders)
@@ -196,9 +206,15 @@ function bindEvents() {
   $('#zoom-in').addEventListener('click', () => setZoom(state.zoom + .1))
   $('#zoom-out').addEventListener('click', () => setZoom(state.zoom - .1))
   $('#fit-view').addEventListener('click', fitView)
-  $('#graph-canvas').addEventListener('click', (event) => { if (event.target.id === 'graph-canvas') selectNode(null) })
-  $('#graph-canvas').addEventListener('dragover', (event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' })
-  $('#graph-canvas').addEventListener('drop', dropPaletteNode)
+  const canvas = $('#graph-canvas')
+  canvas.addEventListener('click', (event) => {
+    if (state.suppressCanvasClick) { state.suppressCanvasClick = false; return }
+    if (event.target.id === 'graph-canvas') selectNode(null)
+  })
+  canvas.addEventListener('pointerdown', beginCanvasPan)
+  canvas.addEventListener('wheel', zoomCanvasAtPointer, { passive: false })
+  canvas.addEventListener('dragover', (event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' })
+  canvas.addEventListener('drop', dropPaletteNode)
   window.addEventListener('keydown', keyboardShortcut)
 }
 
@@ -278,6 +294,7 @@ async function openTemplates() {
 function closeTemplates() { $('#template-dialog').close() }
 function applyTemplate(template) {
   mutate(() => { state.graph = clone(template.graph); state.selected = null; state.positions = {}; seedPositions() })
+  fitView()
   closeTemplates(); toast(`${template.name} graph applied · Save graph to persist it`)
 }
 
@@ -565,8 +582,7 @@ function renderCanvas() {
   renderEdgeLayer(edgeLayer)
   nodeLayer.replaceChildren()
   for (const node of state.graph.nodes) nodeLayer.append(renderNode(node))
-  const width = 1200 / state.zoom, height = 760 / state.zoom
-  $('#graph-canvas').setAttribute('viewBox', `${(1200 - width) / 2} ${(760 - height) / 2} ${width} ${height}`)
+  applyViewport()
 }
 
 function renderEdgeLayer(edgeLayer = $('#edge-layer')) {
@@ -642,6 +658,67 @@ function canvasPoint(clientX, clientY) {
   return matrix ? point.matrixTransform(matrix.inverse()) : { x: clientX, y: clientY }
 }
 
+function viewportBox() {
+  const width = VIEWPORT_WIDTH / state.zoom
+  const height = VIEWPORT_HEIGHT / state.zoom
+  return { x: state.viewport.x - width / 2, y: state.viewport.y - height / 2, width, height }
+}
+
+function applyViewport() {
+  const box = viewportBox()
+  $('#graph-canvas').setAttribute('viewBox', `${box.x} ${box.y} ${box.width} ${box.height}`)
+  $('#zoom-label').textContent = `${Math.round(state.zoom * 100)}%`
+}
+
+function beginCanvasPan(event) {
+  if (![0, 1].includes(event.button)) return
+  if (event.target.closest?.('.node-group, .port-dot, .graph-edge')) return
+  const canvas = event.currentTarget
+  const matrix = canvas.getScreenCTM()
+  if (!matrix) return
+  event.preventDefault()
+  canvas.setPointerCapture(event.pointerId)
+  canvas.classList.add('panning')
+  canvas.style.cursor = 'grabbing'
+  const inverse = matrix.inverse()
+  const startPoint = canvas.createSVGPoint()
+  startPoint.x = event.clientX
+  startPoint.y = event.clientY
+  const origin = startPoint.matrixTransform(inverse)
+  const center = { ...state.viewport }
+  let moved = false
+  const move = (next) => {
+    const screenPoint = canvas.createSVGPoint()
+    screenPoint.x = next.clientX
+    screenPoint.y = next.clientY
+    const current = screenPoint.matrixTransform(inverse)
+    const deltaX = current.x - origin.x
+    const deltaY = current.y - origin.y
+    if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) moved = true
+    state.viewport = { x: center.x - deltaX, y: center.y - deltaY }
+    applyViewport()
+  }
+  const stop = () => {
+    canvas.removeEventListener('pointermove', move)
+    canvas.removeEventListener('pointerup', stop)
+    canvas.removeEventListener('pointercancel', stop)
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
+    canvas.classList.remove('panning')
+    canvas.style.cursor = 'grab'
+    state.suppressCanvasClick = moved
+  }
+  canvas.addEventListener('pointermove', move)
+  canvas.addEventListener('pointerup', stop)
+  canvas.addEventListener('pointercancel', stop)
+}
+
+function zoomCanvasAtPointer(event) {
+  event.preventDefault()
+  const anchor = canvasPoint(event.clientX, event.clientY)
+  const factor = Math.exp(-event.deltaY * .0015)
+  setZoom(state.zoom * factor, { clientX: event.clientX, clientY: event.clientY, anchor })
+}
+
 function beginConnection(event) {
   if (event.button !== 0) return
   event.preventDefault(); event.stopPropagation()
@@ -687,9 +764,11 @@ function beginDrag(event, id) {
   if (event.button !== 0 || event.target.closest('.port-dot')) return
   const target = event.currentTarget
   target.setPointerCapture(event.pointerId)
-  const start = { clientX: event.clientX, clientY: event.clientY, nodeX: state.positions[id].x, nodeY: state.positions[id].y }
+  const startPoint = canvasPoint(event.clientX, event.clientY)
+  const start = { point: startPoint, nodeX: state.positions[id].x, nodeY: state.positions[id].y }
   const move = (next) => {
-    state.positions[id] = { x: start.nodeX + (next.clientX - start.clientX) / state.zoom, y: start.nodeY + (next.clientY - start.clientY) / state.zoom }
+    const point = canvasPoint(next.clientX, next.clientY)
+    state.positions[id] = { x: start.nodeX + point.x - start.point.x, y: start.nodeY + point.y - start.point.y }
     target.setAttribute('transform', `translate(${state.positions[id].x} ${state.positions[id].y})`)
     renderEdgeLayer()
   }
@@ -791,8 +870,12 @@ function scheduleRuntimePoll() {
 }
 async function refreshRuntime() {
   try {
-    state.runtime = await api('/api/v1/runtime')
+    const previousStatus = state.runtime?.status
+    const runtime = await api('/api/v1/runtime')
+    ingestRuntimeSnapshot(runtime)
+    state.runtime = runtime
     renderRuntime(); renderCanvas()
+    if (['completed', 'aborted', 'stopped'].includes(runtime.status) && runtime.status !== previousStatus) refreshObservabilityHistory(true)
   } catch (error) {
     toast(`Runtime metrics unavailable: ${error.message}`, true)
   }
@@ -801,10 +884,13 @@ async function refreshRuntime() {
 async function startRuntime() {
   if (runtimeIsActive()) return
   if (!await validateGraph(false)) return toast('Fix validation errors before running', true)
+  state.telemetry = { previous: null, nodeRates: new Map(), edgeRates: new Map(), selection: null, history: state.telemetry.history }
   state.runtime = { status: 'starting', nodes: [], edges: [], active_nodes: [] }
   renderRuntime()
   try {
-    state.runtime = await api('/api/v1/runtime/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state.graph) })
+    const runtime = await api('/api/v1/runtime/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state.graph) })
+    ingestRuntimeSnapshot(runtime)
+    state.runtime = runtime
     toast('Graph runtime started')
     renderRuntime(); renderCanvas(); scheduleRuntimePoll()
   } catch (error) {
@@ -843,6 +929,8 @@ function renderRuntime() {
     const meter = document.createElement('span'); meter.className = 'runtime-edge-meter'
     const fill = document.createElement('i'); fill.style.width = `${Math.min(100, edge.queue_capacity ? edge.high_watermark / edge.queue_capacity * 100 : 0)}%`; meter.append(fill)
     const detail = document.createElement('small'); detail.textContent = `${edge.dequeue_total} out · ${edge.drop_total} drop`
+    row.title = 'Open Edge telemetry'
+    row.addEventListener('click', () => openObservability('edge', edge.edge_id))
     row.append(label, meter, detail); return row
   })
   if (edgeRows.length) $('#runtime-edges').replaceChildren(...edgeRows)
@@ -852,7 +940,249 @@ function renderRuntime() {
     terminal.textContent = `${runtime.terminal.code || 'MUXIVA-RUNTIME'} · ${runtime.terminal.message}`
     terminal.classList.remove('hidden')
   } else terminal.classList.add('hidden')
+  if (!$('#observability-page').classList.contains('hidden')) renderObservability()
 }
+
+function ingestRuntimeSnapshot(next) {
+  const previous = state.telemetry.previous
+  const sameSession = previous?.session_id != null && previous.session_id === next?.session_id
+  const elapsedSeconds = sameSession ? Math.max(.001, ((next.elapsed_ms || 0) - (previous.elapsed_ms || 0)) / 1000) : 0
+  const previousNodes = new Map((previous?.nodes || []).map((node) => [node.node_id, node]))
+  const previousEdges = new Map((previous?.edges || []).map((edge) => [edge.edge_id, edge]))
+  state.telemetry.nodeRates = new Map((next?.nodes || []).map((node) => {
+    const old = previousNodes.get(node.node_id)
+    return [node.node_id, {
+      process: elapsedSeconds && old ? positiveDelta(node.process_total, old.process_total) / elapsedSeconds : 0,
+      processDuration: elapsedSeconds && old ? positiveDelta(node.process_duration_ns, old.process_duration_ns) : 0,
+    }]
+  }))
+  state.telemetry.edgeRates = new Map((next?.edges || []).map((edge) => {
+    const old = previousEdges.get(edge.edge_id)
+    const frames = elapsedSeconds && old ? positiveDelta(edge.enqueue_total, old.enqueue_total) / elapsedSeconds : 0
+    const audioNs = elapsedSeconds && old ? positiveDelta(edge.audio_duration_ns_total, old.audio_duration_ns_total) : 0
+    return [edge.edge_id, {
+      frames,
+      bytes: elapsedSeconds && old ? positiveDelta(edge.payload_bytes_total, old.payload_bytes_total) / elapsedSeconds : 0,
+      blockedNs: old ? positiveDelta(edge.blocked_duration_ns, old.blocked_duration_ns) : 0,
+      drops: old ? positiveDelta(edge.drop_total, old.drop_total) : 0,
+      mediaRatio: elapsedSeconds ? audioNs / (elapsedSeconds * 1e9) : 0,
+    }]
+  }))
+  state.telemetry.previous = clone(next || {})
+}
+function positiveDelta(current = 0, previous = 0) { return Math.max(0, Number(current) - Number(previous)) }
+function customMetric(node, name) { return (node.custom_metrics || []).find((metric) => metric.name === name)?.value }
+function graphEdge(edgeId) { return state.graph?.edges?.find((edge) => edge.id === edgeId) }
+function graphNode(nodeId) { return state.graph?.nodes?.find((node) => node.id === nodeId) }
+function edgeRoute(edgeId) {
+  const edge = graphEdge(edgeId)
+  return edge ? `${edge.from.node_id}.${edge.from.port} → ${edge.to.node_id}.${edge.to.port}` : edgeId
+}
+function severityRank(value) { return { idle: 0, healthy: 1, warning: 2, critical: 3 }[value] || 0 }
+function worstSeverity(...values) { return values.reduce((worst, value) => severityRank(value) > severityRank(worst) ? value : worst, 'healthy') }
+function edgeVerdict(edge) {
+  const rate = state.telemetry.edgeRates.get(edge.edge_id) || {}
+  const ratio = edge.queue_capacity ? edge.queue_len / edge.queue_capacity : 0
+  const ageMs = (edge.oldest_frame_age_ns || 0) / 1e6
+  if (edge.latest_error_reason || edge.drop_total > 0 || ratio >= .8 || ageMs >= 1000) return { severity: 'critical', reason: edge.latest_error_reason || (edge.drop_total > 0 ? `${edge.drop_total} frame(s) dropped` : ratio >= .8 ? `queue ${Math.round(ratio * 100)}% full` : `oldest frame waiting ${formatDuration(ageMs)}`) }
+  if (ratio >= .4 || ageMs >= 200 || edge.full_total > 0 || (rate.blockedNs || 0) > 0) return { severity: 'warning', reason: ratio >= .4 ? `queue ${Math.round(ratio * 100)}% full` : ageMs >= 200 ? `oldest frame waiting ${formatDuration(ageMs)}` : 'producer was blocked by backpressure' }
+  return { severity: 'healthy', reason: edge.enqueue_total ? 'flowing without visible pressure' : 'no frames observed yet' }
+}
+function nodeVerdict(node) {
+  const averageMs = node.process_total ? node.process_duration_ns / node.process_total / 1e6 : 0
+  const queueMs = Number(customMetric(node, 'ingress.queue_duration_ms') || 0)
+  const ingressDrops = Number(customMetric(node, 'ingress.dropped_frames') || 0)
+  const connected = (state.runtime.edges || []).filter((edge) => {
+    const graph = graphEdge(edge.edge_id)
+    return graph && (graph.from.node_id === node.node_id || graph.to.node_id === node.node_id)
+  }).map((edge) => edgeVerdict(edge).severity)
+  let own = 'healthy', reason = node.process_total ? 'callbacks are within thresholds' : 'waiting for input'
+  if (node.error_total || node.panic_total || ingressDrops > 0 || queueMs >= 1000 || averageMs >= 50) {
+    own = 'critical'; reason = node.error_total || node.panic_total ? `${node.error_total + node.panic_total} callback failure(s)` : ingressDrops > 0 ? `${ingressDrops} ingress frame(s) dropped` : queueMs >= 1000 ? `internal ingress queue is ${formatDuration(queueMs)}` : `average process time is ${averageMs.toFixed(1)}ms`
+  } else if (queueMs >= 200 || averageMs >= 10 || node.max_process_duration_ns / 1e6 >= 100) {
+    own = 'warning'; reason = queueMs >= 200 ? `internal ingress queue is ${formatDuration(queueMs)}` : `slow callback: avg ${averageMs.toFixed(1)}ms, max ${(node.max_process_duration_ns / 1e6).toFixed(1)}ms`
+  }
+  const severity = worstSeverity(own, ...connected)
+  if (severity !== own) reason = 'a connected Edge is under backpressure'
+  return { severity, reason }
+}
+function overallHealth() {
+  if (!state.runtime?.session_id) return 'idle'
+  return [...(state.runtime.nodes || []).map((node) => nodeVerdict(node).severity), ...(state.runtime.edges || []).map((edge) => edgeVerdict(edge).severity)].reduce(worstSeverity, 'healthy')
+}
+function openObservability(kind = null, id = null) {
+  if (kind && id) state.telemetry.selection = { kind, id }
+  $('#observability-page').classList.remove('hidden')
+  $('#observability-page').setAttribute('aria-hidden', 'false')
+  renderObservability()
+  refreshObservabilityHistory(true)
+}
+function closeObservability() {
+  $('#observability-page').classList.add('hidden')
+  $('#observability-page').setAttribute('aria-hidden', 'true')
+}
+function renderObservability() {
+  const runtime = state.runtime || { nodes: [], edges: [] }, nodes = runtime.nodes || [], edges = runtime.edges || []
+  const nodeRate = nodes.reduce((total, node) => total + (state.telemetry.nodeRates.get(node.node_id)?.process || 0), 0)
+  const frameRate = edges.reduce((total, edge) => total + (state.telemetry.edgeRates.get(edge.edge_id)?.frames || 0), 0)
+  const queued = edges.reduce((total, edge) => total + edge.queue_len, 0), capacity = edges.reduce((total, edge) => total + edge.queue_capacity, 0)
+  const verdicts = [...nodes.map((node) => ({ kind: 'node', id: node.node_id, ...nodeVerdict(node) })), ...edges.map((edge) => ({ kind: 'edge', id: edge.edge_id, ...edgeVerdict(edge) }))]
+  const unhealthy = verdicts.filter((value) => severityRank(value.severity) >= severityRank('warning'))
+  const health = overallHealth(), badge = $('#observe-health')
+  badge.className = `health-badge ${health}`; badge.textContent = health.toUpperCase()
+  $('#observe-session').textContent = runtime.session_id == null ? 'No runtime session · press Run to collect telemetry' : `Session #${runtime.session_id} · ${runtime.status} · ${formatDuration(runtime.elapsed_ms || 0)}`
+  $('#observe-node-rate').textContent = `${formatRate(nodeRate)}/s`; $('#observe-frame-rate').textContent = `${formatRate(frameRate)}/s`
+  $('#observe-queued').textContent = queued; $('#observe-queue-detail').textContent = capacity ? `${Math.round(queued / capacity * 100)}% of ${capacity} slots` : 'No Edge queues'
+  $('#observe-bottlenecks').textContent = unhealthy.length
+  renderHotspots(unhealthy); renderObservationHistory(); renderObserveNodes(nodes); renderObserveEdges(edges); renderObserveDetail()
+}
+function renderHotspots(unhealthy) {
+  if (!unhealthy.length) { const empty = document.createElement('div'); empty.className = 'hotspot-empty'; empty.textContent = state.runtime?.session_id ? '✓ No bottleneck detected in this session.' : 'Run the Graph to begin bottleneck detection.'; $('#observe-hotspots').replaceChildren(empty); return }
+  const values = unhealthy.sort((a, b) => severityRank(b.severity) - severityRank(a.severity)).slice(0, 6)
+  $('#observe-hotspots').replaceChildren(...values.map((value) => {
+    const item = document.createElement('div'); item.className = `hotspot ${value.severity}`
+    const dot = document.createElement('i'), copy = document.createElement('div'), title = document.createElement('b'), reason = document.createElement('small')
+    title.textContent = `${value.kind === 'node' ? 'Node' : 'Edge'} · ${value.id}`; reason.textContent = value.reason; copy.append(title, reason); item.append(dot, copy)
+    item.addEventListener('click', () => { state.telemetry.selection = { kind: value.kind, id: value.id }; renderObservability() }); return item
+  }))
+}
+async function refreshObservabilityHistory(silent = true) {
+  try {
+    const value = await api('/api/v1/observability/history')
+    state.telemetry.history.sessions = value.sessions || []
+    state.telemetry.history.export = value.export || null
+    state.telemetry.history.loaded = true
+    renderObservationHistory()
+  } catch (error) {
+    if (!silent) toast(`Session history unavailable: ${error.message}`, true)
+  }
+}
+async function selectObservationHistory(runId) {
+  try {
+    const value = await api(`/api/v1/observability/history/${encodeURIComponent(runId)}`)
+    state.telemetry.history.selected = runId
+    state.telemetry.history.samples = value.samples || []
+    renderObservationHistory()
+  } catch (error) { toast(`Historical telemetry unavailable: ${error.message}`, true) }
+}
+function renderObservationHistory() {
+  const history = state.telemetry.history, container = $('#observe-history')
+  if (!container) return
+  const status = $('#observe-export-status'), exporter = history.export
+  if (exporter?.configured) {
+    status.className = exporter.last_error ? 'warning' : 'ready'
+    status.textContent = exporter.last_error ? `Prometheus /metrics · OTLP retrying (${exporter.last_error})` : `Prometheus /metrics · OTLP ${exporter.last_success_unix_ms ? 'exporting' : 'configured'}`
+    status.title = exporter.endpoint || ''
+  } else if (exporter?.last_error) {
+    status.className = 'warning'; status.textContent = `Prometheus /metrics · OTLP disabled (${exporter.last_error})`
+  } else {
+    status.className = ''; status.textContent = 'Prometheus /metrics · OTLP not configured'
+  }
+  if (!history.loaded) return replaceWithEmptyRow(container, 8, 'Loading persisted sessions…')
+  if (!history.sessions.length) return replaceWithEmptyRow(container, 8, 'No persisted session yet. Start a Graph run to create one.')
+  container.replaceChildren(...history.sessions.map((session) => {
+    const row = document.createElement('tr'); row.className = session.health || 'healthy'
+    if (history.selected === session.run_id) row.classList.add('selected')
+    row.append(entityCell(`#${session.run_id.split('-').at(-1)}`, formatWallTime(session.started_at_unix_ms)), textCell(session.graph_id), textCell(formatDuration(session.duration_ms || 0)), textCell(formatNumber(session.frame_total)), textCell(formatNumber(session.max_queued)), textCell(formatNumber(session.drops_total)), textCell(`${Number(session.max_node_process_ms || 0).toFixed(2)}ms`), statusCell({ severity: session.health || 'healthy', reason: `${session.samples} persisted samples · ${session.status}` }))
+    row.addEventListener('click', () => selectObservationHistory(session.run_id)); return row
+  }))
+  renderHistoryTrend()
+}
+function renderHistoryTrend() {
+  const history = state.telemetry.history, container = $('#observe-history-trend')
+  const samples = history.samples || []
+  if (!history.selected || !samples.length) { container.classList.add('hidden'); container.replaceChildren(); return }
+  container.classList.remove('hidden')
+  const selected = history.sessions.find((session) => session.run_id === history.selected)
+  const header = document.createElement('div'); header.className = 'history-trend-header'
+  const copy = document.createElement('div'), title = document.createElement('b'), detail = document.createElement('small')
+  title.textContent = `Session #${history.selected.split('-').at(-1)} trend`; detail.textContent = `${samples.length} persisted samples · ${selected?.status || 'unknown'} · ${formatDuration(selected?.duration_ms || 0)}`; copy.append(title, detail)
+  const close = document.createElement('button'); close.className = 'mini-button'; close.textContent = 'Close trend'; close.addEventListener('click', () => { history.selected = null; history.samples = []; renderObservationHistory() })
+  header.append(copy, close)
+  const series = [
+    ['Queued frames', samples.map((sample) => sumField(sample.edges, 'queue_len')), '', (value) => formatNumber(value)],
+    ['Slowest Node avg', samples.map(maxNodeAverageMs), 'orange', (value) => `${value.toFixed(2)}ms`],
+    ['Drops', samples.map((sample) => sumField(sample.edges, 'drop_total')), 'red', (value) => formatNumber(value)],
+    ['Frames processed', samples.map((sample) => sumField(sample.edges, 'enqueue_total')), 'green', (value) => formatNumber(value)],
+  ]
+  const grid = document.createElement('div'); grid.className = 'history-trend-grid'; grid.append(...series.map(([name, values, color, formatter]) => sparkCard(name, values, color, formatter)))
+  container.replaceChildren(header, grid)
+}
+function sparkCard(name, values, color, formatter) {
+  const card = document.createElement('div'); card.className = `history-spark ${color}`
+  const label = document.createElement('span'), current = document.createElement('b'), chart = svg('svg', { viewBox: '0 0 240 48', preserveAspectRatio: 'none', 'aria-label': `${name} trend` })
+  label.textContent = name; current.textContent = formatter(values.at(-1) || 0)
+  chart.append(svg('line', { x1: 0, y1: 47, x2: 240, y2: 47 }))
+  const maximum = Math.max(1, ...values), divisor = Math.max(1, values.length - 1)
+  const points = values.map((value, index) => `${index / divisor * 240},${46 - value / maximum * 43}`).join(' ')
+  chart.append(svg('polyline', { points })); card.append(label, current, chart); return card
+}
+function sumField(values, field) { return (values || []).reduce((total, value) => total + Number(value[field] || 0), 0) }
+function maxNodeAverageMs(sample) { return Math.max(0, ...(sample.nodes || []).map((node) => node.process_total ? Number(node.process_duration_ns || 0) / Number(node.process_total) / 1e6 : 0)) }
+function formatWallTime(milliseconds) { if (!milliseconds) return 'Unknown start'; return new Date(milliseconds).toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) }
+function renderObserveNodes(nodes) {
+  if (!nodes.length) return replaceWithEmptyRow($('#observe-nodes'), 7, 'No Node telemetry. Run the Graph first.')
+  $('#observe-nodes').replaceChildren(...nodes.map((node) => {
+    const rate = state.telemetry.nodeRates.get(node.node_id)?.process || 0, verdict = nodeVerdict(node), graph = graphNode(node.node_id), average = node.process_total ? node.process_duration_ns / node.process_total : 0
+    const row = document.createElement('tr'); row.className = verdict.severity; row.dataset.observeKind = 'node'; row.dataset.observeId = node.node_id
+    if (state.telemetry.selection?.kind === 'node' && state.telemetry.selection.id === node.node_id) row.classList.add('selected')
+    row.append(entityCell(node.node_id, graph?.node_type || 'runtime Node'), textCell(formatNumber(node.process_total)), textCell(`${formatRate(rate)}/s`), textCell(formatNanos(average)), textCell(formatNanos(node.max_process_duration_ns || 0)), textCell(formatCustomMetricSummary(node)), statusCell(verdict))
+    row.addEventListener('click', () => { state.telemetry.selection = { kind: 'node', id: node.node_id }; renderObservability() }); return row
+  }))
+}
+function renderObserveEdges(edges) {
+  if (!edges.length) return replaceWithEmptyRow($('#observe-edges'), 8, 'No Edge telemetry. Run the Graph first.')
+  $('#observe-edges').replaceChildren(...edges.map((edge) => {
+    const rate = state.telemetry.edgeRates.get(edge.edge_id) || {}, verdict = edgeVerdict(edge), row = document.createElement('tr'); row.className = verdict.severity; row.dataset.observeKind = 'edge'; row.dataset.observeId = edge.edge_id
+    if (state.telemetry.selection?.kind === 'edge' && state.telemetry.selection.id === edge.edge_id) row.classList.add('selected')
+    row.append(entityCell(edge.edge_id, edgeRoute(edge.edge_id)), textCell(formatNumber(edge.enqueue_total)), textCell(`${formatRate(rate.frames || 0)}/s`), queueCell(edge), textCell(formatNanos(edge.oldest_frame_age_ns || 0)), textCell(formatNumber(edge.drop_total)), textCell(edge.audio_duration_ns_total ? `${(rate.mediaRatio || 0).toFixed(2)}×` : '—'), statusCell(verdict))
+    row.addEventListener('click', () => { state.telemetry.selection = { kind: 'edge', id: edge.edge_id }; renderObservability() }); return row
+  }))
+}
+function replaceWithEmptyRow(container, columns, message) { const row = document.createElement('tr'), cell = document.createElement('td'); cell.colSpan = columns; cell.className = 'observe-table-empty'; cell.textContent = message; row.append(cell); container.replaceChildren(row) }
+function entityCell(titleValue, subtitleValue) { const cell = document.createElement('td'); cell.className = 'entity-cell'; const title = document.createElement('b'), subtitle = document.createElement('small'); title.textContent = titleValue; subtitle.textContent = subtitleValue; cell.append(title, subtitle); return cell }
+function textCell(value) { const cell = document.createElement('td'); cell.textContent = value; return cell }
+function statusCell(verdict) { const cell = document.createElement('td'), pill = document.createElement('span'); pill.className = `status-pill ${verdict.severity}`; pill.textContent = verdict.severity; pill.title = verdict.reason; cell.append(pill); return cell }
+function queueCell(edge) { const cell = document.createElement('td'); cell.className = 'queue-cell'; const label = document.createElement('div'); label.className = 'queue-label'; label.textContent = `${edge.queue_len} / ${edge.queue_capacity}`; const meter = document.createElement('div'); meter.className = 'queue-meter'; const fill = document.createElement('i'); fill.style.width = `${Math.min(100, edge.queue_capacity ? edge.queue_len / edge.queue_capacity * 100 : 0)}%`; meter.append(fill); cell.append(label, meter); return cell }
+function formatCustomMetricSummary(node) { const metrics = node.custom_metrics || []; if (!metrics.length) return '—'; return metrics.slice(0, 2).map((metric) => `${metric.name}=${formatNumber(metric.value)}`).join(' · ') + (metrics.length > 2 ? ` +${metrics.length - 2}` : '') }
+function renderObserveDetail() {
+  const selected = state.telemetry.selection, target = $('#observe-detail')
+  if (!selected) { target.innerHTML = '<div class="observe-empty"><span>◎</span><b>Select a Node or Edge</b><p>Inspect the measurements behind its health verdict and get a concrete next action.</p></div>'; return }
+  if (selected.kind === 'node') {
+    const node = (state.runtime.nodes || []).find((value) => value.node_id === selected.id)
+    if (!node) { state.telemetry.selection = null; return renderObserveDetail() }
+    target.replaceChildren(buildNodeDetail(node)); return
+  }
+  const edge = (state.runtime.edges || []).find((value) => value.edge_id === selected.id)
+  if (!edge) { state.telemetry.selection = null; return renderObserveDetail() }
+  target.replaceChildren(buildEdgeDetail(edge))
+}
+function buildNodeDetail(node) {
+  const root = document.createElement('div'), verdict = nodeVerdict(node), rate = state.telemetry.nodeRates.get(node.node_id) || {}, graph = graphNode(node.node_id)
+  root.append(detailHeader('NODE', node.node_id, graph?.node_type || 'runtime Node', verdict), detailDiagnosis(verdict, nodeRecommendation(node, verdict)), detailMetrics([
+    ['Process callbacks', formatNumber(node.process_total)], ['Current rate', `${formatRate(rate.process || 0)}/s`], ['Average process', formatNanos(node.process_total ? node.process_duration_ns / node.process_total : 0)], ['Maximum process', formatNanos(node.max_process_duration_ns || 0)], ['Signals', formatNumber(node.signal_total)], ['Errors / panics', `${node.error_total} / ${node.panic_total}`],
+  ]))
+  root.append(detailList('NODE-REPORTED METRICS', (node.custom_metrics || []).map((metric) => [metric.name, `${formatNumber(metric.value)} (${metric.kind})`]), 'This Node has not reported internal metrics.'))
+  const connected = (state.runtime.edges || []).filter((edge) => { const item = graphEdge(edge.edge_id); return item && (item.from.node_id === node.node_id || item.to.node_id === node.node_id) }).map((edge) => [edge.edge_id, `${edge.queue_len}/${edge.queue_capacity} · ${edgeVerdict(edge).severity}`])
+  root.append(detailList('CONNECTED EDGES', connected, 'No connected Edges.')); return root
+}
+function buildEdgeDetail(edge) {
+  const root = document.createElement('div'), verdict = edgeVerdict(edge), rate = state.telemetry.edgeRates.get(edge.edge_id) || {}, graph = graphEdge(edge.edge_id)
+  root.append(detailHeader('EDGE', edge.edge_id, edgeRoute(edge.edge_id), verdict), detailDiagnosis(verdict, edgeRecommendation(edge, verdict)), detailMetrics([
+    ['Queue now', `${edge.queue_len} / ${edge.queue_capacity}`], ['Session high watermark', `${edge.high_watermark} / ${edge.queue_capacity}`], ['Frame rate', `${formatRate(rate.frames || 0)}/s`], ['Payload throughput', `${formatBytes(rate.bytes || 0)}/s`], ['Oldest frame', formatNanos(edge.oldest_frame_age_ns || 0)], ['Blocked total', formatNanos(edge.blocked_duration_ns || 0)], ['Dropped / full', `${edge.drop_total} / ${edge.full_total}`], ['Audio media speed', edge.audio_duration_ns_total ? `${(rate.mediaRatio || 0).toFixed(2)}× real time` : 'not an Audio Edge'],
+  ]))
+  root.append(detailList('ROUTING CONTRACT', [['From', graph ? `${graph.from.node_id}.${graph.from.port}` : 'unknown'], ['To', graph ? `${graph.to.node_id}.${graph.to.port}` : 'unknown'], ['Overflow', graph?.queue_policy?.overflow || 'block'], ['Latest error', edge.latest_error_reason || 'none']]))
+  return root
+}
+function detailHeader(kind, titleValue, subtitle, verdict) { const section = document.createElement('div'); section.className = 'detail-header'; const eyebrow = document.createElement('span'); eyebrow.className = 'eyebrow'; eyebrow.textContent = kind; const title = document.createElement('h2'); title.textContent = titleValue; const copy = document.createElement('p'); copy.textContent = subtitle; const pill = statusCell(verdict).firstChild; pill.style.marginTop = '10px'; section.append(eyebrow, title, copy, pill); return section }
+function detailDiagnosis(verdict, recommendation) { const section = document.createElement('section'); section.className = 'detail-section'; const heading = document.createElement('h3'); heading.textContent = 'DIAGNOSIS'; const copy = document.createElement('p'); copy.className = 'detail-diagnosis'; const strong = document.createElement('strong'); strong.textContent = `${verdict.reason}. `; copy.append(strong, document.createTextNode(recommendation)); const help = document.createElement('a'); help.className = 'observe-help'; help.href = 'https://piyotahu.github.io/muxiva/observability/'; help.target = '_blank'; help.rel = 'noreferrer'; help.textContent = 'Open troubleshooting guide ↗'; section.append(heading, copy, help); return section }
+function detailMetrics(values) { const section = document.createElement('section'); section.className = 'detail-section'; const heading = document.createElement('h3'); heading.textContent = 'LIVE MEASUREMENTS'; const grid = document.createElement('div'); grid.className = 'detail-grid'; grid.append(...values.map(([labelValue, value]) => { const item = document.createElement('div'); item.className = 'detail-metric'; const label = document.createElement('span'), result = document.createElement('b'); label.textContent = labelValue; result.textContent = value; item.append(label, result); return item })); section.append(heading, grid); return section }
+function detailList(titleValue, values, empty = 'No values.') { const section = document.createElement('section'); section.className = 'detail-section'; const heading = document.createElement('h3'); heading.textContent = titleValue; const list = document.createElement('div'); list.className = 'detail-list'; if (!values.length) { const item = document.createElement('div'); item.textContent = empty; list.append(item) } else list.append(...values.map(([name, value]) => { const item = document.createElement('div'), label = document.createElement('span'), code = document.createElement('code'); label.textContent = name; code.textContent = value; item.append(label, code); return item })); section.append(heading, list); return section }
+function nodeRecommendation(node, verdict) { if (verdict.severity === 'healthy') return 'No action is required.'; const queueMs = Number(customMetric(node, 'ingress.queue_duration_ms') || 0); if (queueMs) return 'The Node owns an internal input queue. Increase its drain cadence or emit more than one buffered frame per tick; increasing a downstream Edge capacity only hides this delay.'; if (node.error_total || node.panic_total) return 'Open runtime.log and search this Node ID to inspect its latest callback failure.'; return 'Inspect connected Edges first. If their queues are healthy, profile this Node callback or move blocking I/O off the callback path.' }
+function edgeRecommendation(edge, verdict) { if (verdict.severity === 'healthy') return 'No action is required.'; if (edge.drop_total) return 'Frames have already been lost. Fix the slow consumer or the producer rate before changing overflow policy.'; if (edge.queue_len) return 'Compare producer and consumer rates, then inspect the destination Node. A larger capacity delays failure but increases end-to-end latency.'; return 'Inspect the destination Node callback and runtime.log for blocking or errors.' }
+function formatRate(value) { if (!Number.isFinite(value)) return '0'; return value >= 100 ? Math.round(value).toString() : value >= 10 ? value.toFixed(1) : value.toFixed(2) }
+function formatNumber(value) { return new Intl.NumberFormat('en-US', { notation: Number(value) >= 100000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(Number(value) || 0) }
+function formatBytes(value) { if (value < 1024) return `${formatRate(value)} B`; if (value < 1048576) return `${formatRate(value / 1024)} KiB`; return `${formatRate(value / 1048576)} MiB` }
 function formatDuration(milliseconds) {
   if (milliseconds < 1000) return `${milliseconds} ms`
   return `${(milliseconds / 1000).toFixed(milliseconds < 10000 ? 1 : 0)} s`
@@ -886,8 +1216,41 @@ function applyRaw() {
   } catch (error) { $('#raw-error').textContent = error.message }
 }
 
-function setZoom(value) { state.zoom = Math.min(1.4, Math.max(.6, Number(value.toFixed(1)))); $('#zoom-label').textContent = `${Math.round(state.zoom * 100)}%`; renderCanvas() }
-function fitView() { setZoom(state.graph.nodes.length > 5 ? .8 : 1) }
+function setZoom(value, pointer = null) {
+  const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value))
+  if (Math.abs(next - state.zoom) < .0001) return
+  state.zoom = next
+  applyViewport()
+  if (pointer) {
+    const shiftedAnchor = canvasPoint(pointer.clientX, pointer.clientY)
+    state.viewport.x += pointer.anchor.x - shiftedAnchor.x
+    state.viewport.y += pointer.anchor.y - shiftedAnchor.y
+    applyViewport()
+  }
+}
+function fitView() {
+  if (!state.graph.nodes.length) {
+    state.viewport = { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }
+    state.zoom = 1
+    applyViewport()
+    return
+  }
+  const bounds = state.graph.nodes.reduce((result, node) => {
+    const position = state.positions[node.id]
+    if (!position) return result
+    result.left = Math.min(result.left, position.x)
+    result.top = Math.min(result.top, position.y)
+    result.right = Math.max(result.right, position.x + 220)
+    result.bottom = Math.max(result.bottom, position.y + nodeHeight(nodeInfo(node)))
+    return result
+  }, { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity })
+  const padding = 90
+  const contentWidth = Math.max(1, bounds.right - bounds.left + padding * 2)
+  const contentHeight = Math.max(1, bounds.bottom - bounds.top + padding * 2)
+  state.viewport = { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 }
+  state.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(VIEWPORT_WIDTH / contentWidth, VIEWPORT_HEIGHT / contentHeight)))
+  applyViewport()
+}
 function toast(message, error = false) {
   const element = $('#toast'); element.textContent = message; element.classList.toggle('error', error); element.classList.add('show')
   clearTimeout(toast.timer); toast.timer = setTimeout(() => element.classList.remove('show'), 2400)

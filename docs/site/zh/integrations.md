@@ -11,6 +11,9 @@ Turn；这些语义留在对应 Node 中。
 - `qwen.asr_realtime`：Qwen Server VAD + ASR，也是级联打断 Signal 的来源。
 - `qwen.llm_stream`、`qwen.tts_realtime`：可替换的后台 Node，通过 Tick 排空结果，并在
   `muxiva.voice.speech.started` 时关闭进行中的厂商连接。
+- `pi.agent`：Demo 2 的项目内 TypeScript Agent Node；它在该 Graph 中替换
+  `qwen.llm_stream`，通过 Pi 使用 Qwen，负责会话与 Tool Call，并遵守可复用的
+  [`@muxiva/agent` 契约](nodes/pi-agent.md)。
 
 项目 Node 放在 `.muxiva/nodes/`。每个目录包含 `muxiva.node.json` 和语言入口文件；Studio
 可以查看源码、注册并拖入 Graph。Connection 字段通过 Manifest 声明，真实值写入被

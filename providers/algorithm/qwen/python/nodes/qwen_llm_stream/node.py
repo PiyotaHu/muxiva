@@ -203,9 +203,7 @@ class QwenLlmStreamNode:
                 continue
             if kind == "delta":
                 ctx.emit("text_out", muxiva.TextFrame(value, sequence=sequence))
-                self._emit_client_event(
-                    ctx, "muxiva.voice.response.delta", {"text": value}, sequence
-                )
+                ctx.publish_notification("muxiva.voice.response.delta", {"text": value})
             elif kind == "done":
                 answer = value["answer"]
                 if answer:
@@ -215,7 +213,7 @@ class QwenLlmStreamNode:
                             {"role": "assistant", "content": answer},
                         ])
                         self._history = self._history[-12:]
-                    self._emit_client_event(
+                    self._emit_event(
                         ctx, "muxiva.voice.response.completed", {"text": answer}, sequence
                     )
                 self._log("generation.completed", generation=generation, chars=len(answer))
@@ -223,9 +221,9 @@ class QwenLlmStreamNode:
                 raise RuntimeError(f"Qwen LLM stream failed: {value}")
 
     @staticmethod
-    def _emit_client_event(ctx: Any, topic: str, payload: dict[str, Any], sequence: int) -> None:
+    def _emit_event(ctx: Any, topic: str, payload: dict[str, Any], sequence: int) -> None:
         ctx.emit(
-            "client_event_out",
+            "event_out",
             muxiva.EventFrame(
                 topic,
                 json.dumps(payload, separators=(",", ":"), ensure_ascii=False),

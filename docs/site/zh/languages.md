@@ -41,7 +41,9 @@ Graph 只保存 `node_type + language + factory_version` 和配置。源码、�
 ## 当前官方 Node 的分层示例
 
 - Agora Transport Node 使用 C++，贴近官方 Native SDK、音频回调和 RTC 生命周期；
-- Qwen Algorithm Node 使用 Python，贴近模型 API、流式事件与算法迭代；
+- Qwen 语音 Algorithm Node 使用 Python，贴近模型 API、流式事件与算法迭代；
+- Demo 2 的 Pi Agent 使用受管理 TypeScript Host 与可复用 `@muxiva/agent` 契约，
+  管理会话、工具、流式输出和取消；
 - Rust Core 只看标准 Frame 和生命周期，不导入任何 Agora 或 Qwen 业务代码。
 
 从对应教程开始：[Rust](nodes/rust.md) · [C++](nodes/cpp.md) ·

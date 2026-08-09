@@ -59,6 +59,7 @@ plugins:
             Voice credentials checklist: 语音凭据清单
             Remote and headless Linux: 远程与无 GUI Linux
             Studio: Studio 可视化开发
+            Observability: 可观测性与堵点定位
             Core concepts: 核心概念
             System overview: 系统全景
             Rust Core model: Rust Core 模型
@@ -73,6 +74,7 @@ plugins:
             Node packages: Node Package
             Python: Python
             TypeScript: TypeScript
+            TypeScript Agent and Pi: TypeScript Agent 与 Pi
             Rust: Rust
             C++: C++
             Integrations: 集成
@@ -117,6 +119,7 @@ nav:
       - Flagship voice demo: voice-demo.md
       - Remote and headless Linux: remote-studio.md
       - Studio: studio.md
+      - Observability: observability.md
   - Core concepts:
       - System overview: concepts.md
       - Rust Core model: core-runtime.md
@@ -131,6 +134,7 @@ nav:
       - Node packages: nodes/index.md
       - Python: nodes/python.md
       - TypeScript: nodes/typescript.md
+      - TypeScript Agent and Pi: nodes/pi-agent.md
       - Rust: nodes/rust.md
       - C++: nodes/cpp.md
   - Integrations:

@@ -9,11 +9,11 @@
   "entrypoint": "AgoraDataSinkNode",
   "category": "transport",
   "capability": "rtc.data.egress",
-  "summary": "Publishes versioned client messages through the shared Agora RTC data stream.",
+  "summary": "Packetizes and publishes application messages through the shared Agora RTC data stream.",
   "connection_id": "agora",
   "tags": ["rtc", "data", "events", "egress"],
   "ports": [
-    { "name": "message_in", "direction": "input", "frame_type": "byte", "schema": { "media_type": "application/vnd.muxiva.client-event+json", "maximum_bytes": 1024, "streaming": true } }
+    { "name": "message_in", "direction": "input", "frame_type": "byte", "schema": { "maximum_bytes": 32768, "transport_packet_bytes": 1024, "streaming": true } }
   ],
   "config_schema": { "type": "object", "properties": {}, "additionalProperties": false }
 }

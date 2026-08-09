@@ -73,6 +73,9 @@ fn init_creates_a_project_that_all_graph_commands_accept() {
     assert!(created.status.success());
     assert!(project.join("graph.json").is_file());
     assert!(project.join("README.md").is_file());
+    assert!(fs::read_to_string(project.join(".gitignore"))
+        .unwrap()
+        .contains(".muxiva/observability/"));
     assert!(project.join(".muxiva/nodes").is_dir());
     assert!(project.join(".muxiva/templates").is_dir());
 

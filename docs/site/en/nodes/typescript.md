@@ -18,16 +18,24 @@ values are retained as compatibility sugar, but explicit emission supports
 multiple actions during one lifecycle callback.
 
 The standalone `@muxiva/core` SDK executes hosted TypeScript Nodes inside a
-dedicated Worker. Values crossing the boundary must be structured-clone
-compatible, and V1 callbacks are synchronous.
+dedicated Worker. Studio project Nodes run in a managed Node.js subprocess so
+the Runtime can load the actual module, await asynchronous lifecycle methods,
+stream explicit Context actions, and terminate the process on shutdown.
 
-## Current Studio boundary
+## Studio runtime contract
 
-Studio project-package execution is not active yet. Saving makes the package
-discoverable but does not permit it in a runnable Graph. The planned Host must:
+Studio activates a TypeScript package when Node.js 22.19 or newer is available.
+The Host:
 
-1. resolve a locked `@muxiva/core` dependency;
-2. type-check the package;
-3. load the exact exported entrypoint in a Worker;
-4. enforce lifecycle, cancellation, payload, and shutdown limits;
-5. return structured diagnostics to Studio.
+1. loads the exact exported entrypoint from `node.ts`;
+2. passes Manifest configuration and the current input Port to every callback;
+3. awaits all five lifecycle callbacks when they return Promises;
+4. carries typed Frame emissions and NotificationBus publications over a
+   bounded JSON-lines protocol;
+5. reserves stdout for protocol messages and sends application diagnostics to
+   Studio's `runtime.log` through stderr.
+
+Long-running provider streams must not keep `onProcess` blocked. Start the
+request in the background, buffer bounded results, and drain them from a Tick
+input so `onSignal` can cancel immediately. The reusable
+[`@muxiva/agent` contract](pi-agent.md) implements this policy for Agent Nodes.

@@ -277,6 +277,12 @@ struct GraphEmission {
   muxiva_frame_view_v1 frame{};
 };
 
+struct GraphMetric {
+  std::string name;
+  std::uint32_t operation = MUXIVA_NODE_METRIC_GAUGE_SET;
+  std::uint64_t value = 0;
+};
+
 class GraphNodeContext {
  public:
   explicit GraphNodeContext(std::string_view input_port) : input_port_(input_port) {}
@@ -288,7 +294,14 @@ class GraphNodeContext {
     next_source_tick_ns_ = delay.count() > 0
         ? static_cast<std::uint64_t>(delay.count()) : 1;
   }
+  void increment_counter(std::string name, std::uint64_t delta = 1) {
+    metrics_.push_back({std::move(name), MUXIVA_NODE_METRIC_COUNTER_ADD, delta});
+  }
+  void set_gauge(std::string name, std::uint64_t value) {
+    metrics_.push_back({std::move(name), MUXIVA_NODE_METRIC_GAUGE_SET, value});
+  }
   std::vector<GraphEmission> take_emissions() { return std::move(emissions_); }
+  std::vector<GraphMetric> take_metrics() { return std::move(metrics_); }
   std::uint64_t take_next_source_tick_ns() noexcept {
     const auto value = next_source_tick_ns_;
     next_source_tick_ns_ = 0;
@@ -298,6 +311,7 @@ class GraphNodeContext {
  private:
   std::string_view input_port_;
   std::vector<GraphEmission> emissions_;
+  std::vector<GraphMetric> metrics_;
   std::uint64_t next_source_tick_ns_ = 0;
 };
 
@@ -325,6 +339,8 @@ struct MultimodalNodeBox {
   std::unique_ptr<MultimodalGraphNode> implementation;
   std::vector<GraphEmission> emissions;
   std::vector<muxiva_named_frame_v1> views;
+  std::vector<GraphMetric> metrics;
+  std::vector<muxiva_node_metric_v1> metric_views;
   std::uint64_t next_source_tick_ns = 0;
 };
 inline muxiva_status_v1 multimodal_prepare(void* data, muxiva_error_v1* error) noexcept {
@@ -343,6 +359,7 @@ inline muxiva_status_v1 multimodal_process(
     GraphNodeContext context(port);
     box->implementation->on_process(input, context);
     box->emissions = context.take_emissions();
+    box->metrics = context.take_metrics();
     box->next_source_tick_ns = context.take_next_source_tick_ns();
     box->views.clear();
     box->views.reserve(box->emissions.size());
@@ -353,6 +370,21 @@ inline muxiva_status_v1 multimodal_process(
     *output_count = box->views.size();
     return MUXIVA_STATUS_OK;
   } catch (...) { write_exception(error); return MUXIVA_STATUS_FOREIGN_EXCEPTION; }
+}
+inline void multimodal_take_metrics(
+    void* data, const muxiva_node_metric_v1** output,
+    size_t* output_count) noexcept {
+  if (data == nullptr || output == nullptr || output_count == nullptr) return;
+  auto* box = static_cast<MultimodalNodeBox*>(data);
+  box->metric_views.clear();
+  box->metric_views.reserve(box->metrics.size());
+  for (const auto& metric : box->metrics) {
+    box->metric_views.push_back({{metric.name.data(), metric.name.size()},
+                                 metric.operation, 0, metric.value});
+  }
+  *output = box->metric_views.empty() ? nullptr : box->metric_views.data();
+  *output_count = box->metric_views.size();
+  box->metrics.clear();
 }
 inline muxiva_status_v1 multimodal_finish(void* data, muxiva_error_v1* error) noexcept {
   try { static_cast<MultimodalNodeBox*>(data)->implementation->on_finish(); return MUXIVA_STATUS_OK; }
@@ -391,6 +423,7 @@ inline muxiva_graph_node_vtable_v1 multimodal_vtable(MultimodalGraphNode* implem
   table.on_abort = multimodal_abort;
   table.destroy = multimodal_destroy;
   table.take_next_source_tick_ns = multimodal_take_next_source_tick;
+  table.take_metrics = multimodal_take_metrics;
   return table;
 }
 }  // namespace detail

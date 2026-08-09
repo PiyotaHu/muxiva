@@ -1,0 +1,46 @@
+{
+  "format": "muxiva.node/v1",
+  "package_id": "pi_agent",
+  "display_name": "Pi TypeScript Voice Agent",
+  "node_type": "pi.agent",
+  "language": "typescript",
+  "factory_version": "1.0.0",
+  "kind": "transform",
+  "entrypoint": "node:PiAgentNode",
+  "category": "algorithm",
+  "capability": "agent.reasoning.tool_use.cancellable_streaming",
+  "summary": "Runs a stateful Pi TypeScript agent with Qwen, safe tools, streaming output, and hard cancellation.",
+  "documentation": "https://piyotahu.github.io/muxiva/nodes/pi-agent/",
+  "tags": ["agent", "pi", "typescript", "tools", "streaming", "cancellation"],
+  "connection": {
+    "id": "dashscope",
+    "display_name": "Alibaba Cloud Model Studio",
+    "description": "Create both values in Alibaba Cloud Model Studio China (Beijing), in the same workspace.",
+    "fields": [
+      { "name": "api_key", "label": "API Key", "environment": "DASHSCOPE_API_KEY", "secret": true, "required": true, "default": "", "help": "Create a pay-as-you-go Model Studio API Key in China (Beijing) and copy it when shown.", "acquire_url": "https://bailian.console.aliyun.com/" },
+      { "name": "workspace_id", "label": "Workspace ID", "environment": "DASHSCOPE_WORKSPACE_ID", "secret": false, "required": true, "default": "", "help": "Open the top-right workspace menu and copy the ID for the same workspace and region as the API Key.", "acquire_url": "https://help.aliyun.com/zh/model-studio/obtain-the-app-id-and-workspace-id" }
+    ]
+  },
+  "ports": [
+    { "name": "prompt_in", "direction": "input", "frame_type": "text", "schema": { "semantics": "agent_prompt", "streaming": false } },
+    { "name": "tick_in", "direction": "input", "frame_type": "event", "schema": { "semantics": ["runtime_tick"], "streaming": true } },
+    { "name": "signal_in", "direction": "input", "frame_type": "signal", "schema": { "semantics": ["agent_cancel", "barge_in"] } },
+    { "name": "text_out", "direction": "output", "frame_type": "text", "schema": { "semantics": "assistant_delta", "streaming": true } },
+    { "name": "event_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["agent_lifecycle", "tool_lifecycle", "failure"], "streaming": true } }
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "model": { "type": "string", "default": "qwen-flash" },
+      "system_prompt": { "type": "string", "default": "You are Muxiva, a warm, concise real-time voice agent. Use tools whenever current facts are needed. Respond in the user's language." },
+      "temperature": { "type": "number", "minimum": 0, "maximum": 2, "default": 0.6 },
+      "max_tokens": { "type": "integer", "minimum": 64, "maximum": 8192, "default": 2048 },
+      "max_results_per_tick": { "type": "integer", "minimum": 1, "maximum": 1024, "default": 64 },
+      "max_queue_size": { "type": "integer", "minimum": 16, "maximum": 65536, "default": 2048 },
+      "sentence_chunk_characters": { "type": "integer", "minimum": 8, "maximum": 512, "default": 80 },
+      "cancel_signals": { "type": "array", "items": { "type": "string" }, "default": ["muxiva.agent.cancel", "muxiva.voice.speech.started"] }
+    },
+    "required": ["model", "system_prompt"],
+    "additionalProperties": false
+  }
+}

@@ -4,7 +4,7 @@
   "display_name": "Qwen Cancellable Streaming LLM",
   "node_type": "qwen.llm_stream",
   "language": "python",
-  "factory_version": "1.1.0",
+  "factory_version": "1.2.0",
   "kind": "transform",
   "entrypoint": "node:QwenLlmStreamNode",
   "category": "algorithm",
@@ -18,7 +18,7 @@
     { "name": "tick_in", "direction": "input", "frame_type": "event", "schema": { "semantics": ["runtime_tick"], "streaming": true } },
     { "name": "signal_in", "direction": "input", "frame_type": "signal", "schema": { "semantics": ["graph_control", "barge_in"] } },
     { "name": "text_out", "direction": "output", "frame_type": "text", "schema": { "semantics": "assistant_delta", "streaming": true } },
-    { "name": "client_event_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["client_realtime_event"], "streaming": true } }
+    { "name": "event_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["response_completed"], "streaming": true } }
   ],
   "config_schema": {
     "type": "object",
