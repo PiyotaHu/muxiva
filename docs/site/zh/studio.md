@@ -7,7 +7,12 @@ Runtime Compiler 使用的严格 Graph v1 文档，不存在浏览器专用图�
 
 ```bash
 muxiva studio
+# 旗舰语音项目的跨平台显式入口
+./examples/voice-agent/run.sh --studio
 ```
+
+macOS/Windows Shell 直接运行 `run.sh` 也默认进入 Studio；Linux 默认 Headless，因此在
+Linux 上打开 Studio 必须写 `--studio`。
 
 无参数启动时，CLI 按顺序发现当前项目的 `graph.json`、独立的
 `muxiva.graph.json`，以及 Muxiva 源码仓库内的旗舰 Voice Agent。都不存在时会创建一份

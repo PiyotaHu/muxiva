@@ -50,10 +50,16 @@ tokens, Model Studio API Key, and Workspace ID.
 ```bash
 ./examples/voice-agent/setup.sh
 cp examples/voice-agent/.env.example examples/voice-agent/.env
+# macOS: open Studio by default
 ./examples/voice-agent/run.sh
-# In another terminal:
+# Linux / Docker: start the Headless Runtime
+./examples/voice-agent/run.sh --headless
+# In another terminal for headless mode:
 cd examples/voice-agent && npm run voice-room
 ```
+
+`run.sh` defaults to Studio in macOS and Windows shells, and to Headless Runtime
+on Linux. `--studio` and `--headless` explicitly override the platform default.
 
 ## Create and run a graph
 

@@ -178,6 +178,38 @@ fn run_executes_the_initialized_graph_through_the_concurrent_runtime() {
 }
 
 #[test]
+fn run_rejects_missing_project_credentials_before_starting_node_hosts() {
+    let directory = TestDirectory::new("run-credential-preflight");
+    let project = directory.0.join("agent");
+    assert!(muxiva(&["init", project.to_str().unwrap()], &directory.0)
+        .status
+        .success());
+    let package = project.join(".muxiva/nodes/requires_key");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("muxiva.node.json"),
+        r#"{"format":"muxiva.node/v1","package_id":"requires_key","display_name":"Requires Key","node_type":"test.requires_key","language":"python","factory_version":"1.0.0","kind":"source","entrypoint":"node:Node","ports":[],"config_schema":{"type":"object"},"connection":{"id":"test_service","display_name":"Test Service","description":"Test-only connection","fields":[{"name":"api_key","label":"API Key","environment":"MUXIVA_TEST_REQUIRED_CLI_KEY","secret":true,"required":true,"default":""}]}}"#,
+    )
+    .unwrap();
+    fs::write(package.join("node.py"), "class Node:\n    pass\n").unwrap();
+    fs::write(
+        project.join("graph.json"),
+        r#"{"version":"muxiva.graph/v1","graph_id":"preflight","nodes":[{"id":"guarded","node_type":"test.requires_key","language":"python","factory_version":"1.0.0","node_config":{}}],"edges":[]}"#,
+    )
+    .unwrap();
+
+    let output = muxiva(&["run", project.to_str().unwrap()], &directory.0);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(error.contains("required project credentials are missing"));
+    assert!(error.contains("Test Service / API Key (MUXIVA_TEST_REQUIRED_CLI_KEY)"));
+    assert!(error.contains(project.join(".env").to_str().unwrap()));
+    assert!(error.contains("Studio is optional"));
+    assert!(!error.contains("Project Node Host"));
+}
+
+#[test]
 fn installed_binary_labels_synthetic_simulation_and_reports_version() {
     let directory = TestDirectory::new("simulate");
     let version = muxiva(&["--version"], &directory.0);

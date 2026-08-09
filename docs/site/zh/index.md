@@ -21,6 +21,9 @@ Node 提供语音、推理、媒体、传输与业务能力。
 ./examples/voice-agent/run.sh
 ```
 
+macOS/Windows 默认进入 Studio；Linux 默认进入 Headless Runtime。可用 `--studio` 或
+`--headless` 显式选择。
+
 ```mermaid
 flowchart LR
     WEB["浏览器麦克风"] --> AGORA_IN["Agora C++ Ingress"]

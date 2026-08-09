@@ -23,6 +23,9 @@ reasoning, media, transport, and business logic.
 ./examples/voice-agent/run.sh
 ```
 
+macOS/Windows shells default to Studio; Linux defaults to Headless Runtime. Use
+`--studio` or `--headless` to choose explicitly.
+
 ```mermaid
 flowchart LR
     WEB["Browser microphone"] --> AGORA_IN["Agora C++ ingress"]

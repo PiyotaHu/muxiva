@@ -111,7 +111,7 @@ read, search, create, and edit files inside a bounded workspace, and can use
 the same Model Studio credentials for cited live web search. See the
 [Agent integration SOP](nodes/agent-integration.md) for application-owned Agents.
 
-## 4. Start the Headless Runtime and standalone Voice Room
+## 4. Choose Studio or Headless startup
 
 Create the local credential file once. It is Git ignored and loaded by both the CLI and optional Studio:
 
@@ -123,10 +123,19 @@ muxiva doctor --voice
 
 `doctor` must report the Agora Node Packs, Qwen Python environment, and Pi TypeScript Agent as ready. A `MISSING` line means `.env` is incomplete.
 
-Terminal A starts the Graph. `run.sh` now invokes `muxiva serve`; it does not start Studio:
+For local macOS development, the following command opens Studio by default. Windows Git Bash uses
+the same command; PowerShell can run `muxiva studio examples/voice-agent/graph.json`:
 
 ```bash
 ./examples/voice-agent/run.sh
+```
+
+Select a template, use **Run**, and debug Nodes and Edges through **◎ Observe**. On Linux, Docker,
+SSH, or when certifying the separated frontend/backend path, terminal A explicitly starts the
+Headless Runtime:
+
+```bash
+./examples/voice-agent/run.sh --headless
 ```
 
 Terminal B serves static browser files only:
@@ -136,7 +145,7 @@ cd examples/voice-agent
 npm run voice-room
 ```
 
-Open `http://127.0.0.1:4173`, keep Backend URL at `http://127.0.0.1:8080`, select **Test connection**, then start the conversation. The web client and Runtime are independent processes. See [Headless Runtime and standalone web client](headless-deployment.md) for macOS, Windows, SSH, public-address, and Docker commands. Studio remains available to edit Graph and VAD configuration, but is no longer part of startup or conversation delivery.
+Open `http://127.0.0.1:4173`, keep Backend URL at `http://127.0.0.1:8080`, select **Test connection**, then start the conversation. The web client and Runtime are independent processes. `run.sh` defaults to Studio in macOS/Windows shells and Headless Runtime on Linux; `--studio` and `--headless` override the default. See [Headless Runtime and standalone web client](headless-deployment.md) for SSH, public-address, and Docker commands. The project Voice Room remains independent from Studio; a complete browser conversation uses the Client API provided by headless mode.
 
 After Realtime works, switch to **Pi Agent Full-Duplex Cascade (Demo 2)** to inspect
 Qwen Server VAD + Streaming ASR → a stateful TypeScript Agent with Tool Calls →

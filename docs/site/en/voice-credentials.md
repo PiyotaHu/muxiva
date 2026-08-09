@@ -4,9 +4,10 @@ This is the copy-and-follow path for a first run. You obtain **five values**: on
 two RTC tokens, one Model Studio API key, and one Workspace ID. Keep Muxiva's default channel and
 two numeric UIDs.
 
-!!! warning "Do not select Run yet"
-    Wait until both cards in Studio **Connections** show **Ready**, then select a Graph and open
-    Voice Room.
+!!! warning "Complete the project `.env` first"
+    The headless Runtime does not depend on Studio. Save credentials in this checkout's
+    `examples/voice-agent/.env`, then run `muxiva doctor --voice`. Studio Connections is only an
+    optional graphical editor for the same file.
 
 ## Field map
 
@@ -30,7 +31,7 @@ The Agora **App Certificate never goes into Muxiva**. It is used only by Token B
 1. Sign in to [Agora Console](https://console.agora.io/).
 2. Open [Projects](https://console.agora.io/legacy/project-management) and select **Create New**.
 3. Enter a name and choose **Secured mode: APP ID + Token (Recommended)**.
-4. Copy the **App ID** from the project list. This is Studio's App ID.
+4. Copy the **App ID** from the project list into `MUXIVA_AGORA_APP_ID` in `.env`.
 
 See Agora's official [account and project guide](https://docs.agora.io/en/realtime-media/voice/manage-agora-account).
 
@@ -53,7 +54,7 @@ changes.
 | User ID / UID | `1001` | `2001` |
 | Token expiration time | `3600` (one hour for evaluation) | `3600` |
 | Channel name | `muxiva-demo` | `muxiva-demo` |
-| Paste result into Studio | Browser Token | Muxiva Bot Token |
+| Paste result into `.env` | `MUXIVA_AGORA_WEB_TOKEN` | `MUXIVA_AGORA_BOT_TOKEN` |
 
 !!! important "You do not pre-create the channel"
     `muxiva-demo` is a case-sensitive room name agreed by every participant. It must match Token
@@ -76,7 +77,7 @@ identities, this guide uses Token Builder to generate two explicit numeric-UID t
 1. Open **API Key** and select **Create API Key**.
 2. For a first run, select the default workspace and all model permissions.
 3. Copy the complete key immediately. If it is lost, reset it or create another key.
-4. Paste it into **Alibaba Cloud Model Studio → API Key** in Studio.
+4. Paste it into `DASHSCOPE_API_KEY` in `.env`.
 
 Official instructions: [obtain an API key](https://help.aliyun.com/en/model-studio/get-api-key).
 Muxiva expects a pay-as-you-go Model Studio key, not a Coding Plan or Token Plan key.
@@ -87,7 +88,7 @@ Muxiva expects a pay-as-you-go Model Studio key, not a Coding Plan or Token Plan
 2. Open the workspace control in the upper-right and copy the current **Workspace ID**, or copy it
    from Workspace Management.
 3. Confirm that this is the same workspace selected when the API key was created.
-4. Paste it into Studio's **Workspace ID**.
+4. Paste it into `DASHSCOPE_WORKSPACE_ID` in `.env`.
 
 Official instructions: [obtain a Workspace ID](https://help.aliyun.com/en/model-studio/obtain-the-app-id-and-workspace-id).
 A region or workspace mismatch causes WebSocket authentication failures.
@@ -101,17 +102,26 @@ protocols, and `setup.sh` installs the Python dependency.
 cd /path/to/Muxiva
 cp examples/voice-agent/.env.example examples/voice-agent/.env
 # Edit the file with the values listed below.
+# macOS defaults to Studio
 ./examples/voice-agent/run.sh
+# Linux / Docker / servers use the Headless Runtime
+./examples/voice-agent/run.sh --headless
 ```
 
 1. Save the Agora and Model Studio fields in the project `.env`.
 2. Run `muxiva doctor --voice` and resolve every `MISSING` line.
-3. Run `run.sh` and wait for `runtime.started mode=headless`.
-4. In another terminal run `cd examples/voice-agent && npm run voice-room`.
-5. Open `http://127.0.0.1:4173`, test the Backend URL, and start the conversation.
-6. Allow microphone access, say a complete sentence, and pause for the first response.
+3. For macOS/Windows local development, run `run.sh` (or explicit `--studio`) and use Studio.
+4. On Linux or in deployment, run `run.sh --headless` and wait for `runtime.started mode=headless`.
+5. For headless mode, run `cd examples/voice-agent && npm run voice-room` in another terminal.
+6. Open `http://127.0.0.1:4173`, test the Backend URL, and start the conversation.
+7. Allow microphone access, say a complete sentence, and pause for the first response.
 
 Credentials remain in the Git-ignored `examples/voice-agent/.env`; later runs load it automatically:
+
+The file is local to the **current project checkout**. A fresh clone, another machine, or a second
+working directory does not share it automatically. Explicitly copy the old project's `.env`, or
+create it again from `.env.example`. When a value is absent, Muxiva now lists every missing field
+and the absolute file path it read before it creates any Node Host.
 
 ```dotenv
 MUXIVA_AGORA_APP_ID="..."

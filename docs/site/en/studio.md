@@ -7,7 +7,12 @@ the same strict Graph v1 document used by validation and runtime compilation.
 
 ```bash
 muxiva studio
+# Explicit cross-platform entry for the flagship voice project
+./examples/voice-agent/run.sh --studio
 ```
+
+Running `run.sh` without a mode also defaults to Studio in macOS/Windows shells.
+Linux defaults to Headless Runtime, so use explicit `--studio` there.
 
 With no argument, the CLI discovers the current project's `graph.json`, a
 standalone `muxiva.graph.json`, or the flagship Voice Agent inside a Muxiva source

@@ -30,10 +30,10 @@ muxiva studio . --host 127.0.0.1 --port 5678 --no-open
 
 ```bash
 cd /srv/Muxiva
-./examples/voice-agent/run.sh --host 127.0.0.1 --port 5678 --no-open
+./examples/voice-agent/run.sh --studio --host 127.0.0.1 --port 5678 --no-open
 ```
 
-无 `DISPLAY`/`WAYLAND_DISPLAY` 时，`run.sh` 会自动禁用打开浏览器。它会打印类似：
+远程 Linux 默认是 Headless Runtime，因此这里必须显式写 `--studio --no-open`。它会打印类似：
 
 ```text
 [MUXIVA][INFO][studio.ready] url=http://127.0.0.1:5678/#<ACCESS_TOKEN>
@@ -73,7 +73,7 @@ Linux 服务器上的 C++ Bot 使用另一个 UID 加入同一 Channel。
 
 ```bash
 tmux new -s muxiva
-./examples/voice-agent/run.sh --host 127.0.0.1 --port 5678 --no-open
+./examples/voice-agent/run.sh --studio --host 127.0.0.1 --port 5678 --no-open
 ```
 
 按 `Ctrl-b`，再按 `d` 退出会话；重新连接后：
@@ -133,7 +133,7 @@ Studio 可以读写 Graph、保存 Connections 并启动 Runtime；不要把它�
 
 | 现象 | 处理 |
 | --- | --- |
-| 服务器提示 `xdg-open` 失败 | 加 `--no-open`；新版本 `run.sh` 在无桌面 Linux 会自动添加 |
+| 服务器提示 `xdg-open` 失败 | 使用 `run.sh --studio ... --no-open` |
 | 本地浏览器连接被拒绝 | 确认 Studio 仍运行、两端都使用 `5678`、SSH 隧道没有退出 |
 | 页面提示访问 Token 无效 | 必须复制本次启动输出的完整 URL，包括 `#` 后内容 |
 | Studio 能开但麦克风不可用 | 使用本地 `127.0.0.1` 隧道 URL，不要使用远程裸 HTTP 地址 |

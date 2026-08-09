@@ -103,7 +103,7 @@ MUXIVA_PI_AGENT_REF=v1.0.0 \
 
 ```bash
 muxiva doctor --voice
-./examples/voice-agent/run.sh
+./examples/voice-agent/run.sh --studio
 ```
 
 在 Studio 选择 **Pi Agent Full-Duplex Cascade（Demo 2）**，进入 Voice Room。先说：

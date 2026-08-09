@@ -11,6 +11,11 @@ bash -n \
   "$repository_root/examples/voice-agent/setup.sh" \
   "$repository_root/examples/voice-agent/run.sh"
 
+studio_command="$(MUXIVA_BIN=/bin/echo "$repository_root/examples/voice-agent/run.sh" --studio --port 5678 --no-open | tail -n 1)"
+headless_command="$(MUXIVA_BIN=/bin/echo "$repository_root/examples/voice-agent/run.sh" --headless --port 18080 | tail -n 1)"
+test "$studio_command" = "studio $repository_root/examples/voice-agent/graph.json --port 5678 --no-open"
+test "$headless_command" = "serve $repository_root/examples/voice-agent/graph.json --port 18080"
+
 "$repository_root/scripts/check-agent-typescript.sh"
 
 cxx_system=()
