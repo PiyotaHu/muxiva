@@ -1,7 +1,9 @@
 //! Local-only Muxiva Graph Studio server with bundled, dependency-free assets.
 
+mod media_dump;
 mod node_library;
 mod observability;
+mod semantic_trace;
 
 use std::{
     collections::VecDeque,
@@ -18,8 +20,9 @@ use std::{
 };
 
 use muxiva_core::{
-    start_registered_runtime_with_context, EdgePolicies, GraphRuntime, NotificationBus,
-    ResourceStore, RuntimeOptions, RuntimeWaitError,
+    start_registered_runtime_with_context_and_observer, EdgePolicies, FrameObservation,
+    GraphRuntime, NotificationBus, ResourceStore, RuntimeObserver, RuntimeOptions,
+    RuntimeWaitError, SignalObservation,
 };
 use muxiva_graph_json::{GraphDiagnostic, GraphDocument, MAX_DOCUMENT_BYTES};
 use muxiva_types::{EdgeId, NamespacedName, NodeId};
@@ -30,6 +33,8 @@ const STYLES: &str = include_str!("assets/studio.css");
 const RUNTIME_STYLES: &str = include_str!("assets/runtime.css");
 const OBSERVABILITY_STYLES: &str = include_str!("assets/observability.css");
 const OBSERVABILITY_HISTORY_STYLES: &str = include_str!("assets/observability-history.css");
+const MEDIA_DUMP_STYLES: &str = include_str!("assets/media-dump.css");
+const SEMANTIC_TRACE_STYLES: &str = include_str!("assets/semantic-trace.css");
 const NODE_LAB_STYLES: &str = include_str!("assets/node-lab.css");
 const PROVIDER_HELP_STYLES: &str = include_str!("assets/provider-help.css");
 const SCRIPT: &str = include_str!("assets/studio.js");
@@ -54,6 +59,24 @@ struct StudioRuntime {
     connections: node_library::ConnectionStore,
     events: Arc<Mutex<VecDeque<serde_json::Value>>>,
     observability: observability::ObservabilityStore,
+    media_dumps: Arc<media_dump::MediaDumpStore>,
+    semantic_traces: Arc<semantic_trace::SemanticTraceStore>,
+}
+
+struct StudioRuntimeObserver {
+    media_dumps: Arc<media_dump::MediaDumpStore>,
+    semantic_traces: Arc<semantic_trace::SemanticTraceStore>,
+}
+
+impl RuntimeObserver for StudioRuntimeObserver {
+    fn observe_frame(&self, observation: FrameObservation<'_>) {
+        self.media_dumps.observe_frame(observation);
+        self.semantic_traces.observe_frame(observation);
+    }
+
+    fn observe_signal(&self, observation: SignalObservation<'_>) {
+        self.semantic_traces.observe_signal(observation);
+    }
 }
 
 impl StudioRuntime {
@@ -64,6 +87,8 @@ impl StudioRuntime {
             connections: node_library::ConnectionStore::load(graph)?,
             events: Arc::new(Mutex::new(VecDeque::with_capacity(128))),
             observability: observability::ObservabilityStore::new(graph),
+            media_dumps: Arc::new(media_dump::MediaDumpStore::new(graph)),
+            semantic_traces: Arc::new(semantic_trace::SemanticTraceStore::new()),
         })
     }
 }
@@ -233,6 +258,31 @@ fn handle_connection(
         }
     };
     let authorized = request.authorization.as_deref() == Some(&format!("Bearer {token}"));
+    if authorized
+        && request.method == "GET"
+        && request
+            .path
+            .starts_with("/api/v1/observability/media-artifacts/")
+    {
+        let relative = &request.path["/api/v1/observability/media-artifacts/".len()..];
+        let mut parts = relative.split('/');
+        let run_id = parts.next().unwrap_or_default();
+        let artifact_id = parts.next().unwrap_or_default();
+        if parts.next().is_none() {
+            return match runtime.media_dumps.read_artifact(run_id, artifact_id) {
+                Ok((content_type, _, payload)) => {
+                    write_response_bytes(&mut stream, "200 OK", &content_type, &payload, false)
+                }
+                Err(message) => write_response(
+                    &mut stream,
+                    "404 Not Found",
+                    "application/json",
+                    &json_message(&message),
+                    false,
+                ),
+            };
+        }
+    }
     let (status, content_type, payload) = route(&request, graph, authorized, runtime);
     write_response(
         &mut stream,
@@ -266,6 +316,16 @@ fn route(
             "200 OK",
             "text/css; charset=utf-8",
             OBSERVABILITY_HISTORY_STYLES.to_owned(),
+        ),
+        ("GET", "/assets/media-dump.css") => (
+            "200 OK",
+            "text/css; charset=utf-8",
+            MEDIA_DUMP_STYLES.to_owned(),
+        ),
+        ("GET", "/assets/semantic-trace.css") => (
+            "200 OK",
+            "text/css; charset=utf-8",
+            SEMANTIC_TRACE_STYLES.to_owned(),
         ),
         ("GET", "/assets/node-lab.css") => (
             "200 OK",
@@ -434,6 +494,55 @@ fn route(
             "application/json",
             runtime.observability.history_index().to_string(),
         ),
+        ("GET", "/api/v1/observability/traces") => (
+            "200 OK",
+            "application/json",
+            runtime.semantic_traces.status_json(None).to_string(),
+        ),
+        ("GET", path) if path.starts_with("/api/v1/observability/traces/") => {
+            let run_id = &path["/api/v1/observability/traces/".len()..];
+            (
+                "200 OK",
+                "application/json",
+                runtime
+                    .semantic_traces
+                    .status_json(Some(run_id))
+                    .to_string(),
+            )
+        }
+        ("GET", "/api/v1/observability/media") => (
+            "200 OK",
+            "application/json",
+            runtime.media_dumps.status_json(None).to_string(),
+        ),
+        ("GET", path) if path.starts_with("/api/v1/observability/media/") => {
+            let run_id = &path["/api/v1/observability/media/".len()..];
+            (
+                "200 OK",
+                "application/json",
+                runtime.media_dumps.status_json(Some(run_id)).to_string(),
+            )
+        }
+        ("PUT", "/api/v1/observability/media") => {
+            match serde_json::from_str::<serde_json::Value>(&request.body)
+                .ok()
+                .and_then(|value| value["enabled"].as_bool())
+            {
+                Some(enabled) => {
+                    runtime.media_dumps.set_enabled(enabled);
+                    (
+                        "200 OK",
+                        "application/json",
+                        runtime.media_dumps.status_json(None).to_string(),
+                    )
+                }
+                None => (
+                    "400 Bad Request",
+                    "application/json",
+                    json_message("media dump configuration requires boolean `enabled`"),
+                ),
+            }
+        }
         ("GET", path) if path.starts_with("/api/v1/observability/history/") => {
             let run_id = &path["/api/v1/observability/history/".len()..];
             match runtime.observability.history_session(run_id) {
@@ -699,28 +808,38 @@ fn start_runtime(
         .iter()
         .map(|edge| edge.edge_id().clone())
         .collect();
-    let runtime = match start_registered_runtime_with_context(
+    let id = state.next_session.fetch_add(1, Ordering::Relaxed) + 1;
+    let started_at_unix_ms = observability::unix_time_ms();
+    let run_id = format!("{started_at_unix_ms}-{id}");
+    state.media_dumps.start_session(&run_id);
+    state.semantic_traces.start_session(&run_id);
+    let observer = Arc::new(StudioRuntimeObserver {
+        media_dumps: state.media_dumps.clone(),
+        semantic_traces: state.semantic_traces.clone(),
+    });
+    let runtime = match start_registered_runtime_with_context_and_observer(
         graph,
         &registry,
         EdgePolicies::new(),
         RuntimeOptions::default(),
         ResourceStore::new(),
         notification_bus,
+        Some(observer),
     ) {
         Ok(runtime) => runtime,
         Err(error) => {
+            state.media_dumps.finish_session(&run_id);
+            state.semantic_traces.finish_session(&run_id);
             return (
                 "500 Internal Server Error",
                 "application/json",
                 json_message(&format!("failed to start graph runtime: {error}")),
-            )
+            );
         }
     };
-    let id = state.next_session.fetch_add(1, Ordering::Relaxed) + 1;
-    let started_at_unix_ms = observability::unix_time_ms();
     *session = Some(RuntimeSession {
         id,
-        run_id: format!("{started_at_unix_ms}-{id}"),
+        run_id: run_id.clone(),
         started_at_unix_ms,
         graph_id,
         node_ids,
@@ -730,7 +849,8 @@ fn start_runtime(
         stop_requested: false,
         last_observability_log: Mutex::new(Instant::now()),
     });
-    let snapshot = session_snapshot(session.as_ref().expect("installed session"));
+    let mut snapshot = session_snapshot(session.as_ref().expect("installed session"));
+    snapshot["media_dump"] = state.media_dumps.status_json(Some(&run_id));
     state.observability.observe(&snapshot);
     ("201 Created", "application/json", snapshot.to_string())
 }
@@ -815,10 +935,22 @@ fn runtime_snapshot_value(state: &StudioRuntime) -> serde_json::Value {
         .session
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    let snapshot = session.as_ref().map_or_else(
+    let mut snapshot = session.as_ref().map_or_else(
         || serde_json::json!({"status": "idle", "session_id": null}),
         session_snapshot,
     );
+    if let Some(session) = session.as_ref() {
+        if matches!(
+            snapshot["status"].as_str(),
+            Some("completed" | "aborted" | "stopped")
+        ) {
+            state.media_dumps.finish_session(&session.run_id);
+            state.semantic_traces.finish_session(&session.run_id);
+        }
+        snapshot["media_dump"] = state.media_dumps.status_json(Some(&session.run_id));
+    } else {
+        snapshot["media_dump"] = state.media_dumps.status_json(None);
+    }
     state.observability.observe(&snapshot);
     snapshot
 }
@@ -1102,22 +1234,39 @@ fn write_response(
     payload: &str,
     project_asset: bool,
 ) -> std::io::Result<()> {
+    write_response_bytes(
+        stream,
+        status,
+        content_type,
+        payload.as_bytes(),
+        project_asset,
+    )
+}
+
+fn write_response_bytes(
+    stream: &mut TcpStream,
+    status: &str,
+    content_type: &str,
+    payload: &[u8],
+    project_asset: bool,
+) -> std::io::Result<()> {
     let policy = if project_asset {
         "default-src 'none'; script-src 'self' https:; style-src 'self'; connect-src 'self' https: wss:; media-src blob:; worker-src blob:; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'"
     } else {
-        "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'"
+        "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; base-uri 'none'; frame-ancestors 'none'"
     };
-    let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nContent-Security-Policy: {policy}\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{payload}",
+    let headers = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nContent-Security-Policy: {policy}\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
         payload.len()
     );
-    stream.write_all(response.as_bytes())
+    stream.write_all(headers.as_bytes())?;
+    stream.write_all(payload)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        handle_connection, project_templates, route, validate, HttpRequest, StudioRuntime,
+        handle_connection, project_templates, route, validate, HttpRequest, StudioRuntime, SCRIPT,
     };
     use std::{
         fs,
@@ -1205,8 +1354,54 @@ mod tests {
         assert!(response.contains("/assets/studio.js"));
         assert!(response.contains("/assets/observability.css"));
         assert!(response.contains("/assets/observability-history.css"));
+        assert!(response.contains("/assets/media-dump.css"));
+        assert!(response.contains("/assets/semantic-trace.css"));
+        assert!(response.contains("Node media dumps"));
+        assert!(response.contains("Semantic trace"));
         assert!(response.contains("◎ Observe"));
         assert!(!response.contains("<script>"));
+    }
+
+    #[test]
+    fn runtime_polling_updates_canvas_metrics_without_rebuilding_the_svg_graph() {
+        assert!(SCRIPT.contains("function updateCanvasRuntime()"));
+        assert!(SCRIPT.contains("renderRuntime(); updateCanvasRuntime()"));
+        assert!(!SCRIPT.contains("renderRuntime(); renderCanvas()"));
+        assert!(SCRIPT.contains("data-runtime-metrics"));
+    }
+
+    #[test]
+    fn media_dump_is_opt_in_and_can_be_toggled_through_the_authenticated_api() {
+        let graph = graph_path();
+        let runtime = StudioRuntime::new(&graph).unwrap();
+        let read = HttpRequest {
+            method: "GET".into(),
+            path: "/api/v1/observability/media".into(),
+            authorization: None,
+            body: String::new(),
+        };
+        let (status, _, payload) = route(&read, &graph, true, &runtime);
+        assert_eq!(status, "200 OK");
+        assert!(
+            !serde_json::from_str::<serde_json::Value>(&payload).unwrap()["enabled"]
+                .as_bool()
+                .unwrap()
+        );
+
+        let enable = HttpRequest {
+            method: "PUT".into(),
+            path: "/api/v1/observability/media".into(),
+            authorization: None,
+            body: r#"{"enabled":true}"#.into(),
+        };
+        let (status, _, payload) = route(&enable, &graph, true, &runtime);
+        assert_eq!(status, "200 OK");
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&payload).unwrap()["enabled"]
+                .as_bool()
+                .unwrap()
+        );
+        fs::remove_file(graph).unwrap();
     }
 
     #[test]
@@ -1215,6 +1410,7 @@ mod tests {
             "/api/v1/graph",
             "/api/v1/runtime",
             "/api/v1/observability/history",
+            "/api/v1/observability/traces",
             "/metrics",
         ] {
             for authorization in ["", "Authorization: Bearer forged\r\n"] {
@@ -1377,6 +1573,22 @@ mod tests {
         let (_, _, payload) = route(&details_request, &graph, true, &runtime);
         let details: serde_json::Value = serde_json::from_str(&payload).unwrap();
         assert!(!details["samples"].as_array().unwrap().is_empty());
+        let trace_request = HttpRequest {
+            method: "GET".into(),
+            path: format!("/api/v1/observability/traces/{run_id}"),
+            authorization: None,
+            body: String::new(),
+        };
+        let (_, _, payload) = route(&trace_request, &graph, true, &runtime);
+        let trace: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(trace["session"]["status"], "completed");
+        assert_eq!(trace["session"]["turns"].as_array().unwrap().len(), 1);
+        assert_eq!(trace["session"]["entries"], 4);
+        assert!(trace["session"]["turns"][0]["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["kind"] == "text"));
         fs::remove_file(graph).unwrap();
     }
 

@@ -4,7 +4,7 @@
   "display_name": "Qwen Cancellable Streaming TTS",
   "node_type": "qwen.tts_realtime",
   "language": "python",
-  "factory_version": "1.1.0",
+  "factory_version": "1.2.0",
   "kind": "transform",
   "entrypoint": "node:QwenTtsRealtimeNode",
   "category": "algorithm",
@@ -15,7 +15,6 @@
   "tags": ["tts", "text-to-speech", "cancellation", "streaming"],
   "ports": [
     { "name": "text_in", "direction": "input", "frame_type": "text", "schema": { "semantics": "synthesis_text", "streaming": true } },
-    { "name": "tick_in", "direction": "input", "frame_type": "event", "schema": { "semantics": ["runtime_tick"], "streaming": true } },
     { "name": "signal_in", "direction": "input", "frame_type": "signal", "schema": { "semantics": ["graph_control", "barge_in"] } },
     { "name": "audio_out", "direction": "output", "frame_type": "audio", "schema": { "encoding": "pcm_s16le", "sample_rate_hz": 24000, "channels": 1, "streaming": true } }
   ],
@@ -25,7 +24,7 @@
       "model": { "type": "string", "default": "qwen3-tts-flash-realtime" },
       "voice": { "type": "string", "default": "Cherry" },
       "language_type": { "type": "string", "default": "Auto" },
-      "max_results_per_tick": { "type": "integer", "minimum": 1, "maximum": 512, "default": 64 }
+      "max_results_per_wakeup": { "type": "integer", "minimum": 1, "maximum": 512, "default": 64 }
     },
     "required": ["model", "voice"],
     "additionalProperties": false

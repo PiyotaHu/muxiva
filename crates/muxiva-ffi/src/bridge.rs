@@ -24,10 +24,12 @@ use muxiva_types::{EdgeId, ErrorCategory, Frame, FrameType, MuxivaError, NodeId,
 use crate::{
     abi::{
         self, AbortReasonView, ErrorOutput, FactoryCreateCallback, GraphFactoryCreateCallback,
-        GraphNodeVtable, NodeVtable, StrView,
+        GraphNodeVtable, NodeVtable, OwnedNamedFrameView, StrView,
     },
     error::FfiError,
-    frame::{borrowed_frame_view, borrowed_text_view, copy_frame},
+    frame::{
+        adopt_owned_frame, borrowed_frame_view, borrowed_text_view, copy_frame, ForeignPayloadOwner,
+    },
 };
 
 #[derive(Clone)]
@@ -249,6 +251,7 @@ impl ForeignNodeConstructor for CppMultimodalNodeConstructor {
             reserved: [0; 3],
             take_next_source_tick_ns: None,
             take_metrics: None,
+            take_owned_emissions: None,
         };
         let mut output = empty_error();
         let config_json = muxiva_graph_json::config_map_to_json(config).to_string();
@@ -263,23 +266,24 @@ impl ForeignNodeConstructor for CppMultimodalNodeConstructor {
             return Err(factory_callback_error(&output));
         }
         let expected = u32::try_from(mem::size_of::<GraphNodeVtable>()).unwrap_or(u32::MAX);
-        // `take_next_source_tick_ns` is an additive, trailing ABI field. Keep loading
-        // Node packs compiled against the previous v1 header; the zero-initialized
-        // callback above makes them behave exactly as before.
-        let tick_only_expected = u32::try_from(
-            mem::size_of::<GraphNodeVtable>()
-                - mem::size_of::<
-                    Option<extern "C" fn(*mut c_void, *mut *const abi::NodeMetricView, *mut usize)>,
-                >(),
-        )
-        .unwrap_or(u32::MAX);
-        let legacy_expected = u32::try_from(
-            usize::try_from(tick_only_expected).unwrap_or(0)
-                - mem::size_of::<Option<extern "C" fn(*mut c_void) -> u64>>(),
-        )
-        .unwrap_or(u32::MAX);
+        // Every extension is a trailing callback. Accept all earlier v1 layouts;
+        // zero initialization above makes absent capabilities opt out safely.
+        let metrics_expected =
+            u32::try_from(mem::offset_of!(GraphNodeVtable, take_owned_emissions))
+                .unwrap_or(u32::MAX);
+        let tick_only_expected =
+            u32::try_from(mem::offset_of!(GraphNodeVtable, take_metrics)).unwrap_or(u32::MAX);
+        let legacy_expected =
+            u32::try_from(mem::offset_of!(GraphNodeVtable, take_next_source_tick_ns))
+                .unwrap_or(u32::MAX);
         if table.abi_version != abi::ABI_VERSION
-            || ![expected, tick_only_expected, legacy_expected].contains(&table.struct_size)
+            || ![
+                expected,
+                metrics_expected,
+                tick_only_expected,
+                legacy_expected,
+            ]
+            .contains(&table.struct_size)
             || table.reserved != [0; 3]
             || table.on_process.is_none()
         {
@@ -377,15 +381,21 @@ impl ForeignNodeInstance for CppMultimodalInstance {
                 )
             })?;
             let frame = copy_frame(&view.frame)
-                .and_then(|frame| frame.to_rust())
+                .and_then(|frame| frame.into_rust())
                 .map_err(to_muxiva_error)?;
             emissions.push(muxiva_core::ForeignNodeEmission::new(port, frame));
+        }
+        if let Some(callback) = self.table.take_owned_emissions {
+            let mut owned = std::ptr::null();
+            let mut owned_count = 0_usize;
+            callback(self.table.user_data, &mut owned, &mut owned_count);
+            append_owned_emissions(owned, owned_count, self._library.as_ref(), &mut emissions)?;
         }
         let mut output = ForeignNodeCallOutput::new(emissions, []);
         if let Some(callback) = self.table.take_next_source_tick_ns {
             let delay_ns = callback(self.table.user_data);
             if delay_ns != 0 {
-                output = output.with_next_source_tick(Duration::from_nanos(delay_ns));
+                output = output.with_next_tick(Duration::from_nanos(delay_ns));
             }
         }
         if let Some(callback) = self.table.take_metrics {
@@ -492,6 +502,62 @@ impl Drop for CppMultimodalInstance {
             destroy(self.table.user_data);
         }
     }
+}
+
+fn append_owned_emissions(
+    pointer: *const OwnedNamedFrameView,
+    count: usize,
+    library: Option<&Arc<Library>>,
+    emissions: &mut Vec<muxiva_core::ForeignNodeEmission>,
+) -> muxiva_types::Result<()> {
+    if count > 4_096 || (count != 0 && !abi::aligned(pointer)) {
+        return Err(foreign_error(
+            abi::INVALID_ARGUMENT,
+            "MUXIVA-FFI-GRAPH-OWNED-OUTPUT",
+            "C++ callback returned an invalid owned-emission array",
+        ));
+    }
+    let views = if count == 0 {
+        &[]
+    } else {
+        // SAFETY: the Node Pack keeps this array and its borrowed header/port
+        // strings alive until the next lifecycle call. Payload ownership has
+        // transferred to the host and is captured below before returning.
+        unsafe { std::slice::from_raw_parts(pointer, count) }
+    };
+
+    // Attempt to adopt every allocation even when one view is malformed. This
+    // ensures all valid release callbacks run and avoids leaking later entries
+    // because an earlier entry failed validation.
+    let owners = views
+        .iter()
+        .map(|view| ForeignPayloadOwner::from_view(view, library))
+        .collect::<Vec<_>>();
+    if let Some(error) = owners.iter().find_map(|result| result.as_ref().err()) {
+        return Err(to_muxiva_error(*error));
+    }
+
+    for (view, owner) in views.iter().zip(owners) {
+        let owner = owner.expect("owned emission validation completed");
+        let name = abi::copy_str(view.output_port, true).map_err(|_| {
+            foreign_error(
+                abi::INVALID_ARGUMENT,
+                "MUXIVA-FFI-GRAPH-OWNED-OUTPUT",
+                "invalid owned output port",
+            )
+        })?;
+        let port = PortName::new(name).map_err(|_| {
+            foreign_error(
+                abi::INVALID_ARGUMENT,
+                "MUXIVA-FFI-GRAPH-OWNED-OUTPUT",
+                "invalid owned output port",
+            )
+        })?;
+        let frame =
+            adopt_owned_frame(std::ptr::from_ref(&view.frame), owner).map_err(to_muxiva_error)?;
+        emissions.push(muxiva_core::ForeignNodeEmission::new(port, frame));
+    }
+    Ok(())
 }
 
 pub fn run_registered_multimodal_graph(

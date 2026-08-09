@@ -2,7 +2,7 @@
 
 > 一个以 Rust 为核心的实时多模态 Agent Runtime，让 Rust、C++、Python 与 TypeScript 共享同一套图、生命周期和安全边界。
 
-[English](README.md) · [中文文档](https://piyotahu.github.io/muxiva/zh/) · [系统架构](https://piyotahu.github.io/muxiva/zh/concepts/) · [旗舰语音 Demo](https://piyotahu.github.io/muxiva/zh/voice-demo/) · [开发 Node](https://piyotahu.github.io/muxiva/zh/nodes/) · [Studio](https://piyotahu.github.io/muxiva/zh/studio/) · [可观测性](https://piyotahu.github.io/muxiva/zh/observability/) · [Graph v1](https://piyotahu.github.io/muxiva/zh/graph/) · [测试体系](https://piyotahu.github.io/muxiva/zh/testing/)
+[English](README.md) · [中文文档](https://piyotahu.github.io/muxiva/zh/) · [系统架构](https://piyotahu.github.io/muxiva/zh/concepts/) · [旗舰语音 Demo](https://piyotahu.github.io/muxiva/zh/voice-demo/) · [开发手册](https://piyotahu.github.io/muxiva/zh/nodes/) · [Agent 集成](https://piyotahu.github.io/muxiva/zh/nodes/agent-integration/) · [Studio](https://piyotahu.github.io/muxiva/zh/studio/) · [可观测性](https://piyotahu.github.io/muxiva/zh/observability/) · [Graph v1](https://piyotahu.github.io/muxiva/zh/graph/) · [测试体系](https://piyotahu.github.io/muxiva/zh/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -83,8 +83,8 @@ muxiva --version
 ### 运行真实语音助手
 
 门面应用同时提供 Qwen Audio Realtime 与 **Demo 2**：可检查的全双工阿里云 Server
-VAD + ASR → 可取消 Qwen LLM → 可取消 Qwen TTS 图，使用 Agora C++ Transport 和
-浏览器麦克风：
+VAD + ASR → 独立发布、具有真实文件编码能力的 Pi TypeScript Agent → 可取消 Qwen TTS
+图，使用 Agora C++ Transport 和浏览器麦克风：
 
 ```bash
 ./examples/voice-agent/setup.sh       # macOS：自动下载并校验 Agora SDK
@@ -130,7 +130,7 @@ Token。详见 [Studio 指南](https://piyotahu.github.io/muxiva/zh/studio/)和
 ./scripts/check-ffi.sh
 ```
 
-脚本会构建可真实安装的包、执行集成测试，并运行独立的 Python、TypeScript 与 C++ 消费者示例。安装与 Node 开发方式参见[Node 开发指南](https://piyotahu.github.io/muxiva/zh/nodes/)。
+脚本会构建可真实安装的包、执行集成测试，并运行独立的 Python、TypeScript 与 C++ 消费者示例。Agent 集成、多语言 Node 与应用开发方式参见[开发手册](https://piyotahu.github.io/muxiva/zh/nodes/)。
 
 ## 旗舰 Graph
 

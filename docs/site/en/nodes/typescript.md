@@ -13,7 +13,8 @@ export const node: GraphNodeImplementation = {
 }
 ```
 
-The Worker context exposes `emit`, `emitSignal`, and `publishNotification`. Return
+The Worker context exposes `emit`, `emitSignal`, `publishNotification`, and
+`scheduleNextTick(delayMs)`. Return
 values are retained as compatibility sugar, but explicit emission supports
 multiple actions during one lifecycle callback.
 
@@ -36,6 +37,7 @@ The Host:
    Studio's `runtime.log` through stderr.
 
 Long-running provider streams must not keep `onProcess` blocked. Start the
-request in the background, buffer bounded results, and drain them from a Tick
-input so `onSignal` can cancel immediately. The reusable
+request in the background, buffer bounded results, and use `scheduleNextTick`
+to request input-free Runtime callbacks. `onSignal` remains responsive and the
+Graph needs no Clock Node or `tick_in` Port. The reusable
 [`@muxiva/agent` contract](pi-agent.md) implements this policy for Agent Nodes.

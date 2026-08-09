@@ -35,7 +35,7 @@ pub struct ForeignNodeCallOutput {
     emissions: Vec<ForeignNodeEmission>,
     signals: Vec<SignalFrame>,
     events: Vec<EventFrame>,
-    next_source_tick: Option<Duration>,
+    next_tick: Option<Duration>,
     metrics: Vec<NodeMetricObservation>,
 }
 
@@ -48,7 +48,7 @@ impl ForeignNodeCallOutput {
             emissions: emissions.into(),
             signals: signals.into(),
             events: Vec::new(),
-            next_source_tick: None,
+            next_tick: None,
             metrics: Vec::new(),
         }
     }
@@ -58,9 +58,14 @@ impl ForeignNodeCallOutput {
         self
     }
 
-    pub fn with_next_source_tick(mut self, delay: Duration) -> Self {
-        self.next_source_tick = Some(delay);
+    pub fn with_next_tick(mut self, delay: Duration) -> Self {
+        self.next_tick = Some(delay);
         self
+    }
+
+    /// Backward-compatible name retained for existing Source adapters.
+    pub fn with_next_source_tick(self, delay: Duration) -> Self {
+        self.with_next_tick(delay)
     }
 
     pub fn with_signals(mut self, signals: impl Into<Vec<SignalFrame>>) -> Self {
@@ -183,7 +188,7 @@ impl ForeignNodeAdapter {
         for metric in output.metrics {
             context.observe_metric(metric);
         }
-        if let Some(delay) = output.next_source_tick {
+        if let Some(delay) = output.next_tick {
             context.schedule_next_tick(delay);
         }
         Ok(())

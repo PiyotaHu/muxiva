@@ -36,6 +36,8 @@ tests/reports/benchmarks/*.json
 **/.muxiva/native/
 **/.muxiva/venv/
 **/.muxiva/npm-cache/
+**/.muxiva/agents/
+**/.muxiva/workspaces/
 **/.muxiva/observability/
 **/.muxiva/studio.lock/
 

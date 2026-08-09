@@ -13,6 +13,8 @@ const state = {
   viewport: { x: VIEWPORT_WIDTH / 2, y: VIEWPORT_HEIGHT / 2 }, suppressCanvasClick: false,
   runtime: { status: 'idle', nodes: [], edges: [] }, runtimeTimer: null,
   telemetry: { previous: null, nodeRates: new Map(), edgeRates: new Map(), selection: null, history: { sessions: [], selected: null, samples: [], loaded: false, export: null } },
+  mediaDump: { enabled: false, session: null, dropped_frames: 0, limits: {}, refreshing: false, lastRefresh: 0, selectedRunId: null, renderSignature: '' },
+  semanticTrace: { session: null, limits: {}, refreshing: false, lastRefresh: 0, selectedRunId: null, kind: 'all', query: '', dirty: true, expanded: new Set(), turnDisclosure: new Map(), renderSignature: '', interactionUntil: 0, renderTimer: null },
   connection: null, editingEdge: null,
 }
 
@@ -194,6 +196,15 @@ function bindEvents() {
   $('#observability').addEventListener('click', () => openObservability())
   $('#observability-close').addEventListener('click', closeObservability)
   $('#observe-history-refresh').addEventListener('click', () => refreshObservabilityHistory(false))
+  $('#media-dump-enabled').addEventListener('change', toggleMediaDump)
+  $('#semantic-trace-refresh').addEventListener('click', () => refreshSemanticTraces(false))
+  $('#semantic-trace-kind').addEventListener('change', (event) => { state.semanticTrace.kind = event.target.value; state.semanticTrace.dirty = true; renderSemanticTraces() })
+  $('#semantic-trace-search').addEventListener('input', (event) => { state.semanticTrace.query = event.target.value.trim().toLowerCase(); state.semanticTrace.dirty = true; renderSemanticTraces() })
+  $('#semantic-trace-turns').addEventListener('pointerdown', () => {
+    // A poll may complete between pointerdown and click. Keep the current DOM
+    // stable long enough for the native <details> interaction to finish.
+    state.semanticTrace.interactionUntil = Date.now() + 350
+  })
   $('#provider-close').addEventListener('click', closeProviders)
   $('#provider-cancel').addEventListener('click', closeProviders)
   $('#provider-form').addEventListener('submit', saveProviders)
@@ -585,6 +596,27 @@ function renderCanvas() {
   applyViewport()
 }
 
+// Runtime polling is intentionally an in-place visual update. Rebuilding the
+// SVG here used to discard every Node and Edge every 350 ms, which produced
+// visible jank and could interrupt an active pointer gesture while a graph ran.
+function updateCanvasRuntime() {
+  const nodes = new Map((state.runtime.nodes || []).map((metrics) => [metrics.node_id, metrics]))
+  const active = new Set(state.runtime.active_nodes || [])
+  $$('#node-layer .node-group[data-node]').forEach((group) => {
+    const metrics = nodes.get(group.dataset.node)
+    group.classList.toggle('runtime-active', active.has(group.dataset.node))
+    group.classList.toggle('runtime-error', Boolean(metrics?.error_total))
+    const label = group.querySelector('[data-runtime-metrics]')
+    if (label) label.textContent = metrics ? `${metrics.process_total} calls · ${formatNanos(metrics.max_callback_duration_ns)} max` : ''
+  })
+  const edges = new Map((state.runtime.edges || []).map((metrics) => [metrics.edge_id, metrics]))
+  $$('#edge-layer .graph-edge[data-edge]').forEach((path) => {
+    const metrics = edges.get(path.dataset.edge)
+    path.classList.toggle('runtime-flow', Boolean(metrics?.enqueue_total))
+    path.classList.toggle('runtime-drop', Boolean(metrics?.drop_total))
+  })
+}
+
 function renderEdgeLayer(edgeLayer = $('#edge-layer')) {
   edgeLayer.replaceChildren()
   for (const edge of state.graph.edges) {
@@ -635,7 +667,9 @@ function renderNode(node) {
   addText(group, 19, 51, node.id, 'node-title')
   addText(group, 19, 72, node.node_type, 'node-type-label')
   addText(group, 19, 94, `${info.language} · ${info.frameTypes.join('/') || 'control'}`, 'node-type-label')
-  if (metrics) { const runtime = addText(group, 211, 94, `${metrics.process_total} calls · ${formatNanos(metrics.max_callback_duration_ns)} max`, 'node-runtime-label'); runtime.setAttribute('text-anchor', 'end') }
+  const runtime = addText(group, 211, 94, metrics ? `${metrics.process_total} calls · ${formatNanos(metrics.max_callback_duration_ns)} max` : '', 'node-runtime-label')
+  runtime.setAttribute('text-anchor', 'end')
+  runtime.dataset.runtimeMetrics = ''
   info.inputPorts.forEach((port, index) => {
     const dot = svg('circle', { cx: 0, cy: 116 + index * 20, r: 6, class: 'port-dot input', 'data-node': node.id, 'data-port': port.name, 'data-frame-type': port.frame_type })
     group.append(dot); addText(group, 9, 120 + index * 20, `${port.name} · ${port.frame_type}`, 'port-label')
@@ -874,8 +908,8 @@ async function refreshRuntime() {
     const runtime = await api('/api/v1/runtime')
     ingestRuntimeSnapshot(runtime)
     state.runtime = runtime
-    renderRuntime(); renderCanvas()
-    if (['completed', 'aborted', 'stopped'].includes(runtime.status) && runtime.status !== previousStatus) refreshObservabilityHistory(true)
+    renderRuntime(); updateCanvasRuntime()
+    if (['completed', 'aborted', 'stopped'].includes(runtime.status) && runtime.status !== previousStatus) { refreshObservabilityHistory(true); refreshMediaDumps(true); refreshSemanticTraces(true) }
   } catch (error) {
     toast(`Runtime metrics unavailable: ${error.message}`, true)
   }
@@ -885,6 +919,11 @@ async function startRuntime() {
   if (runtimeIsActive()) return
   if (!await validateGraph(false)) return toast('Fix validation errors before running', true)
   state.telemetry = { previous: null, nodeRates: new Map(), edgeRates: new Map(), selection: null, history: state.telemetry.history }
+  state.mediaDump.selectedRunId = null
+  state.semanticTrace.selectedRunId = null
+  state.semanticTrace.expanded.clear()
+  state.semanticTrace.turnDisclosure.clear()
+  state.semanticTrace.renderSignature = ''
   state.runtime = { status: 'starting', nodes: [], edges: [], active_nodes: [] }
   renderRuntime()
   try {
@@ -892,7 +931,7 @@ async function startRuntime() {
     ingestRuntimeSnapshot(runtime)
     state.runtime = runtime
     toast('Graph runtime started')
-    renderRuntime(); renderCanvas(); scheduleRuntimePoll()
+    renderRuntime(); updateCanvasRuntime(); scheduleRuntimePoll()
   } catch (error) {
     state.runtime = { status: 'idle', nodes: [], edges: [] }
     if (error.status === 412) { toast(error.message, true); await openProviders() }
@@ -906,7 +945,7 @@ async function stopRuntime() {
   try {
     state.runtime = await api('/api/v1/runtime/stop', { method: 'POST' })
     toast(state.runtime.accepted ? 'Stop requested' : 'Runtime is already stopping')
-    renderRuntime(); renderCanvas(); scheduleRuntimePoll()
+    renderRuntime(); updateCanvasRuntime(); scheduleRuntimePoll()
   } catch (error) { toast(error.message, true); renderRuntime() }
 }
 function renderRuntime() {
@@ -1016,6 +1055,8 @@ function openObservability(kind = null, id = null) {
   $('#observability-page').setAttribute('aria-hidden', 'false')
   renderObservability()
   refreshObservabilityHistory(true)
+  refreshMediaDumps(true)
+  refreshSemanticTraces(true)
 }
 function closeObservability() {
   $('#observability-page').classList.add('hidden')
@@ -1034,8 +1075,246 @@ function renderObservability() {
   $('#observe-node-rate').textContent = `${formatRate(nodeRate)}/s`; $('#observe-frame-rate').textContent = `${formatRate(frameRate)}/s`
   $('#observe-queued').textContent = queued; $('#observe-queue-detail').textContent = capacity ? `${Math.round(queued / capacity * 100)}% of ${capacity} slots` : 'No Edge queues'
   $('#observe-bottlenecks').textContent = unhealthy.length
-  renderHotspots(unhealthy); renderObservationHistory(); renderObserveNodes(nodes); renderObserveEdges(edges); renderObserveDetail()
+  renderHotspots(unhealthy); renderSemanticTraces(); renderMediaDumps(); renderObservationHistory(); renderObserveNodes(nodes); renderObserveEdges(edges); renderObserveDetail()
+  if (Date.now() - state.mediaDump.lastRefresh > 1200) refreshMediaDumps(true)
+  if (Date.now() - state.semanticTrace.lastRefresh > 750) refreshSemanticTraces(true)
 }
+
+async function refreshSemanticTraces(silent = true, runId = null) {
+  if (state.semanticTrace.refreshing) return
+  state.semanticTrace.refreshing = true
+  try {
+    const selected = runId || state.semanticTrace.selectedRunId
+    const value = await api(selected ? `/api/v1/observability/traces/${encodeURIComponent(selected)}` : '/api/v1/observability/traces')
+    const signature = semanticTraceSignature(value.session)
+    state.semanticTrace.session = value.session || null
+    state.semanticTrace.limits = value.limits || {}
+    if (signature !== state.semanticTrace.renderSignature) {
+      state.semanticTrace.renderSignature = signature
+      state.semanticTrace.dirty = true
+    }
+    renderSemanticTraces()
+  } catch (error) {
+    if (!silent) toast(`Semantic trace unavailable: ${error.message}`, true)
+  }
+  state.semanticTrace.refreshing = false
+  state.semanticTrace.lastRefresh = Date.now()
+}
+
+function renderSemanticTraces() {
+  const trace = state.semanticTrace, status = $('#semantic-trace-status'), container = $('#semantic-trace-turns')
+  if (!status || !container || !trace.dirty) return
+  const delay = trace.interactionUntil - Date.now()
+  if (delay > 0) {
+    clearTimeout(trace.renderTimer)
+    trace.renderTimer = setTimeout(renderSemanticTraces, delay + 16)
+    return
+  }
+  trace.dirty = false
+  const session = trace.session, turns = session?.turns || [], dropped = Number(session?.dropped_entries || 0)
+  status.className = dropped || session?.truncated ? 'trace-warning' : ''
+  status.textContent = session ? `${turns.length} turn(s) · ${formatNumber(session.entries)} messages${dropped ? ` · ${dropped} dropped` : ''}` : 'No semantic messages'
+  const matches = (entry) => {
+    if (trace.kind !== 'all' && entry.kind !== trace.kind) return false
+    if (!trace.query) return true
+    return [entry.node_id, entry.port, entry.name, entry.summary, entry.frame_id, entry.trace_id].some(value => String(value || '').toLowerCase().includes(trace.query))
+  }
+  const visible = turns.map(turn => ({ ...turn, entries: (turn.entries || []).filter(matches) })).filter(turn => turn.entries.length)
+  if (!visible.length) {
+    const empty = document.createElement('div'); empty.className = 'trace-empty'; empty.textContent = session ? 'No semantic messages match this filter.' : 'Run the Graph to trace Text, Event and Signal messages.'; container.replaceChildren(empty); return
+  }
+  container.replaceChildren(...visible.slice().reverse().map((turn, index) => semanticTurn(turn, index === 0)))
+}
+
+function semanticTurn(turn, newest) {
+  const trace = state.semanticTrace
+  const key = `${trace.session?.run_id || 'active'}:${turn.id}`
+  const saved = trace.turnDisclosure.get(key)
+  const root = document.createElement('details'); root.className = 'trace-turn'; root.open = saved == null ? newest : saved
+  const heading = document.createElement('summary'), title = document.createElement('b'), meta = document.createElement('span')
+  title.className = 'trace-turn-title'; title.textContent = `Turn #${turn.ordinal} · ${turn.label}`
+  const end = turn.entries.at(-1)?.elapsed_ms || turn.started_ms; meta.className = 'trace-turn-meta'; meta.append(textSpan(`${turn.entries.length} messages`), textSpan(`${formatDuration(Math.max(0, end - turn.started_ms))}`), textSpan(`started +${formatDuration(turn.started_ms)}`))
+  heading.append(title, meta)
+  const list = document.createElement('div'); list.className = 'trace-list'; list.append(...turn.entries.map(entry => semanticEntry(turn, entry)))
+  root.append(heading, list)
+  root.addEventListener('toggle', () => trace.turnDisclosure.set(key, root.open))
+  return root
+}
+
+function semanticEntry(turn, entry) {
+  const key = `${state.semanticTrace.session?.run_id || 'active'}:${turn.id}:${entry.ordinal}`, row = document.createElement('div'); row.className = 'trace-entry'; row.tabIndex = 0
+  const time = document.createElement('span'); time.className = 'trace-entry-time'; time.textContent = `+${formatDuration(entry.elapsed_ms)}`
+  const kind = document.createElement('span'); kind.className = `trace-kind ${entry.kind}`; kind.textContent = entry.kind.toUpperCase()
+  const node = document.createElement('span'), nodeName = document.createElement('b'), port = document.createElement('small'); node.className = 'trace-node'; nodeName.textContent = entry.node_id; port.textContent = entry.port || 'control plane'; node.append(nodeName, port)
+  const direction = document.createElement('span'); direction.className = `trace-direction ${entry.direction}`; direction.textContent = entry.direction === 'output' ? 'OUT →' : '→ IN'
+  const message = document.createElement('span'), name = document.createElement('b'), summary = document.createElement('small'); message.className = 'trace-message'; name.textContent = entry.name; summary.textContent = entry.summary || '—'; message.append(name, summary)
+  const detail = document.createElement('pre'); detail.className = 'trace-detail'; detail.hidden = !state.semanticTrace.expanded.has(key); detail.textContent = JSON.stringify({ payload: entry.payload, frame_id: entry.frame_id, trace_id: entry.trace_id, stream_id: entry.stream_id, sequence: entry.sequence, payload_truncated: entry.payload_truncated }, null, 2)
+  const toggle = () => { const open = detail.hidden; detail.hidden = !open; if (open) state.semanticTrace.expanded.add(key); else state.semanticTrace.expanded.delete(key) }
+  row.addEventListener('click', toggle); row.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle() } })
+  row.append(time, kind, node, direction, message, detail); return row
+}
+
+function textSpan(value) { const element = document.createElement('span'); element.textContent = value; return element }
+
+function semanticTraceSignature(session) {
+  if (!session) return 'none'
+  const turns = (session.turns || []).map(turn => {
+    const entries = turn.entries || []
+    return `${turn.id}:${entries.length}:${entries.at(-1)?.ordinal || 0}`
+  }).join(',')
+  return [session.run_id, session.status, session.entries, session.dropped_entries, session.truncated, turns].join('|')
+}
+
+async function toggleMediaDump(event) {
+  const enabled = Boolean(event.target.checked)
+  event.target.disabled = true
+  try {
+    const value = await api('/api/v1/observability/media', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) })
+    ingestMediaDump(value)
+    toast(enabled ? 'Media dump enabled for Audio and Video Frames' : 'Media dump disabled; existing artifacts are retained')
+  } catch (error) {
+    event.target.checked = !enabled
+    toast(`Media dump configuration failed: ${error.message}`, true)
+  }
+  event.target.disabled = false
+}
+
+async function refreshMediaDumps(silent = true, runId = null) {
+  if (state.mediaDump.refreshing) return
+  state.mediaDump.refreshing = true
+  try {
+    const selected = runId || state.mediaDump.selectedRunId
+    const value = await api(selected ? `/api/v1/observability/media/${encodeURIComponent(selected)}` : '/api/v1/observability/media')
+    ingestMediaDump(value)
+  } catch (error) {
+    if (!silent) toast(`Media dumps unavailable: ${error.message}`, true)
+  }
+  state.mediaDump.refreshing = false
+  state.mediaDump.lastRefresh = Date.now()
+}
+
+function ingestMediaDump(value) {
+  const refreshing = state.mediaDump.refreshing
+  const lastRefresh = state.mediaDump.lastRefresh
+  const selectedRunId = state.mediaDump.selectedRunId
+  const renderSignature = state.mediaDump.renderSignature
+  state.mediaDump = { enabled: Boolean(value.enabled), session: value.session || null, dropped_frames: Number(value.dropped_frames || 0), limits: value.limits || {}, refreshing, lastRefresh, selectedRunId, renderSignature }
+  renderMediaDumps()
+}
+
+function renderMediaDumps() {
+  const value = state.mediaDump, toggle = $('#media-dump-enabled'), status = $('#media-dump-status'), container = $('#media-dump-artifacts')
+  if (!toggle || !status || !container) return
+  toggle.checked = value.enabled
+  const session = value.session, artifacts = session?.artifacts || [], dropped = value.dropped_frames || 0
+  status.className = dropped || session?.truncated ? 'media-dump-warning' : ''
+  status.textContent = value.enabled
+    ? `On · ${formatBytes(session?.bytes || 0)} · ${artifacts.length} track(s)${dropped ? ` · ${dropped} diagnostic drop(s)` : ''}`
+    : `Off · ${artifacts.length ? `${artifacts.length} retained track(s)` : 'no media is stored'}`
+  const signature = JSON.stringify({ enabled: value.enabled, dropped, session: session && { run_id: session.run_id, status: session.status, bytes: session.bytes, truncated: session.truncated, last_error: session.last_error, artifacts } })
+  if (value.renderSignature === signature) return
+  value.renderSignature = signature
+  if (!artifacts.length) {
+    const empty = document.createElement('div')
+    empty.className = 'media-dump-empty'
+    empty.textContent = value.enabled ? 'Capture is on. Audio/Video tracks appear after Frames cross Node Ports.' : 'Enable the switch before or during a run to collect media diagnostics.'
+    container.replaceChildren(empty)
+    return
+  }
+  container.replaceChildren(...artifacts.map(mediaArtifactCard))
+}
+
+function mediaArtifactCard(artifact) {
+  const card = document.createElement('article'); card.className = 'media-artifact'
+  const head = document.createElement('div'); head.className = 'media-artifact-head'
+  const copy = document.createElement('div'), title = document.createElement('b'), subtitle = document.createElement('small'), kind = document.createElement('span')
+  title.textContent = `${artifact.node_id}.${artifact.port}`
+  subtitle.textContent = `${artifact.direction.toUpperCase()} · ${artifact.format}`
+  kind.className = 'media-artifact-kind'; kind.textContent = artifact.kind.toUpperCase()
+  copy.append(title, subtitle); head.append(copy, kind)
+  const meta = document.createElement('div'); meta.className = 'media-artifact-meta'
+  meta.append(...[`${formatNumber(artifact.frames)} frames`, formatBytes(artifact.bytes), formatDuration(artifact.duration_ms || 0), artifact.ready ? 'ready' : 'finalizing…'].map(value => { const item = document.createElement('span'); item.textContent = value; return item }))
+  const actions = document.createElement('div'); actions.className = 'media-artifact-actions'
+  const preview = document.createElement('button'); preview.textContent = artifact.kind === 'audio' ? '▶ Play' : '▶ Replay'; preview.disabled = !artifact.ready; preview.addEventListener('click', () => loadMediaPreview(card, artifact, preview))
+  const download = document.createElement('button'); download.textContent = '↓ Download'; download.disabled = !artifact.ready; download.addEventListener('click', () => downloadMediaArtifact(artifact, download))
+  actions.append(preview, download); card.append(head, meta, actions)
+  return card
+}
+
+function mediaArtifactPath(artifact) {
+  return `/api/v1/observability/media-artifacts/${encodeURIComponent(state.mediaDump.session.run_id)}/${encodeURIComponent(artifact.id)}`
+}
+
+async function fetchMediaArtifact(artifact) {
+  const response = await fetch(mediaArtifactPath(artifact), { headers: { Authorization: `Bearer ${state.token}` } })
+  if (!response.ok) throw new Error((await response.json().catch(() => null))?.message || response.statusText)
+  return response.blob()
+}
+
+async function downloadMediaArtifact(artifact, button) {
+  button.disabled = true
+  try {
+    const blob = await fetchMediaArtifact(artifact), url = URL.createObjectURL(blob), anchor = document.createElement('a')
+    anchor.href = url; anchor.download = artifact.file_name; anchor.click()
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } catch (error) { toast(`Media download failed: ${error.message}`, true) }
+  button.disabled = false
+}
+
+async function loadMediaPreview(card, artifact, button) {
+  button.disabled = true
+  try {
+    const blob = await fetchMediaArtifact(artifact), old = card.querySelector('.media-player')
+    if (old) old.remove()
+    const player = document.createElement('div'); player.className = 'media-player'
+    if (artifact.kind === 'audio') {
+      const audio = document.createElement('audio'), url = URL.createObjectURL(blob)
+      audio.controls = true; audio.autoplay = true; audio.src = url
+      audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true })
+      player.append(audio)
+    } else player.append(await createRawVideoPlayer(blob, artifact))
+    card.append(player)
+  } catch (error) { toast(`Media preview failed: ${error.message}`, true) }
+  button.disabled = false
+}
+
+async function createRawVideoPlayer(blob, artifact) {
+  const bytes = new Uint8Array(await blob.arrayBuffer()), details = artifact.details || {}, frameBytes = Number(details.frame_bytes || 0), frameCount = frameBytes ? Math.floor(bytes.length / frameBytes) : 0
+  if (!frameBytes || !frameCount) throw new Error('video dump has no complete frames')
+  const root = document.createElement('div'); root.className = 'media-video-player'
+  const canvas = document.createElement('canvas'); canvas.width = Number(details.width); canvas.height = Number(details.height)
+  const controls = document.createElement('div'); controls.className = 'media-video-controls'
+  const play = document.createElement('button'), slider = document.createElement('input'), label = document.createElement('span')
+  play.textContent = 'Play'; slider.type = 'range'; slider.min = 0; slider.max = frameCount - 1; slider.value = 0; label.textContent = `1 / ${frameCount}`
+  controls.append(play, slider, label); root.append(canvas, controls)
+  let timer = null
+  const render = (index) => { renderRawVideoFrame(canvas, bytes.subarray(index * frameBytes, (index + 1) * frameBytes), details); slider.value = index; label.textContent = `${index + 1} / ${frameCount}` }
+  slider.addEventListener('input', () => render(Number(slider.value)))
+  play.addEventListener('click', () => {
+    if (timer) { clearInterval(timer); timer = null; play.textContent = 'Play'; return }
+    play.textContent = 'Pause'
+    const fps = Math.min(30, Math.max(1, artifact.duration_ms ? frameCount / (artifact.duration_ms / 1000) : 15))
+    timer = setInterval(() => render((Number(slider.value) + 1) % frameCount), 1000 / fps)
+  })
+  render(0)
+  return root
+}
+
+function renderRawVideoFrame(canvas, source, details) {
+  const width = canvas.width, height = canvas.height, output = new Uint8ClampedArray(width * height * 4), planes = details.planes || []
+  if (details.pixel_format === 'rgba8') {
+    const plane = planes[0]
+    for (let y = 0; y < height; y++) output.set(source.subarray(Number(plane.offset) + y * Number(plane.stride), Number(plane.offset) + y * Number(plane.stride) + width * 4), y * width * 4)
+  } else if (details.pixel_format === 'yuv420p') {
+    const [yp, up, vp] = planes
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const Y = source[Number(yp.offset) + y * Number(yp.stride) + x], U = source[Number(up.offset) + Math.floor(y / 2) * Number(up.stride) + Math.floor(x / 2)] - 128, V = source[Number(vp.offset) + Math.floor(y / 2) * Number(vp.stride) + Math.floor(x / 2)] - 128, i = (y * width + x) * 4
+      output[i] = Math.max(0, Math.min(255, Y + 1.402 * V)); output[i + 1] = Math.max(0, Math.min(255, Y - .344136 * U - .714136 * V)); output[i + 2] = Math.max(0, Math.min(255, Y + 1.772 * U)); output[i + 3] = 255
+    }
+  } else throw new Error(`unsupported video format ${details.pixel_format}`)
+  canvas.getContext('2d').putImageData(new ImageData(output, width, height), 0, 0)
+}
+
 function renderHotspots(unhealthy) {
   if (!unhealthy.length) { const empty = document.createElement('div'); empty.className = 'hotspot-empty'; empty.textContent = state.runtime?.session_id ? '✓ No bottleneck detected in this session.' : 'Run the Graph to begin bottleneck detection.'; $('#observe-hotspots').replaceChildren(empty); return }
   const values = unhealthy.sort((a, b) => severityRank(b.severity) - severityRank(a.severity)).slice(0, 6)
@@ -1062,6 +1341,10 @@ async function selectObservationHistory(runId) {
     const value = await api(`/api/v1/observability/history/${encodeURIComponent(runId)}`)
     state.telemetry.history.selected = runId
     state.telemetry.history.samples = value.samples || []
+    state.mediaDump.selectedRunId = runId
+    state.semanticTrace.selectedRunId = runId
+    refreshMediaDumps(true, runId)
+    refreshSemanticTraces(true, runId)
     renderObservationHistory()
   } catch (error) { toast(`Historical telemetry unavailable: ${error.message}`, true) }
 }
@@ -1097,7 +1380,7 @@ function renderHistoryTrend() {
   const header = document.createElement('div'); header.className = 'history-trend-header'
   const copy = document.createElement('div'), title = document.createElement('b'), detail = document.createElement('small')
   title.textContent = `Session #${history.selected.split('-').at(-1)} trend`; detail.textContent = `${samples.length} persisted samples · ${selected?.status || 'unknown'} · ${formatDuration(selected?.duration_ms || 0)}`; copy.append(title, detail)
-  const close = document.createElement('button'); close.className = 'mini-button'; close.textContent = 'Close trend'; close.addEventListener('click', () => { history.selected = null; history.samples = []; renderObservationHistory() })
+  const close = document.createElement('button'); close.className = 'mini-button'; close.textContent = 'Close trend'; close.addEventListener('click', () => { history.selected = null; history.samples = []; state.mediaDump.selectedRunId = null; state.semanticTrace.selectedRunId = null; refreshMediaDumps(true); refreshSemanticTraces(true); renderObservationHistory() })
   header.append(copy, close)
   const series = [
     ['Queued frames', samples.map((sample) => sumField(sample.edges, 'queue_len')), '', (value) => formatNumber(value)],

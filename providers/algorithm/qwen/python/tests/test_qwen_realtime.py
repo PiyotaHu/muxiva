@@ -44,13 +44,56 @@ class FakeTransport:
 
 
 class Context:
-    def __init__(self): self.emissions, self.signals, self.events = [], [], []
+    def __init__(self):
+        self.emissions, self.signals, self.events = [], [], []
+        self.counters, self.gauges = {}, {}
     def emit(self, port, frame): self.emissions.append((port, frame))
     def emit_signal(self, name, payload): self.signals.append((name, payload))
     def publish_notification(self, topic, payload): self.events.append((topic, payload))
+    def increment_counter(self, name, amount=1):
+        self.counters[name] = self.counters.get(name, 0) + amount
+    def set_gauge(self, name, value): self.gauges[name] = value
 
 
 class QwenNodeTests(unittest.TestCase):
+    def test_transport_waits_for_session_configuration_before_accepting_audio(self):
+        actions = []
+
+        class Socket:
+            def __init__(self):
+                self.events = iter([
+                    '{"type":"session.created"}',
+                    '{"type":"session.updated"}',
+                ])
+            def recv(self):
+                actions.append("recv")
+                return next(self.events)
+            def send(self, value):
+                actions.append(("send", value))
+            def settimeout(self, value):
+                actions.append(("timeout", value))
+            def close(self):
+                actions.append("close")
+
+        socket = Socket()
+        websocket = types.SimpleNamespace(
+            create_connection=lambda *_args, **_kwargs: socket,
+            WebSocketTimeoutException=TimeoutError,
+        )
+        with mock.patch.dict(sys.modules, {"websocket": websocket}):
+            transport = module._QwenWebSocket(
+                "wss://example.invalid", "secret", {"type": "session.update"}
+            )
+
+        self.assertEqual(actions[0], "recv")
+        self.assertEqual(actions[1][0], "send")
+        self.assertEqual(actions[2], "recv")
+        self.assertEqual(actions[3], ("timeout", 0))
+        self.assertEqual(
+            [event["type"] for event in transport.poll(maximum=2)],
+            ["session.created", "session.updated"],
+        )
+
     def test_nonblocking_ssl_want_read_is_not_a_runtime_failure(self):
         class Socket:
             def recv(self): raise ssl.SSLWantReadError()
@@ -70,7 +113,7 @@ class QwenNodeTests(unittest.TestCase):
             {"type": "response.audio.delta", "delta": "AQIDBA=="},
             {"type": "response.done"},
         ])
-        node = module.QwenAudioRealtimeNode({}, lambda *_: transport)
+        node = module.QwenAudioRealtimeNode({"input_chunk_ms": 20}, lambda *_: transport)
         with mock.patch.dict(os.environ, {
             "DASHSCOPE_API_KEY": "secret", "DASHSCOPE_WORKSPACE_ID": "workspace"
         }):
@@ -93,6 +136,7 @@ class QwenNodeTests(unittest.TestCase):
         self.assertNotIn("client_event_out", ports)
         self.assertIn(("muxiva.voice.transcript.preview", {"text": "用户说"}), ctx.events)
         self.assertIn(("muxiva.voice.transcript.completed", {"text": "用户说"}), ctx.events)
+        self.assertEqual(ctx.counters["qwen.audio_chunks_sent"], 1)
 
     def test_uncancelled_response_emits_text_audio_and_completion(self):
         transport = FakeTransport([
@@ -101,7 +145,7 @@ class QwenNodeTests(unittest.TestCase):
             {"type": "response.audio.delta", "delta": "AQIDBA=="},
             {"type": "response.done"},
         ])
-        node = module.QwenAudioRealtimeNode({}, lambda *_: transport)
+        node = module.QwenAudioRealtimeNode({"input_chunk_ms": 20}, lambda *_: transport)
         with mock.patch.dict(os.environ, {
             "DASHSCOPE_API_KEY": "secret", "DASHSCOPE_WORKSPACE_ID": "workspace"
         }):
@@ -130,13 +174,31 @@ class QwenNodeTests(unittest.TestCase):
         self.assertEqual(update["session"]["voice"], "longanqian")
         self.assertNotIn("input_audio_transcription", update["session"])
 
+    def test_default_batches_ten_millisecond_frames_into_recommended_chunk(self):
+        transport = FakeTransport([])
+        node = module.QwenAudioRealtimeNode({}, lambda *_: transport)
+        with mock.patch.dict(os.environ, {
+            "DASHSCOPE_API_KEY": "secret", "DASHSCOPE_WORKSPACE_ID": "workspace"
+        }):
+            node.on_prepare()
+        ctx = Context()
+        for sequence in range(9):
+            node.on_process(AudioFrame(b"\x00\x01" * 160, 16000, sequence=sequence), ctx)
+        self.assertEqual(transport.sent, [])
+        node.on_process(AudioFrame(b"\x00\x01" * 160, 16000, sequence=9), ctx)
+        self.assertEqual(len(transport.sent), 1)
+        self.assertEqual(transport.sent[0]["type"], "input_audio_buffer.append")
+        self.assertEqual(ctx.counters["input.audio_frames"], 10)
+        self.assertEqual(ctx.counters["qwen.audio_chunks_sent"], 1)
+        self.assertEqual(ctx.gauges["input.audio_peak_pcm16"], 256)
+
     def test_smart_turn_does_not_include_server_vad_tuning(self):
         detection = module.session_update({"turn_detection": "smart_turn"})["session"]["turn_detection"]
         self.assertEqual(detection, {"type": "smart_turn"})
 
     def test_idle_speech_interrupts_muxiva_without_invalid_provider_cancel(self):
         transport = FakeTransport([{"type": "input_audio_buffer.speech_started"}])
-        node = module.QwenAudioRealtimeNode({}, lambda *_: transport)
+        node = module.QwenAudioRealtimeNode({"input_chunk_ms": 20}, lambda *_: transport)
         with mock.patch.dict(os.environ, {
             "DASHSCOPE_API_KEY": "secret", "DASHSCOPE_WORKSPACE_ID": "workspace"
         }):
@@ -147,7 +209,7 @@ class QwenNodeTests(unittest.TestCase):
         self.assertEqual(ctx.signals[0][0], "muxiva.voice.speech.started")
         self.assertFalse(any(topic == "muxiva.voice.barge_in" for topic, _ in ctx.events))
 
-    def test_late_cancel_error_does_not_abort_the_next_turn(self):
+    def test_real_qwen_late_cancel_race_recovers_and_answers_the_next_turn(self):
         transport = FakeTransport([
             {"type": "response.created"},
             {"type": "input_audio_buffer.speech_started"},
@@ -155,17 +217,62 @@ class QwenNodeTests(unittest.TestCase):
             {
                 "type": "error",
                 "error": {
-                    "code": "invalid_request_error",
-                    "message": "Cannot cancel: no active response",
+                    "code": "invalid_value",
+                    "message": "Conversation has no active response.",
                 },
             },
+            {"type": "input_audio_buffer.speech_stopped"},
+            {"type": "response.created"},
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "transcript": "猴子在树上扒得紧不紧，会不会掉下来？",
+            },
+            {"type": "response.audio_transcript.delta", "delta": "抓得牢通常不会掉。"},
+            {"type": "response.audio.delta", "delta": "AQIDBA=="},
+            {"type": "response.done"},
         ])
         node = module.QwenAudioRealtimeNode({}, lambda *_: transport)
         with mock.patch.dict(os.environ, {
             "DASHSCOPE_API_KEY": "secret", "DASHSCOPE_WORKSPACE_ID": "workspace"
         }):
             node.on_prepare()
-        node.on_process(AudioFrame(b"\0" * 640, 16000), Context())
+        ctx = Context()
+        node.on_process(AudioFrame(b"\0" * 640, 16000), ctx)
+
+        self.assertEqual(
+            [item["type"] for item in transport.sent],
+            ["response.cancel"],
+        )
+        self.assertIn(
+            ("muxiva.voice.transcript.completed", {
+                "text": "猴子在树上扒得紧不紧，会不会掉下来？"
+            }),
+            ctx.events,
+        )
+        self.assertIn("response_text_out", [port for port, _ in ctx.emissions])
+        self.assertIn("audio_out", [port for port, _ in ctx.emissions])
+        self.assertIn(
+            ("muxiva.voice.response.completed", {
+                "text": "抓得牢通常不会掉。", "audio_bytes": 4
+            }),
+            ctx.events,
+        )
+
+    def test_no_active_response_error_without_local_cancel_is_fatal(self):
+        transport = FakeTransport([{
+            "type": "error",
+            "error": {
+                "code": "invalid_value",
+                "message": "Conversation has no active response.",
+            },
+        }])
+        node = module.QwenAudioRealtimeNode({}, lambda *_: transport)
+        with mock.patch.dict(os.environ, {
+            "DASHSCOPE_API_KEY": "secret", "DASHSCOPE_WORKSPACE_ID": "workspace"
+        }):
+            node.on_prepare()
+        with self.assertRaises(module.QwenProtocolError):
+            node.on_process(AudioFrame(b"\0" * 640, 16000), Context())
 
 
 if __name__ == "__main__":

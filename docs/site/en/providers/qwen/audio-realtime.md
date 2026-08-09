@@ -25,8 +25,16 @@ realtime session. Use it for the lowest-latency speech-to-speech graph.
 
 `model` defaults to `qwen-audio-3.0-realtime-flash`; `voice` selects the synthesized voice;
 `instructions` defines assistant behavior; `turn_detection` accepts `server_vad` or `smart_turn`.
-The flagship demo recommends `server_vad` with a default threshold of `0.35` and a `1000ms`
-silence boundary so natural pauses do not split one utterance into two turns.
+The flagship demo uses Qwen Realtime's internal `server_vad`, preserving the boundary that one
+Realtime Node owns VAD, ASR, LLM, and TTS.
+`input_chunk_ms` defaults to
+`100`: the Node combines
+Agora's 10ms PCM Frames into the 100ms/3200-byte WebSocket chunks recommended by Model Studio
+while continuing to poll server events on every Runtime callback.
+Before sending any audio, the Node completes the strict
+`session.created → session.update → session.updated` handshake. A timeout or rejected
+configuration fails Runtime startup instead of leaving a false-running session whose audio count
+grows while the model never responds.
 
 On interruption, the Qwen Node cancels its own generation and emits a
 `muxiva.voice.speech.started` Signal; the Agora Audio Sink receives it and clears queued PCM.
@@ -35,3 +43,9 @@ consumes `transcript_preview_out`, `transcript_out`, `response_text_out`, and `e
 builds the Voice Room protocol. NotificationBus remains local observability. Voice Room renders `YOU ARE SPEAKING` and
 `BARGE-IN · INTERRUPTING AGENT`; `[MUXIVA][AGORA][audio.cancelled]` reports the exact number of
 bytes removed from pending playback.
+
+If RTC Frames keep increasing but there is no response, inspect `input.audio_peak_pcm16` and
+`input.audio_mean_abs_pcm16` on the Qwen Node in Observe. Values that remain near zero
+mean the browser is publishing silence or the wrong input device, rather than an ASR network
+bottleneck. Voice Room also shows a live **MIC LEVEL** and emits a yellow diagnostic when it sees no
+speech energy for five seconds.

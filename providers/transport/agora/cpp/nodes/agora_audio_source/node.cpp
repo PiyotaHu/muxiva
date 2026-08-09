@@ -1,10 +1,12 @@
 #include <muxiva/agora_rtc.hpp>
 #include <muxiva/muxiva.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 
@@ -22,6 +24,7 @@ muxiva_str_v1 borrow(const std::string& value) noexcept {
 class AgoraAudioSourceNode final : public muxiva::MultimodalGraphNode {
  public:
   void on_prepare() override {
+    peak_max_ = 0;
     const auto app_id = required_env("MUXIVA_AGORA_APP_ID");
     const auto token = required_env("MUXIVA_AGORA_BOT_TOKEN");
     const auto channel = required_env("MUXIVA_AGORA_CHANNEL");
@@ -71,6 +74,26 @@ class AgoraAudioSourceNode final : public muxiva::MultimodalGraphNode {
 
  private:
   void emit_current(muxiva::GraphNodeContext& ctx) {
+    std::uint64_t absolute_sum = 0;
+    std::uint64_t peak = 0;
+    const auto sample_count = current_.bytes.size() / 2;
+    for (std::size_t offset = 0; offset + 1 < current_.bytes.size(); offset += 2) {
+      const auto encoded = static_cast<std::uint16_t>(current_.bytes[offset]) |
+                           (static_cast<std::uint16_t>(current_.bytes[offset + 1]) << 8U);
+      const auto sample = static_cast<std::int16_t>(encoded);
+      const auto magnitude = sample < 0
+                                 ? static_cast<std::uint64_t>(-static_cast<std::int32_t>(sample))
+                                 : static_cast<std::uint64_t>(sample);
+      absolute_sum += magnitude;
+      peak = std::max(peak, magnitude);
+    }
+    const auto mean_absolute = sample_count == 0 ? 0 : absolute_sum / sample_count;
+    peak_max_ = std::max(peak_max_, peak);
+    ctx.set_gauge("input.audio_peak_pcm16", peak);
+    ctx.set_gauge("input.audio_peak_max_pcm16", peak_max_);
+    ctx.set_gauge("input.audio_mean_abs_pcm16", mean_absolute);
+    if (peak >= 256) ctx.increment_counter("input.non_silent_frames", 1);
+
     frame_ = {};
     frame_.header.abi_version = MUXIVA_ABI_VERSION_V1;
     frame_.header.struct_size = sizeof(frame_.header);
@@ -91,15 +114,18 @@ class AgoraAudioSourceNode final : public muxiva::MultimodalGraphNode {
     frame_.payload.audio.layout = MUXIVA_AUDIO_INTERLEAVED;
     frame_.payload.audio.samples_per_channel = current_.samples_per_channel;
     frame_.payload.audio.bytes = {current_.bytes.data(), current_.bytes.size()};
-    ctx.emit("audio_out", frame_);
+    const auto byte_count = current_.bytes.size();
+    ctx.emit_owned("audio_out",
+                   muxiva::OwnedFrame(frame_, std::move(current_.bytes)));
     ctx.increment_counter("output.audio_frames", 1);
     const auto emitted = ++emitted_frames_;
     if (emitted == 1 || emitted % 500 == 0) {
       std::fprintf(stderr,
                    "[MUXIVA][AGORA][audio.forwarded] frames=%llu bytes=%zu "
-                   "participant_uid=%u\n",
-                   static_cast<unsigned long long>(emitted), current_.bytes.size(),
-                   current_.remote_uid);
+                   "participant_uid=%u peak_pcm16=%llu mean_abs_pcm16=%llu\n",
+                   static_cast<unsigned long long>(emitted), byte_count,
+                   current_.remote_uid, static_cast<unsigned long long>(peak),
+                   static_cast<unsigned long long>(mean_absolute));
     }
   }
   static constexpr std::size_t kMaxDrainPerTick = 8;
@@ -110,6 +136,7 @@ class AgoraAudioSourceNode final : public muxiva::MultimodalGraphNode {
   std::atomic<std::uint64_t> emitted_frames_{0};
   std::uint64_t last_received_total_ = 0;
   std::uint64_t last_dropped_total_ = 0;
+  std::uint64_t peak_max_ = 0;
   std::string frame_id_;
   std::string clock_domain_ = "agora.remote.monotonic";
   std::string stream_id_;

@@ -59,13 +59,19 @@ source compatibility. Override
 `void on_signal(const muxiva_frame_view_v1&)` to receive graph Signals such as
 `muxiva.voice.speech.started`; emitting new control actions from C++ still requires a future
 context extension. Audio PCM, packed RGBA8 or I420 video, text, and bytes are copied
-and validated by Rust before queue admission. See
+and validated by Rust before queue admission when using the safe-default
+`context.emit`. High-throughput Audio, Video, and Byte Sources can instead call
+`context.emit_owned` with a move-only `muxiva::OwnedFrame`: the native vector
+allocation is adopted by the Runtime without a payload copy, shared across
+queues and Frame clones, and released after the last clone. The additive ABI
+falls back to safe copy on older hosts and keeps older Node Packs loadable. See
 `cpp/examples/multimodal_graph.cpp`.
 
-A Source controls its own polling cadence with
+Any Node can request a later input-free callback with
 `context.schedule_next_tick(std::chrono::milliseconds(20))`. This scheduling request is
 returned through an additive trailing ABI callback; Node packs built against the previous v1
-header remain loadable. Device and RTC Sources therefore do not need a surprising clock Node or
+header remain loadable. Device/RTC Sources use it for capture cadence; asynchronous Transform and
+Sink Nodes use it to drain bounded background results. None need a surprising clock Node or
 `tick_in` Port in the user's Graph.
 
 ## Agora RTC adapter

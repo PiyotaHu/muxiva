@@ -1,8 +1,8 @@
 """Cancellable Qwen streaming LLM application Node Pack for Muxiva.
 
-Provider I/O runs on a background worker. ``on_process`` only starts work or
-drains bounded results on a Runtime tick, so ``on_signal`` remains responsive
-while an HTTP SSE response is in flight.
+Provider I/O runs on a background worker. The Node asks the Runtime for short,
+internal callbacks that drain bounded results, so ``on_signal`` remains
+responsive without exposing a clock Node in the application Graph.
 """
 
 from __future__ import annotations
@@ -92,9 +92,12 @@ class QwenLlmStreamNode:
         input_port = getattr(ctx, "input_port", None)
         if input_port in (None, "text_in") and hasattr(frame, "text"):
             self._start_generation(frame.text, frame.sequence)
+            ctx.schedule_next_tick(20)
             return
-        if input_port == "tick_in":
+        if input_port == "tick_in" or (input_port is None and frame is None):
             self._drain(ctx)
+            if self._has_pending_work():
+                ctx.schedule_next_tick(20)
             return
         raise ValueError(f"Qwen LLM received unsupported input port: {input_port}")
 
@@ -193,7 +196,12 @@ class QwenLlmStreamNode:
                     self._active_client = None
 
     def _drain(self, ctx: Any) -> None:
-        maximum = int(self.config.get("max_results_per_tick", 32))
+        maximum = int(
+            self.config.get(
+                "max_results_per_wakeup",
+                self.config.get("max_results_per_tick", 32),
+            )
+        )
         for _ in range(maximum):
             try:
                 generation, kind, value, sequence = self._results.get_nowait()
@@ -253,6 +261,10 @@ class QwenLlmStreamNode:
     def _current_generation(self) -> int:
         with self._lock:
             return self._generation
+
+    def _has_pending_work(self) -> bool:
+        worker = self._worker
+        return (worker is not None and worker.is_alive()) or not self._results.empty()
 
     def _put_result(
         self,

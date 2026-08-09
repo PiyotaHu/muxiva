@@ -107,6 +107,30 @@ class VoiceRoomProtocolTests(unittest.TestCase):
         self.assertEqual(envelope["type"], "muxiva.voice.response.completed")
         self.assertEqual(envelope["payload"], {"text": "done"})
 
+    def test_cascade_graph_exposes_only_domain_nodes_not_runtime_plumbing(self):
+        project = pathlib.Path(__file__).parents[1]
+        graphs = [
+            json.loads((project / "graph.json").read_text()),
+            json.loads((project / ".muxiva/templates/02-qwen-cascade.json").read_text())["graph"],
+        ]
+        for graph in graphs:
+            with self.subTest(graph=graph["graph_id"]):
+                node_types = {node["node_type"] for node in graph["nodes"]}
+                self.assertTrue({
+                    "builtin.interval_tick",
+                    "builtin.voice_turn_context",
+                    "builtin.text_cancellation_gate",
+                }.isdisjoint(node_types))
+                self.assertFalse(any(
+                    edge["to"]["port"] == "tick_in" for edge in graph["edges"]
+                ))
+                routes = {
+                    (edge["from"]["node_id"], edge["to"]["node_id"])
+                    for edge in graph["edges"]
+                }
+                self.assertIn(("qwen-vad-asr", "pi-agent"), routes)
+                self.assertIn(("pi-agent", "qwen-tts"), routes)
+
 
 if __name__ == "__main__":
     unittest.main()

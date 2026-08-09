@@ -71,6 +71,8 @@ export interface GraphNodeContext {
   incrementCounter(name:string,delta?:number):void
   /** Replace a Node-owned runtime gauge shown in Studio Observe. Values are non-negative integers. */
   setGauge(name:string,value:number):void
+  /** Studio Host: request one input-free Runtime callback after the bounded delay. */
+  scheduleNextTick?(delayMs:number):void
 }
 export type GraphTextFrame = { kind:'text'; sequence:number; text:string }
 export type GraphByteFrame = { kind:'byte'; sequence:number; bytes:number[]; mediaType?:string }

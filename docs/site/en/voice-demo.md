@@ -43,9 +43,11 @@ The final command:
    [official macOS SDK repository](https://github.com/AgoraIO/AgoraRtcEngine_macOS/tree/4.6.2);
 2. verifies every archive with SHA-256;
 3. creates `examples/voice-agent/.muxiva/venv` and installs `websocket-client`;
-4. installs the exact Pi and Muxiva Agent npm dependency graph with lifecycle
-   scripts disabled, then type-checks the project Agent Node;
-5. builds the four C++ Nodes `agora.audio_source`, `agora.audio_sink`,
+4. checks out the pinned independent [Pi coding Agent](nodes/pi-agent.md),
+   installs npm dependencies with lifecycle scripts disabled, and tests the
+   adapter, Agent, and filesystem policy;
+5. creates the Agent's default coding workspace;
+6. builds the four C++ Nodes `agora.audio_source`, `agora.audio_sink`,
    `agora.data_source`, and `agora.data_sink`. They share one RTC Engine and Bot UID.
 
 Installation is complete only after these lines appear:
@@ -54,7 +56,8 @@ Installation is complete only after these lines appear:
 [MUXIVA][READY] Native, Python, and TypeScript Agent Node Packs are installed.
 [MUXIVA][AGORA] sdk=.../build/vendor/agora-macos-4.6.2
 [MUXIVA][QWEN]  python=.../.muxiva/venv/bin/python (no Qwen SDK download required)
-[MUXIVA][PI]    node=... version=... package=@earendil-works/pi-agent-core@0.84.1
+[MUXIVA][AGENT] repository=https://github.com/PiyotaHu/muxiva-pi-agent.git ref=v0.1.2 commit=...
+[MUXIVA][AGENT] workspace=.../.muxiva/workspaces/pi-agent permissions=list,read,search,create,replace
 ```
 
 To use a manually downloaded SDK instead:
@@ -103,7 +106,9 @@ The key and Workspace ID must be a matching pair from the same China (Beijing) w
 There is no Qwen SDK download step. Muxiva's Python Node talks directly to
 the documented WebSocket/HTTP protocols. Realtime defaults to
 `qwen-audio-3.0-realtime-flash`; the cascade uses Qwen ASR and TTS around a
-[Pi TypeScript Agent](nodes/pi-agent.md) backed by `qwen-flash`.
+[Pi coding Agent](nodes/pi-agent.md) backed by `qwen-flash`. It can really
+read, search, create, and edit files inside a bounded workspace. See the
+[Agent integration SOP](nodes/agent-integration.md) for application-owned Agents.
 
 ## 4. Start Studio and enter the credentials
 
@@ -115,7 +120,9 @@ muxiva doctor --voice
 `doctor` should report both Agora packs as `mode=agora-native`, report
 `qwen-python dependency=websocket`, and report
 `pi-typescript-agent ... dependencies=locked`. With no credentials it prints every `MISSING` value;
-that is a blocking diagnosis, not an optional hint. In Studio:
+that is a blocking diagnosis, not an optional hint. `run.sh` also prints `[MUXIVA][CLI]`; in a
+source checkout it should point at this repository's `target/debug/muxiva` or
+`target/release/muxiva`, preventing an older global CLI from serving stale Studio assets. In Studio:
 
 1. Open **Connections**.
 2. Enter the Model Studio API Key and Workspace ID.
@@ -124,7 +131,8 @@ that is a blocking diagnosis, not an optional hint. In Studio:
 5. Open **Templates** and choose **Qwen Realtime** for the first run.
 6. Select **Run** in Studio and confirm the Runtime is live. Studio owns this management action.
 7. Open **Voice Room**, select **Start live conversation**, and allow microphone access.
-8. Speak naturally, then speak again while the assistant is playing to verify full-duplex interruption.
+8. Confirm **MIC LEVEL** rises above `0%` while speaking, then speak again while the assistant is
+   playing to verify full-duplex interruption.
 
 Save connections writes values to `examples/voice-agent/.env` (mode `0600`, Git ignored).
 Future runs load it automatically. You can also create it manually from `.env.example`.
@@ -146,11 +154,15 @@ yellow/red bottlenecks automatically. See [Observability and bottleneck diagnosi
 for metric definitions, thresholds, and log filters.
 
 1. Voice Room reports that the browser joined and published the microphone.
-2. The log reports `[MUXIVA][AGORA][participant.joined] uid=1001`.
-3. The log reports `[MUXIVA][AGORA][audio.received]` and `agora-in.audio_out` advances in Studio.
-4. ASR, `turn-to-agent`, `agent-to-response-gate`, and the semantic room-message
-   Edges advance; Tool use appears as `muxiva.agent.tool.*` in Runtime events.
-5. `qwen-audio` and `agora-out` advance and the browser plays the response.
+2. **MIC LEVEL** rises while speaking; after five seconds without speech energy the page identifies
+   the input-device/permission problem directly.
+3. The log reports `[MUXIVA][AGORA][participant.joined] uid=1001`.
+4. The log reports `[MUXIVA][AGORA][audio.received]` and `agora-input` advances. In Observe, select
+   `agora-audio-source`; `input.audio_peak_pcm16` must rise clearly above zero while speaking.
+5. In Demo 1, the Qwen Realtime Node first logs Server VAD `speech_started` / `speech_stopped`,
+   followed by ASR and `response.created`. In Demo 2, inspect
+   `turn-to-agent` and `agent-to-response-gate`.
+6. `qwen-audio` and `audio-to-room` advance and the browser plays the response.
 
 The first missing signal identifies the failing layer. Credential values are never logged.
 
@@ -174,10 +186,13 @@ exposes Studio's Graph or Runtime management APIs.
 | `AgoraRtcKit.xcframework` not found | The manual package is for the wrong platform or incomplete; use the automatic installer |
 | `qwen-python ready=false` | Run `setup.sh` again to recreate the project virtual environment |
 | `pi-typescript-agent ready=false` | Install Node.js 22.19+ and rerun `setup.sh` to install the locked Pi packages |
+| `installed Agora Node Packs are older` | Stop the currently running Studio, run `./examples/voice-agent/setup.sh` once, then start the demo again; `run.sh` rejects stale native code instead of silently loading it |
 | Qwen authentication/model error | Key, Workspace ID, and model must belong to the same China (Beijing) Workspace |
 | Agora cannot join | App ID, channel, and UID must exactly match token generation and the token must be unexpired |
 | No microphone input | Allow microphone access for the local Studio page in browser site permissions |
-| You clearly hear your own voice | Update Muxiva and rerun `setup.sh` to rebuild the Agora Node Pack; Bot remote playout must log `muted` |
+| RTC Frames advance but nothing reacts | Check Voice Room **MIC LEVEL**, then Observe `input.audio_peak_pcm16`; values near zero mean silence or the wrong input device is being published |
+| The top bar has no `◎ Observe` | Check `[MUXIVA][CLI]` in startup output; source development must use this checkout's `target/.../muxiva`, and rerunning `setup.sh` now builds and selects it |
+| You clearly hear your own voice | Update Muxiva and rerun `setup.sh` to rebuild the Agora Node Pack; Bot logs must show `local_remote_playback=silenced-after-mix` |
 | Text appears but no voice plays | Look for `[MUXIVA][AGORA][audio.published]`; if absent Qwen produced no audio, otherwise verify the browser subscribed to the Bot track |
 | User ASR is missing | Look for Qwen `input_audio_transcription.completed`; the current page renders `text + stash` previews and final `transcript` |
 

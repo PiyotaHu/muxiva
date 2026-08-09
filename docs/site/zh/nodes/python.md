@@ -24,7 +24,9 @@ class ClientEvent:
 
 `ctx.emit(port, frame)` 可以在不结束回调的情况下发送数据；
 `ctx.emit_signal(name, payload)` 用于相邻图控制；
-`ctx.publish_notification(topic, payload)` 用于向 Runtime NotificationBus 发布低频进程内通知。
+`ctx.publish_notification(topic, payload)` 用于向 Runtime NotificationBus 发布低频进程内通知；
+`ctx.schedule_next_tick(delay_ms)` 请求一次无输入的 Runtime 内部回调，适合有界排空后台结果，
+无需声明 `tick_in` 或连接 Clock Node。
 返回 Frame 或 Port 映射仍作为兼容写法保留，新 Node 应优先使用显式 Context 动作。
 
 声明匹配的 Port：

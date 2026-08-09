@@ -4,18 +4,17 @@
   "display_name": "Qwen Cancellable Streaming LLM",
   "node_type": "qwen.llm_stream",
   "language": "python",
-  "factory_version": "1.2.0",
+  "factory_version": "1.3.0",
   "kind": "transform",
   "entrypoint": "node:QwenLlmStreamNode",
   "category": "algorithm",
   "capability": "language.generation.cancellable_streaming",
-  "summary": "Generates sentence-streamed responses on a cancellable background request drained by Runtime ticks.",
+  "summary": "Generates sentence-streamed responses on a cancellable background request with Runtime-managed wakeups.",
   "connection_id": "dashscope",
   "documentation": "https://piyotahu.github.io/muxiva/providers/qwen/llm-stream/",
   "tags": ["llm", "generation", "cancellation", "streaming"],
   "ports": [
     { "name": "text_in", "direction": "input", "frame_type": "text", "schema": { "semantics": "prompt_or_context", "streaming": true } },
-    { "name": "tick_in", "direction": "input", "frame_type": "event", "schema": { "semantics": ["runtime_tick"], "streaming": true } },
     { "name": "signal_in", "direction": "input", "frame_type": "signal", "schema": { "semantics": ["graph_control", "barge_in"] } },
     { "name": "text_out", "direction": "output", "frame_type": "text", "schema": { "semantics": "assistant_delta", "streaming": true } },
     { "name": "event_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["response_completed"], "streaming": true } }
@@ -26,7 +25,7 @@
       "model": { "type": "string", "default": "qwen-flash" },
       "system_prompt": { "type": "string", "default": "You are Muxiva, a warm, concise real-time voice assistant. Respond in the user's language." },
       "temperature": { "type": "number", "default": 0.6 },
-      "max_results_per_tick": { "type": "integer", "minimum": 1, "maximum": 256, "default": 32 }
+      "max_results_per_wakeup": { "type": "integer", "minimum": 1, "maximum": 256, "default": 32 }
     },
     "required": ["model", "system_prompt"],
     "additionalProperties": false

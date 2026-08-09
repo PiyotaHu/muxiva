@@ -49,8 +49,9 @@ cancellable Qwen TTS graph with live Node, Tool Call, Frame, and conversation st
 | Install and run a graph | [Installation and first run](getting-started.md) |
 | Build visually | [Muxiva Studio](studio.md) |
 | Understand the runtime | [Runtime architecture](concepts.md) |
-| Write a Node | [Node packages](nodes/index.md) |
+| Integrate an existing Agent | [Agent integration SOP](nodes/agent-integration.md) |
+| Build an Agent application or Node | [Developer manual](nodes/index.md) |
 | Integrate RTC or media | [Official and custom Nodes](integrations.md) |
 | Contribute safely | [Contributing](contributing.md) |
 
-[Build a Node](nodes/index.md){ .md-button }
+[Open the developer manual](nodes/index.md){ .md-button }

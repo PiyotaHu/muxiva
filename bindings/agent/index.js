@@ -32,7 +32,11 @@ export function defineAgentNode({ createDriver }) {
       this.closed = false
       this.tail = Promise.resolve()
       this.maxQueueSize = positiveInteger(config.max_queue_size, 2048, 65536)
-      this.maxResultsPerTick = positiveInteger(config.max_results_per_tick, 64, 1024)
+      this.maxResultsPerWakeup = positiveInteger(
+        config.max_results_per_wakeup ?? config.max_results_per_tick,
+        64,
+        1024,
+      )
       this.cancelSignals = new Set(
         Array.isArray(config.cancel_signals) ? config.cancel_signals : DEFAULT_CANCEL_SIGNALS,
       )
@@ -46,17 +50,22 @@ export function defineAgentNode({ createDriver }) {
       if (context.inputPort === 'prompt_in') {
         if (frame?.kind !== 'text') throw new TypeError('prompt_in requires a TextFrame')
         this.start(frame.text, frame.sequence ?? 0)
+        context.scheduleNextTick?.(20)
         return
       }
-      if (context.inputPort === 'tick_in') {
+      if (context.inputPort === 'tick_in' || (context.inputPort == null && frame == null)) {
         this.drain(context)
+        if (this.activeController || this.queue.length > 0) context.scheduleNextTick?.(20)
         return
       }
       throw new Error(`Agent Node received unsupported input Port: ${String(context.inputPort)}`)
     }
 
-    onSignal(signal) {
-      if (this.cancelSignals.has(signal?.name)) this.cancel(signal?.name ?? 'cancelled', signal?.sequence ?? 0)
+    onSignal(signal, context) {
+      if (this.cancelSignals.has(signal?.name)) {
+        this.cancel(signal?.name ?? 'cancelled', signal?.sequence ?? 0)
+        if (this.queue.length > 0) context?.scheduleNextTick?.(1)
+      }
     }
 
     async onFinish() {
@@ -154,7 +163,7 @@ export function defineAgentNode({ createDriver }) {
     }
 
     drain(context) {
-      for (let index = 0; index < this.maxResultsPerTick; index += 1) {
+      for (let index = 0; index < this.maxResultsPerWakeup; index += 1) {
         const item = this.queue.shift()
         if (!item) return
         if (item.generation !== this.generation) continue

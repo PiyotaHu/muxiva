@@ -66,5 +66,7 @@ The Studio project-package path is a separate execution boundary from
 `runGraph`. With Node.js 22.19 or newer, Studio imports the exact `node.ts`
 entrypoint in a managed subprocess and awaits asynchronous lifecycle methods.
 This is the path used by long-lived integrations such as the Pi Agent Node.
-Provider streams still run in the background and drain bounded output on a
-Tick input so cancellation callbacks remain responsive.
+Provider streams still run in the background and call
+`context.scheduleNextTick(delayMs)` to drain bounded output through input-free
+Runtime callbacks. Cancellation remains responsive without a Clock Node or
+synthetic Tick Edge in the application Graph.

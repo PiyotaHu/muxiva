@@ -46,8 +46,9 @@ flowchart LR
 | 安装并运行 Graph | [安装与首次运行](getting-started.md) |
 | 可视化开发 | [Muxiva Studio](studio.md) |
 | 理解 Runtime | [Runtime 架构](concepts.md) |
-| 编写 Node | [Node Package](nodes/index.md) |
+| 集成已有 Agent | [Agent 集成 SOP](nodes/agent-integration.md) |
+| 开发 Agent 应用或 Node | [开发手册](nodes/index.md) |
 | 集成 RTC 或媒体 | [官方与自定义 Node](integrations.md) |
 | 参与贡献 | [参与贡献](contributing.md) |
 
-[开发 Node](nodes/index.md){ .md-button }
+[打开开发手册](nodes/index.md){ .md-button }

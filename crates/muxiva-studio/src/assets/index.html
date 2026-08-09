@@ -8,6 +8,8 @@
   <link rel="stylesheet" href="/assets/runtime.css">
   <link rel="stylesheet" href="/assets/observability.css">
   <link rel="stylesheet" href="/assets/observability-history.css">
+  <link rel="stylesheet" href="/assets/media-dump.css">
+  <link rel="stylesheet" href="/assets/semantic-trace.css">
   <link rel="stylesheet" href="/assets/node-lab.css">
   <link rel="stylesheet" href="/assets/provider-help.css">
 </head>
@@ -156,6 +158,16 @@
             <section class="observe-card">
               <div class="observe-card-heading"><div><span class="eyebrow">DIAGNOSIS</span><h2>Hotspots</h2></div><small>Calculated from live rates, queues, latency and drops</small></div>
               <div id="observe-hotspots" class="observe-hotspots"></div>
+            </section>
+            <section class="observe-card semantic-trace-card">
+              <div class="observe-card-heading trace-heading"><div><span class="eyebrow">TURN-BY-TURN DATA FLOW</span><h2>Semantic trace</h2></div><div class="trace-controls"><span id="semantic-trace-status">No semantic messages</span><select id="semantic-trace-kind" aria-label="Filter semantic message type"><option value="all">All types</option><option value="text">Text</option><option value="event">Event</option><option value="signal">Signal</option></select><input id="semantic-trace-search" type="search" placeholder="Node, Port, topic or text" aria-label="Search semantic trace"><button id="semantic-trace-refresh" class="mini-button">↻ Refresh</button></div></div>
+              <div class="trace-notice">Text, Event and graph-local Signal envelopes are grouped into turns and correlated by Frame ID, Trace ID and Sequence. Both Node input and output boundaries are shown. Payloads stay in bounded process memory and are cleared when Studio restarts.</div>
+              <div id="semantic-trace-turns" class="semantic-trace-turns"><div class="trace-empty">Run the Graph to trace semantic messages.</div></div>
+            </section>
+            <section class="observe-card media-dump-card">
+              <div class="observe-card-heading"><div><span class="eyebrow">OPT-IN DIAGNOSTICS</span><h2>Node media dumps</h2></div><div class="media-dump-controls"><span id="media-dump-status">Off · no media is stored</span><label class="media-dump-toggle"><input id="media-dump-enabled" type="checkbox"><i></i><b>Dump Audio + Video</b></label></div></div>
+              <div class="media-dump-notice">When enabled, Studio captures every Audio/Video Frame received and emitted at each Node Port. Capture is asynchronous and bounded; it never blocks the Graph. Files stay local under <code>.muxiva/observability/media</code>.</div>
+              <div id="media-dump-artifacts" class="media-dump-artifacts"><div class="media-dump-empty">Enable the switch before or during a run to collect media diagnostics.</div></div>
             </section>
             <section class="observe-card">
               <div class="observe-card-heading"><div><span class="eyebrow">PERSISTED LOCALLY</span><h2>Session history</h2></div><div class="observe-history-actions"><span id="observe-export-status">Prometheus /metrics · OTLP not configured</span><button id="observe-history-refresh" class="mini-button">↻ Refresh</button></div></div>

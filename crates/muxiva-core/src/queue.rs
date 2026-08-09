@@ -2,7 +2,7 @@ use std::{
     collections::VecDeque,
     fmt,
     sync::{Arc, Condvar, Mutex},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use muxiva_types::{EdgeId, Frame};
@@ -99,6 +99,17 @@ impl QueueWake {
                 .wait(generation)
                 .unwrap_or_else(|e| e.into_inner());
         }
+    }
+
+    pub(crate) fn wait_for_change_timeout(&self, observed: u64, timeout: Duration) {
+        let generation = self.generation.lock().unwrap_or_else(|e| e.into_inner());
+        if *generation != observed {
+            return;
+        }
+        let _ = self
+            .changed
+            .wait_timeout_while(generation, timeout, |current| *current == observed)
+            .unwrap_or_else(|e| e.into_inner());
     }
 }
 

@@ -130,11 +130,11 @@ The Voice Graph Gallery exposes two choices:
    Node, project-local Voice Room event encoder, output resampler, and Agora audio/data Sinks. This is the recommended
    lowest-latency product path.
 2. **Pi Agent Full-Duplex Cascade (Demo 2)**: Agora ingress, input resampler,
-   Qwen Server VAD + realtime ASR, turn/context fusion, a project-local Pi
-   TypeScript Agent backed by Qwen with safe Tool Calls, text cancellation gate,
-   cancellable Qwen realtime TTS, project-local Voice Room event encoder, output
-   resampler, and Agora audio/data Sinks. A generic interval Node drives short
-   result-drain callbacks without placing Agent or vendor scheduling in Core.
+   Qwen Server VAD + realtime ASR, a project-local Pi TypeScript Agent backed by
+   Qwen with safe Tool Calls, cancellable Qwen realtime TTS, project-local Voice
+   Room event encoder, output resampler, and Agora audio/data Sinks. Agent and TTS
+   request short internal callbacks from the Runtime through Node Context; no
+   scheduling Node or synthetic Edge appears in the application Graph.
 
 A template is visible before its optional Provider is installed. It can be
 inspected and applied, while validation and Run require every exact Factory
@@ -174,15 +174,15 @@ Implemented after the provider-boundary correction:
   and the explicit interruption Signal;
 - the managed TypeScript Project Node Host loads exact module entrypoints and
   awaits async lifecycle callbacks in an isolated subprocess;
-- `@muxiva/agent` provides a vendor-neutral prompt/tick/signal/text/event Port
+- `@muxiva/agent` provides a vendor-neutral prompt/signal/text/event Port
   contract, bounded output, cancellation, and stale-generation suppression;
 - the project-local Pi Node owns Agent session state, Tool Calls, and the Qwen
   model adapter; none of those dependencies enter Rust Core;
 - Pi model streaming and Qwen TTS WebSocket I/O are cancellable background work;
-  20 ms Runtime ticks drain bounded result queues while leaving `on_signal` responsive;
-- the Demo 2 Signal fans out to Agent, TTS, text/project-protocol gates, and Agora playback;
-  late outputs retain the originating audio sequence so every watermark rejects
-  the same cancelled response;
+  Runtime-managed Node wakeups drain bounded result queues while leaving `on_signal` responsive;
+- the Demo 2 Signal fans out to Agent, TTS, the project-protocol Node, and Agora playback;
+  Agent generation, the TTS cancellation sequence, and Agora playback each reject
+  late output from the same cancelled response;
 - the project Voice Room joins through Agora Web SDK as an independent client;
   it neither controls the Studio Runtime nor reads its NotificationBus. Audio and
   versioned client events cross the Agora media/data transport and the room

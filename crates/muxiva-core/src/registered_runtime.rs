@@ -151,12 +151,40 @@ pub fn start_registered_runtime_with_context(
     resources: crate::ResourceStore,
     notification_bus: crate::NotificationBus,
 ) -> Result<GraphRuntime, RegisteredRuntimeStartError> {
+    start_registered_runtime_with_context_and_observer(
+        graph,
+        registry,
+        policies,
+        options,
+        resources,
+        notification_bus,
+        None,
+    )
+}
+
+/// Materializes and starts one graph with runtime services and an optional
+/// Runtime observer used only for diagnostics.
+pub fn start_registered_runtime_with_context_and_observer(
+    graph: GraphDefinition,
+    registry: &NodeRegistry,
+    policies: EdgePolicies,
+    options: RuntimeOptions,
+    resources: crate::ResourceStore,
+    notification_bus: crate::NotificationBus,
+    runtime_observer: Option<std::sync::Arc<dyn crate::RuntimeObserver>>,
+) -> Result<GraphRuntime, RegisteredRuntimeStartError> {
     let nodes = materialize_registered_nodes(&graph, registry)
         .map_err(RegisteredRuntimeStartError::Materialization)?;
-    ConcurrentRuntime::new(graph, nodes, policies, options)
+    let runtime = ConcurrentRuntime::new(graph, nodes, policies, options)
         .map_err(RegisteredRuntimeStartError::Attachments)?
         .with_resources(resources)
-        .with_notification_bus(notification_bus)
+        .with_notification_bus(notification_bus);
+    let runtime = if let Some(observer) = runtime_observer {
+        runtime.with_runtime_observer(observer)
+    } else {
+        runtime
+    };
+    runtime
         .start()
         .map_err(RegisteredRuntimeStartError::Threads)
 }

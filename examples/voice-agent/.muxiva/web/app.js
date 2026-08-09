@@ -16,8 +16,12 @@ let sessionStartedAt = 0
 let lastErrorMessage = ''
 let currentUserMessage = null
 let currentAgentMessage = null
+let lastCompletedTranscriptSequence = -1
+let transcriptCommittedForCurrentUtterance = false
 let botUid = null
 let clientMessageCount = 0
+let microphoneEnergyObserved = false
+let microphoneWarningShown = false
 const fragments = new Map()
 const maximumFragmentMessages = 64
 const maximumFragmentsPerMessage = 64
@@ -60,6 +64,8 @@ function resetConversation() {
   $('#message-list').append(empty)
   currentUserMessage = null
   currentAgentMessage = null
+  lastCompletedTranscriptSequence = -1
+  transcriptCommittedForCurrentUtterance = false
 }
 
 function createChatMessage(role) {
@@ -114,9 +120,10 @@ function completeAgentMessage(text = '') {
   currentAgentMessage = null
 }
 
-function diagnostic(text, error = false) {
+function diagnostic(text, error = false, warning = false) {
   const item = document.createElement('li')
   if (error) item.className = 'error-line'
+  else if (warning) item.className = 'warning-line'
   const time = document.createElement('time')
   time.textContent = new Date().toLocaleTimeString()
   item.append(time, document.createTextNode(text))
@@ -191,6 +198,8 @@ async function join() {
     diagnostic('Browser microphone published to Agora')
     sessionStartedAt = Date.now()
     clientMessageCount = 0
+    microphoneEnergyObserved = false
+    microphoneWarningShown = false
     $('#orb').classList.add('live')
     $('#orb span').textContent = 'LIVE'
     $('#launch').hidden = true
@@ -210,6 +219,15 @@ function startMeter() {
   clearInterval(meterTimer)
   meterTimer = setInterval(() => {
     const volume = microphone?.getVolumeLevel?.() || 0
+    $('#mic-level').textContent = `${Math.round(volume * 100)}%`
+    if (volume >= 0.015 && !microphoneEnergyObserved) {
+      microphoneEnergyObserved = true
+      diagnostic(`Microphone speech energy detected · level=${Math.round(volume * 100)}%`)
+    }
+    if (!microphoneEnergyObserved && !microphoneWarningShown && sessionStartedAt && Date.now() - sessionStartedAt >= 5000) {
+      microphoneWarningShown = true
+      diagnostic('No microphone speech energy detected yet · check the selected input device and browser microphone permission', false, true)
+    }
     const bars = [...document.querySelectorAll('#levels i')]
     bars.forEach((bar, index) => {
       const curve = Math.sin((index / bars.length) * Math.PI)
@@ -264,7 +282,12 @@ function handleClientEvent(event) {
     $('#calls').textContent = clientMessageCount
     $('#frames').textContent = event.sequence || clientMessageCount
     const text = typeof event.payload?.text === 'string' ? event.payload.text : ''
+    const numericSequence = Number(event.sequence)
+    const sequence = Number.isSafeInteger(numericSequence) && numericSequence >= 0
+      ? numericSequence
+      : null
     if (event.type === 'muxiva.voice.speech.started') {
+      transcriptCommittedForCurrentUtterance = false
       const interruptedPlayback = Boolean(currentAgentMessage) || $('#orb').classList.contains('speaking')
       beginUserMessage()
       if (interruptedPlayback) {
@@ -281,10 +304,18 @@ function handleClientEvent(event) {
     } else if (event.type === 'muxiva.voice.speech.stopped') {
       showBargeState('', 'UTTERANCE CAPTURED')
     } else if (event.type === 'muxiva.voice.transcript.preview') {
+      if (transcriptCommittedForCurrentUtterance) return
+      if (sequence !== null && sequence < lastCompletedTranscriptSequence) return
       previewUserMessage(text)
     } else if (event.type === 'muxiva.voice.transcript.delta') {
+      if (transcriptCommittedForCurrentUtterance) return
+      if (sequence !== null && sequence < lastCompletedTranscriptSequence) return
       previewUserMessage(`${currentUserMessage?.copy.textContent || ''}${text}`)
     } else if (event.type === 'muxiva.voice.transcript.completed') {
+      if (transcriptCommittedForCurrentUtterance) return
+      if (sequence !== null && sequence < lastCompletedTranscriptSequence) return
+      transcriptCommittedForCurrentUtterance = true
+      if (sequence !== null) lastCompletedTranscriptSequence = Math.max(lastCompletedTranscriptSequence, sequence)
       completeUserMessage(text)
       showBargeState('', 'VOICE CONTROL READY')
       message('Thinking…', 'Transcript committed to the typed Graph')
@@ -307,6 +338,9 @@ async function leave() {
   $('#orb').className = 'orb'
   $('#orb span').textContent = 'READY'
   sessionStartedAt = 0
+  microphoneEnergyObserved = false
+  microphoneWarningShown = false
+  $('#mic-level').textContent = '0%'
   fragments.clear()
   showBargeState('', 'VOICE CONTROL READY')
   $('#launch').hidden = false

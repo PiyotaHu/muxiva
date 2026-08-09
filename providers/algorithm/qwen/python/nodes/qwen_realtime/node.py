@@ -21,6 +21,10 @@ import muxiva
 
 DEFAULT_MODEL = "qwen-audio-3.0-realtime-flash"
 DEFAULT_VOICE = "longanqian"
+INPUT_SAMPLE_RATE_HZ = 16_000
+INPUT_CHANNELS = 1
+INPUT_SAMPLE_WIDTH_BYTES = 2
+DEFAULT_INPUT_CHUNK_MS = 100
 
 
 class QwenProtocolError(RuntimeError):
@@ -42,14 +46,50 @@ class _QwenWebSocket:
             timeout=10,
             enable_multithread=False,
         )
-        self._socket.send(json.dumps(session, separators=(",", ":")))
+        self._pending_events: list[dict[str, Any]] = []
+        try:
+            created = self._receive_until("session.created")
+            self._socket.send(json.dumps(session, separators=(",", ":")))
+            updated = self._receive_until("session.updated")
+        except Exception:
+            self._socket.close()
+            raise
+        self._pending_events.extend((created, updated))
         self._socket.settimeout(0)
+
+    def _receive_until(self, expected_type: str, maximum: int = 64) -> dict[str, Any]:
+        for _ in range(maximum):
+            try:
+                value = self._socket.recv()
+            except self._websocket.WebSocketTimeoutException as error:
+                raise QwenProtocolError(
+                    f"timed out waiting for Qwen {expected_type}"
+                ) from error
+            if value is None or value == b"" or value == "":
+                raise QwenProtocolError(
+                    f"Qwen connection closed before {expected_type}"
+                )
+            event = parse_server_event(value)
+            if event["type"] == "error":
+                detail = event.get("error", {})
+                code = str(detail.get("code", "unknown"))[:128]
+                message = str(detail.get("message", "session setup failed"))[:512]
+                raise QwenProtocolError(f"Qwen session error {code}: {message}")
+            if event["type"] == expected_type:
+                return event
+            self._pending_events.append(event)
+        raise QwenProtocolError(f"Qwen did not send {expected_type} within {maximum} events")
 
     def send(self, event: dict[str, Any]) -> None:
         self._socket.send(json.dumps(event, separators=(",", ":")))
 
     def poll(self, maximum: int = 64) -> Iterable[dict[str, Any]]:
-        for _ in range(maximum):
+        emitted = 0
+        pending_events = getattr(self, "_pending_events", [])
+        while pending_events and emitted < maximum:
+            emitted += 1
+            yield pending_events.pop(0)
+        for _ in range(maximum - emitted):
             try:
                 value = self._socket.recv()
             except (self._websocket.WebSocketTimeoutException, BlockingIOError, ssl.SSLWantReadError):
@@ -74,7 +114,10 @@ class QwenAudioRealtimeNode:
         self._response_active = False
         self._cancel_pending = False
         self._discard_response_output = False
-        self._audio_frames_sent = 0
+        self._input_audio = bytearray()
+        self._input_frames_received = 0
+        self._audio_chunks_sent = 0
+        self._audio_bytes_sent = 0
         self._response_text = ""
         self._response_audio_bytes = 0
 
@@ -110,12 +153,38 @@ class QwenAudioRealtimeNode:
     def on_process(self, frame: Any, ctx: Any) -> None:
         if self._transport is None:
             raise RuntimeError("Qwen realtime transport is not prepared")
-        if frame.sample_rate_hz != 16_000 or frame.channels != 1:
+        if frame.sample_rate_hz != INPUT_SAMPLE_RATE_HZ or frame.channels != INPUT_CHANNELS:
             raise ValueError("Qwen input must be mono PCM s16le at 16000 Hz")
-        self._transport.send(audio_append(frame.data))
-        self._audio_frames_sent += 1
-        if self._audio_frames_sent == 1 or self._audio_frames_sent % 500 == 0:
-            self._log("audio.sent", frames=self._audio_frames_sent, bytes=len(frame.data))
+        self._input_frames_received += 1
+        self._input_audio.extend(frame.data)
+        self._record_input_metrics(frame.data, ctx)
+        chunk_bytes = (
+            INPUT_SAMPLE_RATE_HZ
+            * INPUT_CHANNELS
+            * INPUT_SAMPLE_WIDTH_BYTES
+            * int(self.config.get("input_chunk_ms", DEFAULT_INPUT_CHUNK_MS))
+            // 1000
+        )
+        if chunk_bytes <= 0 or chunk_bytes > 64 * 1024:
+            raise ValueError("input_chunk_ms must produce a 1 through 65536 byte PCM chunk")
+        while len(self._input_audio) >= chunk_bytes:
+            chunk = bytes(self._input_audio[:chunk_bytes])
+            del self._input_audio[:chunk_bytes]
+            self._transport.send(audio_append(chunk))
+            self._audio_chunks_sent += 1
+            self._audio_bytes_sent += len(chunk)
+            increment = getattr(ctx, "increment_counter", None)
+            if callable(increment):
+                increment("qwen.audio_chunks_sent")
+                increment("qwen.audio_bytes_sent", len(chunk))
+            if self._audio_chunks_sent == 1 or self._audio_chunks_sent % 50 == 0:
+                self._log(
+                    "audio.sent",
+                    input_frames=self._input_frames_received,
+                    chunks=self._audio_chunks_sent,
+                    chunk_bytes=len(chunk),
+                    total_bytes=self._audio_bytes_sent,
+                )
         for event in self._transport.poll():
             kind = event["type"]
             if kind in {
@@ -147,27 +216,9 @@ class QwenAudioRealtimeNode:
                         frame.sequence,
                     )
             elif kind == "input_audio_buffer.speech_started":
-                response_cancelled = self._response_active
-                if self._response_active:
-                    self._transport.send(response_cancel())
-                    self._response_active = False
-                    self._cancel_pending = True
-                    self._discard_response_output = True
-                ctx.emit_signal("muxiva.voice.speech.started", {"node": "qwen.audio_realtime"})
-                self._emit_event(
-                    ctx, "muxiva.voice.speech.started", {"node": "qwen.audio_realtime"}, frame.sequence
-                )
-                if response_cancelled:
-                    self._emit_event(
-                        ctx,
-                        "muxiva.voice.barge_in",
-                        {"node": "qwen.audio_realtime", "response_cancelled": True},
-                        frame.sequence,
-                    )
+                self._speech_started(ctx, frame.sequence)
             elif kind == "input_audio_buffer.speech_stopped":
-                self._emit_event(
-                    ctx, "muxiva.voice.speech.stopped", {"node": "qwen.audio_realtime"}, frame.sequence
-                )
+                self._speech_stopped(ctx, frame.sequence)
             elif kind == "response.audio.delta":
                 if self._discard_response_output:
                     continue
@@ -195,6 +246,7 @@ class QwenAudioRealtimeNode:
             elif kind == "conversation.item.input_audio_transcription.completed":
                 text = event.get("transcript", "")
                 if text:
+                    self._log("transcript.completed", text=json.dumps(text, ensure_ascii=False))
                     ctx.emit("transcript_out", muxiva.TextFrame(text, sequence=frame.sequence))
                     ctx.publish_notification("muxiva.voice.transcript.completed", {"text": text})
             elif kind == "conversation.item.input_audio_transcription.failed":
@@ -212,11 +264,62 @@ class QwenAudioRealtimeNode:
                 self._log("node.error", code=code, message=json.dumps(message))
                 if self._cancel_pending and _is_cancel_race(code, message):
                     self._cancel_pending = False
-                    self._log("cancel.race", action="ignored", reason="response_already_done")
+                    self._log(
+                        "cancel.race",
+                        action="ignored",
+                        reason="response_already_done",
+                        provider_code=code,
+                    )
                     continue
                 raise QwenProtocolError(
                     f"Qwen Node error {code}: {message}"
                 )
+
+    def _speech_started(self, ctx: Any, sequence: int) -> None:
+        response_cancelled = self._response_active
+        if self._response_active:
+            self._transport.send(response_cancel())
+            self._response_active = False
+            self._cancel_pending = True
+            self._discard_response_output = True
+            self._log("barge_in", action="cancel_response", sequence=sequence)
+        ctx.emit_signal("muxiva.voice.speech.started", {"node": "qwen.audio_realtime"})
+        self._emit_event(
+            ctx, "muxiva.voice.speech.started", {"node": "qwen.audio_realtime"}, sequence
+        )
+        if response_cancelled:
+            self._emit_event(
+                ctx,
+                "muxiva.voice.barge_in",
+                {"node": "qwen.audio_realtime", "response_cancelled": True},
+                sequence,
+            )
+
+    def _speech_stopped(self, ctx: Any, sequence: int) -> None:
+        self._emit_event(
+            ctx, "muxiva.voice.speech.stopped", {"node": "qwen.audio_realtime"}, sequence
+        )
+
+    @staticmethod
+    def _record_input_metrics(pcm: bytes, ctx: Any) -> None:
+        peak = 0
+        absolute_sum = 0
+        sample_count = len(pcm) // 2
+        for offset in range(0, sample_count * 2, 2):
+            sample = int.from_bytes(pcm[offset : offset + 2], "little", signed=True)
+            magnitude = abs(sample)
+            absolute_sum += magnitude
+            peak = max(peak, magnitude)
+        mean_absolute = absolute_sum // sample_count if sample_count else 0
+        gauge = getattr(ctx, "set_gauge", None)
+        if callable(gauge):
+            gauge("input.audio_peak_pcm16", peak)
+            gauge("input.audio_mean_abs_pcm16", mean_absolute)
+        increment = getattr(ctx, "increment_counter", None)
+        if callable(increment):
+            increment("input.audio_frames")
+            if peak >= 256:
+                increment("input.non_silent_frames")
 
     @staticmethod
     def _emit_event(ctx: Any, topic: str, payload: dict[str, Any], sequence: int) -> None:
@@ -286,17 +389,27 @@ def response_cancel() -> dict[str, str]:
 
 def _is_cancel_race(code: str, message: str) -> bool:
     detail = f"{code} {message}".lower()
-    return "cancel" in detail and any(
+    response_is_gone = any(
         marker in detail
         for marker in (
-            "no active",
-            "not active",
-            "not found",
-            "already done",
-            "already completed",
-            "cannot cancel",
+            "conversation has no active response",
+            "no active response",
+            "response is not active",
+            "response not found",
+            "response already done",
+            "response already completed",
         )
     )
+    # Qwen currently reports a late response.cancel in two forms. Some versions
+    # mention cancel explicitly; Audio Realtime may only return
+    # `invalid_value: Conversation has no active response.`. The caller also
+    # requires an outstanding local cancel, so an unrelated provider error is
+    # never swallowed here.
+    cancel_request_rejected = "cancel" in detail or code.lower() in {
+        "invalid_value",
+        "invalid_request_error",
+    }
+    return response_is_gone and cancel_request_rejected
 
 
 def _event_id() -> str:

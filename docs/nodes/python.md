@@ -25,6 +25,8 @@ class Uppercase:
 
 `ctx.emit` may be called repeatedly for different ports or Frames. Return
 values remain supported by the Studio Host only as compatibility sugar. The
+Host also exposes `ctx.schedule_next_tick(delay_ms)` for bounded background
+result draining without a Clock Node or `tick_in` Port. The
 standalone Wheel's general Graph callback bridge still uses returned mappings;
 bringing this context-action protocol to that bridge is a tracked SDK boundary.
 
@@ -38,4 +40,5 @@ configuration, and Agora boundaries.
 Graph 并在本地开发 Host 中运行；保存和浏览不会导入代码，只有点击 **Run** 才会
 加载。`on_process(frame, ctx)` 可通过 `ctx.emit`、`ctx.emit_signal` 和
 `ctx.publish_notification` 分别发送数据、图内控制信号和进程内通知，不需要用 `return`
-结束回调。Graph JSON 只引用 Factory 身份，不保存 Python 源码。
+结束回调；后台任务可用 `ctx.schedule_next_tick(delay_ms)` 请求 Runtime 内部回调，不必
+在图中增加 Clock Node。Graph JSON 只引用 Factory 身份，不保存 Python 源码。

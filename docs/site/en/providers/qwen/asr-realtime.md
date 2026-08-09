@@ -18,7 +18,7 @@ enters explicit control Edges.
 | `speech_out` | Output Event | Server-VAD `speech.started` / `speech.stopped` |
 | `signal_out` | Output Signal | `muxiva.voice.speech.started` for barge-in |
 | `transcript_preview_out` | Output Text | Partial transcript |
-| `text_out` | Output Text | Final transcript |
+| `text_out` | Output Text | Final transcript committed after Server VAD closes the turn |
 | `event_out` | Output Event | Transcript failure state |
 
 ## Configuration
@@ -26,6 +26,8 @@ enters explicit control Edges.
 `model` defaults to `qwen3-asr-flash-realtime`; `language` defaults to `zh`; `vad_threshold` and
 `silence_duration_ms` tune utterance completion. Configure the shared `dashscope` Connection.
 The Node emits provider-neutral semantic Frames only. Demo 2 fans its Text and Event outputs into
-both Graph processing Nodes and the project-local Voice Room protocol Node.
+both Graph processing Nodes and the project-local Voice Room protocol Node. If vendor events are
+reordered, the Node waits for `speech.stopped` before committing `text_out` and drops previews that
+arrive after Final, so the Graph needs no separate Turn Context Node.
 
 See Alibaba Cloud's [Qwen real-time speech recognition guide](https://help.aliyun.com/en/model-studio/real-time-speech-recognition-user-guide) for the current protocol and model scope.

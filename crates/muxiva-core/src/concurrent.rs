@@ -26,7 +26,10 @@ use crate::{
     SignalQueuePushError, StopToken, TransformPolicy, ValidationDecision, ValidationFailureAction,
     ValidationPolicy,
 };
-use crate::{NotificationBus, SignalQueueSnapshot};
+use crate::{
+    FrameObservation, FrameObservationDirection, NotificationBus, RuntimeObserver,
+    SignalObservation, SignalObservationDirection, SignalQueueSnapshot,
+};
 
 /// Stage 5A scheduler options. Admission is deliberately fixed at one active
 /// callback per node; later profiles may lower or raise the declared ceiling.
@@ -410,6 +413,7 @@ pub struct ConcurrentRuntime {
     options: RuntimeOptions,
     notification_bus: NotificationBus,
     resources: ResourceStore,
+    runtime_observer: Option<Arc<dyn RuntimeObserver>>,
 }
 
 impl ConcurrentRuntime {
@@ -437,6 +441,7 @@ impl ConcurrentRuntime {
             options,
             notification_bus: NotificationBus::default(),
             resources: ResourceStore::new(),
+            runtime_observer: None,
         })
     }
 
@@ -447,6 +452,13 @@ impl ConcurrentRuntime {
 
     pub fn with_resources(mut self, resources: ResourceStore) -> Self {
         self.resources = resources;
+        self
+    }
+
+    /// Attaches diagnostics that observe Frames and Signals at Node boundaries.
+    /// The observer is isolated from routing and cannot change graph behavior.
+    pub fn with_runtime_observer(mut self, observer: Arc<dyn RuntimeObserver>) -> Self {
+        self.runtime_observer = Some(observer);
         self
     }
 
@@ -520,6 +532,7 @@ impl ConcurrentRuntime {
             notification_bus: self.notification_bus.clone(),
             resources: self.resources.clone(),
             node_metrics: node_metrics.clone(),
+            runtime_observer: self.runtime_observer.clone(),
         });
 
         let mut incoming = BTreeMap::<NodeId, Vec<InputEdge>>::new();
@@ -979,6 +992,7 @@ struct WorkerShared {
     notification_bus: NotificationBus,
     resources: ResourceStore,
     node_metrics: Arc<BTreeMap<NodeId, NodeMetrics>>,
+    runtime_observer: Option<Arc<dyn RuntimeObserver>>,
 }
 
 struct InputEdge {
@@ -1007,7 +1021,7 @@ enum Dispatch {
 struct NodeCallOutput {
     emissions: Vec<NodeEmission>,
     signals: Vec<SignalFrame>,
-    next_source_tick: Option<Duration>,
+    next_tick: Option<Duration>,
 }
 
 struct NodeWorker {
@@ -1108,7 +1122,7 @@ impl NodeWorker {
                     .get(&self.node_id)
                     .expect("node metrics"),
             )?;
-            let next_tick = output.next_source_tick;
+            let next_tick = output.next_tick;
             self.route(output)?;
             let Some(delay) = next_tick else {
                 return Ok(());
@@ -1121,6 +1135,7 @@ impl NodeWorker {
 
     fn run_consumer(&mut self) -> Result<(), AbortReason> {
         let mut cursor = 0usize;
+        let mut next_tick: Option<Instant> = None;
         loop {
             let observed = self.wake.generation();
             let mut received_signal = None;
@@ -1134,6 +1149,13 @@ impl NodeWorker {
             }
             if let Some((index, signal)) = received_signal {
                 let input_port = self.incoming[index].port.clone();
+                observe_signal(
+                    self.shared.runtime_observer.as_deref(),
+                    &self.node_id,
+                    Some(&input_port),
+                    SignalObservationDirection::Input,
+                    &signal,
+                );
                 let output = call_signal(
                     &mut *self.node,
                     &self.node_id,
@@ -1149,6 +1171,33 @@ impl NodeWorker {
                         .get(&self.node_id)
                         .expect("node metrics"),
                 )?;
+                if let Some(delay) = output.next_tick {
+                    next_tick = Some(Instant::now() + delay);
+                }
+                self.route(output)?;
+                continue;
+            }
+
+            if next_tick.is_some_and(|deadline| deadline <= Instant::now()) {
+                next_tick = None;
+                let output = call_process(
+                    &mut *self.node,
+                    &self.node_id,
+                    None,
+                    None,
+                    &self.shared.graph,
+                    self.shared.options.emission_budget(),
+                    !self.outgoing.is_empty(),
+                    &self.shared.notification_bus,
+                    &self.shared.resources,
+                    self.shared
+                        .node_metrics
+                        .get(&self.node_id)
+                        .expect("node metrics"),
+                )?;
+                if let Some(delay) = output.next_tick {
+                    next_tick = Some(Instant::now() + delay);
+                }
                 self.route(output)?;
                 continue;
             }
@@ -1163,6 +1212,13 @@ impl NodeWorker {
             }
             if let Some((index, frame)) = received {
                 let input_port = self.incoming[index].port.clone();
+                observe_frame(
+                    self.shared.runtime_observer.as_deref(),
+                    &self.node_id,
+                    &input_port,
+                    FrameObservationDirection::Input,
+                    &frame,
+                );
                 let output = call_process(
                     &mut *self.node,
                     &self.node_id,
@@ -1178,15 +1234,26 @@ impl NodeWorker {
                         .get(&self.node_id)
                         .expect("node metrics"),
                 )?;
+                if let Some(delay) = output.next_tick {
+                    next_tick = Some(Instant::now() + delay);
+                }
                 self.route(output)?;
                 continue;
             }
             if self.incoming.iter().all(|edge| {
                 edge.queue.is_closed_and_empty() && edge.signal_queue.is_closed_and_empty()
-            }) {
+            }) && (next_tick.is_none() || self.shared.stop.is_cancelled())
+            {
                 return Ok(());
             }
-            self.wake.wait_for_change(observed);
+            if let Some(deadline) = next_tick {
+                self.wake.wait_for_change_timeout(
+                    observed,
+                    deadline.saturating_duration_since(Instant::now()),
+                );
+            } else {
+                self.wake.wait_for_change(observed);
+            }
         }
     }
 
@@ -1221,6 +1288,13 @@ impl NodeWorker {
                     AbortStage::Process,
                 ));
             }
+            observe_frame(
+                self.shared.runtime_observer.as_deref(),
+                &self.node_id,
+                &output_port,
+                FrameObservationDirection::Output,
+                &frame,
+            );
             for (index, output) in self.outgoing.iter().enumerate() {
                 if output.descriptor.from_output_port() == &output_port {
                     batches[index].push(frame.clone());
@@ -1260,6 +1334,15 @@ impl NodeWorker {
             }
         }
         if !output.signals.is_empty() {
+            for signal in &output.signals {
+                observe_signal(
+                    self.shared.runtime_observer.as_deref(),
+                    &self.node_id,
+                    None,
+                    SignalObservationDirection::Output,
+                    signal,
+                );
+            }
             for outgoing in &self.outgoing {
                 if outgoing
                     .sender
@@ -1286,6 +1369,37 @@ impl NodeWorker {
             ))
         }
     }
+}
+
+fn observe_frame(
+    observer: Option<&dyn RuntimeObserver>,
+    node_id: &NodeId,
+    port: &PortName,
+    direction: FrameObservationDirection,
+    frame: &Frame,
+) {
+    let Some(observer) = observer else {
+        return;
+    };
+    // Diagnostic extensions cannot be allowed to fail a data-plane worker.
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        observer.observe_frame(FrameObservation::new(node_id, port, direction, frame));
+    }));
+}
+
+fn observe_signal(
+    observer: Option<&dyn RuntimeObserver>,
+    node_id: &NodeId,
+    port: Option<&PortName>,
+    direction: SignalObservationDirection,
+    signal: &SignalFrame,
+) {
+    let Some(observer) = observer else {
+        return;
+    };
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        observer.observe_signal(SignalObservation::new(node_id, port, direction, signal));
+    }));
 }
 
 fn run_dispatcher(
@@ -1546,7 +1660,7 @@ fn call_process(
         Ok(Ok(())) => Ok(NodeCallOutput {
             emissions: context.take_emissions(),
             signals: context.take_signals(),
-            next_source_tick: context.take_next_source_tick(),
+            next_tick: context.take_next_tick(),
         }),
         Ok(Err(error)) => Err(node_error(error, node_id, AbortStage::Process)),
         Err(payload) => Err(panic_abort(
@@ -1598,7 +1712,7 @@ fn call_signal(
         Ok(Ok(())) => Ok(NodeCallOutput {
             emissions: context.take_emissions(),
             signals: context.take_signals(),
-            next_source_tick: None,
+            next_tick: context.take_next_tick(),
         }),
         Ok(Err(error)) => Err(node_error(error, node_id, AbortStage::Process)),
         Err(payload) => Err(panic_abort(

@@ -4,7 +4,7 @@
   "display_name": "Qwen Audio Realtime",
   "node_type": "qwen.audio_realtime",
   "language": "python",
-  "factory_version": "1.1.0",
+  "factory_version": "1.2.0",
   "kind": "transform",
   "entrypoint": "node:QwenAudioRealtimeNode",
   "category": "algorithm",
@@ -30,7 +30,8 @@
       "instructions": { "type": "string", "default": "You are a concise, helpful realtime voice assistant." },
       "turn_detection": { "type": "string", "enum": ["server_vad", "smart_turn"], "default": "server_vad" },
       "vad_threshold": { "type": "number", "minimum": -1, "maximum": 1, "default": 0.35 },
-      "silence_duration_ms": { "type": "integer", "minimum": 200, "maximum": 6000, "default": 1000 }
+      "silence_duration_ms": { "type": "integer", "minimum": 200, "maximum": 6000, "default": 1000 },
+      "input_chunk_ms": { "type": "integer", "minimum": 20, "maximum": 1000, "multipleOf": 10, "default": 100 }
     },
     "required": ["model", "voice", "instructions", "turn_detection"],
     "additionalProperties": false

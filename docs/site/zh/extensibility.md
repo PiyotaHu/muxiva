@@ -71,4 +71,4 @@ Studio 和 CLI 从受信任的目录发现 Package，包括项目内 `.muxiva/no
 6. 用测试工具覆盖正常、慢下游、取消和错误路径；
 7. 作为项目 Node 或官方 Node Pack 分发。
 
-选择实现语言：[多语言执行模型](languages.md)。具体教程：[开发 Node](nodes/index.md)。
+选择实现语言：[多语言执行模型](languages.md)。Agent 集成和语言教程见[开发手册](nodes/index.md)。

@@ -2,7 +2,7 @@
 
 > A Rust-native, real-time multimodal agent runtime with one graph and lifecycle contract across Rust, C++, Python, and TypeScript.
 
-[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/muxiva/) · [Architecture](https://piyotahu.github.io/muxiva/concepts/) · [Flagship voice demo](https://piyotahu.github.io/muxiva/voice-demo/) · [Build Nodes](https://piyotahu.github.io/muxiva/nodes/) · [Studio](https://piyotahu.github.io/muxiva/studio/) · [Observability](https://piyotahu.github.io/muxiva/observability/) · [Graph v1](https://piyotahu.github.io/muxiva/graph/) · [Testing](https://piyotahu.github.io/muxiva/testing/)
+[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/muxiva/) · [Architecture](https://piyotahu.github.io/muxiva/concepts/) · [Flagship voice demo](https://piyotahu.github.io/muxiva/voice-demo/) · [Developer manual](https://piyotahu.github.io/muxiva/nodes/) · [Agent integration](https://piyotahu.github.io/muxiva/nodes/agent-integration/) · [Studio](https://piyotahu.github.io/muxiva/studio/) · [Observability](https://piyotahu.github.io/muxiva/observability/) · [Graph v1](https://piyotahu.github.io/muxiva/graph/) · [Testing](https://piyotahu.github.io/muxiva/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -87,8 +87,9 @@ knowledge of the Rust workspace.
 ### Run the real voice assistant
 
 The flagship application offers Qwen Audio Realtime plus **Demo 2**, an
-inspectable full-duplex Qwen Server VAD + ASR → tool-using Pi TypeScript Agent →
-cancellable Qwen TTS graph, with Agora C++ transport and a browser microphone:
+inspectable full-duplex Qwen Server VAD + ASR → independently versioned Pi
+TypeScript coding Agent → cancellable Qwen TTS graph, with Agora C++ transport,
+a browser microphone, and real workspace-scoped file tools:
 
 ```bash
 ./examples/voice-agent/setup.sh       # macOS: downloads and verifies Agora SDK
@@ -136,7 +137,7 @@ listens on `127.0.0.1` by default and generates a local access token. See the
 ./scripts/check-ffi.sh
 ```
 
-These scripts build real installable packages, run integration tests, and execute independent Python, TypeScript, and C++ consumer examples. See the [Node development guide](https://piyotahu.github.io/muxiva/nodes/) for language-specific workflows.
+These scripts build real installable packages, run integration tests, and execute independent Python, TypeScript, and C++ consumer examples. See the [developer manual](https://piyotahu.github.io/muxiva/nodes/) for Agent integration and language-specific Node workflows.
 
 ## Flagship graphs
 

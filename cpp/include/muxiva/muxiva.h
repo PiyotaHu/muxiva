@@ -148,6 +148,20 @@ typedef struct muxiva_named_frame_v1 {
   muxiva_str_v1 output_port;
   muxiva_frame_view_v1 frame;
 } muxiva_named_frame_v1;
+typedef void (*muxiva_owned_payload_release_fn_v1)(void *);
+/*
+ * One payload whose allocation is transferred from a native Node to Muxiva.
+ * Header strings remain borrowed until the next lifecycle call. `payload_owner`
+ * and `release_payload` transfer exactly once when this view is returned. The
+ * release callback may run on any Runtime worker thread.
+ */
+typedef struct muxiva_owned_named_frame_v1 {
+  muxiva_str_v1 output_port;
+  muxiva_frame_view_v1 frame;
+  void *payload_owner;
+  muxiva_owned_payload_release_fn_v1 release_payload;
+  uint64_t reserved[2];
+} muxiva_owned_named_frame_v1;
 enum { MUXIVA_NODE_METRIC_COUNTER_ADD = 1, MUXIVA_NODE_METRIC_GAUGE_SET = 2 };
 typedef struct muxiva_node_metric_v1 {
   muxiva_str_v1 name;
@@ -170,6 +184,7 @@ typedef struct muxiva_graph_node_vtable_v1 {
   uint64_t reserved[3];
   uint64_t (*take_next_source_tick_ns)(void *);
   void (*take_metrics)(void *, const muxiva_node_metric_v1 **, size_t *);
+  void (*take_owned_emissions)(void *, const muxiva_owned_named_frame_v1 **, size_t *);
 } muxiva_graph_node_vtable_v1;
 typedef muxiva_status_v1 (*muxiva_multimodal_node_factory_create_fn_v1)(
     void *, muxiva_str_v1, muxiva_str_v1, muxiva_graph_node_vtable_v1 *, muxiva_error_v1 *);

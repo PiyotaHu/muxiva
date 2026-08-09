@@ -130,21 +130,24 @@ fn inspect_voice_project(current: &Path, warnings: &mut usize) -> Option<PathBuf
         .is_ok_and(|status| status.success());
     let pi_ready = node_ready
         && project
-            .join("node_modules/@earendil-works/pi-agent-core/package.json")
+            .join("node_modules/@piyotahu/muxiva-pi-agent/package.json")
             .is_file()
         && project
             .join("node_modules/@muxiva/agent/package.json")
+            .is_file()
+        && project
+            .join(".muxiva/agents/muxiva-pi-agent/src/index.ts")
             .is_file();
     if pi_ready {
         println!(
-            "[MUXIVA][DOCTOR][PASS] pi-typescript-agent node={} version={} dependencies=locked",
+            "[MUXIVA][DOCTOR][PASS] pi-typescript-agent node={} version={} source=.muxiva/agents/muxiva-pi-agent dependencies=locked workspace=.muxiva/workspaces/pi-agent",
             node,
             tool_version(&node).unwrap_or_else(|| "unknown".into())
         );
     } else {
         *warnings += 1;
         println!(
-            "[MUXIVA][DOCTOR][WARN] pi-typescript-agent ready=false requirement=\"Node.js >=22.19 + locked npm dependencies\" next=\"./examples/voice-agent/setup.sh\""
+            "[MUXIVA][DOCTOR][WARN] pi-typescript-agent ready=false requirement=\"Node.js >=22.19 + external Agent repository + locked npm dependencies\" next=\"./examples/voice-agent/setup.sh\""
         );
     }
     Some(project)

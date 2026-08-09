@@ -72,6 +72,7 @@ class NodeContext:
         self.node_id, self.input_port, self.config = node_id, input_port, config
         self.streaming = streaming
         self.emissions, self.signals, self.events, self.metrics = [], [], [], []
+        self.next_tick_ms = None
     def emit(self, port, frame):
         emission = {"port":port, "frame":encode_frame(frame)}
         if self.streaming:
@@ -94,6 +95,11 @@ class NodeContext:
         metric = {"name":name, "operation":"gauge_set", "value":int(value)}
         if self.streaming: print(json.dumps({"kind":"metric", **metric}), flush=True)
         else: self.metrics.append(metric)
+    def schedule_next_tick(self, delay_ms):
+        delay_ms = int(delay_ms)
+        if delay_ms < 1 or delay_ms > 60000:
+            raise ValueError("next tick delay must be between 1 and 60000 ms")
+        self.next_tick_ms = delay_ms
     def __str__(self): return self.input_port or ""
     def __eq__(self, other): return self.input_port == other
 
@@ -149,12 +155,12 @@ for line in sys.stdin:
                 for port, frames in values.items():
                     if not isinstance(frames, list): frames = [frames]
                     for item in frames: ctx.emit(port, item)
-            response = {"ok": True, "signals":ctx.signals, "events":ctx.events, "metrics":ctx.metrics}
+            response = {"ok": True, "signals":ctx.signals, "events":ctx.events, "metrics":ctx.metrics, "next_tick_ms":ctx.next_tick_ms}
         elif op == "signal":
             signal = decode_frame(command["signal"])
             ctx = NodeContext(command["node_id"], command.get("input_port"), config, streaming=False)
             invoke("on_signal", signal, ctx)
-            response = {"ok": True, "signals":ctx.signals, "events":ctx.events, "metrics":ctx.metrics}
+            response = {"ok": True, "signals":ctx.signals, "events":ctx.events, "metrics":ctx.metrics, "next_tick_ms":ctx.next_tick_ms}
         elif op == "prepare": invoke("on_prepare", NodeContext(command["node_id"], None, config)); response = {"ok": True}
         elif op == "finish": invoke("on_finish", NodeContext(command["node_id"], None, config)); response = {"ok": True}
         elif op == "abort": invoke("on_abort", command.get("reason", "aborted"), NodeContext(command["node_id"], None, config)); response = {"ok": True}
@@ -1368,7 +1374,7 @@ fn python_registration(
 }
 
 fn typescript_registration(
-    _graph: &Path,
+    graph: &Path,
     package: &NodePackage,
     connections: ConnectionStore,
 ) -> Result<NodeRegistration, String> {
@@ -1419,6 +1425,10 @@ fn typescript_registration(
         Arc::new(TypeScriptDevFactory {
             executable: node_executable(),
             source,
+            project_root: graph
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf(),
             entrypoint: manifest.entrypoint.clone(),
             default_output,
             connection: package.resolved_connection.clone(),
@@ -1731,6 +1741,9 @@ impl Node for PythonDevNode {
         {
             observe_host_metric(metric, context)?;
         }
+        if let Some(delay) = host_next_tick(&response).map_err(python_error)? {
+            context.schedule_next_tick(delay);
+        }
         Ok(())
     }
 
@@ -1744,7 +1757,7 @@ impl Node for PythonDevNode {
         signal: muxiva_types::SignalFrame,
         context: &mut NodeContext,
     ) -> muxiva_types::Result<()> {
-        self.call(serde_json::json!({
+        let response = self.call(serde_json::json!({
             "op":"signal",
             "node_id":self.node_id.as_str(),
             "input_port":context.input_port().map(PortName::as_str),
@@ -1755,8 +1768,11 @@ impl Node for PythonDevNode {
                 "schema_version":signal.data().schema_version().get(),
                 "sequence":signal.header().sequence_id().get(),
             }
-        }))
-        .map(|_| ())
+        }))?;
+        if let Some(delay) = host_next_tick(&response).map_err(python_error)? {
+            context.schedule_next_tick(delay);
+        }
+        Ok(())
     }
 
     fn on_abort(&mut self, reason: &muxiva_core::AbortReason, _context: &mut NodeContext) {
@@ -1873,6 +1889,7 @@ impl Drop for PythonDevNode {
 struct TypeScriptDevFactory {
     executable: PathBuf,
     source: PathBuf,
+    project_root: PathBuf,
     entrypoint: String,
     default_output: Option<String>,
     connection: Option<ConnectionManifest>,
@@ -1917,6 +1934,9 @@ impl TypeScriptDevNode {
                 .collect(),
         );
         let mut command = Command::new(&factory.executable);
+        command
+            .current_dir(&factory.project_root)
+            .env("MUXIVA_PROJECT_ROOT", &factory.project_root);
         command.args([
             "--no-warnings",
             "--input-type=module",
@@ -2061,6 +2081,9 @@ impl Node for TypeScriptDevNode {
         {
             observe_host_metric(metric, context)?;
         }
+        if let Some(delay) = host_next_tick(&response).map_err(typescript_error)? {
+            context.schedule_next_tick(delay);
+        }
         Ok(())
     }
 
@@ -2074,7 +2097,7 @@ impl Node for TypeScriptDevNode {
         signal: muxiva_types::SignalFrame,
         context: &mut NodeContext,
     ) -> muxiva_types::Result<()> {
-        self.call(serde_json::json!({
+        let response = self.call(serde_json::json!({
             "op":"signal",
             "node_id":self.node_id.as_str(),
             "input_port":context.input_port().map(PortName::as_str),
@@ -2086,8 +2109,11 @@ impl Node for TypeScriptDevNode {
                 "schema_version":signal.data().schema_version().get(),
                 "sequence":signal.header().sequence_id().get(),
             }
-        }))
-        .map(|_| ())
+        }))?;
+        if let Some(delay) = host_next_tick(&response).map_err(typescript_error)? {
+            context.schedule_next_tick(delay);
+        }
+        Ok(())
     }
 
     fn on_abort(&mut self, reason: &muxiva_core::AbortReason, _context: &mut NodeContext) {
@@ -2117,6 +2143,20 @@ fn read_host_response(output: &mut BufReader<ChildStdout>) -> Result<serde_json:
     }
     serde_json::from_str(&line)
         .map_err(|error| format!("invalid Project Node Host response: {error}"))
+}
+
+fn host_next_tick(response: &serde_json::Value) -> Result<Option<std::time::Duration>, String> {
+    let Some(value) = response.get("next_tick_ms") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let milliseconds = value
+        .as_u64()
+        .filter(|value| (1..=60_000).contains(value))
+        .ok_or_else(|| "Project Node next_tick_ms must be an integer from 1 to 60000".to_owned())?;
+    Ok(Some(std::time::Duration::from_millis(milliseconds)))
 }
 
 fn frame_to_wire(frame: &Frame) -> muxiva_types::Result<serde_json::Value> {
@@ -2191,19 +2231,38 @@ fn control_frame(
     node_id: &NodeId,
     payload: FramePayload,
 ) -> muxiva_types::Result<Frame> {
-    let parent = parent.ok_or_else(|| {
-        python_error("source control actions require an input Frame in the Studio development Host")
-    })?;
     let serial = NEXT_FRAME.fetch_add(1, Ordering::Relaxed);
-    parent.derive(
-        FrameDerivation::new(
+    if let Some(parent) = parent {
+        return parent.derive(
+            FrameDerivation::new(
+                FrameId::new(format!("studio-python-control-{serial}")).expect("bounded frame ID"),
+                parent.header().timestamp(),
+                parent.header().sequence_id(),
+                TransformOrigin::new(Some(node_id.clone()), None)?,
+                "studio-python-control",
+            )?
+            .with_payload(payload),
+        );
+    }
+    Frame::new(
+        FrameHeader::new(
             FrameId::new(format!("studio-python-control-{serial}")).expect("bounded frame ID"),
-            parent.header().timestamp(),
-            parent.header().sequence_id(),
-            TransformOrigin::new(Some(node_id.clone()), None)?,
-            "studio-python-control",
-        )?
-        .with_payload(payload),
+            Timestamp::from_nanos(0),
+            ClockDomain::new(
+                ClockDomainId::new("muxiva.studio.internal").expect("valid Studio clock"),
+                ClockKind::Monotonic,
+            ),
+            SequenceId::new(0),
+            StreamId::new(format!("studio-control-stream-{serial}"))
+                .expect("bounded Studio stream ID"),
+            TraceId::new(format!("studio-control-trace-{serial}"))
+                .expect("bounded Studio trace ID"),
+            payload.frame_type(),
+            Metadata::empty(),
+            Extensions::empty(),
+            Lineage::empty(),
+        )?,
+        payload,
     )
 }
 
@@ -2344,7 +2403,11 @@ fn wire_to_frame(
                 ClockDomainId::new("muxiva.studio.python").expect("valid Studio clock"),
                 ClockKind::MediaRelative,
             ),
-            SequenceId::new(0),
+            SequenceId::new(
+                wire.get("sequence")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0),
+            ),
             StreamId::new(format!("studio-python-stream-{serial}"))
                 .expect("bounded Studio stream ID"),
             TraceId::new(format!("studio-python-trace-{serial}")).expect("bounded Studio trace ID"),
@@ -2534,7 +2597,7 @@ mod tests {
     #[test]
     fn saved_python_node_registers_and_executes_in_the_real_runtime() {
         let graph_path = graph();
-        let package = r#"{"format":"muxiva.node/v1","package_id":"uppercase_python","display_name":"Uppercase Python","node_type":"example.studio.uppercase","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:MyNode","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"import muxiva\nclass MyNode:\n    def on_process(self, frame, ctx):\n        ctx.increment_counter(\"text.frames\")\n        ctx.set_gauge(\"text.last_length\", len(frame.text))\n        ctx.emit(\"text_out\", muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence))\n        ctx.publish_notification(\"example.text.uppercased\", {\"sequence\": frame.sequence})\n","runtime_available":false}"#;
+        let package = r#"{"format":"muxiva.node/v1","package_id":"uppercase_python","display_name":"Uppercase Python","node_type":"example.studio.uppercase","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:MyNode","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"import muxiva\nclass MyNode:\n    def __init__(self, config=None): self.pending = None\n    def on_process(self, frame, ctx):\n        if frame is not None:\n            self.pending = frame\n            ctx.schedule_next_tick(5)\n            return\n        frame, self.pending = self.pending, None\n        ctx.increment_counter(\"text.frames\")\n        ctx.set_gauge(\"text.last_length\", len(frame.text))\n        ctx.emit(\"text_out\", muxiva.TextFrame(frame.text.upper(), sequence=frame.sequence))\n        ctx.publish_notification(\"example.text.uppercased\", {\"sequence\": frame.sequence})\n","runtime_available":false}"#;
         save(&graph_path, package).unwrap();
         let mut registry = muxiva_graph_json::builtin_registry();
         let connections = ConnectionStore::load(&graph_path).unwrap();
@@ -2565,7 +2628,7 @@ mod tests {
     #[test]
     fn saved_typescript_node_registers_and_executes_async_lifecycle() {
         let graph_path = graph();
-        let package = r#"{"format":"muxiva.node/v1","package_id":"uppercase_typescript","display_name":"Uppercase TypeScript","node_type":"example.studio.typescript_uppercase","language":"typescript","factory_version":"1.0.0","kind":"transform","entrypoint":"node:node","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"export const node = {\n  async onProcess(frame: { kind: string; text: string; sequence: number }, ctx: { emit(port: string, frame: unknown): void; incrementCounter(name: string, value?: number): void }) {\n    await Promise.resolve()\n    ctx.incrementCounter('text.frames')\n    ctx.emit('text_out', { kind: 'text', text: frame.text.toUpperCase(), sequence: frame.sequence })\n  },\n}\n","runtime_available":false}"#;
+        let package = r#"{"format":"muxiva.node/v1","package_id":"uppercase_typescript","display_name":"Uppercase TypeScript","node_type":"example.studio.typescript_uppercase","language":"typescript","factory_version":"1.0.0","kind":"transform","entrypoint":"node:node","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"let pending: { kind: string; text: string; sequence: number } | undefined\nexport const node = {\n  async onProcess(frame: { kind: string; text: string; sequence: number } | undefined, ctx: { emit(port: string, frame: unknown): void; incrementCounter(name: string, value?: number): void; scheduleNextTick(delayMs: number): void }) {\n    await Promise.resolve()\n    if (process.cwd() !== process.env.MUXIVA_PROJECT_ROOT) throw new Error('TypeScript Host project root is unavailable')\n    if (frame) { pending = frame; ctx.scheduleNextTick(5); return }\n    const value = pending!\n    pending = undefined\n    ctx.incrementCounter('text.frames')\n    ctx.emit('text_out', { kind: 'text', text: value.text.toUpperCase(), sequence: value.sequence })\n  },\n}\n","runtime_available":false}"#;
         let saved = save(&graph_path, package).unwrap();
         if !saved.runtime_available {
             fs::remove_dir_all(graph_path.parent().unwrap()).unwrap();

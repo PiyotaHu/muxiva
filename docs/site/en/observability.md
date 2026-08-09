@@ -64,7 +64,50 @@ Data is local to the project:
 
 The same data is available through Bearer-authenticated APIs: `GET /api/v1/observability/history` returns session summaries and `GET /api/v1/observability/history/{run_id}` returns one session's samples.
 
-The directory is Git ignored by default. Memory retains at most 5,000 samples; when the file exceeds 16 MiB it is compacted to the newest 2,500 samples. Frame payloads, user audio, conversation text, and credentials are never stored.
+The directory is Git ignored by default. Memory retains at most 5,000 samples; when the file exceeds 16 MiB it is compacted to the newest 2,500 samples. This metrics history never stores Frame payloads, user audio, conversation text, or credentials. Raw media is stored only when you explicitly enable the separate media-dump switch described below.
+
+## Follow every Text, Event, and Signal by turn
+
+Open **◎ Observe → Semantic trace** to inspect the meaning flowing through the Graph rather than only its performance counters. The newest turn is expanded first. Each row shows:
+
+- elapsed time from Runtime start;
+- Text, Event, or Signal type;
+- producing or consuming Node and Port;
+- `OUT →` or `→ IN` boundary direction;
+- text/topic/name and a payload summary.
+
+Click a row to inspect the full bounded payload plus Frame ID, Trace ID, Stream ID, and Sequence. Use the type selector or search box to isolate one Node, Port, topic, text fragment, Frame, or Trace. Seeing the same Frame ID as an output and then as the next Node's input confirms propagation; a missing input row identifies the exact boundary where it stopped.
+
+Studio derives display turns from output markers named `muxiva.turn.started`, `muxiva.voice.speech.started`, or another `*.turn.started` / `*.speech.started` name. The marker itself is included in the turn. Duplicate Signal/Event representations of the same marker are deduplicated for grouping, but both remain visible as separate trace rows. A Graph without turn markers is shown as one **Session flow** group. This is presentation logic in Studio—Runtime Core does not own or mutate a business Turn ID.
+
+Semantic tracing covers Graph Text/Event Frame ports and the graph-local Signal control plane, including Signal emission and delivery. It deliberately does **not** label process-local `NotificationBus` messages as Graph Events; those remain visible through their explicit NotificationBus consumer/logging integration.
+
+Trace storage is bounded to four in-memory sessions, 10,000 entries per session, 4 KiB per displayed payload, and 4 MiB of payload data per session. Overflow and truncation are shown in the UI. Conversation contents are cleared when Studio restarts and are not written into observability history. The authenticated APIs are `GET /api/v1/observability/traces` and `GET /api/v1/observability/traces/<run-id>`.
+
+!!! warning
+    Semantic traces contain conversation text and structured Event/Signal payloads. Treat screenshots and copied JSON as sensitive data.
+
+## Inspect the Audio or Video at every Node Port
+
+Metrics tell you **where** a flow stopped; a media dump lets you hear or see **what** crossed that boundary. Open **◎ Observe → Node media dumps** and enable **Dump Audio + Video** before or during a run. The switch is off whenever Studio starts.
+
+When enabled, Studio creates a separate artifact for every observed combination of:
+
+```text
+Node + input/output direction + Port + media format
+```
+
+For example, `qwen-input-resampler.audio_out · OUTPUT` is the exact Audio emitted by the resampler, while `qwen-audio-realtime.audio_in · INPUT` is what the Qwen Node actually received. Comparing the two tracks makes corruption, silence, wrong sample rates, and breaks between adjacent Nodes immediately visible.
+
+- Audio is finalized as a standard WAV file and can be played or downloaded directly in Observe.
+- RGBA8 and YUV420p Video is stored as a raw frame sequence with plane/stride metadata and can be replayed on the Observe canvas or downloaded.
+- Artifacts and a manifest survive a Studio restart under `.muxiva/observability/media/<run-id>/`; only the newest four sessions are retained.
+- Capture uses a bounded 256-Frame asynchronous queue, a 64 MiB limit per artifact, and a 256 MiB limit per session. A full diagnostic queue drops only dump copies—not Runtime Frames—and the UI reports the drop/truncation count.
+
+!!! warning
+    A dump may contain private microphone audio or camera frames. Enable it only while diagnosing, stop it afterwards, and do not publish `.muxiva/observability/media`. The directory is Git ignored by the project templates, but you remain responsible for copied or downloaded files.
+
+The authenticated APIs are `GET /api/v1/observability/media`, `GET /api/v1/observability/media/<run-id>`, `PUT /api/v1/observability/media` with `{"enabled":true|false}`, and `GET /api/v1/observability/media-artifacts/<run-id>/<artifact-id>`.
 
 ## Prometheus scraping
 
@@ -167,4 +210,7 @@ Names are limited to 64 ASCII letters, digits, dots, underscores, and hyphens. V
 
 - High Node process time plus a growing input Edge: the callback is slow or synchronously waiting on network/disk I/O.
 - Fast Node callbacks but high `ingress.queue_duration_ms`: the SDK queue or Node polling cadence is faulty.
+- Agora/Qwen input Frames advance but `input.audio_peak_pcm16` and
+  `input.audio_mean_abs_pcm16` stay near zero: the browser is publishing silence or the wrong
+  input device; fix microphone input before investigating model networking.
 - Healthy Runtime queues but a slow cloud first byte: inspect provider latency, region, session configuration, and the network, correlated with the provider request/session ID.
