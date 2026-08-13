@@ -6,6 +6,7 @@ use muxiva_core::{
 use muxiva_types::NamespacedName;
 use std::{
     env, fs,
+    io::IsTerminal,
     net::{IpAddr, TcpListener},
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
@@ -332,6 +333,7 @@ fn studio_access_token() -> Result<String, String> {
 }
 
 fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(), String> {
+    print_logo();
     let timeout = cli_timeout("timeout-ms", timeout_ms)?;
     let shutdown_timeout = cli_timeout("shutdown-timeout-ms", shutdown_timeout_ms)?;
     let graph_path = resolve_graph_path(graph_path)?;
@@ -742,6 +744,130 @@ fn welcome() {
     println!();
     println!("Real voice guide: {FLAGSHIP_GUIDE}");
     println!("Run `muxiva --help` for every command.");
+}
+
+fn hsv_to_rgb(hue: f64, saturation: f64, value: f64) -> (u8, u8, u8) {
+    let chroma = value * saturation;
+    let hue_sector = hue * 6.0;
+    let secondary = chroma * (1.0 - ((hue_sector % 2.0) - 1.0).abs());
+    let (r, g, b) = match hue_sector.floor() as i32 {
+        0 => (chroma, secondary, 0.0),
+        1 => (secondary, chroma, 0.0),
+        2 => (0.0, chroma, secondary),
+        3 => (0.0, secondary, chroma),
+        4 => (secondary, 0.0, chroma),
+        _ => (chroma, 0.0, secondary),
+    };
+    let offset = value - chroma;
+    (
+        ((r + offset) * 255.0).round() as u8,
+        ((g + offset) * 255.0).round() as u8,
+        ((b + offset) * 255.0).round() as u8,
+    )
+}
+
+fn logo_color(column: usize, width: usize) -> String {
+    let hue = if width <= 1 {
+        0.0
+    } else {
+        (column as f64 / (width - 1) as f64) * 0.78
+    };
+    let (r, g, b) = hsv_to_rgb(hue, 0.85, 0.95);
+    format!("\u{1b}[38;2;{r};{g};{b}m")
+}
+
+fn print_logo() {
+    let letters: [[&str; 7]; 6] = [
+        [
+            "█     █",
+            "██   ██",
+            "█ █ █ █",
+            "█  █  █",
+            "█     █",
+            "█     █",
+            "█     █",
+        ],
+        [
+            "█     █",
+            "█     █",
+            "█     █",
+            "█     █",
+            "█     █",
+            "█     █",
+            " █████ ",
+        ],
+        [
+            "█     █",
+            " █   █ ",
+            "  █ █  ",
+            "   █   ",
+            "  █ █  ",
+            " █   █ ",
+            "█     █",
+        ],
+        [
+            "███████",
+            "   █   ",
+            "   █   ",
+            "   █   ",
+            "   █   ",
+            "   █   ",
+            "███████",
+        ],
+        [
+            "█     █",
+            "█     █",
+            "█     █",
+            "█     █",
+            " █   █ ",
+            "  █ █  ",
+            "   █   ",
+        ],
+        [
+            "   █   ",
+            "  █ █  ",
+            " █   █ ",
+            "█     █",
+            "███████",
+            "█     █",
+            "█     █",
+        ],
+    ];
+
+    let width = letters.len() * 7 + (letters.len() - 1) * 2;
+    let use_color = std::io::stdout().is_terminal();
+
+    println!();
+    for row in 0..7 {
+        let mut line = String::new();
+        for (index, letter) in letters.iter().enumerate() {
+            if index > 0 {
+                line.push_str("  ");
+            }
+            line.push_str(letter[row]);
+        }
+        if use_color {
+            let mut colored = String::new();
+            for (column, ch) in line.chars().enumerate() {
+                if ch == '█' {
+                    colored.push_str(&logo_color(column, width));
+                    colored.push(ch);
+                    colored.push_str("\u{1b}[0m");
+                } else {
+                    colored.push(ch);
+                }
+            }
+            println!("{colored}");
+        } else {
+            println!("{line}");
+        }
+    }
+    if use_color {
+        println!("\u{1b}[2mReal-time multimodal Agent Runtime\u{1b}[0m");
+    } else {
+        println!("Real-time multimodal Agent Runtime");
+    }
+    println!();
 }
 
 fn main() {
