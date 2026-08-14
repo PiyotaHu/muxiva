@@ -18,7 +18,7 @@ if [[ "$sdk_root" == "--help" || "$sdk_root" == "-h" ]]; then
   cat <<'EOF'
 Usage:
   ./examples/voice-agent/setup.sh
-      macOS: download the pinned official Agora SDK, verify it, then build.
+      macOS / Linux: download the pinned official Agora SDK, verify it, then build.
 
   ./examples/voice-agent/setup.sh /absolute/path/to/agora-sdk
       Use an SDK that you downloaded manually.
@@ -67,14 +67,18 @@ if ! command -v "$cargo_command" >/dev/null 2>&1; then
 fi
 
 if [[ -z "$sdk_root" ]]; then
-  if [[ "$(uname -s)" != "Darwin" ]]; then
-    echo "[MUXIVA][ERROR] Automatic Agora SDK download currently supports macOS only." >&2
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    sdk_root="$repository_root/build/vendor/agora-macos-4.6.2"
+    "$agora_provider_root/download-macos-sdk.sh" "$sdk_root"
+  elif [[ "$(uname -s)" == "Linux" ]]; then
+    sdk_root="$repository_root/build/vendor/agora-linux-4.4.32"
+    "$agora_provider_root/download-linux-sdk.sh" "$sdk_root"
+  else
+    echo "[MUXIVA][ERROR] Automatic Agora SDK download supports macOS and Linux only." >&2
     echo "[MUXIVA][HELP]  Download your platform SDK from https://docs.agora.io/en/api-reference/sdks?product=voice" >&2
     echo "[MUXIVA][NEXT]  ./examples/voice-agent/setup.sh /absolute/path/to/agora-sdk" >&2
     exit 2
   fi
-  sdk_root="$repository_root/build/vendor/agora-macos-4.6.2"
-  "$agora_provider_root/download-macos-sdk.sh" "$sdk_root"
 fi
 if [[ ! -d "$sdk_root" ]]; then
   echo "Agora SDK directory does not exist: $sdk_root" >&2

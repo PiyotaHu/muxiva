@@ -18,6 +18,14 @@ else()
   set(MUXIVA_AGORA_PROVIDER_MODE "offline-stub")
 endif()
 
+# The vendor API differs by platform: macOS uses the Agora client SDK
+# (IAgoraRtcEngine); Linux uses the Server Gateway / RTSA SDK (IRtcConnection).
+if(APPLE)
+  set(MUXIVA_AGORA_NATIVE_SDK_SOURCE src/agora_native_sdk.cc)
+else()
+  set(MUXIVA_AGORA_NATIVE_SDK_SOURCE src/agora_native_sdk_linux.cc)
+endif()
+
 add_library(muxiva_agora STATIC src/agora_rtc_adapter.cc src/agora_shared_session.cc)
 add_library(MuxivaAgora::agora ALIAS muxiva_agora)
 target_compile_features(muxiva_agora PUBLIC cxx_std_17)
@@ -48,12 +56,13 @@ if(MUXIVA_ENABLE_AGORA)
     file(GLOB MUXIVA_AGORA_XCFRAMEWORK_SLICES
       "${MUXIVA_AGORA_SDK_ROOT}/*.xcframework/macos-*")
   else()
-    find_path(MUXIVA_AGORA_INCLUDE_DIR IAgoraRtcEngine.h
-      PATHS "${MUXIVA_AGORA_SDK_ROOT}" PATH_SUFFIXES include sdk/include REQUIRED)
+    find_path(MUXIVA_AGORA_INCLUDE_DIR IAgoraService.h
+      PATHS "${MUXIVA_AGORA_SDK_ROOT}" PATH_SUFFIXES agora_sdk/include include sdk/include REQUIRED)
     find_library(MUXIVA_AGORA_LIBRARY NAMES agora_rtc_sdk AgoraRtcKit
-      PATHS "${MUXIVA_AGORA_SDK_ROOT}" PATH_SUFFIXES lib libs libs/x86_64 REQUIRED)
+      PATHS "${MUXIVA_AGORA_SDK_ROOT}" PATH_SUFFIXES agora_sdk lib libs libs/x86_64 REQUIRED)
+    get_filename_component(MUXIVA_AGORA_LIBRARY_DIR "${MUXIVA_AGORA_LIBRARY}" DIRECTORY)
   endif()
-  target_sources(muxiva_agora PRIVATE src/agora_native_sdk.cc)
+  target_sources(muxiva_agora PRIVATE "${MUXIVA_AGORA_NATIVE_SDK_SOURCE}")
   target_compile_definitions(muxiva_agora PRIVATE MUXIVA_ENABLE_AGORA=1)
   target_include_directories(muxiva_agora PRIVATE "${MUXIVA_AGORA_INCLUDE_DIR}")
   target_link_libraries(muxiva_agora PUBLIC "${MUXIVA_AGORA_LIBRARY}")
@@ -71,7 +80,7 @@ if(APPLE)
     "${MUXIVA_APPLE_SDK_PATH}/usr/include/c++/v1")
 endif()
 if(MUXIVA_ENABLE_AGORA)
-  target_sources(muxiva_agora_node_runtime PRIVATE src/agora_native_sdk.cc)
+  target_sources(muxiva_agora_node_runtime PRIVATE "${MUXIVA_AGORA_NATIVE_SDK_SOURCE}")
   target_compile_definitions(muxiva_agora_node_runtime PRIVATE MUXIVA_ENABLE_AGORA=1)
   target_include_directories(muxiva_agora_node_runtime PRIVATE "${MUXIVA_AGORA_INCLUDE_DIR}")
   target_link_libraries(muxiva_agora_node_runtime PUBLIC "${MUXIVA_AGORA_LIBRARY}")
@@ -84,6 +93,13 @@ set_target_properties(muxiva_agora_node_runtime PROPERTIES
 if(APPLE AND MUXIVA_ENABLE_AGORA)
   set_target_properties(muxiva_agora_node_runtime PROPERTIES
     BUILD_RPATH "${MUXIVA_AGORA_XCFRAMEWORK_SLICES}")
+elseif(UNIX AND MUXIVA_ENABLE_AGORA)
+  set_target_properties(muxiva_agora_node_runtime PROPERTIES
+    BUILD_RPATH "${MUXIVA_AGORA_LIBRARY_DIR}")
+  # Use DT_RPATH (transitive) so libagora_rtc_sdk.so's sibling libraries
+  # (libagora-fdkaac.so, libaosl.so) resolve from the same vendor directory.
+  target_link_options(muxiva_agora_node_runtime PRIVATE
+    "-Wl,--disable-new-dtags")
 endif()
 
 function(add_agora_node_pack package)
@@ -101,6 +117,10 @@ function(add_agora_node_pack package)
   if(APPLE)
     set_target_properties(${package} PROPERTIES
       BUILD_RPATH "@loader_path/..;${MUXIVA_AGORA_XCFRAMEWORK_SLICES}")
+  elseif(UNIX AND MUXIVA_ENABLE_AGORA)
+    set_target_properties(${package} PROPERTIES
+      BUILD_RPATH "$ORIGIN/..;${MUXIVA_AGORA_LIBRARY_DIR}")
+    target_link_options(${package} PRIVATE "-Wl,--disable-new-dtags")
   elseif(UNIX)
     set_target_properties(${package} PROPERTIES BUILD_RPATH "$ORIGIN/..")
   endif()
