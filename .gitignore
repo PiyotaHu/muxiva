@@ -64,3 +64,6 @@ Testing/
 # Local provider credentials
 **/.env
 **/.env.local
+
+# Local test agent
+my-agent/
