@@ -73,7 +73,20 @@ jobs:
       - name: Enable Linux ARM64 builds
         if: matrix.platform.target == 'aarch64-unknown-linux-gnu'
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-      - name: Build audited wheel
+      - name: Build audited Linux wheel
+        if: contains(matrix.platform.target, 'linux')
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          command: build
+          maturin-version: v1.13.3
+          working-directory: crates/muxiva-python
+          target: ${{ matrix.platform.target }}
+          manylinux: ${{ matrix.platform.manylinux }}
+          # manylinux runs inside a container and must select its own exact
+          # /opt/python interpreter; the setup-python host shim is not visible.
+          args: --release --locked --compatibility pypi --out dist -i python${{ matrix.python }}
+      - name: Build audited macOS or Windows wheel
+        if: ${{ !contains(matrix.platform.target, 'linux') }}
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           command: build
@@ -86,7 +99,7 @@ jobs:
         if: matrix.platform.target != 'aarch64-unknown-linux-gnu'
         shell: bash
         run: |
-          python -m pip install --disable-pip-version-check pytest==8.4.1
+          python -m pip install --disable-pip-version-check "pytest==8.3.5; python_version < '3.9'" "pytest==8.4.1; python_version >= '3.9'"
           python -m pip install --disable-pip-version-check --no-index --find-links crates/muxiva-python/dist "muxiva==${GITHUB_REF_NAME#v}"
           python -m pytest -q crates/muxiva-python/tests
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
