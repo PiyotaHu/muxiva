@@ -161,7 +161,7 @@ jobs:
           packages-dir: dist
           verbose: true
       - name: Create checksums
-        run: (cd dist && sha256sum * > SHA256SUMS)
+        run: (cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS-python)
       - name: Attach Python distributions to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

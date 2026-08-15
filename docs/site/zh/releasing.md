@@ -102,10 +102,10 @@ Workflow 会先构建和测试，再执行发布。不要用本地生成的产�
 
 ## 验证已发布的 CLI
 
-从同一个 GitHub Release 下载压缩包与 `SHA256SUMS`：
+从同一个 GitHub Release 下载压缩包与 `SHA256SUMS-cli`：
 
 ```bash
-sha256sum --check SHA256SUMS --ignore-missing
+sha256sum --check SHA256SUMS-cli --ignore-missing
 gh attestation verify muxiva-v0.1.1-aarch64-apple-darwin.tar.gz --repo PiyotaHu/muxiva
 ```
 

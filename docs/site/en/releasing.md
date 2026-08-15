@@ -112,10 +112,10 @@ from a branch.
 
 ## Verify a published CLI
 
-Download an archive and `SHA256SUMS` from the matching GitHub Release, then run:
+Download an archive and `SHA256SUMS-cli` from the matching GitHub Release, then run:
 
 ```bash
-sha256sum --check SHA256SUMS --ignore-missing
+sha256sum --check SHA256SUMS-cli --ignore-missing
 gh attestation verify muxiva-v0.1.1-aarch64-apple-darwin.tar.gz --repo PiyotaHu/muxiva
 ```
 
