@@ -95,15 +95,15 @@ gates, commit the release changes, then create and push the signed tag. This
 starts the Python release:
 
 ```bash
-git tag -s v0.1.0 -m "Muxiva v0.1.0"
-git push origin v0.1.0
+git tag -s v0.1.1 -m "Muxiva v0.1.1"
+git push origin v0.1.1
 ```
 
 After Homebrew ownership is confirmed, publish CLI and Homebrew from that exact
 tag:
 
 ```bash
-gh workflow run release-cli.yml --ref v0.1.0
+gh workflow run release-cli.yml --ref v0.1.1
 ```
 
 The workflows build and test before publishing. Do not rerun only the publishing
@@ -116,7 +116,7 @@ Download an archive and `SHA256SUMS` from the matching GitHub Release, then run:
 
 ```bash
 sha256sum --check SHA256SUMS --ignore-missing
-gh attestation verify muxiva-v0.1.0-aarch64-apple-darwin.tar.gz --repo PiyotaHu/muxiva
+gh attestation verify muxiva-v0.1.1-aarch64-apple-darwin.tar.gz --repo PiyotaHu/muxiva
 ```
 
 macOS users normally use the tested Formula instead:

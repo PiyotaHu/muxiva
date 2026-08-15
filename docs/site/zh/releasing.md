@@ -87,14 +87,14 @@ python3 scripts/release/check-release-identity.py --channel python
 再创建并推送签名 Tag。该操作会启动 Python 发布：
 
 ```bash
-git tag -s v0.1.0 -m "Muxiva v0.1.0"
-git push origin v0.1.0
+git tag -s v0.1.1 -m "Muxiva v0.1.1"
+git push origin v0.1.1
 ```
 
 Homebrew 归属确认后，针对同一个 Tag 发布 CLI 与 Homebrew：
 
 ```bash
-gh workflow run release-cli.yml --ref v0.1.0
+gh workflow run release-cli.yml --ref v0.1.1
 ```
 
 Workflow 会先构建和测试，再执行发布。不要用本地生成的产物单独重跑发布步骤，也
@@ -106,7 +106,7 @@ Workflow 会先构建和测试，再执行发布。不要用本地生成的产�
 
 ```bash
 sha256sum --check SHA256SUMS --ignore-missing
-gh attestation verify muxiva-v0.1.0-aarch64-apple-darwin.tar.gz --repo PiyotaHu/muxiva
+gh attestation verify muxiva-v0.1.1-aarch64-apple-darwin.tar.gz --repo PiyotaHu/muxiva
 ```
 
 macOS 用户通常直接使用已在 M1 Runner 测试过的 Formula：
