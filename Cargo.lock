@@ -612,7 +612,7 @@ dependencies = [
 
 [[package]]
 name = "muxiva-bench"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -620,7 +620,7 @@ dependencies = [
 
 [[package]]
 name = "muxiva-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "ctrlc",
@@ -633,7 +633,7 @@ dependencies = [
 
 [[package]]
 name = "muxiva-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "muxiva-types",
  "tracing",
@@ -642,7 +642,7 @@ dependencies = [
 
 [[package]]
 name = "muxiva-examples"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "muxiva-core",
  "muxiva-types",
@@ -650,7 +650,7 @@ dependencies = [
 
 [[package]]
 name = "muxiva-ffi"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libloading 0.8.9",
  "muxiva-core",
@@ -662,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "muxiva-graph-json"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "muxiva-core",
  "muxiva-types",
@@ -686,7 +686,7 @@ dependencies = [
 
 [[package]]
 name = "muxiva-python"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "muxiva-core",
  "muxiva-graph-json",
@@ -698,7 +698,7 @@ dependencies = [
 
 [[package]]
 name = "muxiva-studio"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "muxiva-core",
  "muxiva-ffi",
@@ -712,7 +712,7 @@ dependencies = [
 
 [[package]]
 name = "muxiva-testkit"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "muxiva-core",
  "muxiva-types",
@@ -720,7 +720,7 @@ dependencies = [
 
 [[package]]
 name = "muxiva-types"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "thiserror",

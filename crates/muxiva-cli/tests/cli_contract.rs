@@ -214,7 +214,10 @@ fn installed_binary_labels_synthetic_simulation_and_reports_version() {
     let directory = TestDirectory::new("simulate");
     let version = muxiva(&["--version"], &directory.0);
     assert!(version.status.success());
-    assert_eq!(String::from_utf8(version.stdout).unwrap(), "muxiva 0.1.0\n");
+    assert_eq!(
+        String::from_utf8(version.stdout).unwrap(),
+        format!("muxiva {}\n", env!("CARGO_PKG_VERSION"))
+    );
 
     let output = muxiva(&["simulate"], &directory.0);
     assert!(output.status.success());
@@ -260,7 +263,10 @@ fn doctor_is_redacted_and_actionable_without_external_credentials() {
     let output = muxiva(&["doctor"], &directory.0);
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("[MUXIVA][DOCTOR][PASS] cli version=0.1.0"));
+    assert!(stdout.contains(&format!(
+        "[MUXIVA][DOCTOR][PASS] cli version={}",
+        env!("CARGO_PKG_VERSION")
+    )));
     assert!(stdout.contains("next=\"muxiva init my-agent\""));
     assert!(stdout.contains("[MUXIVA][DOCTOR][SUMMARY]"));
 }
