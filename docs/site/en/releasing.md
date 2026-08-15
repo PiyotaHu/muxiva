@@ -1,8 +1,10 @@
 # Release operations
 
-Muxiva publishes each version from one signed Git tag. The CLI and Python
-workflows share a concurrency group, so they cannot race while creating or
-updating the same GitHub Release.
+Muxiva publishes each version from one signed Git tag. Pushing the tag starts
+the Python release automatically. The CLI workflow is dispatched explicitly
+against that same tag after its Homebrew publisher is ready. Both workflows
+share a concurrency group, so they cannot race while creating or updating the
+same GitHub Release.
 
 ## Release channels
 
@@ -82,22 +84,31 @@ Metadata checks are safe to run without publisher credentials:
 python3 scripts/release/check-release-identity.py
 ```
 
-Require all ownership confirmations before the first public tag:
+Require Python publisher ownership before a Python-first public tag:
 
 ```bash
-python3 scripts/release/check-release-identity.py --channel all
+python3 scripts/release/check-release-identity.py --channel python
 ```
 
 Make every package version match the intended tag, run the repository quality
-gates, commit the release changes, then create and push the signed tag:
+gates, commit the release changes, then create and push the signed tag. This
+starts the Python release:
 
 ```bash
 git tag -s v0.1.0 -m "Muxiva v0.1.0"
 git push origin v0.1.0
 ```
 
+After Homebrew ownership is confirmed, publish CLI and Homebrew from that exact
+tag:
+
+```bash
+gh workflow run release-cli.yml --ref v0.1.0
+```
+
 The workflows build and test before publishing. Do not rerun only the publishing
-steps against locally produced artifacts.
+steps against locally produced artifacts, and never dispatch the CLI workflow
+from a branch.
 
 ## Verify a published CLI
 

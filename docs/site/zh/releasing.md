@@ -1,7 +1,9 @@
 # 发布运维
 
-Muxiva 的每个版本都从同一个签名 Git Tag 发布。CLI 与 Python Workflow 共用
-Concurrency Group，因此不会同时创建或修改同一个 GitHub Release。
+Muxiva 的每个版本都从同一个签名 Git Tag 发布。推送 Tag 会自动启动 Python
+发布；Homebrew 发布方就绪后，再针对同一个 Tag 手动启动 CLI Workflow。CLI 与
+Python Workflow 共用 Concurrency Group，因此不会同时创建或修改同一个 GitHub
+Release。
 
 ## 发布通道
 
@@ -76,21 +78,28 @@ npm org ls muxiva --json
 python3 scripts/release/check-release-identity.py
 ```
 
-第一次公开发布前，要求全部归属已确认：
+Python 优先发布前，只要求 Python 发布方归属已确认：
 
 ```bash
-python3 scripts/release/check-release-identity.py --channel all
+python3 scripts/release/check-release-identity.py --channel python
 ```
 
 确认所有 Package Version 与目标 Tag 相同，跑完仓库质量门禁并提交 Release 改动，
-再创建并推送签名 Tag：
+再创建并推送签名 Tag。该操作会启动 Python 发布：
 
 ```bash
 git tag -s v0.1.0 -m "Muxiva v0.1.0"
 git push origin v0.1.0
 ```
 
-Workflow 会先构建和测试，再执行发布。不要用本地生成的产物单独重跑发布步骤。
+Homebrew 归属确认后，针对同一个 Tag 发布 CLI 与 Homebrew：
+
+```bash
+gh workflow run release-cli.yml --ref v0.1.0
+```
+
+Workflow 会先构建和测试，再执行发布。不要用本地生成的产物单独重跑发布步骤，也
+不要从 Branch 启动 CLI 发布。
 
 ## 验证已发布的 CLI
 
