@@ -28,19 +28,18 @@ GitHub Provenance Attestation 是关于产物生成 Workflow 和 Commit 的加�
 
 ### 2. Homebrew Tap
 
-创建公开仓库 `PiyotaHu/homebrew-muxiva` 和默认分支，再创建名为 `homebrew` 的受
-保护 GitHub Environment。创建只对 Tap 仓库拥有 **Contents: write** 权限的
-Fine-grained Token，并把它保存为 Environment Secret。以下配置不会把 Token 写入
-文件：
+公开仓库 `PiyotaHu/homebrew-muxiva`、默认分支和名为 `homebrew` 的 GitHub
+Environment 已配置。专用 SSH Deploy Key 只对该 Tap 有写权限；其私钥保存在
+Environment Secret `HOMEBREW_TAP_DEPLOY_KEY` 中。规范仓库变量配置为：
 
 ```bash
 gh variable set HOMEBREW_TAP_REPOSITORY --body PiyotaHu/homebrew-muxiva
-gh secret set --env homebrew HOMEBREW_TAP_TOKEN
 ```
 
-完成后把 `release/identity.json` 的 `homebrew.confirmed` 改为 `true`，并记录验证
-日期。正式 Release 会先在 GitHub M1 Runner 安装并测试 Formula，再把它提交到
-Tap 的 `Formula/muxiva.rb`。
+Deploy Key 已验证可写，`release/identity.json` 也记录了确认日期。正式 Release
+会先在 GitHub M1 Runner 安装并测试 Formula，再使用该受限密钥 checkout Tap 并
+提交 `Formula/muxiva.rb`。撤销这一枚 Deploy Key 即可停止自动更新 Tap，不会影响
+维护者账号。
 
 ### 3. PyPI
 

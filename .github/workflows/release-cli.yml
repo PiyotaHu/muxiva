@@ -204,15 +204,22 @@ jobs:
         with:
           name: homebrew-formula
           path: formula
+      - name: Require the scoped tap publisher
+        env:
+          TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY }}
+          TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          test "$TAP_REPOSITORY" = PiyotaHu/homebrew-muxiva
+          test -n "$TAP_DEPLOY_KEY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ vars.HOMEBREW_TAP_REPOSITORY }}
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          path: tap
       - name: Publish Formula to the official tap
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY }}
         run: |
-          test -n "$GH_TOKEN" || { echo 'HOMEBREW_TAP_TOKEN is not configured' >&2; exit 1; }
-          test -n "$TAP_REPOSITORY" || { echo 'HOMEBREW_TAP_REPOSITORY is not configured' >&2; exit 1; }
-          gh auth setup-git
-          gh repo clone "$TAP_REPOSITORY" tap -- --depth=1
           mkdir -p tap/Formula
           cp formula/muxiva.rb tap/Formula/muxiva.rb
           cd tap

@@ -31,20 +31,20 @@ administrator were verified on 2026-08-15.
 
 ### 2. Homebrew tap
 
-Create the public repository `PiyotaHu/homebrew-muxiva`, add a default branch,
-and create a protected GitHub environment named `homebrew`. Grant the workflow a
-fine-grained token with **Contents: write** only for the tap repository, and
-store it as an environment secret. Configure the main repository without
-putting the token in a file:
+The public repository `PiyotaHu/homebrew-muxiva`, its default branch, and the
+GitHub environment named `homebrew` are configured. A dedicated SSH Deploy Key
+has write access only to the tap; its private half is stored as the environment
+secret `HOMEBREW_TAP_DEPLOY_KEY`. The canonical repository is configured as:
 
 ```bash
 gh variable set HOMEBREW_TAP_REPOSITORY --body PiyotaHu/homebrew-muxiva
-gh secret set --env homebrew HOMEBREW_TAP_TOKEN
 ```
 
-Then set `homebrew.confirmed` to `true` in `release/identity.json` and record the
-verification date. A successful release first installs the generated Formula on
-a GitHub-hosted M1 runner, then commits it to `Formula/muxiva.rb` in the tap.
+The deploy key is verified as writable and `homebrew.confirmed` records the
+verification date. A successful release first installs the generated Formula
+on a GitHub-hosted M1 runner, then checks out the tap with the scoped key and
+commits `Formula/muxiva.rb`. Revoke that single deploy key to disable automated
+tap updates without affecting the maintainer account.
 
 ### 3. PyPI
 
