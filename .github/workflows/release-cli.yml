@@ -1,8 +1,7 @@
 name: release-cli
 
 on:
-  push:
-    tags: ['v*']
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}
@@ -23,7 +22,12 @@ jobs:
       - name: Require matching version and confirmed publishers
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
         run: |
+          test "$RELEASE_REF_TYPE" = tag || {
+            echo 'release-cli must be dispatched against an existing signed tag' >&2
+            exit 1
+          }
           python scripts/release/check-release-identity.py --channel cli
           python - <<'PY'
           import os
