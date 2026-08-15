@@ -187,10 +187,15 @@ jobs:
           path: formula
       - name: Install and test the released Apple Silicon binary
         run: |
-          brew install --formula "$PWD/formula/muxiva.rb"
+          brew tap-new muxiva/release-test
+          tap_root="$(brew --repository muxiva/release-test)"
+          mkdir -p "$tap_root/Formula"
+          cp "$PWD/formula/muxiva.rb" "$tap_root/Formula/muxiva.rb"
+          brew install --formula muxiva/release-test/muxiva
           muxiva --version
           muxiva simulate --scenario text --turns 1 --interval-ms 1
           brew uninstall muxiva
+          brew untap muxiva/release-test
 
   update-homebrew-tap:
     needs: test-homebrew
