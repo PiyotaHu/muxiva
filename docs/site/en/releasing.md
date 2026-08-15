@@ -46,8 +46,8 @@ a GitHub-hosted M1 runner, then commits it to `Formula/muxiva.rb` in the tap.
 
 ### 3. PyPI
 
-The `muxiva` project did not exist on PyPI when checked on 2026-08-15. Configure
-a pending Trusted Publisher for:
+The `muxiva` project did not exist on PyPI when checked on 2026-08-15. A pending
+Trusted Publisher is now configured for:
 
 - PyPI project: `muxiva`
 - GitHub owner: `PiyotaHu`
@@ -55,9 +55,9 @@ a pending Trusted Publisher for:
 - workflow: `release-python.yml`
 - environment: `pypi`
 
-Also create a protected GitHub environment named `pypi`. After verifying the
-publisher in PyPI's UI, set `pypi.confirmed` to `true`. No long-lived PyPI token
-is used by the workflow.
+A matching GitHub environment named `pypi` was created and the publisher is
+recorded as confirmed in `release/identity.json`. The first successful workflow
+run will create the project on PyPI. No long-lived PyPI token is used.
 
 ### 4. npm
 

@@ -17,7 +17,7 @@
   },
   "pypi": {
     "project": "muxiva",
-    "confirmed": false,
-    "evidence": "PyPI project endpoint returned 404 on 2026-08-15; availability is not ownership."
+    "confirmed": true,
+    "evidence": "PyPI pending Trusted Publisher configured for PiyotaHu/muxiva, release-python.yml, environment pypi; matching GitHub Environment created on 2026-08-15."
   }
 }
