@@ -7,8 +7,8 @@
   },
   "homebrew": {
     "tap_repository": "PiyotaHu/homebrew-muxiva",
-    "confirmed": false,
-    "evidence": "Repository not created as of 2026-08-15."
+    "confirmed": true,
+    "evidence": "Public tap, GitHub homebrew Environment, canonical repository variable, and verified repository-scoped read/write deploy key configured on 2026-08-15."
   },
   "npm": {
     "scope": "@muxiva",
