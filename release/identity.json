@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "github": {
+    "repository": "PiyotaHu/muxiva",
+    "confirmed": true,
+    "evidence": "Authenticated GitHub user PiyotaHu has ADMIN permission; checked 2026-08-15."
+  },
+  "homebrew": {
+    "tap_repository": "PiyotaHu/homebrew-muxiva",
+    "confirmed": false,
+    "evidence": "Repository not created as of 2026-08-15."
+  },
+  "npm": {
+    "scope": "@muxiva",
+    "confirmed": false,
+    "evidence": "Public registry returned scope not found and no authenticated npm session was available on 2026-08-15."
+  },
+  "pypi": {
+    "project": "muxiva",
+    "confirmed": false,
+    "evidence": "PyPI project endpoint returned 404 on 2026-08-15; availability is not ownership."
+  }
+}

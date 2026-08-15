@@ -1,27 +1,33 @@
 # 安装与首次运行
 
-Muxiva 当前为 pre-alpha。仓库暂时提供源码安装；独立二进制、Python Wheel、npm
-Package 与 Native SDK 压缩包的 Release Pipeline 仍在建设中。
+Muxiva 当前为 pre-alpha。发布自动化已经可以构建独立 CLI 压缩包与 Python Wheel；
+第一次公开 Tag 仍受发布账号归属确认门禁保护。
 
-## 环境要求
+## 安装 CLI
 
-- Git；
-- `rust-toolchain.toml` 固定的 Rust 工具链；
-- Native 开发所需的 CMake 3.20+ 与 C11/C++17 编译器；
-- Python 开发可选 CPython 与 maturin；
-- TypeScript 开发可选 Node.js 与 pnpm。
+Homebrew Tap 激活后，macOS ARM64 与 Intel 用户无需 Rust Toolchain 即可安装原生
+二进制：
 
-## 一次安装 CLI
+```bash
+brew install PiyotaHu/muxiva/muxiva
+muxiva --version
+```
+
+第一次正式 Tag 发布前，使用源码 Checkout 安装：
 
 ```bash
 git clone https://github.com/PiyotaHu/muxiva.git
-cd Muxiva
+cd muxiva
 cargo install --locked --path crates/muxiva-cli
 muxiva --version
 ```
 
 完成安装后，应用开发者日常只使用 `muxiva`，不需要通过 `cargo run` 启动整个
 Workspace。
+
+源码安装需要 Git 与 `rust-toolchain.toml` 指定的 Rust Toolchain。CMake、CPython、
+maturin、Node.js 与 pnpm 仅在贡献者构建相应 SDK 或示例时需要。发布维护者请阅读
+[发布运维](releasing.md)。
 
 ## CLI 入口
 

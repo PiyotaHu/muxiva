@@ -333,7 +333,9 @@ fn studio_access_token() -> Result<String, String> {
 }
 
 fn run(graph_path: &Path, timeout_ms: u64, shutdown_timeout_ms: u64) -> Result<(), String> {
-    print_logo();
+    if std::io::stdout().is_terminal() {
+        print_logo();
+    }
     let timeout = cli_timeout("timeout-ms", timeout_ms)?;
     let shutdown_timeout = cli_timeout("shutdown-timeout-ms", shutdown_timeout_ms)?;
     let graph_path = resolve_graph_path(graph_path)?;

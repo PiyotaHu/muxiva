@@ -1,0 +1,223 @@
+name: release-cli
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.13'
+      - name: Require matching version and confirmed publishers
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python scripts/release/check-release-identity.py --channel cli
+          python - <<'PY'
+          import os
+          import pathlib
+          import tomllib
+
+          cargo = tomllib.loads(pathlib.Path('Cargo.toml').read_text())
+          versions = {
+              'tag': os.environ['RELEASE_TAG'].removeprefix('v'),
+              'workspace': cargo['workspace']['package']['version'],
+          }
+          if len(set(versions.values())) != 1:
+              raise SystemExit(f'release version mismatch: {versions}')
+          print(f"release version verified: {versions['tag']}")
+          PY
+      - name: Run CLI contract tests before packaging
+        run: cargo test --locked --package muxiva-cli
+
+  build:
+    needs: validate-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            executable: muxiva
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            executable: muxiva
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            executable: muxiva
+          - runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            executable: muxiva
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            executable: muxiva.exe
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      RELEASE_TARGET: ${{ matrix.target }}
+      RELEASE_EXECUTABLE: ${{ matrix.executable }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Build locked release binary
+        shell: bash
+        run: |
+          rustup target add "$RELEASE_TARGET"
+          cargo build --locked --release --package muxiva-cli --target "$RELEASE_TARGET"
+      - name: Smoke-test native binary
+        shell: bash
+        run: |
+          binary="target/$RELEASE_TARGET/release/$RELEASE_EXECUTABLE"
+          "$binary" --version
+          "$binary" simulate --scenario text --turns 1 --interval-ms 1
+      - name: Package Unix release
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          archive="muxiva-v${version}-${RELEASE_TARGET}.tar.gz"
+          mkdir -p dist staging
+          cp "target/$RELEASE_TARGET/release/$RELEASE_EXECUTABLE" staging/muxiva
+          cp LICENSE README.md staging/
+          tar -C staging -czf "dist/$archive" muxiva LICENSE README.md
+      - name: Package Windows release
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          $archive = "muxiva-v$version-$env:RELEASE_TARGET.zip"
+          New-Item -ItemType Directory -Force -Path dist, staging | Out-Null
+          Copy-Item "target/$env:RELEASE_TARGET/release/$env:RELEASE_EXECUTABLE" staging/muxiva.exe
+          Copy-Item LICENSE, README.md staging/
+          Compress-Archive -Path staging/* -DestinationPath "dist/$archive"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: cli-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: cli-*
+          path: dist
+          merge-multiple: true
+      - name: Inspect payload and create checksums
+        run: |
+          test "$(find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l | tr -d ' ')" = 5
+          (cd dist && sha256sum muxiva-* > SHA256SUMS)
+          find dist -maxdepth 1 -type f -print | sort
+      - name: Render release-pinned Homebrew Formula
+        env:
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          arm_archive="dist/muxiva-v${version}-aarch64-apple-darwin.tar.gz"
+          intel_archive="dist/muxiva-v${version}-x86_64-apple-darwin.tar.gz"
+          arm_sha="$(sha256sum "$arm_archive" | cut -d' ' -f1)"
+          intel_sha="$(sha256sum "$intel_archive" | cut -d' ' -f1)"
+          python scripts/release/render-homebrew-formula.py \
+            --version "$version" \
+            --repository "$RELEASE_REPOSITORY" \
+            --arm64-sha256 "$arm_sha" \
+            --x86-64-sha256 "$intel_sha" \
+            --output dist/muxiva.rb
+      - name: Attest CLI artifacts, checksums, and Formula
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS
+            dist/muxiva.rb
+      - name: Create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+          fi
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: homebrew-formula
+          path: dist/muxiva.rb
+          if-no-files-found: error
+          retention-days: 7
+
+  test-homebrew:
+    needs: publish
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: homebrew-formula
+          path: formula
+      - name: Install and test the released Apple Silicon binary
+        run: |
+          brew install --formula "$PWD/formula/muxiva.rb"
+          muxiva --version
+          muxiva simulate --scenario text --turns 1 --interval-ms 1
+          brew uninstall muxiva
+
+  update-homebrew-tap:
+    needs: test-homebrew
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: homebrew
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: homebrew-formula
+          path: formula
+      - name: Publish Formula to the official tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY }}
+        run: |
+          test -n "$GH_TOKEN" || { echo 'HOMEBREW_TAP_TOKEN is not configured' >&2; exit 1; }
+          test -n "$TAP_REPOSITORY" || { echo 'HOMEBREW_TAP_REPOSITORY is not configured' >&2; exit 1; }
+          gh auth setup-git
+          gh repo clone "$TAP_REPOSITORY" tap -- --depth=1
+          mkdir -p tap/Formula
+          cp formula/muxiva.rb tap/Formula/muxiva.rb
+          cd tap
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Formula/muxiva.rb
+          if git diff --cached --quiet; then
+            echo 'Homebrew Formula already matches this release.'
+            exit 0
+          fi
+          git commit -m "muxiva ${GITHUB_REF_NAME}"
+          git push origin HEAD

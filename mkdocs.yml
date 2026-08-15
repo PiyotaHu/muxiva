@@ -57,6 +57,7 @@ plugins:
             Home: 首页
             Get started: 快速开始
             Installation and first run: 安装与首次运行
+            Release operations: 发布运维
             Flagship voice demo: 旗舰语音 Demo
             Voice credentials checklist: 语音凭据清单
             Remote and headless Linux: 远程与无 GUI Linux
@@ -164,6 +165,7 @@ nav:
       - Testing: testing.md
   - Project:
       - Status and roadmap: roadmap.md
+      - Release operations: releasing.md
       - Contributing: contributing.md
 
 extra:

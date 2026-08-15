@@ -14,14 +14,14 @@ distribution and several execution Hosts remain incomplete.
 | Studio TypeScript project Host | Experimental | Node.js 22.19+, async lifecycle, bounded subprocess protocol |
 | Studio Rust/C++ build Hosts | Planned | Source authoring exists; project compilation remains external |
 | Agora and FFmpeg | Experimental | Mock and optional official Node paths |
-| Package releases | Planned | No stable public release yet |
+| Package releases | Release-gated | CLI/Homebrew and Python automation are ready; publisher ownership is not fully confirmed |
 
 ## Near-term priorities
 
 1. Harden and package the multi-language project Node execution Hosts.
 2. Unify CLI, Runtime, and Studio project Registry and lockfile behavior.
-3. Publish standalone CLI binaries, Python Wheels, npm packages, and C++ SDK
-   archives with checksums and provenance.
+3. Confirm Homebrew, PyPI, and npm publishers; ship the prepared CLI/Homebrew
+   and Python channels; then add npm packages and C++ SDK archives.
 4. Replace skipped Studio checks with real browser end-to-end coverage.
 5. Add coverage, security audit, API/ABI compatibility, and release gates.
 6. Retain live official-Node certification evidence for every release platform.

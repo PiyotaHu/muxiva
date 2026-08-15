@@ -8,7 +8,7 @@
 
 > A Rust-native, real-time multimodal agent runtime with one graph and lifecycle contract across Rust, C++, Python, and TypeScript.
 
-[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/muxiva/) · [Architecture](https://piyotahu.github.io/muxiva/concepts/) · [Flagship voice demo](https://piyotahu.github.io/muxiva/voice-demo/) · [Developer manual](https://piyotahu.github.io/muxiva/nodes/) · [Agent integration](https://piyotahu.github.io/muxiva/nodes/agent-integration/) · [Studio](https://piyotahu.github.io/muxiva/studio/) · [Observability](https://piyotahu.github.io/muxiva/observability/) · [Graph v1](https://piyotahu.github.io/muxiva/graph/) · [Testing](https://piyotahu.github.io/muxiva/testing/)
+[简体中文](README.zh-CN.md) · [Documentation](https://piyotahu.github.io/muxiva/) · [Architecture](https://piyotahu.github.io/muxiva/concepts/) · [Flagship voice demo](https://piyotahu.github.io/muxiva/voice-demo/) · [Developer manual](https://piyotahu.github.io/muxiva/nodes/) · [Agent integration](https://piyotahu.github.io/muxiva/nodes/agent-integration/) · [Studio](https://piyotahu.github.io/muxiva/studio/) · [Observability](https://piyotahu.github.io/muxiva/observability/) · [Graph v1](https://piyotahu.github.io/muxiva/graph/) · [Release operations](https://piyotahu.github.io/muxiva/releasing/) · [Testing](https://piyotahu.github.io/muxiva/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -70,14 +70,17 @@ or open the [editable Draw.io source](docs/site/en/assets/architecture/muxiva-sy
 
 ## Quick start
 
-### Prerequisites
-
-- Rust stable, as pinned by [`rust-toolchain.toml`](rust-toolchain.toml)
-- A C11/C++17 compiler and CMake 3.20+ for the native SDK checks
-- Optional: CPython 3.13 with maturin for Python bindings
-- Optional: Node.js 22 and pnpm for Node-API bindings; Demo 2's Pi Agent requires Node.js 22.19+
-
 ### Install the `muxiva` CLI once
+
+After the first public release, macOS ARM64 and Intel users install the tested
+native binary without Rust:
+
+```bash
+brew install PiyotaHu/muxiva/muxiva
+muxiva --version
+```
+
+Until that release is published, use the source installation:
 
 ```bash
 git clone https://github.com/PiyotaHu/muxiva.git muxiva
@@ -86,8 +89,10 @@ cargo install --locked --path crates/muxiva-cli
 muxiva --version
 ```
 
-Until the first binary release, installation builds the CLI from the checkout.
-After that one-time step, normal usage never needs `cargo run -p ...` or
+Source installation requires Rust stable as selected by
+[`rust-toolchain.toml`](rust-toolchain.toml). CMake, CPython/maturin, and
+Node.js/pnpm are contributor prerequisites only for their corresponding SDKs.
+After either one-time install, normal usage never needs `cargo run -p ...` or
 knowledge of the Rust workspace.
 
 ### Run the real voice assistant
