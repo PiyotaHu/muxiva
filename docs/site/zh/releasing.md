@@ -42,8 +42,8 @@ Tap 的 `Formula/muxiva.rb`。
 
 ### 3. PyPI
 
-2026-08-15 检查时，PyPI 上不存在 `muxiva` 项目。请创建 Pending Trusted
-Publisher：
+2026-08-15 检查时，PyPI 上不存在 `muxiva` 项目。目前已经配置以下 Pending
+Trusted Publisher：
 
 - PyPI Project：`muxiva`
 - GitHub Owner：`PiyotaHu`
@@ -51,8 +51,9 @@ Publisher：
 - Workflow：`release-python.yml`
 - Environment：`pypi`
 
-同时在 GitHub 创建受保护的 `pypi` Environment。在 PyPI 界面确认 Publisher 后，
-把 `pypi.confirmed` 改为 `true`。Workflow 不使用长期 PyPI Token。
+对应的 GitHub `pypi` Environment 已创建，Publisher 也已经在
+`release/identity.json` 中标记为已确认。第一次成功运行 Workflow 时会在 PyPI
+创建项目；发布过程不使用长期 PyPI Token。
 
 ### 4. npm
 
