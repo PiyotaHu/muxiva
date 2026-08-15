@@ -8,7 +8,7 @@
 
 > 一个以 Rust 为核心的实时多模态 Agent Runtime，让 Rust、C++、Python 与 TypeScript 共享同一套图、生命周期和安全边界。
 
-[English](README.md) · [中文文档](https://piyotahu.github.io/muxiva/zh/) · [系统架构](https://piyotahu.github.io/muxiva/zh/concepts/) · [旗舰语音 Demo](https://piyotahu.github.io/muxiva/zh/voice-demo/) · [开发手册](https://piyotahu.github.io/muxiva/zh/nodes/) · [Agent 集成](https://piyotahu.github.io/muxiva/zh/nodes/agent-integration/) · [Studio](https://piyotahu.github.io/muxiva/zh/studio/) · [可观测性](https://piyotahu.github.io/muxiva/zh/observability/) · [Graph v1](https://piyotahu.github.io/muxiva/zh/graph/) · [测试体系](https://piyotahu.github.io/muxiva/zh/testing/)
+[English](README.md) · [中文文档](https://piyotahu.github.io/muxiva/zh/) · [系统架构](https://piyotahu.github.io/muxiva/zh/concepts/) · [旗舰语音 Demo](https://piyotahu.github.io/muxiva/zh/voice-demo/) · [开发手册](https://piyotahu.github.io/muxiva/zh/nodes/) · [Agent 集成](https://piyotahu.github.io/muxiva/zh/nodes/agent-integration/) · [Studio](https://piyotahu.github.io/muxiva/zh/studio/) · [可观测性](https://piyotahu.github.io/muxiva/zh/observability/) · [Graph v1](https://piyotahu.github.io/muxiva/zh/graph/) · [发布运维](https://piyotahu.github.io/muxiva/zh/releasing/) · [测试体系](https://piyotahu.github.io/muxiva/zh/testing/)
 
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
@@ -67,14 +67,16 @@ ASR、LLM、TTS、Transport、Codec 和厂商“Provider”都不是 Runtime Cor
 
 ## 快速开始
 
-### 环境要求
-
-- [`rust-toolchain.toml`](rust-toolchain.toml) 固定的 Rust stable 工具链
-- 执行 Native SDK 检查所需的 C11/C++17 编译器与 CMake 3.20+
-- 可选：CPython 3.13 与 maturin，用于 Python Binding
-- 可选：Node.js 22 与 pnpm，用于 Node-API Binding
-
 ### 一次安装 `muxiva` CLI
+
+第一次公开发布后，macOS ARM64 与 Intel 用户无需 Rust 即可安装已测试的原生版本：
+
+```bash
+brew install PiyotaHu/muxiva/muxiva
+muxiva --version
+```
+
+在该版本发布前，请使用源码安装：
 
 ```bash
 git clone https://github.com/PiyotaHu/muxiva.git muxiva
@@ -83,8 +85,9 @@ cargo install --locked --path crates/muxiva-cli
 muxiva --version
 ```
 
-首次二进制 Release 发布前，安装过程会从源码构建 CLI。完成这一次安装后，
-日常使用不再需要 `cargo run -p ...`，也不需要理解 Rust workspace。
+源码安装需要 [`rust-toolchain.toml`](rust-toolchain.toml) 指定的 Rust stable。
+CMake、CPython/maturin 与 Node.js/pnpm 只在贡献者构建对应 SDK 时需要。任一方式
+完成一次安装后，日常使用不再需要 `cargo run -p ...`，也不需要理解 Rust workspace。
 
 ### 运行真实语音助手
 

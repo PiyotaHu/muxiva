@@ -2,11 +2,25 @@
 
 ## Application developers / 应用开发者
 
-`muxiva` is a binary CLI. Cargo is used once to build and install the current
-pre-alpha checkout; it is not part of normal graph execution.
+`muxiva` is a binary CLI. After the first public tag, macOS ARM64 and Intel users
+install the native release through Homebrew:
 
-`muxiva` 是一个二进制 CLI。当前 pre-alpha 阶段只需使用 Cargo 从源码安装
-一次；正常运行 Graph 时不再经过 Cargo。
+```bash
+brew install PiyotaHu/muxiva/muxiva
+```
+
+Until that tag exists, Cargo is used once to build and install the pre-alpha
+checkout; it is not part of normal graph execution.
+
+`muxiva` 是一个二进制 CLI。第一次公开 Tag 发布后，macOS ARM64 与 Intel 用户
+通过 Homebrew 安装原生版本：
+
+```bash
+brew install PiyotaHu/muxiva/muxiva
+```
+
+在该 Tag 存在前，当前 pre-alpha 阶段只需使用 Cargo 从源码安装一次；正常运行
+Graph 时不再经过 Cargo。
 
 ```bash
 git clone https://github.com/PiyotaHu/muxiva.git muxiva
@@ -70,12 +84,13 @@ installed `muxiva` command.
 
 ## Public release boundary / 正式发布边界
 
-Before the first public alpha, Muxiva still needs signed GitHub binaries with
-checksums and platform installers such as Homebrew. Those release channels
-will remove the Rust toolchain requirement for application developers. Until
-those artifacts exist, the documentation explicitly describes source
-installation and does not pretend that a binary release has shipped.
+The CLI workflow now builds five native archives, checksums them, generates
+GitHub build-provenance attestations, tests the Homebrew Formula on Apple
+Silicon, and updates the official tap. The workflow remains intentionally gated
+until the tap owner is confirmed. Provenance attestation does not claim Apple
+Developer ID signing or notarization.
 
-首次公开 Alpha 前还需要提供带校验和及签名的 GitHub 二进制，以及 Homebrew
-等平台安装方式。届时应用开发者将不再需要 Rust 工具链。在这些 Artifact 真正
-发布之前，文档会明确写作“源码安装”，不会假装已经发布了二进制 Release。
+CLI Workflow 现在会构建五个平台原生压缩包、生成校验和与 GitHub 构建来源证明、
+在 Apple Silicon 上测试 Homebrew Formula，并更新官方 Tap。在 Tap Owner 确认前，
+Workflow 会主动阻止发布。Provenance Attestation 不等同于 Apple Developer ID
+签名或公证，文档不会混淆二者。

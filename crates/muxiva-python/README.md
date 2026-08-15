@@ -4,11 +4,15 @@ Develop synchronous or asynchronous Muxiva Nodes in Python. The native runtime
 executes each Node on a dedicated thread and asyncio event loop with bounded
 mailboxes and deadlines.
 
-Published releases will use:
+Install a published wheel from PyPI:
 
 ```bash
 pip install muxiva
 ```
+
+Tagged Muxiva releases publish CPython 3.8–3.14 wheels for Linux x86-64/ARM64,
+macOS universal2, and Windows x86-64. The same artifacts and their SHA-256
+checksums are attached to the GitHub release.
 
 ```python
 import muxiva

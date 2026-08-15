@@ -2,7 +2,10 @@
 
 ## Install
 
-Published releases will use `pip install muxiva`. From this repository:
+Published releases use `pip install muxiva`. Every `v*` release tag must match
+the versions in the workspace `Cargo.toml` and Python `pyproject.toml`; CI builds,
+installs, and tests each supported wheel before PyPI trusted publishing. From
+this repository:
 
 ```bash
 python -m pip install maturin

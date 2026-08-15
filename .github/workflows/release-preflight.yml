@@ -1,0 +1,57 @@
+name: release-preflight
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release-*.yml'
+      - 'bindings/*/package.json'
+      - 'crates/muxiva-python/pyproject.toml'
+      - 'release/**'
+      - 'scripts/release/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-*.yml'
+      - 'bindings/*/package.json'
+      - 'crates/muxiva-python/pyproject.toml'
+      - 'release/**'
+      - 'scripts/release/**'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Publisher ownership to require
+        type: choice
+        required: true
+        default: metadata
+        options: [metadata, cli, python, npm, all]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.13'
+      - name: Check release identity metadata
+        env:
+          PREFLIGHT_CHANNEL: ${{ inputs.channel || 'metadata' }}
+        run: |
+          if [ "$PREFLIGHT_CHANNEL" = metadata ]; then
+            python scripts/release/check-release-identity.py
+          else
+            python scripts/release/check-release-identity.py --channel "$PREFLIGHT_CHANNEL"
+          fi
+      - name: Test Homebrew Formula renderer
+        run: |
+          python scripts/release/render-homebrew-formula.py \
+            --version 0.1.0 \
+            --repository PiyotaHu/muxiva \
+            --arm64-sha256 "$(printf 'a%.0s' {1..64})" \
+            --x86-64-sha256 "$(printf 'b%.0s' {1..64})" \
+            --output "$RUNNER_TEMP/muxiva.rb"
+          ruby -c "$RUNNER_TEMP/muxiva.rb"

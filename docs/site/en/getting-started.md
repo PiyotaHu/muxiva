@@ -1,28 +1,35 @@
 # Installation and first run
 
-Muxiva is pre-alpha. The repository currently provides source installation while
-the release pipeline for standalone binaries, Wheels, npm packages, and native
-SDK archives is being completed.
+Muxiva is pre-alpha. Its release automation builds standalone CLI archives and
+Python Wheels; the first public tag remains gated on publisher ownership
+confirmation.
 
-## Prerequisites
+## Install the CLI
 
-- Git;
-- the Rust toolchain pinned by `rust-toolchain.toml`;
-- CMake 3.20+ and a C11/C++17 compiler for native development;
-- optional CPython and maturin for Python;
-- optional Node.js and pnpm for TypeScript.
+After the Homebrew tap is activated, macOS ARM64 and Intel users install the
+native binary without a Rust toolchain:
 
-## Install the CLI once
+```bash
+brew install PiyotaHu/muxiva/muxiva
+muxiva --version
+```
+
+Until the first tagged release is published, install from the source checkout:
 
 ```bash
 git clone https://github.com/PiyotaHu/muxiva.git
-cd Muxiva
+cd muxiva
 cargo install --locked --path crates/muxiva-cli
 muxiva --version
 ```
 
 After installation, application developers use `muxiva`; they do not run the
 workspace through `cargo run` for normal workflows.
+
+Source installation requires Git and the Rust toolchain in
+`rust-toolchain.toml`. CMake, CPython, maturin, Node.js, and pnpm are needed only
+for contributors building their corresponding SDKs or examples. Release owners
+should follow [Release operations](releasing.md).
 
 ## CLI entry point
 
