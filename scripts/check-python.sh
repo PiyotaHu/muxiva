@@ -3,8 +3,6 @@ set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 if [ -n "${MUXIVA_PYTHON:-}" ]; then
   python_bin=$MUXIVA_PYTHON
-elif [ -x /Users/private-user/.pyenv/versions/3.13.12/bin/python3.13 ] && /Users/private-user/.pyenv/versions/3.13.12/bin/python3.13 -m maturin --version >/dev/null 2>&1; then
-  python_bin=/Users/private-user/.pyenv/versions/3.13.12/bin/python3.13
 else
   python_bin=$(command -v python3)
 fi

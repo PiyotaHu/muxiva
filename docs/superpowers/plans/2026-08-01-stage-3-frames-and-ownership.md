@@ -24,8 +24,7 @@ requirements.
 
 ## Global execution constraints
 
-- Work only on `codex/stage-3-frames` in
-  `/Users/private-user/Documents/muxiva/.worktrees/codex-stage-3-frames`.
+- Work only on `codex/stage-3-frames` in a dedicated repository worktree.
 - Keep `#![forbid(unsafe_code)]`; do not add an `unsafe` block, allow, or
   exception.
 - Do not add Tokio, another async runtime, graph execution, Node/Edge structs,
