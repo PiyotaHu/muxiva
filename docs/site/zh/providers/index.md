@@ -10,7 +10,7 @@ Muxiva 的公开扩展单元只有 **Node**。每个 `muxiva.node.json` 声明�
 
 | 层级 | 官方 Node 集合 | 能力 |
 | --- | --- | --- |
-| 传输层 | [Agora RTC](agora/index.md) | RTC 音频与有序客户端消息输入/输出 |
+| 传输层 | [Agora RTC](agora/index.md)、[小智 ESP32](xiaozhi.md) | RTC 音频与有序客户端消息输入/输出；小智设备 WebSocket + Opus 语音交互 |
 | 算法层 | [阿里云 Qwen](qwen/index.md) | 实时语音、ASR、LLM 与 TTS |
 | 媒体、控制、工具 | [Muxiva 内置 Node](builtin.md) | 重采样、VAD、上下文与诊断 |
 

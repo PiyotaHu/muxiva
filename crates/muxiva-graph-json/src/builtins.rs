@@ -1,9 +1,12 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    io::{BufRead, Read},
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        mpsc::{self, Receiver, Sender},
         Arc,
     },
+    thread::{self, JoinHandle},
     time::Duration,
 };
 
@@ -38,6 +41,7 @@ pub const DEMO_CONTEXT_FUSION: &str = "builtin.demo.context_fusion";
 pub const DEMO_REASONING_LLM: &str = "builtin.demo.reasoning_llm";
 pub const DEMO_NEURAL_TTS: &str = "builtin.demo.neural_tts";
 pub const DEMO_SPEAKER: &str = "builtin.demo.speaker";
+pub const LLM_OPENAI_COMPATIBLE: &str = "builtin.llm_openai_compatible";
 const TEXT_INPUT: &str = "text_in";
 const TEXT_OUTPUT: &str = "text_out";
 const MAX_TEXT_BYTES: usize = 256 * 1024;
@@ -104,6 +108,7 @@ pub fn registry() -> NodeRegistry {
     );
     register_demo_nodes(&mut registry);
     register_audio_nodes(&mut registry);
+    register_llm_node(&mut registry);
     registry
 }
 
@@ -173,6 +178,644 @@ fn register_audio_nodes(registry: &mut NodeRegistry) {
         ),
         Arc::new(VoiceTurnContextFactory),
     );
+}
+
+fn register_llm_node(registry: &mut NodeRegistry) {
+    register(
+        registry,
+        typed_descriptor(
+            LLM_OPENAI_COMPATIBLE,
+            NodeKind::Transform,
+            &[
+                ("text_in", PortDirection::Input, FrameType::Text),
+                ("signal_in", PortDirection::Input, FrameType::Signal),
+                ("text_out", PortDirection::Output, FrameType::Text),
+                ("event_out", PortDirection::Output, FrameType::Event),
+            ],
+            llm_openai_compatible_schema(),
+        ),
+        Arc::new(LlmOpenAiCompatibleFactory),
+    );
+}
+
+fn llm_openai_compatible_schema() -> ConfigSchema {
+    ConfigSchema::new(map([
+        ("type", Value::String("object".into())),
+        (
+            "properties",
+            map([
+                (
+                    "endpoint",
+                    map([
+                        ("type", Value::String("string".into())),
+                        (
+                            "description",
+                            Value::String(
+                                "OpenAI-compatible base URL without /chat/completions, e.g. https://api.deepseek.com/v1".into(),
+                            ),
+                        ),
+                    ]),
+                ),
+                (
+                    "api_key_env",
+                    map([
+                        ("type", Value::String("string".into())),
+                        (
+                            "description",
+                            Value::String(
+                                "Environment variable that holds the API key; empty means no Authorization header".into(),
+                            ),
+                        ),
+                        ("default", Value::String("".into())),
+                    ]),
+                ),
+                (
+                    "model",
+                    map([
+                        ("type", Value::String("string".into())),
+                        (
+                            "description",
+                            Value::String("Model name, e.g. deepseek-chat, gpt-4o-mini, qwen-flash".into()),
+                        ),
+                    ]),
+                ),
+                (
+                    "system_prompt",
+                    map([
+                        ("type", Value::String("string".into())),
+                        ("default", Value::String(LLM_DEFAULT_SYSTEM_PROMPT.into())),
+                    ]),
+                ),
+                (
+                    "temperature",
+                    map([
+                        ("type", Value::String("number".into())),
+                        ("minimum", Value::Integer(0)),
+                        ("maximum", Value::Integer(2)),
+                        ("default", Value::Integer(0)),
+                    ]),
+                ),
+                (
+                    "max_tokens",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(1)),
+                        ("maximum", Value::Integer(32_768)),
+                        ("default", Value::Integer(512)),
+                    ]),
+                ),
+                (
+                    "timeout_ms",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(1_000)),
+                        ("maximum", Value::Integer(300_000)),
+                        ("default", Value::Integer(60_000)),
+                    ]),
+                ),
+                (
+                    "max_results_per_wakeup",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(1)),
+                        ("maximum", Value::Integer(256)),
+                        ("default", Value::Integer(32)),
+                    ]),
+                ),
+                (
+                    "history_turns",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(0)),
+                        ("maximum", Value::Integer(32)),
+                        ("default", Value::Integer(6)),
+                    ]),
+                ),
+                (
+                    "sentence_chunk_characters",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(20)),
+                        ("maximum", Value::Integer(400)),
+                        ("default", Value::Integer(80)),
+                    ]),
+                ),
+                (
+                    "stream",
+                    map([
+                        ("type", Value::String("boolean".into())),
+                        ("default", Value::Bool(true)),
+                    ]),
+                ),
+            ]),
+        ),
+        (
+            "required",
+            Value::List(
+                vec![Value::String("endpoint".into()), Value::String("model".into())]
+                    .into_boxed_slice(),
+            ),
+        ),
+        ("additionalProperties", Value::Bool(false)),
+    ]))
+}
+
+const LLM_DEFAULT_SYSTEM_PROMPT: &str =
+    "You are Muxiva, a warm, concise real-time voice assistant. Respond in the user's language using short, natural spoken sentences. Never use Markdown, lists, or URLs aloud.";
+
+struct LlmOpenAiCompatibleFactory;
+
+impl NodeFactory for LlmOpenAiCompatibleFactory {
+    fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
+        if !matches!(config.get("endpoint"), Some(Value::String(value)) if !value.trim().is_empty() && value.len() <= 1024) {
+            return Err(config_error("LLM node requires a non-empty endpoint string"));
+        }
+        if !matches!(config.get("model"), Some(Value::String(value)) if !value.trim().is_empty() && value.len() <= 256) {
+            return Err(config_error("LLM node requires a non-empty model string"));
+        }
+        if !matches!(config.get("api_key_env"), Some(Value::String(value)) if value.len() <= 256) {
+            return Err(config_error("LLM api_key_env must be a bounded string"));
+        }
+        if !matches!(config.get("system_prompt"), Some(Value::String(value)) if value.len() <= 16_384) {
+            return Err(config_error("LLM system_prompt must be a bounded string"));
+        }
+        if !matches!(config.get("temperature"), Some(Value::Float(value)) if value.get() >= 0.0 && value.get() <= 2.0) {
+            return Err(config_error("LLM temperature must be between 0 and 2"));
+        }
+        if !matches!(config.get("max_tokens"), Some(Value::Integer(1..=32_768)))
+            || !matches!(config.get("timeout_ms"), Some(Value::Integer(1_000..=300_000)))
+            || !matches!(config.get("max_results_per_wakeup"), Some(Value::Integer(1..=256)))
+            || !matches!(config.get("history_turns"), Some(Value::Integer(0..=32)))
+            || !matches!(config.get("sentence_chunk_characters"), Some(Value::Integer(20..=400)))
+            || !matches!(config.get("stream"), Some(Value::Bool(_)))
+        {
+            return Err(config_error("LLM node has an out-of-range numeric or boolean value"));
+        }
+        Ok(())
+    }
+
+    fn create(
+        &self,
+        _node_id: &NodeId,
+        config: &ConfigMap,
+    ) -> Result<Box<dyn Node>, NodeFactoryError> {
+        let string = |name: &str| match config.get(name) {
+            Some(Value::String(value)) => value.to_string(),
+            _ => String::new(),
+        };
+        let temperature = match config.get("temperature") {
+            Some(Value::Float(value)) => value.get(),
+            _ => 0.6,
+        };
+        let integer = |name: &str, default: i64| match config.get(name) {
+            Some(Value::Integer(value)) => *value,
+            _ => default,
+        };
+        let (sender, results) = mpsc::channel();
+        Ok(Box::new(LlmOpenAiCompatible {
+            endpoint: string("endpoint").trim_end_matches('/').to_owned(),
+            api_key_env: {
+                let value = string("api_key_env");
+                if value.trim().is_empty() {
+                    None
+                } else {
+                    Some(value)
+                }
+            },
+            model: string("model"),
+            system_prompt: string("system_prompt"),
+            temperature,
+            max_tokens: integer("max_tokens", 512) as u32,
+            timeout_ms: integer("timeout_ms", 60_000) as u64,
+            max_results_per_wakeup: integer("max_results_per_wakeup", 32) as usize,
+            history_turns: integer("history_turns", 6) as usize,
+            sentence_chunk_characters: integer("sentence_chunk_characters", 80) as usize,
+            stream: matches!(config.get("stream"), Some(Value::Bool(true))),
+            generation: 0,
+            cancel: None,
+            pending: Arc::new(AtomicUsize::new(0)),
+            worker: None,
+            sender,
+            results,
+            history: Vec::new(),
+        }))
+    }
+}
+
+enum LlmResult {
+    Delta { generation: u64, sequence: u64, text: String },
+    Done { generation: u64, sequence: u64, user: String, answer: String },
+    Error { generation: u64, message: String },
+}
+
+struct LlmOpenAiCompatible {
+    endpoint: String,
+    api_key_env: Option<String>,
+    model: String,
+    system_prompt: String,
+    temperature: f64,
+    max_tokens: u32,
+    timeout_ms: u64,
+    max_results_per_wakeup: usize,
+    history_turns: usize,
+    sentence_chunk_characters: usize,
+    stream: bool,
+    generation: u64,
+    cancel: Option<Arc<AtomicBool>>,
+    pending: Arc<AtomicUsize>,
+    worker: Option<JoinHandle<()>>,
+    sender: Sender<LlmResult>,
+    results: Receiver<LlmResult>,
+    history: Vec<(String, String)>,
+}
+
+impl LlmOpenAiCompatible {
+    fn cancel_current(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        if let Some(cancel) = self.cancel.take() {
+            cancel.store(true, Ordering::Release);
+        }
+        // Detach the previous worker: it observes its own cancel flag, exits on
+        // the next SSE read, and its stale results are filtered by generation.
+        self.worker = None;
+        while self.results.try_recv().is_ok() {
+            self.pending.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+
+    fn start_generation(
+        &mut self,
+        text: &str,
+        sequence: u64,
+        context: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(());
+        }
+        self.cancel_current();
+        let generation = self.generation;
+        let endpoint = format!("{}/chat/completions", self.endpoint);
+        let model = self.model.clone();
+        let system_prompt = self.system_prompt.clone();
+        let api_key_env = self.api_key_env.clone();
+        let api_key = api_key_env
+            .as_ref()
+            .and_then(|name| std::env::var(name).ok());
+        let temperature = self.temperature;
+        let max_tokens = self.max_tokens;
+        let timeout_ms = self.timeout_ms;
+        let sentence_chunk_characters = self.sentence_chunk_characters;
+        let stream = self.stream;
+        let history: Vec<(String, String)> = self
+            .history
+            .iter()
+            .rev()
+            .take(self.history_turns)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        let user = text.to_owned();
+        let mut messages = Vec::with_capacity(2 + history.len() * 2);
+        messages.push(serde_json::json!({"role": "system", "content": system_prompt}));
+        for (role_user, role_assistant) in &history {
+            messages.push(serde_json::json!({"role": "user", "content": role_user}));
+            messages.push(serde_json::json!({"role": "assistant", "content": role_assistant}));
+        }
+        messages.push(serde_json::json!({"role": "user", "content": user}));
+
+        let sender = self.sender.clone();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let pending_count = Arc::clone(&self.pending);
+        self.cancel = Some(Arc::clone(&cancel));
+        self.worker = Some(thread::Builder::new()
+            .name(format!("muxiva-llm-{generation}"))
+            .spawn(move || {
+                run_llm_request(
+                    endpoint,
+                    api_key_env,
+                    api_key,
+                    model,
+                    messages,
+                    temperature,
+                    max_tokens,
+                    timeout_ms,
+                    sentence_chunk_characters,
+                    stream,
+                    generation,
+                    sequence,
+                    user,
+                    sender,
+                    cancel,
+                    pending_count,
+                );
+            })
+            .expect("bounded LLM worker thread"));
+        context.schedule_next_tick(Duration::from_millis(20));
+        Ok(())
+    }
+
+    fn drain(&mut self, context: &mut NodeContext) -> muxiva_types::Result<()> {
+        for _ in 0..self.max_results_per_wakeup {
+            match self.results.try_recv() {
+                Ok(LlmResult::Delta { generation, sequence, text }) if generation == self.generation => {
+                    self.pending.fetch_sub(1, Ordering::AcqRel);
+                    context.emit(
+                        PortName::new("text_out").unwrap(),
+                        llm_frame(context.node_id(), sequence, FramePayload::Text(TextData::new(text)), "llm-delta")?,
+                    )?;
+                }
+                Ok(LlmResult::Done { generation, sequence, user, answer }) if generation == self.generation => {
+                    self.pending.fetch_sub(1, Ordering::AcqRel);
+                    if !answer.is_empty() {
+                        self.history.push((user, answer.clone()));
+                        let keep = self.history_turns * 2;
+                        if self.history.len() > keep {
+                            let drain = self.history.len() - keep;
+                            self.history.drain(..drain);
+                        }
+                        context.emit(
+                            PortName::new("event_out").unwrap(),
+                            llm_frame(
+                                context.node_id(),
+                                sequence,
+                                FramePayload::Event(EventData::new(
+                                    NamespacedName::new("muxiva.voice.response.completed")?,
+                                    SchemaVersion::new(1)?,
+                                    context.node_id().clone(),
+                                    Value::String(answer.clone().into()),
+                                )),
+                                "llm-completed",
+                            )?,
+                        )?;
+                    }
+                    break;
+                }
+                Ok(LlmResult::Error { generation, message }) if generation == self.generation => {
+                    self.pending.fetch_sub(1, Ordering::AcqRel);
+                    return Err(MuxivaError::new(
+                        ErrorCategory::External,
+                        "MUXIVA-LLM-REQUEST",
+                        message,
+                    ));
+                }
+                Ok(_) => {
+                    self.pending.fetch_sub(1, Ordering::AcqRel);
+                    continue;
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => break,
+            }
+        }
+        Ok(())
+    }
+
+    fn has_pending_work(&self) -> bool {
+        self.worker.as_ref().is_some_and(|worker| !worker.is_finished())
+            || self.pending.load(Ordering::Acquire) > 0
+    }
+}
+
+impl Node for LlmOpenAiCompatible {
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        match context.input_port().map(PortName::as_str) {
+            Some("text_in") => {
+                let input = required_type(input, FrameType::Text, "LLM node requires text")?;
+                let text = input.as_text().expect("validated text frame").data().as_str();
+                let sequence = input.header().sequence_id().get();
+                self.start_generation(text, sequence, context)?;
+            }
+            _ => {
+                self.drain(context)?;
+            }
+        }
+        if self.has_pending_work() {
+            context.schedule_next_tick(Duration::from_millis(20));
+        }
+        Ok(())
+    }
+
+    fn on_signal(
+        &mut self,
+        _signal: muxiva_types::SignalFrame,
+        _context: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        self.cancel_current();
+        Ok(())
+    }
+
+    fn on_finish(&mut self, _context: &mut NodeContext) -> muxiva_types::Result<()> {
+        self.cancel_current();
+        Ok(())
+    }
+
+    fn on_abort(&mut self, _reason: &muxiva_core::AbortReason, _context: &mut NodeContext) {
+        self.cancel_current();
+    }
+}
+
+fn llm_frame(
+    node_id: &NodeId,
+    sequence: u64,
+    payload: FramePayload,
+    reason: &'static str,
+) -> muxiva_types::Result<Frame> {
+    let serial = NEXT_FRAME.fetch_add(1, Ordering::Relaxed);
+    let frame_type = payload.frame_type();
+    Frame::new(
+        FrameHeader::new(
+            FrameId::new(format!("builtin-{reason}-{serial}")).expect("bounded LLM frame ID"),
+            Timestamp::from_nanos(0),
+            ClockDomain::new(
+                ClockDomainId::new("muxiva.builtin.llm").expect("valid LLM clock"),
+                ClockKind::Monotonic,
+            ),
+            SequenceId::new(sequence),
+            StreamId::new(format!("llm-{node_id}")).expect("bounded LLM stream"),
+            TraceId::new(format!("llm-{node_id}")).expect("bounded LLM trace"),
+            frame_type,
+            Metadata::empty(),
+            Extensions::empty(),
+            Lineage::empty(),
+        )?,
+        payload,
+    )
+}
+
+fn run_llm_request(
+    endpoint: String,
+    api_key_env: Option<String>,
+    api_key: Option<String>,
+    model: String,
+    messages: Vec<serde_json::Value>,
+    temperature: f64,
+    max_tokens: u32,
+    timeout_ms: u64,
+    sentence_chunk_characters: usize,
+    stream: bool,
+    generation: u64,
+    sequence: u64,
+    user: String,
+    sender: Sender<LlmResult>,
+    cancel: Arc<AtomicBool>,
+    pending_count: Arc<AtomicUsize>,
+) {
+    let body = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": stream,
+    });
+    let agent = ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .timeout_global(Some(Duration::from_millis(timeout_ms)))
+            .build(),
+    );
+    let mut request = agent
+        .post(&endpoint)
+        .header("Content-Type", "application/json")
+        .header("Accept", "text/event-stream");
+    if let (Some(name), Some(key)) = (api_key_env.as_deref(), api_key.as_deref()) {
+        request = request.header("Authorization", &format!("Bearer {key}"));
+        eprintln!(
+            "[MUXIVA][LLM][request.started] endpoint={endpoint} model={model} auth_env={name}"
+        );
+    } else {
+        eprintln!(
+            "[MUXIVA][LLM][request.started] endpoint={endpoint} model={model} auth=none"
+        );
+    }
+    let response = match request.send_json(&body) {
+        Ok(response) => response,
+        Err(error) => {
+            pending_count.fetch_add(1, Ordering::AcqRel);
+            let _ = sender.send(LlmResult::Error {
+                generation,
+                message: format!("LLM HTTP request failed: {error}"),
+            });
+            return;
+        }
+    };
+
+    let mut answer = String::new();
+    let mut pending = String::new();
+    let mut chunks = Vec::new();
+    let emit_chunks = |pending: &mut String, chunks: &mut Vec<String>, sender: &Sender<LlmResult>| {
+        drain_sentence_chunks(pending, sentence_chunk_characters, chunks);
+        for chunk in chunks.drain(..) {
+            if !chunk.is_empty() {
+                pending_count.fetch_add(1, Ordering::AcqRel);
+                let _ = sender.send(LlmResult::Delta {
+                    generation,
+                    sequence,
+                    text: chunk,
+                });
+            }
+        }
+    };
+    if stream {
+        let mut reader = std::io::BufReader::new(response.into_body().into_reader());
+        let mut line = String::new();
+        loop {
+            if cancel.load(Ordering::Acquire) {
+                return;
+            }
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(_) => break,
+            }
+            let trimmed = line.trim();
+            if let Some(data) = trimmed.strip_prefix("data: ") {
+                if data == "[DONE]" {
+                    break;
+                }
+                if let Ok(event) = serde_json::from_str::<serde_json::Value>(data) {
+                    if let Some(delta) = event
+                        .get("choices")
+                        .and_then(|choices| choices.get(0))
+                        .and_then(|choice| choice.get("delta"))
+                        .and_then(|delta| delta.get("content"))
+                        .and_then(serde_json::Value::as_str)
+                    {
+                        answer.push_str(delta);
+                        pending.push_str(delta);
+                        emit_chunks(&mut pending, &mut chunks, &sender);
+                    }
+                }
+            }
+        }
+    } else {
+        let mut body_text = String::new();
+        let _ = response.into_body().into_reader().read_to_string(&mut body_text);
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body_text) {
+            if let Some(content) = value
+                .get("choices")
+                .and_then(|choices| choices.get(0))
+                .and_then(|choice| choice.get("message"))
+                .and_then(|message| message.get("content"))
+                .and_then(serde_json::Value::as_str)
+            {
+                answer.push_str(content);
+                pending.push_str(content);
+                emit_chunks(&mut pending, &mut chunks, &sender);
+            }
+        }
+    }
+    drain_sentence_chunks(&mut pending, sentence_chunk_characters, &mut chunks);
+    if !pending.is_empty() {
+        chunks.push(std::mem::take(&mut pending));
+    }
+    for chunk in chunks.drain(..) {
+        if !chunk.is_empty() {
+            pending_count.fetch_add(1, Ordering::AcqRel);
+            let _ = sender.send(LlmResult::Delta {
+                generation,
+                sequence,
+                text: chunk,
+            });
+        }
+    }
+
+    pending_count.fetch_add(1, Ordering::AcqRel);
+    let _ = sender.send(LlmResult::Done {
+        generation,
+        sequence,
+        user,
+        answer,
+    });
+}
+
+/// Drains complete spoken sentences (or oversized runs) out of `buffer`.
+fn drain_sentence_chunks(buffer: &mut String, max_characters: usize, chunks: &mut Vec<String>) {
+    loop {
+        let boundary = buffer
+            .char_indices()
+            .find(|(_, ch)| matches!(ch, '。' | '！' | '？' | '.' | '!' | '?' | '\n'))
+            .map(|(index, ch)| index + ch.len_utf8());
+        if let Some(end) = boundary {
+            chunks.push(buffer.drain(..end).collect());
+            continue;
+        }
+        if buffer.chars().count() >= max_characters {
+            let cut = buffer
+                .char_indices()
+                .nth(max_characters)
+                .map(|(index, _)| index)
+                .unwrap_or(buffer.len());
+            chunks.push(buffer.drain(..cut).collect());
+            continue;
+        }
+        break;
+    }
 }
 
 struct TextCancellationGateFactory;
@@ -2207,6 +2850,206 @@ mod tests {
             formatter.format_chunk("下一轮仍然可以正常播报。"),
             "下一轮仍然可以正常播报。"
         );
+    }
+
+    #[test]
+    fn llm_sentence_chunks_split_on_boundaries_and_overflow() {
+        let mut buffer = String::from("第一句。第二句！第三句？");
+        let mut chunks = Vec::new();
+        drain_sentence_chunks(&mut buffer, 80, &mut chunks);
+        assert_eq!(chunks, vec!["第一句。", "第二句！", "第三句？"]);
+        assert!(buffer.is_empty());
+
+        let mut buffer = String::from("没有标点符号的超长回答");
+        let mut chunks = Vec::new();
+        drain_sentence_chunks(&mut buffer, 4, &mut chunks);
+        assert_eq!(chunks, vec!["没有标点", "符号的超"]);
+        assert_eq!(buffer, "长回答");
+    }
+
+    #[test]
+    fn llm_config_requires_endpoint_and_model() {
+        let factory = LlmOpenAiCompatibleFactory;
+        let valid = || {
+            ConfigMap::try_from_iter(vec![
+                (
+                    muxiva_core::ConfigKey::new("endpoint").unwrap(),
+                    Value::String("https://api.deepseek.com/v1".into()),
+                ),
+                (
+                    muxiva_core::ConfigKey::new("api_key_env").unwrap(),
+                    Value::String("DEEPSEEK_API_KEY".into()),
+                ),
+                (
+                    muxiva_core::ConfigKey::new("model").unwrap(),
+                    Value::String("deepseek-chat".into()),
+                ),
+                (
+                    muxiva_core::ConfigKey::new("system_prompt").unwrap(),
+                    Value::String(LLM_DEFAULT_SYSTEM_PROMPT.into()),
+                ),
+                (
+                    muxiva_core::ConfigKey::new("temperature").unwrap(),
+                    Value::Float(muxiva_types::FiniteF64::new(0.6).unwrap()),
+                ),
+                (
+                    muxiva_core::ConfigKey::new("max_tokens").unwrap(),
+                    Value::Integer(512),
+                ),
+                (
+                    muxiva_core::ConfigKey::new("timeout_ms").unwrap(),
+                    Value::Integer(60_000),
+                ),
+                (
+                    muxiva_core::ConfigKey::new("max_results_per_wakeup").unwrap(),
+                    Value::Integer(32),
+                ),
+                (
+                    muxiva_core::ConfigKey::new("history_turns").unwrap(),
+                    Value::Integer(6),
+                ),
+                (
+                    muxiva_core::ConfigKey::new("sentence_chunk_characters").unwrap(),
+                    Value::Integer(80),
+                ),
+                (
+                    muxiva_core::ConfigKey::new("stream").unwrap(),
+                    Value::Bool(true),
+                ),
+            ])
+            .unwrap()
+        };
+        assert!(factory.validate_config(&valid()).is_ok());
+
+        let missing_model = ConfigMap::try_from_iter(
+            valid()
+                .iter()
+                .filter(|(key, _)| key.as_str() != "model")
+                .map(|(key, value)| (key.clone(), value.clone())),
+        )
+        .unwrap();
+        assert!(factory.validate_config(&missing_model).is_err());
+    }
+
+    #[test]
+    fn llm_openai_compatible_streams_sse_into_text_and_event_frames() {
+        use std::io::{Read as _, Write as _};
+        use std::net::TcpListener;
+
+        // A minimal OpenAI-compatible streaming endpoint for the test.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let body = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"，世界\"}}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let responder = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.flush();
+        });
+
+        let config = ConfigMap::try_from_iter(vec![
+            (
+                muxiva_core::ConfigKey::new("endpoint").unwrap(),
+                Value::String(format!("http://127.0.0.1:{port}/v1").into()),
+            ),
+            (
+                muxiva_core::ConfigKey::new("api_key_env").unwrap(),
+                Value::String(String::new().into()),
+            ),
+            (
+                muxiva_core::ConfigKey::new("model").unwrap(),
+                Value::String("test-model".into()),
+            ),
+            (
+                muxiva_core::ConfigKey::new("system_prompt").unwrap(),
+                Value::String("assistant".into()),
+            ),
+            (
+                muxiva_core::ConfigKey::new("temperature").unwrap(),
+                Value::Float(muxiva_types::FiniteF64::new(0.0).unwrap()),
+            ),
+            (
+                muxiva_core::ConfigKey::new("max_tokens").unwrap(),
+                Value::Integer(32),
+            ),
+            (
+                muxiva_core::ConfigKey::new("timeout_ms").unwrap(),
+                Value::Integer(5_000),
+            ),
+            (
+                muxiva_core::ConfigKey::new("max_results_per_wakeup").unwrap(),
+                Value::Integer(32),
+            ),
+            (
+                muxiva_core::ConfigKey::new("history_turns").unwrap(),
+                Value::Integer(0),
+            ),
+            (
+                muxiva_core::ConfigKey::new("sentence_chunk_characters").unwrap(),
+                Value::Integer(80),
+            ),
+            (
+                muxiva_core::ConfigKey::new("stream").unwrap(),
+                Value::Bool(true),
+            ),
+        ])
+        .unwrap();
+        let node_id = NodeId::new("llm-test").unwrap();
+        let mut node = LlmOpenAiCompatibleFactory
+            .create(&node_id, &config)
+            .unwrap();
+
+        let mut text_input = NodeContext::new(
+            node_id.clone(),
+            config.clone(),
+            Some(PortName::new("text_in").unwrap()),
+        );
+        node.on_process(Some(source_frame("测试").unwrap()), &mut text_input)
+            .unwrap();
+
+        let mut received_text = String::new();
+        let mut saw_completed = false;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            let mut tick = NodeContext::new(node_id.clone(), config.clone(), None);
+            node.on_process(None, &mut tick).unwrap();
+            for emission in tick.take_emissions() {
+                match emission.output_port().as_str() {
+                    "text_out" => received_text.push_str(
+                        emission
+                            .frame()
+                            .as_text()
+                            .unwrap()
+                            .data()
+                            .as_str(),
+                    ),
+                    "event_out" => {
+                        let event = emission.frame().as_event().unwrap();
+                        if event.data().topic().as_str() == "muxiva.voice.response.completed" {
+                            saw_completed = true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if saw_completed {
+                break;
+            }
+            thread::sleep(std::time::Duration::from_millis(10));
+        }
+        responder.join().unwrap();
+        assert_eq!(received_text, "你好，世界");
+        assert!(saw_completed);
     }
 
     #[test]

@@ -144,11 +144,13 @@ class QwenTtsRealtimeNode:
                 self._cancelled_through_sequence,
                 int(getattr(signal, "sequence", 0)),
             )
+            actively_synthesizing = self._pending_jobs > 0 or not self._results.empty()
         cancelled = self._invalidate()
         self._log(
             "synthesis.cancelled",
             sequence=getattr(signal, "sequence", 0),
             active_session=cancelled,
+            actively_synthesizing=actively_synthesizing,
         )
 
     def on_finish(self, _ctx: Any = None) -> None:

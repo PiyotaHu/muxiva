@@ -1,0 +1,254 @@
+{
+  "version": "muxiva.graph/v1",
+  "graph_id": "xiaozhi-qwen-deepseek-voice",
+  "nodes": [
+    {
+      "id": "xiaozhi-in",
+      "node_type": "xiaozhi.audio_source",
+      "language": "python",
+      "factory_version": "1.0.0",
+      "node_config": {
+        "ws_host": "0.0.0.0",
+        "ws_port": 8888,
+        "control_host": "127.0.0.1",
+        "control_port": 8889,
+        "sample_rate": 16000,
+        "frame_duration_ms": 60
+      }
+    },
+    {
+      "id": "qwen-vad-asr",
+      "node_type": "qwen.asr_realtime",
+      "language": "python",
+      "factory_version": "1.3.0",
+      "node_config": {
+        "language": "zh",
+        "model": "qwen3-asr-flash-realtime",
+        "silence_duration_ms": 500,
+        "vad_threshold": 0.45
+      }
+    },
+    {
+      "id": "llm",
+      "node_type": "builtin.llm_openai_compatible",
+      "language": "rust",
+      "factory_version": "1.0.0",
+      "node_config": {
+        "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "api_key_env": "DASHSCOPE_API_KEY",
+        "model": "qwen-flash",
+        "system_prompt": "你是小智，一个温暖、简洁的实时语音助手。请用用户的语言，用短句自然口语回答。绝对不要使用 Markdown、列表、代码块或读出网址。",
+        "temperature": 0.6,
+        "max_tokens": 512,
+        "timeout_ms": 60000,
+        "max_results_per_wakeup": 32,
+        "history_turns": 6,
+        "sentence_chunk_characters": 80,
+        "stream": true
+      }
+    },
+    {
+      "id": "speech-formatter",
+      "node_type": "builtin.speech_formatter",
+      "language": "rust",
+      "factory_version": "1.0.0",
+      "node_config": {
+        "code_block_message": "代码已经生成，请在设备上查看。",
+        "strip_urls": true,
+        "table_message": "详细表格请在设备上查看。"
+      }
+    },
+    {
+      "id": "qwen-tts",
+      "node_type": "qwen.tts_realtime",
+      "language": "python",
+      "factory_version": "1.2.0",
+      "node_config": {
+        "language_type": "Auto",
+        "max_results_per_wakeup": 64,
+        "model": "qwen3-tts-flash-realtime",
+        "voice": "Cherry"
+      }
+    },
+    {
+      "id": "tts-resampler",
+      "node_type": "builtin.audio_resampler",
+      "language": "rust",
+      "factory_version": "1.0.0",
+      "node_config": {
+        "input": {
+          "channels": 1,
+          "sample_format": "pcm_s16le",
+          "sample_rate_hz": 24000
+        },
+        "output": {
+          "channels": 1,
+          "sample_format": "pcm_s16le",
+          "sample_rate_hz": 16000
+        }
+      }
+    },
+    {
+      "id": "xiaozhi-out",
+      "node_type": "xiaozhi.audio_sink",
+      "language": "python",
+      "factory_version": "1.0.0",
+      "node_config": {
+        "control_host": "127.0.0.1",
+        "control_port": 8889
+      }
+    },
+    {
+      "id": "xiaozhi-events",
+      "node_type": "xiaozhi.event_encoder",
+      "language": "python",
+      "factory_version": "1.0.0",
+      "node_config": {
+        "control_host": "127.0.0.1",
+        "control_port": 8889
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "mic-to-asr",
+      "from": { "node_id": "xiaozhi-in", "port": "audio_out" },
+      "to": { "node_id": "qwen-vad-asr", "port": "audio_in" },
+      "frame_type": "audio",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "client-abort-llm",
+      "from": { "node_id": "xiaozhi-in", "port": "signal_out" },
+      "to": { "node_id": "llm", "port": "signal_in" },
+      "frame_type": "signal",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "client-abort-formatter",
+      "from": { "node_id": "xiaozhi-in", "port": "signal_out" },
+      "to": { "node_id": "speech-formatter", "port": "signal_in" },
+      "frame_type": "signal",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "client-abort-tts",
+      "from": { "node_id": "xiaozhi-in", "port": "signal_out" },
+      "to": { "node_id": "qwen-tts", "port": "signal_in" },
+      "frame_type": "signal",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "client-abort-sink",
+      "from": { "node_id": "xiaozhi-in", "port": "signal_out" },
+      "to": { "node_id": "xiaozhi-out", "port": "signal_in" },
+      "frame_type": "signal",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "client-abort-events",
+      "from": { "node_id": "xiaozhi-in", "port": "signal_out" },
+      "to": { "node_id": "xiaozhi-events", "port": "signal_in" },
+      "frame_type": "signal",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "vad-abort-llm",
+      "from": { "node_id": "qwen-vad-asr", "port": "signal_out" },
+      "to": { "node_id": "llm", "port": "signal_in" },
+      "frame_type": "signal",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "vad-abort-formatter",
+      "from": { "node_id": "qwen-vad-asr", "port": "signal_out" },
+      "to": { "node_id": "speech-formatter", "port": "signal_in" },
+      "frame_type": "signal",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "vad-abort-tts",
+      "from": { "node_id": "qwen-vad-asr", "port": "signal_out" },
+      "to": { "node_id": "qwen-tts", "port": "signal_in" },
+      "frame_type": "signal",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "vad-abort-sink",
+      "from": { "node_id": "qwen-vad-asr", "port": "signal_out" },
+      "to": { "node_id": "xiaozhi-out", "port": "signal_in" },
+      "frame_type": "signal",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "vad-abort-events",
+      "from": { "node_id": "qwen-vad-asr", "port": "signal_out" },
+      "to": { "node_id": "xiaozhi-events", "port": "signal_in" },
+      "frame_type": "signal",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "transcript-to-llm",
+      "from": { "node_id": "qwen-vad-asr", "port": "text_out" },
+      "to": { "node_id": "llm", "port": "text_in" },
+      "frame_type": "text",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "transcript-to-events",
+      "from": { "node_id": "qwen-vad-asr", "port": "text_out" },
+      "to": { "node_id": "xiaozhi-events", "port": "transcript_in" },
+      "frame_type": "text",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "llm-to-formatter",
+      "from": { "node_id": "llm", "port": "text_out" },
+      "to": { "node_id": "speech-formatter", "port": "text_in" },
+      "frame_type": "text",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "llm-to-events",
+      "from": { "node_id": "llm", "port": "text_out" },
+      "to": { "node_id": "xiaozhi-events", "port": "response_text_in" },
+      "frame_type": "text",
+      "queue_policy": { "capacity": 64, "overflow": "block" }
+    },
+    {
+      "id": "formatter-to-tts",
+      "from": { "node_id": "speech-formatter", "port": "text_out" },
+      "to": { "node_id": "qwen-tts", "port": "text_in" },
+      "frame_type": "text",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "tts-to-resampler",
+      "from": { "node_id": "qwen-tts", "port": "audio_out" },
+      "to": { "node_id": "tts-resampler", "port": "audio_in" },
+      "frame_type": "audio",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "resampler-to-sink",
+      "from": { "node_id": "tts-resampler", "port": "audio_out" },
+      "to": { "node_id": "xiaozhi-out", "port": "audio_in" },
+      "frame_type": "audio",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "speech-state-to-events",
+      "from": { "node_id": "qwen-vad-asr", "port": "speech_out" },
+      "to": { "node_id": "xiaozhi-events", "port": "event_in" },
+      "frame_type": "event",
+      "queue_policy": { "capacity": 64, "overflow": "block" }
+    },
+    {
+      "id": "response-state-to-events",
+      "from": { "node_id": "llm", "port": "event_out" },
+      "to": { "node_id": "xiaozhi-events", "port": "event_in" },
+      "frame_type": "event",
+      "queue_policy": { "capacity": 64, "overflow": "block" }
+    }
+  ]
+}

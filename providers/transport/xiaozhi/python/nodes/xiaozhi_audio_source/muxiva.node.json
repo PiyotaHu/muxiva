@@ -1,0 +1,55 @@
+{
+  "format": "muxiva.node/v1",
+  "package_id": "xiaozhi_audio_source",
+  "display_name": "Xiaozhi Audio Ingress",
+  "node_type": "xiaozhi.audio_source",
+  "language": "python",
+  "factory_version": "1.0.0",
+  "kind": "source",
+  "entrypoint": "node:XiaozhiAudioSourceNode",
+  "category": "transport",
+  "capability": "xiaozhi.audio.ingress",
+  "summary": "Hosts the Xiaozhi ESP32 WebSocket server, decodes Opus into 16 kHz PCM Audio Frames, and forwards client control as Events and a barge-in Signal.",
+  "connection_id": null,
+  "documentation": "https://piyotahu.github.io/muxiva/providers/xiaozhi/audio-ingress/",
+  "tags": ["xiaozhi", "websocket", "opus", "audio", "ingress", "realtime"],
+  "ports": [
+    {
+      "name": "audio_out",
+      "direction": "output",
+      "frame_type": "audio",
+      "schema": {
+        "encoding": "pcm_s16le",
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "frame_duration_ms": 60,
+        "streaming": true
+      }
+    },
+    {
+      "name": "event_out",
+      "direction": "output",
+      "frame_type": "event",
+      "schema": { "semantics": ["client_hello", "client_listen", "client_abort"] }
+    },
+    {
+      "name": "signal_out",
+      "direction": "output",
+      "frame_type": "signal",
+      "schema": { "semantics": ["graph_control", "barge_in"] }
+    }
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "ws_host": { "type": "string", "default": "0.0.0.0" },
+      "ws_port": { "type": "integer", "default": 8888 },
+      "control_host": { "type": "string", "default": "127.0.0.1" },
+      "control_port": { "type": "integer", "default": 8889 },
+      "sample_rate": { "type": "integer", "default": 16000 },
+      "frame_duration_ms": { "type": "integer", "default": 60 }
+    },
+    "required": ["ws_host", "ws_port", "control_host", "control_port", "sample_rate", "frame_duration_ms"],
+    "additionalProperties": false
+  }
+}

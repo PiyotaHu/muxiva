@@ -1,0 +1,50 @@
+{
+  "format": "muxiva.node/v1",
+  "package_id": "xiaozhi_event_encoder",
+  "display_name": "Xiaozhi Device Event Encoder",
+  "node_type": "xiaozhi.event_encoder",
+  "language": "python",
+  "factory_version": "1.0.0",
+  "kind": "sink",
+  "entrypoint": "node:XiaozhiEventEncoderNode",
+  "category": "transport",
+  "capability": "xiaozhi.protocol.encode",
+  "summary": "Maps transcripts and assistant response text into the Xiaozhi stt/tts device messages and clears queued audio on barge-in.",
+  "documentation": "https://piyotahu.github.io/muxiva/providers/xiaozhi/event-encoder/",
+  "tags": ["xiaozhi", "protocol", "stt", "tts", "display"],
+  "ports": [
+    {
+      "name": "transcript_in",
+      "direction": "input",
+      "frame_type": "text",
+      "schema": { "semantics": ["user_transcript_final"], "streaming": false }
+    },
+    {
+      "name": "response_text_in",
+      "direction": "input",
+      "frame_type": "text",
+      "schema": { "semantics": ["assistant_transcript"], "streaming": true }
+    },
+    {
+      "name": "event_in",
+      "direction": "input",
+      "frame_type": "event",
+      "schema": { "semantics": ["speech_state", "response_state"], "streaming": true }
+    },
+    {
+      "name": "signal_in",
+      "direction": "input",
+      "frame_type": "signal",
+      "schema": { "semantics": ["graph_control", "barge_in"] }
+    }
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "control_host": { "type": "string", "default": "127.0.0.1" },
+      "control_port": { "type": "integer", "default": 8889 }
+    },
+    "required": ["control_host", "control_port"],
+    "additionalProperties": false
+  }
+}

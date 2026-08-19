@@ -1,0 +1,16 @@
+{
+  "format": "muxiva.provider/v1",
+  "provider_id": "xiaozhi",
+  "display_name": "Xiaozhi ESP32 WebSocket Transport",
+  "category": "transport",
+  "summary": "Bridges the Xiaozhi ESP32 device WebSocket protocol (Opus audio plus hello/listen/abort control) into a Muxiva graph as PCM ingress and egress.",
+  "vendor": "Xiaozhi open-source community (78/xiaozhi-esp32)",
+  "homepage": "https://github.com/78/xiaozhi-esp32",
+  "documentation": "https://piyotahu.github.io/muxiva/providers/xiaozhi/",
+  "license": "MIT (client protocol reference); Apache-2.0 (this adapter)",
+  "sdk": {
+    "name": "Xiaozhi WebSocket device protocol",
+    "version": "v1"
+  },
+  "connections": []
+}

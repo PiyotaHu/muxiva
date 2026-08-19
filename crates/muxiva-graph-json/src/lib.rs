@@ -205,6 +205,12 @@ fn builtin_metadata(
             "Converts streaming Markdown into natural plain text for TTS while preserving the original display branch.",
             &["speech", "tts", "markdown", "text"],
         ),
+        "builtin.llm_openai_compatible" => (
+            "algorithm",
+            "language.generation.openai_compatible",
+            "Streams cancellable sentence chunks from any OpenAI-compatible chat-completions endpoint, including DeepSeek, OpenAI, Qwen, and local Ollama servers.",
+            &["llm", "openai", "deepseek", "streaming", "cancellation"],
+        ),
         "builtin.text_source" => (
             "utility",
             "text.source",

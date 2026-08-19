@@ -1,0 +1,79 @@
+# 小智 ESP32 语音交互
+
+Muxiva 原生支持开源的 [小智 ESP32](https://github.com/78/xiaozhi-esp32)
+语音助手设备作为客户端。小智开发板通过其原生 WebSocket + Opus 协议连接到
+Muxiva 语音图，即可获得完整的 **VAD + ASR + LLM + TTS** 语音管线，无需改动固件。
+
+- 传输 Provider：`providers/transport/xiaozhi`（Python）
+- 分类：`transport`
+- 设备协议：小智 WebSocket `v1`（JSON 控制 + Opus 音频）
+- 旗舰示例：[`examples/xiaozhi-agent`](https://github.com/PiyotaHu/muxiva/tree/main/examples/xiaozhi-agent)
+- 凭据：阿里云百炼 API Key + Workspace ID
+- 成本：默认 Qwen 模型均有免费额度（见 [示例 README](https://github.com/PiyotaHu/muxiva/tree/main/examples/xiaozhi-agent#7-free-quota-and-cost)）
+
+## 设备协议
+
+小智固件通过一条 WebSocket 连接收发 JSON 控制消息与 Opus 音频：
+
+| 方向 | 消息 | 含义 |
+| --- | --- | --- |
+| 设备 → 服务端 | `{"type":"hello"}` | 握手；服务端回复协商后的 Opus 音频参数 |
+| 设备 → 服务端 | 二进制 Opus 包 | 麦克风音频（60ms 帧） |
+| 设备 → 服务端 | `{"type":"abort"}` | 用户按下打断按钮 |
+| 设备 → 服务端 | `{"type":"listen",...}` | 设备拾音状态切换 |
+| 设备 → 服务端 | `{"type":"ping"}` | 保活；服务端回复 `pong` |
+| 服务端 → 设备 | `{"type":"hello",...}` | 协商的 `audio_params` 与 `session_id` |
+| 服务端 → 设备 | 二进制 Opus 包 | 助手语音 |
+| 服务端 → 设备 | `{"type":"stt","text":...}` | 用户转写在设备屏幕展示 |
+| 服务端 → 设备 | `{"type":"tts","state":...}` | 助手说话状态 / 回答文字 |
+
+因此设备屏幕会实时展示：ASR 识别的问题（`stt`）、LLM 回答（`tts sentence_start`），
+以及说话 / 打断状态（`tts start` / `stop`）。
+
+## 架构
+
+传输层由三个 Node Pack 组成，与 Agora RTC Provider 处于同一架构层：
+
+- **`xiaozhi.audio_source`**（源节点）：内嵌 WebSocket 服务端，将 Opus 解码为
+  16kHz PCM，并把设备控制事件与 `muxiva.voice.speech.started` 打断 Signal 转发进图。
+- **`xiaozhi.audio_sink`**（汇节点）：把 TTS PCM 编码回 Opus 流式下发到设备。
+- **`xiaozhi.event_encoder`**（汇节点）：把转写与助手文字映射为 `stt` / `tts` 设备消息。
+
+由于 Muxiva 每个 Python Node 运行在独立进程中，源节点内置一个小型 gateway，
+汇节点与事件编码节点通过回环 JSON-lines 控制 socket 连接它。跨运行时边界流动的
+只有 PCM Frame 与控制 Signal/Event；Opus 与 WebSocket 协议始终留在传输 Provider 内部。
+
+## 示例图
+
+```text
+ESP32（Opus over WebSocket）
+        │  ws://<服务器IP>:8888
+        ▼
+xiaozhi.audio_source ──► qwen.asr_realtime ──► builtin.llm_openai_compatible
+   (VAD, barge-in)        (服务端 VAD + ASR)        (Qwen / DeepSeek / OpenAI)
+        ▲                                                     │
+        │                                                     ▼
+xiaozhi.audio_sink ◄── builtin.audio_resampler ◄── qwen.tts_realtime
+        ▲                        │                     ▲
+        └────────────────────────┴── builtin.speech_formatter
+```
+
+该图支持全双工对话：用户可在助手说话时打断（barge-in），服务端会取消正在进行的
+TTS/LLM 工作并立即回答新的一轮。
+
+## 快速开始（树莓派 4B）
+
+```bash
+cd examples/xiaozhi-agent
+./setup.sh                     # 安装 libopus、websockets、Qwen 依赖并生成 .env
+./run.sh                       # 启动 muxiva serve；WebSocket 监听 0.0.0.0:8888
+```
+
+把固件 WebSocket 地址指向 `ws://<树莓派IP>:8888` 即可对话。
+
+## 自动化全双工测试
+
+`examples/xiaozhi-agent/tests/test_full_duplex.py` 无需任何硬件即可复现三轮对话
+（打招呼、讲笑话、天气打断）。它用 Qwen TTS 合成用户语音，以 Opus 流式送入服务端
+（与设备麦克风完全一致），并校验 `stt` / `tts` 展示序列与打断信号。完整命令见
+[示例 README](https://github.com/PiyotaHu/muxiva/tree/main/examples/xiaozhi-agent)。

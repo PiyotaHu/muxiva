@@ -668,6 +668,7 @@ dependencies = [
  "muxiva-types",
  "serde",
  "serde_json",
+ "ureq",
 ]
 
 [[package]]

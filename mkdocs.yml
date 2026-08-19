@@ -96,6 +96,7 @@ plugins:
             Streaming ASR: 流式 ASR
             Streaming LLM: 流式 LLM
             Streaming TTS: 流式 TTS
+            Xiaozhi ESP32: 小智 ESP32
             Quality: 质量保障
             Testing: 测试体系
             Project: 项目
@@ -161,6 +162,8 @@ nav:
               - Streaming ASR: providers/qwen/asr-realtime.md
               - Streaming LLM: providers/qwen/llm-stream.md
               - Streaming TTS: providers/qwen/tts-realtime.md
+          - Xiaozhi ESP32:
+              - Overview: providers/xiaozhi.md
   - Quality:
       - Testing: testing.md
   - Project:
