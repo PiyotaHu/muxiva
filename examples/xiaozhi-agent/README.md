@@ -41,6 +41,11 @@ newer, and an ESP32 already flashed with compatible Xiaozhi firmware.
 ./setup.sh
 ```
 
+The setup command creates/reuses the repository `.venv` and installs Pillow for
+the artwork conversion and gallery helpers. The service must put that `.venv`
+first on `PATH`; the setup command verifies that the image pipeline can import
+it before returning successfully.
+
 Configure secrets and deployment-specific endpoints in `.env` rather than in
 the committed Graph:
 
@@ -115,6 +120,10 @@ utterances, long ASR turns, decimals, required Tools, and repeated turns.
   `xiaozhi-events`, and run the gateway pacing tests.
 - Weather/news is guessed: confirm its capability pack is enabled and the Tool
   completed successfully; required Tools must never silently fall back.
+- Drawing reaches the model but no image appears: run
+  `.venv/bin/python -c 'from PIL import Image'`, then rerun `setup.sh` if the
+  import fails. Recover the temporary generated-image URL from the service log
+  before it expires instead of paying for a second generation.
 - Wake word is insensitive: this is firmware/microphone/AEC policy, not an
   Agent route. Validate it on the physical board.
 

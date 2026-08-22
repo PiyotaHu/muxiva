@@ -1,0 +1,2 @@
+# Image conversion and gallery rendering for the 400x300 monochrome ESP32 display.
+Pillow>=10,<13

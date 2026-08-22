@@ -4,17 +4,25 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-echo "[setup] install system Opus codec"
+repo_root="$(cd ../.. && pwd)"
+python_bin="$repo_root/.venv/bin/python"
+
+echo "[setup] install system Opus codec and Python virtualenv support"
 sudo apt-get update -y
-sudo apt-get install -y libopus0 libopus-dev
+sudo apt-get install -y libopus0 libopus-dev python3-venv
 
-echo "[setup] install Python WebSocket dependency"
-python3 -m pip install --user -r ../providers/transport/xiaozhi/python/requirements.txt 2>/dev/null \
-  || python3 -m pip install -r ../providers/transport/xiaozhi/python/requirements.txt
+if [ ! -x "$python_bin" ]; then
+  echo "[setup] create repository Python environment"
+  python3 -m venv "$repo_root/.venv"
+fi
 
-echo "[setup] install provider Python dependencies"
-python3 -m pip install --user -r ../providers/algorithm/qwen/python/requirements.txt 2>/dev/null \
-  || python3 -m pip install -r ../providers/algorithm/qwen/python/requirements.txt
+echo "[setup] install transport, speech, and artwork dependencies"
+"$python_bin" -m pip install \
+  -r "$repo_root/providers/transport/xiaozhi/python/requirements.txt" \
+  -r "$repo_root/providers/algorithm/qwen/python/requirements.txt" \
+  -r "$repo_root/examples/xiaozhi-agent/requirements.txt"
+
+"$python_bin" -c 'from PIL import Image; print("[setup] artwork image pipeline ready")'
 
 if [ ! -f .env ]; then
   cp .env.example .env

@@ -65,6 +65,14 @@ class VoiceRegressionContractTests(unittest.TestCase):
         self.assertGreater(config["agent_turn_timeout_ms"], config["web_search_timeout_ms"])
         self.assertGreaterEqual(config["max_tokens"], 768)
 
+    def test_artwork_runtime_is_reproducibly_installable(self) -> None:
+        requirements = (PROJECT / "requirements.txt").read_text(encoding="utf-8")
+        setup = (PROJECT / "setup.sh").read_text(encoding="utf-8")
+        self.assertIn("Pillow", requirements)
+        self.assertIn("examples/xiaozhi-agent/requirements.txt", setup)
+        self.assertTrue((PROJECT / ".muxiva" / "tools" / "prepare_image.py").is_file())
+        self.assertTrue((PROJECT / ".muxiva" / "tools" / "build_gallery.py").is_file())
+
     def test_spoken_progress_is_disabled_in_the_realtime_graph(self) -> None:
         config = self.nodes["pi-agent"]["node_config"]
         self.assertEqual(config["progress_message"], "")
