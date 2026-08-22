@@ -15,6 +15,7 @@ import re
 import ssl
 import sys
 import threading
+import time
 import uuid
 from typing import Any, Callable, Iterable
 from urllib.parse import quote
@@ -27,7 +28,7 @@ class _WebSocketTransport:
         self,
         endpoint: str,
         api_key: str,
-        workspace_id: str,
+        _workspace_id: str,
         session: dict[str, Any],
     ) -> None:
         try:
@@ -39,13 +40,12 @@ class _WebSocketTransport:
             endpoint,
             header=[
                 f"Authorization: Bearer {api_key}",
-                f"X-DashScope-WorkSpace: {workspace_id}",
             ],
-            timeout=10,
+            timeout=20,
             enable_multithread=True,
         )
         self._socket.send(json.dumps(session, separators=(",", ":")))
-        self._socket.settimeout(15)
+        self._socket.settimeout(30)
 
     def send(self, event: dict[str, Any]) -> None:
         self._socket.send(json.dumps(event, separators=(",", ":")))
@@ -56,7 +56,7 @@ class _WebSocketTransport:
                 value = self._socket.recv()
             except (self._websocket.WebSocketTimeoutException, BlockingIOError, ssl.SSLWantReadError):
                 return
-            if value is None:
+            if not value:
                 return
             event = json.loads(value)
             if not isinstance(event, dict) or not isinstance(event.get("type"), str):
@@ -82,6 +82,9 @@ class QwenTtsRealtimeNode:
         self._lock = threading.Lock()
         self._generation = 0
         self._pending_jobs = 0
+        self._terminal_sequence: int | None = None
+        self._terminal_generation: int | None = None
+        self._drain_not_before = 0.0
         self._cancelled_through_sequence = -1
         self._active_transport: Any | None = None
         self._worker: threading.Thread | None = None
@@ -109,24 +112,56 @@ class QwenTtsRealtimeNode:
 
     def on_process(self, frame: Any, ctx: Any) -> None:
         input_port = getattr(ctx, "input_port", None)
+        if input_port == "event_in":
+            if getattr(frame, "topic", "") not in {
+                "muxiva.agent.response.completed",
+                "muxiva.voice.response.completed",
+            }:
+                return
+            sequence = int(getattr(frame, "sequence", 0))
+            with self._lock:
+                if sequence < self._cancelled_through_sequence:
+                    return
+                self._terminal_sequence = sequence
+                self._terminal_generation = self._generation
+                self._drain_not_before = time.monotonic() + self._end_of_turn_grace_seconds()
+            self._maybe_emit_drained(ctx)
+            if self._has_pending_work():
+                ctx.schedule_next_tick(20)
+            return
         if input_port in (None, "text_in") and hasattr(frame, "text"):
-            text = frame.text.strip()
+            text = normalize_tts_text(frame.text.strip())
             if text:
                 sequence = int(frame.sequence)
                 with self._lock:
-                    if sequence <= self._cancelled_through_sequence:
+                    # A validated final transcript emits the barge-in Signal and
+                    # the new prompt with the same Runtime sequence.  The Signal
+                    # must invalidate older synthesis, but it must not suppress
+                    # the response belonging to that new turn.
+                    if sequence < self._cancelled_through_sequence:
                         self._log(
                             "text.dropped",
                             sequence=sequence,
                             reason="cancelled_turn",
                         )
                         return
-                try:
-                    self._jobs.put_nowait((self._current_generation(), text, sequence))
-                except queue.Full as error:
-                    raise RuntimeError("Qwen TTS pending text queue is full") from error
-                with self._lock:
+                    generation = self._generation
                     self._pending_jobs += 1
+                    # Agent events and text travel over separate graph edges.
+                    # If the terminal event wins that race, late text extends
+                    # the barrier so it cannot be mistaken for a drained Turn.
+                    if (
+                        self._terminal_generation == generation
+                        and self._terminal_sequence == sequence
+                    ):
+                        self._drain_not_before = (
+                            time.monotonic() + self._end_of_turn_grace_seconds()
+                        )
+                try:
+                    self._jobs.put_nowait((generation, text, sequence))
+                except queue.Full as error:
+                    self._complete_job()
+                    raise RuntimeError("Qwen TTS pending text queue is full") from error
                 ctx.schedule_next_tick(20)
             return
         if input_port == "tick_in" or (input_port is None and frame is None):
@@ -186,20 +221,39 @@ class QwenTtsRealtimeNode:
                     if transport is not None:
                         self._close_transport(transport)
                         self._forget_transport(transport)
-                    try:
-                        transport = self._open_transport()
-                        transport_generation = generation
-                        with self._lock:
-                            if generation != self._generation:
-                                self._close_transport(transport)
-                                transport = None
-                                continue
-                            self._active_transport = transport
-                    except Exception as error:
-                        transport = None
-                        if generation == self._current_generation() and not self._closing.is_set():
+                    last_error: Exception | None = None
+                    retry_count = max(1, int(self.config.get("connect_retries", 3)))
+                    for attempt in range(1, retry_count + 1):
+                        try:
+                            transport = self._open_transport()
+                            transport_generation = generation
+                            with self._lock:
+                                if generation != self._generation:
+                                    self._close_transport(transport)
+                                    transport = None
+                                    break
+                                self._active_transport = transport
+                            last_error = None
+                            break
+                        except Exception as error:
+                            transport = None
+                            last_error = error
+                            self._log(
+                                "connect.retry",
+                                attempt=attempt,
+                                maximum=retry_count,
+                                error=str(error)[:160],
+                            )
+                            if attempt < retry_count and not self._closing.is_set():
+                                time.sleep(min(0.5 * attempt, 1.5))
+                    if transport is None:
+                        if (
+                            last_error is not None
+                            and generation == self._current_generation()
+                            and not self._closing.is_set()
+                        ):
                             self._put_result(
-                                (generation, "error", str(error)[:512], sequence)
+                                (generation, "error", str(last_error)[:512], sequence)
                             )
                         continue
                 try:
@@ -286,7 +340,7 @@ class QwenTtsRealtimeNode:
             try:
                 generation, kind, value, sequence = self._results.get_nowait()
             except queue.Empty:
-                return
+                break
             if generation != self._current_generation():
                 continue
             if kind == "audio":
@@ -304,12 +358,53 @@ class QwenTtsRealtimeNode:
                 self._log("synthesis.completed", generation=generation, chars=value)
             elif kind == "error":
                 self._complete_job()
-                raise RuntimeError(f"Qwen TTS failed: {value}")
+                # A transient cloud TTS failure must not abort the whole voice
+                # graph.  The text has already reached the screen; later turns
+                # should be able to reconnect and speak normally.
+                self._log("synthesis.failed", generation=generation, error=value)
+        self._maybe_emit_drained(ctx)
+
+    def _maybe_emit_drained(self, ctx: Any) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            generation = self._generation
+            sequence = self._terminal_sequence
+            if (
+                sequence is None
+                or self._terminal_generation != generation
+                or self._pending_jobs > 0
+                or not self._jobs.empty()
+                or not self._results.empty()
+            ):
+                return False
+            if now < self._drain_not_before:
+                return False
+            self._terminal_sequence = None
+            self._terminal_generation = None
+            self._drain_not_before = 0.0
+        self._emit_drained(ctx, generation, sequence)
+        return True
+
+    @staticmethod
+    def _emit_drained(ctx: Any, generation: int, sequence: int) -> None:
+        payload = {"generation": generation, "sequence": sequence}
+        ctx.emit(
+            "event_out",
+            muxiva.EventFrame(
+                "muxiva.voice.tts.drained",
+                json.dumps(payload, separators=(",", ":")),
+                source="qwen.tts_realtime",
+                sequence=sequence,
+            ),
+        )
 
     def _invalidate(self) -> bool:
         with self._lock:
             self._generation += 1
             self._pending_jobs = 0
+            self._terminal_sequence = None
+            self._terminal_generation = None
+            self._drain_not_before = 0.0
             transport = self._active_transport
             self._active_transport = None
         self._clear_queue(self._jobs)
@@ -325,13 +420,21 @@ class QwenTtsRealtimeNode:
         with self._lock:
             return self._generation
 
-    def _complete_job(self) -> None:
+    def _complete_job(self) -> int:
         with self._lock:
             self._pending_jobs = max(0, self._pending_jobs - 1)
+            return self._pending_jobs
 
     def _has_pending_work(self) -> bool:
         with self._lock:
-            return self._pending_jobs > 0 or not self._results.empty()
+            return (
+                self._pending_jobs > 0
+                or not self._results.empty()
+                or self._terminal_sequence is not None
+            )
+
+    def _end_of_turn_grace_seconds(self) -> float:
+        return max(0, int(self.config.get("end_of_turn_grace_ms", 300))) / 1000.0
 
     def _put_result(self, value: tuple[int, str, Any, int]) -> None:
         while not self._closing.is_set() and value[0] == self._current_generation():
@@ -362,6 +465,11 @@ def session_update(config: dict[str, Any]) -> dict[str, Any]:
             "sample_rate": 24_000,
         },
     }
+
+
+def normalize_tts_text(text: str) -> str:
+    """Make numeric decimals unambiguous to Chinese speech synthesis."""
+    return re.sub(r"(?<=\d)\.(?=\d)", "点", text)
 
 
 def _credentials() -> tuple[str, str]:

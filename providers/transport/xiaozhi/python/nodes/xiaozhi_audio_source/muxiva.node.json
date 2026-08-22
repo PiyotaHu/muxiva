@@ -47,7 +47,11 @@
       "control_host": { "type": "string", "default": "127.0.0.1" },
       "control_port": { "type": "integer", "default": 8889 },
       "sample_rate": { "type": "integer", "default": 16000 },
-      "frame_duration_ms": { "type": "integer", "default": 60 }
+      "frame_duration_ms": { "type": "integer", "default": 60 },
+      "playback_prebuffer_ms": { "type": "integer", "minimum": 60, "maximum": 5000, "default": 1200 },
+      "playback_queue_ms": { "type": "integer", "minimum": 30000, "maximum": 300000, "default": 120000 },
+      "playback_stop_grace_ms": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 1000, "description": "Quiet time after the last delivered audio packet before sending tts/stop." },
+      "playback_no_audio_stop_timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 30000, "default": 5000, "description": "Fail-safe delay before sending tts/stop when a turn produced no audio." }
     },
     "required": ["ws_host", "ws_port", "control_host", "control_port", "sample_rate", "frame_duration_ms"],
     "additionalProperties": false

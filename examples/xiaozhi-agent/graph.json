@@ -13,7 +13,11 @@
         "control_host": "127.0.0.1",
         "control_port": 8889,
         "sample_rate": 16000,
-        "frame_duration_ms": 60
+        "frame_duration_ms": 60,
+        "playback_prebuffer_ms": 1200,
+        "playback_queue_ms": 120000,
+        "playback_stop_grace_ms": 1000,
+        "playback_no_audio_stop_timeout_ms": 5000
       }
     },
     {
@@ -24,27 +28,47 @@
       "node_config": {
         "language": "zh",
         "model": "qwen3-asr-flash-realtime",
-        "silence_duration_ms": 500,
-        "vad_threshold": 0.45
+        "silence_duration_ms": 1000,
+        "vad_threshold": 0.45,
+        "ignore_filler_utterances": true,
+        "barge_in_requires_final": true
       }
     },
     {
-      "id": "llm",
-      "node_type": "builtin.llm_openai_compatible",
-      "language": "rust",
-      "factory_version": "1.0.0",
+      "id": "pi-agent",
+      "node_type": "pi.agent",
+      "language": "typescript",
+      "factory_version": "1.4.0",
       "node_config": {
-        "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "api_key_env": "DASHSCOPE_API_KEY",
-        "model": "qwen-flash",
-        "system_prompt": "你是小智，一个温暖、简洁的实时语音助手。请用用户的语言，用短句自然口语回答。绝对不要使用 Markdown、列表、代码块或读出网址。",
-        "temperature": 0.6,
-        "max_tokens": 512,
-        "timeout_ms": 60000,
+        "max_file_bytes": 262144,
         "max_results_per_wakeup": 32,
-        "history_turns": 6,
-        "sentence_chunk_characters": 80,
-        "stream": true
+        "max_search_files": 200,
+        "max_tokens": 768,
+        "model": "qwen-flash",
+        "sentence_chunk_characters": 120,
+        "agent_first_output_timeout_ms": 10000,
+        "agent_turn_timeout_ms": 90000,
+        "max_history_messages": 18,
+        "information_tools_enabled": true,
+        "default_weather_city": "合肥",
+        "default_time_zone": "Asia/Shanghai",
+        "workspace_tools_enabled": false,
+        "device_tools_enabled": true,
+        "artwork_tools_enabled": true,
+        "strip_stage_directions": true,
+        "emotion_events_enabled": true,
+        "timeout_message": "刚才响应超时了，已经自动恢复，请再问一次吧。",
+        "failure_message": "刚才模型连接失败了，已经自动恢复，请再问一次吧。",
+        "progress_message": "",
+        "progress_delay_ms": 0,
+        "system_prompt": "你是桌面猫咪老师小喵，运行在用户家里的 ESP32 语音终端上。你的核心人格是耐心、博学、亲切、深入浅出，目标不只是给答案，还要尽量让用户真正理解并记住知识。讲解时先给清楚结论，再解释为什么；优先用生活化比喻、具体例子或小故事化解抽象概念，必要时分步骤说明，最后点出最值得记住的一点。保持寓教于乐，可以有轻松幽默感，但不要说教、卖萌过度或故意拖长。默认不要称呼用户，也不要在回答开头或结尾固定加称呼。只有用户主动问候、需要安慰或明确告别时，才可以偶尔称呼一次“小主人”；一整轮最多出现一次，普通知识问答和连续对话中禁止使用这个称呼。你的回答会被直接朗读，所以使用自然、温暖、连贯的中文口语；普通问题通常回答三到六句、约250到400个汉字，复杂问题可以更详细，用户明确要求简短时再缩短。句子可以完整一些，不要把一个意思拆成很多短碎句。禁止输出任何舞台提示、旁白或动作描写，例如括号里的耳朵、尾巴、眨眼、歪头、表情和动作；猫咪动画由系统单独驱动，绝不能写进回答。除非用户要求，否则不要主动念参考资料。不要输出 Markdown、列表、代码块、表情符号或网址。绝不猜测实时事实：询问日期、星期、几点或相对日期时必须先调用 get_current_time；询问此刻天气、温度或湿度时调用 get_current_weather；询问明天、后天、未来几天、周末或天气预报时必须调用 get_weather_forecast；询问新闻、网页、最新消息或任何可能变化的信息时必须调用 web_search。天气工具失败时可以改用 web_search，仍然禁止猜测。要求调整扬声器音量时必须调用 set_device_volume。只有明确要求创作一幅新画时才调用 generate_and_display_image；说再展示一次、刚才那幅或上一幅时必须调用 show_saved_artwork，绝不能重新生成；说打开或展示作品集时调用 show_artwork_gallery；指定作品编号时调用 show_saved_artwork。调用设备工具后再用一句话确认结果。工具失败时如实说明，禁止编造。用户说再见、闭嘴、退出对话、结束对话或不聊了时，只简短告别。允许用户插话，避免重复用户原话。",
+        "temperature": 0.35,
+        "web_search_enabled": true,
+        "web_search_max_sources": 6,
+        "web_search_model": "qwen-flash",
+        "web_search_strategy": "turbo",
+        "web_search_timeout_ms": 20000,
+        "workspace_root": ".muxiva/workspaces/pi-agent"
       }
     },
     {
@@ -118,9 +142,9 @@
       "queue_policy": { "capacity": 32, "overflow": "block" }
     },
     {
-      "id": "client-abort-llm",
+      "id": "client-abort-agent",
       "from": { "node_id": "xiaozhi-in", "port": "signal_out" },
-      "to": { "node_id": "llm", "port": "signal_in" },
+      "to": { "node_id": "pi-agent", "port": "signal_in" },
       "frame_type": "signal",
       "queue_policy": { "capacity": 32, "overflow": "block" }
     },
@@ -153,9 +177,9 @@
       "queue_policy": { "capacity": 32, "overflow": "block" }
     },
     {
-      "id": "vad-abort-llm",
+      "id": "vad-abort-agent",
       "from": { "node_id": "qwen-vad-asr", "port": "signal_out" },
-      "to": { "node_id": "llm", "port": "signal_in" },
+      "to": { "node_id": "pi-agent", "port": "signal_in" },
       "frame_type": "signal",
       "queue_policy": { "capacity": 32, "overflow": "block" }
     },
@@ -188,9 +212,9 @@
       "queue_policy": { "capacity": 32, "overflow": "block" }
     },
     {
-      "id": "transcript-to-llm",
+      "id": "transcript-to-agent",
       "from": { "node_id": "qwen-vad-asr", "port": "text_out" },
-      "to": { "node_id": "llm", "port": "text_in" },
+      "to": { "node_id": "pi-agent", "port": "prompt_in" },
       "frame_type": "text",
       "queue_policy": { "capacity": 32, "overflow": "block" }
     },
@@ -202,15 +226,15 @@
       "queue_policy": { "capacity": 32, "overflow": "block" }
     },
     {
-      "id": "llm-to-formatter",
-      "from": { "node_id": "llm", "port": "text_out" },
+      "id": "agent-to-formatter",
+      "from": { "node_id": "pi-agent", "port": "text_out" },
       "to": { "node_id": "speech-formatter", "port": "text_in" },
       "frame_type": "text",
       "queue_policy": { "capacity": 32, "overflow": "block" }
     },
     {
-      "id": "llm-to-events",
-      "from": { "node_id": "llm", "port": "text_out" },
+      "id": "agent-to-events",
+      "from": { "node_id": "pi-agent", "port": "text_out" },
       "to": { "node_id": "xiaozhi-events", "port": "response_text_in" },
       "frame_type": "text",
       "queue_policy": { "capacity": 64, "overflow": "block" }
@@ -230,6 +254,13 @@
       "queue_policy": { "capacity": 32, "overflow": "block" }
     },
     {
+      "id": "tts-state-to-events",
+      "from": { "node_id": "qwen-tts", "port": "event_out" },
+      "to": { "node_id": "xiaozhi-events", "port": "event_in" },
+      "frame_type": "event",
+      "queue_policy": { "capacity": 16, "overflow": "block" }
+    },
+    {
       "id": "resampler-to-sink",
       "from": { "node_id": "tts-resampler", "port": "audio_out" },
       "to": { "node_id": "xiaozhi-out", "port": "audio_in" },
@@ -244,9 +275,16 @@
       "queue_policy": { "capacity": 64, "overflow": "block" }
     },
     {
-      "id": "response-state-to-events",
-      "from": { "node_id": "llm", "port": "event_out" },
+      "id": "agent-state-to-events",
+      "from": { "node_id": "pi-agent", "port": "event_out" },
       "to": { "node_id": "xiaozhi-events", "port": "event_in" },
+      "frame_type": "event",
+      "queue_policy": { "capacity": 64, "overflow": "block" }
+    },
+    {
+      "id": "agent-state-to-tts",
+      "from": { "node_id": "pi-agent", "port": "event_out" },
+      "to": { "node_id": "qwen-tts", "port": "event_in" },
       "frame_type": "event",
       "queue_policy": { "capacity": 64, "overflow": "block" }
     }

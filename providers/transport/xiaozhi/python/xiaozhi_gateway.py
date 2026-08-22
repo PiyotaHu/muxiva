@@ -22,7 +22,9 @@ import queue
 import socketserver
 import sys
 import threading
+import time
 import uuid
+import math
 
 import opus_codec
 
@@ -49,11 +51,46 @@ class XiaozhiGateway:
         self.control_port = int(config.get("control_port", 8889))
         self.sample_rate = int(config.get("sample_rate", 16_000))
         self.frame_duration_ms = int(config.get("frame_duration_ms", 60))
+        self.prebuffer_ms = max(
+            self.frame_duration_ms,
+            int(config.get("playback_prebuffer_ms", 1200)),
+        )
+        self.playback_queue_ms = max(
+            self.prebuffer_ms,
+            int(config.get("playback_queue_ms", 120_000)),
+        )
+        self.playback_stop_grace_ms = max(
+            0,
+            int(config.get("playback_stop_grace_ms", 1_000)),
+        )
+        self.playback_no_audio_stop_timeout_ms = max(
+            self.playback_stop_grace_ms,
+            int(config.get("playback_no_audio_stop_timeout_ms", 5_000)),
+        )
 
         self._ingress = queue.Queue(maxsize=512)
         self._events = queue.Queue(maxsize=256)
-        self._egress = queue.Queue(maxsize=512)
+        self._egress = queue.Queue(
+            maxsize=max(1, math.ceil(self.playback_queue_ms / self.frame_duration_ms))
+        )
         self._messages = queue.Queue(maxsize=256)
+        self._egress_drop_count = 0
+
+        # The LLM completion event can arrive before the asynchronous TTS node
+        # has finished publishing its audio.  Sending ``tts/stop`` immediately
+        # makes Xiaozhi firmware leave the speaking state and discard every
+        # binary packet that follows.  Hold the stop marker until the current
+        # turn's audio queue has drained and stayed quiet for a short interval.
+        self._tts_lock = threading.Lock()
+        self._tts_audio_seen = False
+        self._tts_last_audio_at = 0.0
+        self._tts_last_packet_sent_at = 0.0
+        self._tts_stop_message: str | None = None
+        self._tts_stop_requested_at = 0.0
+        self._tts_playback_started = False
+        self._prebuffer_frames = max(
+            1, math.ceil(self.prebuffer_ms / self.frame_duration_ms)
+        )
 
         self._stopped = threading.Event()
         self._async_stop = None
@@ -67,6 +104,11 @@ class XiaozhiGateway:
             sample_rate=self.sample_rate, frame_duration_ms=self.frame_duration_ms
         )
         self._threads: list[threading.Thread] = []
+        self._pcm_lock = threading.Lock()
+        self._egress_pcm = bytearray()
+        self._pcm_frame_bytes = (
+            self.sample_rate * self.frame_duration_ms // 1000 * 2
+        )
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -109,25 +151,77 @@ class XiaozhiGateway:
 
     # ------------------------------------------------------------------ sink/event side
     def publish_audio(self, pcm: bytes) -> None:
-        """Encode assistant PCM and queue it for paced delivery."""
+        """Reblock arbitrary PCM chunks into exact, paced Opus frames.
+
+        Vendor streaming deltas are not guaranteed to be one protocol frame.
+        Encoding each delta directly used to truncate long deltas and pad short
+        ones, which made replies sound skipped or unnaturally fast/slow.
+        """
         if not self.has_client():
             return
+        frames = []
+        with self._pcm_lock:
+            self._egress_pcm.extend(pcm)
+            while len(self._egress_pcm) >= self._pcm_frame_bytes:
+                frames.append(bytes(self._egress_pcm[: self._pcm_frame_bytes]))
+                del self._egress_pcm[: self._pcm_frame_bytes]
+        with self._tts_lock:
+            self._tts_audio_seen = True
+            self._tts_last_audio_at = time.monotonic()
+        for frame in frames:
+            self._encode_and_queue(frame)
+
+    def _encode_and_queue(self, pcm: bytes) -> bool:
         try:
             packet = self._encoder.encode(pcm)
-        except opus_codec.OpusError:
-            return
-        try:
             self._egress.put_nowait(packet)
+            return True
+        except opus_codec.OpusError:
+            return False
         except queue.Full:
-            pass
+            self._egress_drop_count += 1
+            if self._egress_drop_count == 1 or self._egress_drop_count % 100 == 0:
+                print(
+                    "[MUXIVA][XIAOZHI][playback.queue_full] "
+                    f"dropped_frames={self._egress_drop_count} "
+                    f"capacity_frames={self._egress.maxsize}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            return False
+
+    def _flush_pcm_tail(self) -> bool:
+        """Pad and queue the final partial frame after TTS becomes quiet."""
+        with self._pcm_lock:
+            if not self._egress_pcm:
+                return False
+            tail = bytes(self._egress_pcm)
+            self._egress_pcm.clear()
+        return self._encode_and_queue(tail)
 
     def publish_message(self, payload: dict) -> None:
         if not self.has_client():
             return
         payload = dict(payload)
         payload.setdefault("session_id", self._client_id or "")
+        message = json.dumps(payload, ensure_ascii=False)
+        if payload.get("type") == TTS_TYPE:
+            state = payload.get("state")
+            if state == "start":
+                with self._tts_lock:
+                    self._tts_audio_seen = False
+                    self._tts_last_audio_at = 0.0
+                    self._tts_last_packet_sent_at = 0.0
+                    self._tts_stop_message = None
+                    self._tts_stop_requested_at = 0.0
+                    self._tts_playback_started = False
+            elif state == "stop":
+                with self._tts_lock:
+                    self._tts_stop_message = message
+                    self._tts_stop_requested_at = time.monotonic()
+                return
         try:
-            self._messages.put_nowait(json.dumps(payload, ensure_ascii=False))
+            self._messages.put_nowait(message)
         except queue.Full:
             pass
 
@@ -137,7 +231,16 @@ class XiaozhiGateway:
             try:
                 self._egress.get_nowait()
             except queue.Empty:
-                return
+                break
+        with self._pcm_lock:
+            self._egress_pcm.clear()
+        with self._tts_lock:
+            self._tts_stop_message = None
+            self._tts_stop_requested_at = 0.0
+            self._tts_audio_seen = False
+            self._tts_last_audio_at = 0.0
+            self._tts_last_packet_sent_at = 0.0
+            self._tts_playback_started = False
 
     # ------------------------------------------------------------------ websocket server
     def _run_ws_server(self) -> None:
@@ -173,6 +276,9 @@ class XiaozhiGateway:
             )
 
     async def _ws_handler(self, ws) -> None:
+        # Never let audio/control data from a dead session leak into a newly
+        # connected device session.
+        self.reset_egress()
         self._ws = ws
         self._client_id = str(uuid.uuid4())
         print(
@@ -186,10 +292,16 @@ class XiaozhiGateway:
                     self._on_binary(bytes(message))
                 elif isinstance(message, str):
                     await self._on_text(message)
-        except Exception:
-            pass
+        except Exception as error:
+            print(
+                "[MUXIVA][XIAOZHI][device.connection_error] "
+                f"type={type(error).__name__} detail={str(error)[:240]}",
+                file=sys.stderr,
+                flush=True,
+            )
         finally:
             self._ws = None
+            self.reset_egress()
             print(
                 f"[MUXIVA][XIAOZHI][device.disconnected] id={self._client_id}",
                 file=sys.stderr,
@@ -244,6 +356,11 @@ class XiaozhiGateway:
 
     async def _ws_sender(self) -> None:
         frame_seconds = self.frame_duration_ms / 1000.0
+        quiet_before_stop_seconds = self.playback_stop_grace_ms / 1000.0
+        stop_without_audio_timeout_seconds = (
+            self.playback_no_audio_stop_timeout_ms / 1000.0
+        )
+        next_audio_send_at: float | None = None
         while not self._stopped.is_set():
             # Control/display messages are sent immediately, before paced audio.
             sent_message = False
@@ -261,17 +378,92 @@ class XiaozhiGateway:
             if sent_message:
                 await asyncio.sleep(0.002)
                 continue
+            # Do not start playback on the first small cloud-TTS burst. A 120ms
+            # quiet gap does not mean a short reply has finished; it is often
+            # merely the gap before the next vendor delta, and starting there
+            # drains the queue inside a word (heard as “小—主—人”).  Start when
+            # the jitter reservoir is full, or when TTS has explicitly drained.
+            with self._tts_lock:
+                playback_started = self._tts_playback_started
+                short_reply_ready = (
+                    self._tts_audio_seen
+                    and self._tts_stop_message is not None
+                )
+            if not playback_started:
+                queued_frames = self._egress.qsize()
+                if queued_frames < self._prebuffer_frames and not (
+                    queued_frames > 0 and short_reply_ready
+                ):
+                    await asyncio.sleep(0.005)
+                    continue
+                with self._tts_lock:
+                    self._tts_playback_started = True
+                next_audio_send_at = time.monotonic()
             try:
                 packet = self._egress.get_nowait()
             except queue.Empty:
+                pending_stop = None
+                flush_tail = False
+                now = time.monotonic()
+                with self._tts_lock:
+                    if self._tts_stop_message is not None:
+                        audio_drained = (
+                            self._tts_audio_seen
+                            and now
+                            - max(
+                                self._tts_last_audio_at,
+                                self._tts_last_packet_sent_at,
+                            )
+                            >= quiet_before_stop_seconds
+                        )
+                        audio_never_arrived = (
+                            not self._tts_audio_seen
+                            and now - self._tts_stop_requested_at
+                            >= stop_without_audio_timeout_seconds
+                        )
+                        if audio_drained or audio_never_arrived:
+                            flush_tail = audio_drained
+                            if not flush_tail:
+                                pending_stop = self._tts_stop_message
+                                self._tts_stop_message = None
+                                self._tts_stop_requested_at = 0.0
+                if flush_tail and self._flush_pcm_tail():
+                    # The padded tail is now an ordinary paced packet. Keep the
+                    # stop marker pending until that packet has been sent.
+                    continue
+                if flush_tail:
+                    with self._tts_lock:
+                        pending_stop = self._tts_stop_message
+                        self._tts_stop_message = None
+                        self._tts_stop_requested_at = 0.0
+                if pending_stop is not None and self._ws is not None:
+                    try:
+                        await self._ws.send(pending_stop)
+                        with self._tts_lock:
+                            self._tts_playback_started = False
+                            self._tts_audio_seen = False
+                    except Exception:
+                        pass
                 await asyncio.sleep(0.005)
                 continue
             if self._ws is not None:
                 try:
                     await self._ws.send(packet)
+                    with self._tts_lock:
+                        self._tts_last_packet_sent_at = time.monotonic()
                 except Exception:
                     pass
-            await asyncio.sleep(frame_seconds)
+            # Pace against an absolute monotonic deadline. Sleeping a full
+            # frame after each send accumulates encoding/event-loop overhead,
+            # making 60 ms audio packets arrive slower than real time.
+            now = time.monotonic()
+            if (
+                next_audio_send_at is None
+                or next_audio_send_at < now - frame_seconds
+            ):
+                next_audio_send_at = now
+            next_audio_send_at += frame_seconds
+            await asyncio.sleep(max(0.0, next_audio_send_at - time.monotonic()))
 
     # ------------------------------------------------------------------ control server
     def _run_control_server(self) -> None:

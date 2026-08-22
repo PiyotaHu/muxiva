@@ -137,7 +137,26 @@ class XiaozhiGatewayTests(unittest.TestCase):
                 "127.0.0.1", self.control_port, "sink"
             )
             self.assertTrue(sink.connect())
-            sink.send({"op": "audio", "pcm_hex": microphone_pcm.hex()})
+            # Send 2.5 protocol frames in one vendor-style delta. The gateway
+            # must preserve all samples, not truncate the chunk to one frame.
+            sink.send(
+                {
+                    "op": "audio",
+                    "pcm_hex": (microphone_pcm * 2 + microphone_pcm[: len(microphone_pcm) // 2]).hex(),
+                }
+            )
+
+            # Regression: assistant playback must never mute microphone input.
+            # Echo rejection belongs after ASR validation so a real user can
+            # still say "stop" or ask a new question while audio is playing.
+            await asyncio.sleep(0.1)
+            await device.send(microphone_packet)
+            await asyncio.sleep(0.1)
+            live_ingress = self.gateway.poll_audio()
+            self.assertTrue(
+                live_ingress,
+                "microphone ingress was muted during assistant playback",
+            )
 
             # 5. Device display messages through the event-encoder control client.
             events = xiaozhi_gateway.XiaozhiControlClient(
@@ -151,15 +170,22 @@ class XiaozhiGatewayTests(unittest.TestCase):
                     "payload": {"type": "tts", "state": "sentence_start", "text": "你好呀"},
                 }
             )
+            # The LLM may finish before asynchronous TTS audio reaches the
+            # gateway.  A stop marker must therefore remain behind the audio.
+            events.send(
+                {"op": "message", "payload": {"type": "tts", "state": "stop"}}
+            )
 
             # 6. The device must receive Opus audio plus stt/tts JSON messages.
             received_audio = False
+            received_audio_packets = 0
             received_stt = False
             received_tts = False
+            received_stop = False
+            audio_received_at = 0.0
+            audio_packet_times = []
             deadline = time.time() + 5.0
-            while time.time() < deadline and not (
-                received_audio and received_stt and received_tts
-            ):
+            while time.time() < deadline and not received_stop:
                 try:
                     message = await asyncio.wait_for(device.recv(), timeout=1.0)
                 except asyncio.TimeoutError:
@@ -169,20 +195,38 @@ class XiaozhiGatewayTests(unittest.TestCase):
                     self.assertEqual(len(egress_pcm), FRAME_SIZE * 2)
                     self.assertTrue(has_energy(egress_pcm), "egress audio must not be silent")
                     received_audio = True
+                    received_audio_packets += 1
+                    audio_received_at = time.monotonic()
+                    audio_packet_times.append(audio_received_at)
                 else:
                     payload = json.loads(message)
                     if payload.get("type") == "stt":
                         received_stt = True
                         self.assertEqual(payload["text"], "你好小智")
                     elif payload.get("type") == "tts":
-                        received_tts = True
-                        self.assertEqual(payload["state"], "sentence_start")
+                        if payload["state"] == "sentence_start":
+                            received_tts = True
+                        elif payload["state"] == "stop":
+                            received_stop = True
+                            self.assertTrue(received_audio, "tts stop arrived before audio")
+                            self.assertGreaterEqual(
+                                time.monotonic() - audio_received_at,
+                                0.8,
+                                "tts stop was not held until audio became quiet",
+                            )
                     # The gateway injects the session id into display messages.
                     self.assertTrue(payload.get("session_id"))
 
             self.assertTrue(received_audio, "device never received Opus audio")
+            self.assertEqual(received_audio_packets, 3, "PCM delta was not reblocked losslessly")
+            self.assertGreaterEqual(
+                audio_packet_times[-1] - audio_packet_times[0],
+                0.09,
+                "Opus packets were burst-sent instead of paced near real time",
+            )
             self.assertTrue(received_stt, "device never received an stt message")
             self.assertTrue(received_tts, "device never received a tts message")
+            self.assertTrue(received_stop, "device never received the deferred tts stop")
 
             sink.close()
             events.close()

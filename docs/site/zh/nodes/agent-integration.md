@@ -6,13 +6,14 @@
 
 本章给出从独立 Agent 仓库到可运行 Muxiva Graph 的完整 SOP。
 
-## 先理解三层边界
+## 先理解四层边界
 
 | 层 | 谁维护 | 应该包含什么 | 不应该包含什么 |
 | --- | --- | --- | --- |
-| Agent 仓库 | 应用团队 | 模型 Harness、会话、Tool、权限策略、业务测试 | Graph 调度、RTC、ASR、TTS |
+| Agent 仓库 | 应用团队 | 模型 Harness、会话、能力目录、路由策略、Tool、业务测试 | Graph 调度、RTC、ASR、TTS |
 | Agent Node 适配器 | Agent 项目 | Port 映射、配置 Schema、Driver 装配 | 大量业务代码、厂商 SDK |
-| Muxiva Runtime | Muxiva | Frame、Graph、Edge 队列、Signal、调度、Host、可观测性 | Qwen、Pi 或业务 Tool |
+| `@muxiva/agent` Binding | Muxiva | 通用 Turn Controller、能力契约与路由校验 | 新闻/天气/设备意图规则或具体 Tool |
+| Muxiva Core/Runtime | Muxiva | Frame、Graph、Edge 队列、Signal、调度、Host、可观测性 | Agent Turn、Qwen、Pi 或业务 Tool |
 
 因此，更换 Pi、LangGraph 或自研 Agent 时，RTC、ASR、TTS 和 Graph 不需要重写；更换
 Agora 或 Qwen Node 时，Agent 仓库也不需要感知。
@@ -23,6 +24,8 @@ TypeScript Agent 通过 `@muxiva/agent` 的稳定 Driver 形状接入：
 
 ```typescript
 interface AgentDriver {
+  capabilities?(): readonly AgentCapability[]
+  route?(prompt): AgentRouteDecision
   run(
     prompt: { text: string; sequence: number },
     sink: {
@@ -33,6 +36,7 @@ interface AgentDriver {
   ): Promise<void>
 
   cancel?(reason: unknown): void
+  snapshot?(): unknown
   close?(): void | Promise<void>
 }
 ```
@@ -42,10 +46,32 @@ interface AgentDriver {
 - `sink.event` 输出 Agent、Turn 和 Tool 生命周期 Event；
 - `AbortSignal` 是首选取消通道；用户插话或新问题覆盖旧问题时会立即触发；
 - `cancel` 用于同步通知 Agent Harness；
+- `capabilities` 声明本 Driver 可以授予的模型、Tool 或资源能力；
+- `route` 为当前 Prompt 同步选择能力子集，Muxiva 会拒绝任何未声明能力；
+- `snapshot` 在 Driver 熔断重建时传递同实现的私有会话快照，Muxiva 不解析它；
 - `close` 在 Runtime 结束时释放会话、连接和订阅。
 
 这不是 HTTP 协议，也不要求 Agent 与 Runtime 在同一个实现仓库。它是应用 Agent 与
 Muxiva Node 之间最小、可测试的进程内契约。
+
+## AgentTurnController 在哪一层
+
+`AgentTurnController` 是 `@muxiva/agent` 导出的框架组件，也是 `defineAgentNode` 背后的
+默认实现。它不是新的 Graph Node，也不属于 Rust Runtime Core。应用仍然只在 Graph 中
+看到一个 Agent Node。
+
+它统一处理 latest-wins、Generation、输出队列、取消、首字与整轮超时、晚到结果抑制、
+Driver 熔断重建和终止事件。Rust Core 仍只处理 Frame、Edge、Signal 和 Node 生命周期，
+遵守 Stage 6 的机制/业务策略边界。
+
+能力路由同样分两部分：Muxiva 定义并校验 `AgentCapability`、`AgentRouteDecision`，应用
+Agent 决定“什么输入需要什么能力”。例如“最近新闻需要联网”属于 Pi Agent 的产品策略，
+绝不会写入 Muxiva Core。每次有效决定都会产生 `muxiva.agent.route.selected` Event。
+
+路由里的 `capabilities` 表示本轮“最多允许使用”的权限；`requiredCapabilities` 是其中
+“回答前必须真正满足”的子集。框架会校验必需能力没有越权，Driver 负责执行并在无法满足
+时显式失败。这样新闻或天气问题不会因为 Tool 只是可用但没有调用，就把模型猜测提交给
+UI/TTS。
 
 ## Graph Port 契约
 

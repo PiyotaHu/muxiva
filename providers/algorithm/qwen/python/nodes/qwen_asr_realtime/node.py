@@ -69,6 +69,10 @@ class QwenAsrRealtimeNode:
         self._transport: Any | None = None
         self._speech_active = False
         self._pending_transcript: tuple[str, int] | None = None
+        # Do not let a cough or a standalone filler sound interrupt playback.
+        # Barge-in is armed by Server VAD, but committed only after ASR has
+        # produced some meaningful text for the utterance.
+        self._interruption_emitted = False
         # Qwen may deliver a final transcript before an already-buffered preview.
         # Fence previews at the utterance boundary so a committed transcript can
         # never be reopened by that late event.
@@ -80,10 +84,13 @@ class QwenAsrRealtimeNode:
         print(f"[MUXIVA][QWEN-ASR][{event}] {detail}".rstrip(), file=sys.stderr, flush=True)
 
     def on_prepare(self, _ctx: Any = None) -> None:
-        key, workspace = _credentials()
+        self._connect_transport()
+
+    def _connect_transport(self) -> None:
+        key, _workspace = _credentials()
         model = str(self.config.get("model", "qwen3-asr-flash-realtime"))
         endpoint = (
-            f"wss://{workspace}.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime"
+            "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
             f"?model={quote(model, safe='-._')}"
         )
         self._transport = self._transport_factory(endpoint, key, session_update(self.config))
@@ -94,13 +101,44 @@ class QwenAsrRealtimeNode:
             audio="pcm_s16le/16000/mono",
         )
 
+    def _close_transport(self) -> None:
+        transport, self._transport = self._transport, None
+        if transport is not None:
+            try:
+                transport.close()
+            except Exception:
+                pass
+
     def on_process(self, frame: Any, ctx: Any) -> None:
-        if self._transport is None:
-            raise RuntimeError("Qwen ASR transport is not prepared")
         if frame.sample_rate_hz != 16_000 or frame.channels != 1:
             raise ValueError("Qwen ASR input must be mono PCM s16le at 16000 Hz")
-        self._transport.send(audio_append(frame.data))
-        for event in self._transport.poll():
+
+        events: list[dict[str, Any]] | None = None
+        for attempt in range(1, 3):
+            try:
+                if self._transport is None:
+                    self._connect_transport()
+                self._transport.send(audio_append(frame.data))
+                events = list(self._transport.poll())
+                break
+            except Exception as error:
+                self._log(
+                    "session.reconnect",
+                    attempt=attempt,
+                    error=str(error)[:180],
+                )
+                self._close_transport()
+                self._speech_active = False
+                self._pending_transcript = None
+                self._transcript_committed = False
+                self._interruption_emitted = False
+        if events is None:
+            # A cloud/network outage must not kill the Python Host and then the
+            # whole graph.  Drop this 60 ms frame; the next frame retries.
+            self._log("audio.dropped", sequence=frame.sequence, reason="asr_unavailable")
+            return
+
+        for event in events:
             kind = event["type"]
             if kind == "input_audio_buffer.speech_started":
                 if self._speech_active:
@@ -108,12 +146,13 @@ class QwenAsrRealtimeNode:
                 self._speech_active = True
                 self._transcript_committed = False
                 self._pending_transcript = None
+                self._interruption_emitted = False
                 self._emit_speech_state(ctx, frame.sequence, True)
-                ctx.emit_signal(
-                    "muxiva.voice.speech.started",
-                    {"node": "qwen.asr_realtime", "detector": "qwen_server_vad"},
+                self._log(
+                    "speech.started",
+                    sequence=frame.sequence,
+                    action="await_meaningful_transcript",
                 )
-                self._log("speech.started", sequence=frame.sequence, action="interrupt")
             elif kind == "input_audio_buffer.speech_stopped":
                 if not self._speech_active:
                     continue
@@ -136,7 +175,13 @@ class QwenAsrRealtimeNode:
                     )
                     continue
                 text = f"{event.get('text', '')}{event.get('stash', '')}"
-                if text:
+                if text and not self._is_ignorable_utterance(text):
+                    # Partial hypotheses can briefly turn a filler such as
+                    # "嗯" into another word and then correct it in the final
+                    # transcript.  In strict mode, never let that unstable
+                    # preview stop the assistant's audio.
+                    if not bool(self.config.get("barge_in_requires_final", False)):
+                        self._emit_interruption(ctx, frame.sequence)
                     ctx.emit(
                         "transcript_preview_out",
                         muxiva.TextFrame(text, sequence=frame.sequence),
@@ -207,15 +252,50 @@ class QwenAsrRealtimeNode:
         ctx.publish_notification(topic, payload)
 
     def _emit_completed(self, ctx: Any, text: str, sequence: int) -> None:
+        if self._is_ignorable_utterance(text):
+            self._log(
+                "transcript.ignored",
+                sequence=sequence,
+                reason="filler_or_non_speech",
+                chars=len(text),
+            )
+            return
+        self._emit_interruption(ctx, sequence)
         ctx.emit("text_out", muxiva.TextFrame(text, sequence=sequence))
         ctx.publish_notification("muxiva.voice.transcript.completed", {"text": text})
         self._log("transcript.completed", sequence=sequence, chars=len(text))
 
+    def _emit_interruption(self, ctx: Any, sequence: int) -> None:
+        if self._interruption_emitted:
+            return
+        self._interruption_emitted = True
+        ctx.emit_signal(
+            "muxiva.voice.speech.started",
+            {"node": "qwen.asr_realtime", "detector": "qwen_server_vad"},
+        )
+        self._log("speech.validated", sequence=sequence, action="interrupt")
+
+    def _is_ignorable_utterance(self, text: str) -> bool:
+        if not bool(self.config.get("ignore_filler_utterances", True)):
+            return False
+        normalized = re.sub(
+            r"[\s\u3000，。！？、,.!?…~～;；:：'\"“”‘’（）()\[\]【】<>《》*_—-]+",
+            "",
+            text,
+        ).lower()
+        if not normalized:
+            return True
+        if re.fullmatch(r"[啊阿呀嗯呃额哦噢唔哎诶欸唉呐哼]+", normalized):
+            return True
+        return re.fullmatch(r"(?:(?:咳嗽)|咳)+声?", normalized) is not None
+
     def on_finish(self, _ctx: Any = None) -> None:
         if self._transport is not None:
-            self._transport.send({"event_id": _event_id(), "type": "session.finish"})
-            self._transport.close()
-            self._transport = None
+            try:
+                self._transport.send({"event_id": _event_id(), "type": "session.finish"})
+            except Exception:
+                pass
+            self._close_transport()
 
     def on_abort(self, _reason: str, ctx: Any = None) -> None:
         self.on_finish(ctx)

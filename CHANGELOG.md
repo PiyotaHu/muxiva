@@ -11,6 +11,10 @@ but must be called out explicitly with migration guidance.
 
 ### Added
 
+- Public `AgentTurnController` and `CapabilityRouter` contracts in
+  `@muxiva/agent`, with least-authority route validation, route-selection
+  events, first-output/whole-Turn watchdogs, stale-output isolation, and
+  recoverable Driver rotation without moving Agent business policy into Core.
 - Strictly separated English and Simplified Chinese documentation sources with
   contextual language switching and translation-parity CI validation.
 - Project Node Library and `muxiva.node/v1` Manifest authoring in Studio.

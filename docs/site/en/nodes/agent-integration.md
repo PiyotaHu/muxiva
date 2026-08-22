@@ -8,13 +8,14 @@ forcing the team to rewrite it.
 This chapter is the complete SOP from an independent Agent repository to a
 running Muxiva Graph.
 
-## Three ownership layers
+## Four ownership layers
 
 | Layer | Owner | Contains | Must not contain |
 | --- | --- | --- | --- |
-| Agent repository | application team | model harness, sessions, tools, policy, tests | Graph scheduling, RTC, ASR, TTS |
+| Agent repository | application team | model harness, sessions, capability catalog, route policy, tools, tests | Graph scheduling, RTC, ASR, TTS |
 | Agent Node adapter | Agent project | Port mapping, configuration schema, Driver assembly | substantial business logic or vendor SDKs |
-| Muxiva Runtime | Muxiva | Frames, Graph, queues, Signals, scheduling, Hosts, observability | Pi, Qwen, or application tools |
+| `@muxiva/agent` binding | Muxiva | generic Turn Controller, capability contract and route validation | news/weather/device intent rules or concrete tools |
+| Muxiva Core/Runtime | Muxiva | Frames, Graph, queues, Signals, scheduling, Hosts, observability | Agent turns, Pi, Qwen, or application tools |
 
 Replacing Pi, LangGraph, or an in-house Agent does not rewrite RTC, ASR, TTS,
 or the Graph. Replacing Agora or Qwen Nodes does not affect the Agent repo.
@@ -25,8 +26,10 @@ TypeScript Agents implement the `@muxiva/agent` Driver shape:
 
 ```typescript
 interface AgentDriver {
+  capabilities?(): readonly AgentCapability[]
+  route?(prompt: AgentPrompt): AgentRouteDecision
   run(
-    prompt: { text: string; sequence: number },
+    prompt: { text: string; sequence: number; route?: AgentRouteDecision },
     sink: {
       text(delta: string): void
       event(type: string, payload?: Record<string, unknown>): void
@@ -35,6 +38,7 @@ interface AgentDriver {
   ): Promise<void>
 
   cancel?(reason: unknown): void
+  snapshot?(): unknown
   close?(): void | Promise<void>
 }
 ```
@@ -42,7 +46,11 @@ interface AgentDriver {
 `run` receives a committed ASR prompt. `sink.text` produces streaming Text
 Frames; `sink.event` produces Agent, Turn, and Tool lifecycle Events.
 `AbortSignal` is the primary cancellation path for barge-in and superseding
-prompts. `close` releases sessions and subscriptions at Runtime shutdown.
+prompts. `capabilities` declares the maximum authority available to this Driver;
+`route` synchronously selects a bounded subset for one Turn. The binding rejects
+routes that attempt to grant undeclared capabilities. `snapshot` optionally
+preserves session state when a timed-out or wedged Driver is rotated. `close`
+releases sessions and subscriptions at Runtime shutdown.
 
 This is not an HTTP protocol and does not require the Agent and Runtime to live
 in one repository. It is the smallest testable contract between an application
@@ -60,6 +68,48 @@ Agent and a Muxiva Node.
 `defineAgentNode` owns the bounded output queue, generation IDs, stale-result
 suppression, internal wakeups, cancellation, and shutdown. The Agent does not
 need a Clock Node and should not embed WebSocket, RTC, or browser protocols.
+
+## Turn Controller and capability routing
+
+`AgentTurnController` is the concrete framework component returned by
+`defineAgentNode`. It is not an extra Graph Node and it is intentionally not in
+Rust Core. Core transports typed Frames and Signals; the controller applies
+generic Agent-Turn semantics:
+
+- latest-Turn-wins sequencing, bounded queues, cancellation, and stale-output
+  suppression;
+- first-output and whole-Turn watchdogs, optional application-configured progress output, visible failure events, and
+  Driver rotation with optional state transfer;
+- capability declaration validation, per-Turn route validation, and
+  `muxiva.agent.route.selected` observability.
+
+`CapabilityRouter` is a declarative helper for Agent repositories. Muxiva owns
+the catalog/route schema and validates least-authority decisions, but route
+matchers remain application policy. For example, the framework knows what
+`tool.web_search` means as an opaque capability ID; it does not contain a regex
+for “latest news”. A voice assistant may map that intent to web search while a
+coding Agent may expose a different route set and workspace tools.
+
+```typescript
+const router = new CapabilityRouter({
+  capabilities: [
+    { id: 'model.chat', kind: 'model' },
+    { id: 'tool.web_search', kind: 'tool' },
+  ],
+  routes: [{
+    id: 'live_information',
+    capabilities: ['model.chat', 'tool.web_search'],
+    requiredCapabilities: ['tool.web_search'],
+    match: applicationOwnsThisMatcher,
+  }],
+  fallback: { id: 'fast_chat', capabilities: ['model.chat'] },
+})
+```
+
+Granted capabilities are the Turn's maximum authority. Required capabilities
+are a validated subset that the Driver must satisfy before committing an
+answer. This distinction prevents a model from guessing a news or weather
+answer merely because the correct Tool was available but not invoked.
 
 ## SOP 1: prepare the independent Agent repository
 

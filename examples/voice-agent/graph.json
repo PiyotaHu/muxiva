@@ -43,7 +43,7 @@
       "id": "pi-agent",
       "node_type": "pi.agent",
       "language": "typescript",
-      "factory_version": "1.3.0",
+      "factory_version": "1.4.0",
       "node_config": {
         "max_file_bytes": 262144,
         "max_results_per_wakeup": 64,

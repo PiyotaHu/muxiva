@@ -7,6 +7,7 @@ application policy, so it stays in the transport provider rather than in Core.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -45,7 +46,9 @@ class XiaozhiEventEncoderNode:
             self._send({"type": xiaozhi_gateway.TTS_TYPE, "state": "start"})
             self._speaking = True
         elif input_port == "response_text_in":
-            if frame.sequence <= self._cancelled_through_sequence:
+            # A validated transcript and its barge-in Signal intentionally
+            # share a sequence.  Only older response text is stale.
+            if frame.sequence < self._cancelled_through_sequence:
                 return
             self._send(
                 {
@@ -55,7 +58,34 @@ class XiaozhiEventEncoderNode:
                 }
             )
         elif input_port == "event_in":
-            if frame.topic == "muxiva.voice.response.completed":
+            if frame.topic == "muxiva.agent.emotion.changed":
+                try:
+                    payload = json.loads(getattr(frame, "payload", "") or "{}")
+                except json.JSONDecodeError:
+                    payload = {}
+                emotion = str(payload.get("emotion", "neutral"))
+                if emotion in {
+                    "neutral", "happy", "laughing", "sad", "angry",
+                    "thinking", "relaxed", "confident",
+                }:
+                    self._send({"type": "llm", "emotion": emotion})
+            elif frame.topic == "muxiva.voice.tts.drained":
+                # This event is emitted only after the Agent has closed the
+                # Turn and every queued TTS sentence has been synthesized.
+                self._send({"type": xiaozhi_gateway.TTS_TYPE, "state": "stop"})
+                self._speaking = False
+            elif frame.topic in (
+                "muxiva.agent.response.completed",
+                "muxiva.voice.response.completed",
+            ):
+                # TTS owns the Turn/media drain barrier. Agent completion by
+                # itself is too early because synthesis can still be running.
+                return
+            elif frame.topic in (
+                "muxiva.agent.response.failed",
+                "muxiva.voice.response.failed",
+            ):
+                # Failed turns may never reach TTS, so request media shutdown.
                 self._send({"type": xiaozhi_gateway.TTS_TYPE, "state": "stop"})
                 self._speaking = False
             elif frame.topic == "muxiva.voice.speech.started":

@@ -300,13 +300,24 @@ def sentence_chunks(
     deltas: Iterable[str], cancelled: threading.Event | None = None
 ) -> Iterable[str]:
     buffer = ""
-    boundaries = "。！？.!?\n"
     for delta in deltas:
         if cancelled is not None and cancelled.is_set():
             return
         buffer += delta
         while True:
-            positions = [buffer.find(mark) for mark in boundaries if mark in buffer]
+            positions: list[int] = []
+            for index, mark in enumerate(buffer):
+                if mark in "。！？!?\n":
+                    positions.append(index)
+                elif mark == ".":
+                    # A streaming delta may end at `26.` and deliver `2` in
+                    # the next delta.  Wait for one-character look-ahead and
+                    # never treat a decimal point as a sentence boundary.
+                    if index + 1 == len(buffer):
+                        continue
+                    if index > 0 and buffer[index - 1].isdigit() and buffer[index + 1].isdigit():
+                        continue
+                    positions.append(index)
             if not positions and len(buffer) < 80:
                 break
             end = min(positions) + 1 if positions else 80

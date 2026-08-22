@@ -1,50 +1,59 @@
 # Xiaozhi + Muxiva voice agent (Raspberry Pi 4B)
 
 Turn a [Xiaozhi ESP32 board](https://github.com/78/xiaozhi-esp32) into the
-client of a Muxiva voice pipeline running on a Raspberry Pi 4B:
+client of a Muxiva voice pipeline running on a Raspberry Pi:
 
-```
-ESP32 (Opus over WebSocket)
-        │  ws://<pi-ip>:8888
-        ▼
-xiaozhi.audio_source ──► qwen.asr_realtime ──► builtin.llm_openai_compatible
-   (VAD, barge-in)        (server VAD + ASR)         (DeepSeek/OpenAI/Ollama)
-        ▲                                                     │
-        │                                                     ▼
-xiaozhi.audio_sink ◄── builtin.audio_resampler ◄── qwen.tts_realtime
-        ▲                        │                     ▲
-        └────────────────────────┴── builtin.speech_formatter
+```text
+ESP32 (Opus/WebSocket)
+  │
+  ▼
+Xiaozhi gateway → Qwen realtime ASR → Pi Agent → speech formatter
+       ▲                                  │              │
+       │                                  └─ tools       ▼
+       └──── paced Opus ← resampler ← Qwen realtime TTS
 ```
 
-- **VAD**: Qwen server VAD (`qwen.asr_realtime`) detects speech start/stop and
-  emits barge-in Signals. The built-in `builtin.audio_vad` is a zero-cost local
-  CPU alternative if you want VAD to run fully on the Pi.
-- **ASR / TTS**: Qwen realtime cloud models by default (fast, no Pi CPU cost).
-  They are vendor adapter Nodes; swap them for local `faster-whisper` / `piper`
-  provider Nodes when available.
-- **LLM**: the vendor-neutral `builtin.llm_openai_compatible` framework Node.
-  Point it at DeepSeek, OpenAI, Qwen, or a local `ollama` / `vLLM` server just
-  by editing `graph.json`.
+The Graph keeps transport, ASR, Agent policy, formatting, TTS, and playback as
+separate Nodes. `@muxiva/agent` supplies the reusable Turn Controller inside the
+Agent Node; product routes and Tools come from
+[`muxiva-pi-agent`](https://github.com/PiyotaHu/muxiva-pi-agent).
 
-## 1. Prerequisites
+## 1. Responsibilities
 
-- Raspberry Pi 4B (8 GB) with a 64-bit Debian-based OS.
-- Rust stable (see `rust-toolchain.toml`) and Python 3.
-- One Xiaozhi ESP32 board already flashed with the official firmware.
+| Layer | Owns |
+| --- | --- |
+| Muxiva Runtime | Frames, Signals, bounded queues, scheduling, lifecycle |
+| `@muxiva/agent` | turn admission, cancellation, deadlines, stale-output suppression, Driver recovery, route validation |
+| `muxiva-pi-agent` | model session, capability policy, weather/time/search/device/artwork Tools, voice presentation policy |
+| Qwen ASR Node | server endpointing, final transcript, filler rejection, validated barge-in |
+| Qwen TTS Node | sentence synthesis, cancellation, retry, Turn drain barrier |
+| Xiaozhi provider | WebSocket/Opus protocol, jitter buffer, real-time packet pacing, UI protocol mapping |
+
+The Graph is deliberately acyclic. Assistant text is not fed back into ASR;
+speaker echo control belongs to device AEC and validated final transcripts.
 
 ## 2. Setup
 
+Prerequisites are a 64-bit Raspberry Pi OS, Rust stable, Python 3, Node 22 or
+newer, and an ESP32 already flashed with compatible Xiaozhi firmware.
+
 ```bash
-./setup.sh          # installs libopus, websockets, Qwen deps, creates .env
+./setup.sh
 ```
 
-Edit `.env`:
+Configure secrets and deployment-specific endpoints in `.env` rather than in
+the committed Graph:
 
 ```dotenv
-DEEPSEEK_API_KEY=sk-...
-DASHSCOPE_API_KEY=sk-...
+DASHSCOPE_API_KEY=...
 DASHSCOPE_WORKSPACE_ID=...
+ESP32_HUB_URL=http://127.0.0.1:8890/command
+ESP32_HUB_TOKEN=...
+MUXIVA_IMAGE_PUBLIC_URL=http://raspberry-pi.local:8890/generated/
 ```
+
+Optional endpoint overrides are `DASHSCOPE_COMPATIBLE_BASE_URL` and
+`DASHSCOPE_SEARCH_ENDPOINT`. The public DashScope endpoints remain defaults.
 
 ## 3. Run
 
@@ -52,102 +61,63 @@ DASHSCOPE_WORKSPACE_ID=...
 ./run.sh
 ```
 
-The WebSocket server listens on `0.0.0.0:8888` by default. In the Xiaozhi
-firmware configuration (OTA / websocket URL), set:
+The WebSocket server listens on `0.0.0.0:8888`. Configure the firmware endpoint
+as `ws://<raspberry-pi-ip>:8888`, then wake the board and speak. A validated new
+utterance can interrupt an active reply.
 
-```
-ws://<raspberry-pi-ip>:8888
-```
+## 4. Capability packs and routing
 
-Power the board, wait for the wake word, and talk. Speak again to barge in and
-interrupt the assistant.
+The `pi-agent` Node in `graph.json` enables independent capability packs:
 
-## 4. Configuring the LLM
+| Configuration | Capability pack |
+| --- | --- |
+| `information_tools_enabled` | date/time and current/forecast weather |
+| `web_search_enabled` | live web/news search |
+| `device_tools_enabled` | speaker volume control |
+| `artwork_tools_enabled` | generation, saved-art replay, and gallery |
+| `workspace_tools_enabled` | bounded coding workspace access |
 
-The LLM Node is a generic OpenAI-compatible adapter. Edit `graph.json` → `llm`:
+The product route grants only the pack required by the utterance. Stable
+knowledge takes the model-only fast route. News and current facts require live
+search; weather and date questions require their factual Tool. If a required
+pack is disabled or its Tool fails, the Turn fails visibly instead of falling
+back to an ungrounded model answer.
 
-| Provider | `endpoint` | `model` | `api_key_env` |
-| --- | --- | --- | --- |
-| DeepSeek (default) | `https://api.deepseek.com/v1` | `deepseek-chat` | `DEEPSEEK_API_KEY` |
-| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` | `OPENAI_API_KEY` |
-| Qwen (Bailian) | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-flash` | `DASHSCOPE_API_KEY` |
-| Ollama (local CPU) | `http://127.0.0.1:11434/v1` | `qwen2.5:7b` | *(empty)* |
+Timeouts are layered: search has its own bounded timeout, while the whole Agent
+Turn has a longer deadline. Spoken progress is disabled by default because it
+can introduce an extra TTS session and first-word jitter; applications may opt
+in with `progress_message` and `progress_delay_ms`.
 
-For Ollama, leave `api_key_env` empty and start `ollama serve` on the Pi. A 4B
-with 8 GB can run small quantized models, but expect slower responses than a
-cloud endpoint.
+## 5. Regression gate
 
-### Using the Pi coding Agent instead of a plain LLM
-
-The flagship demo already ships a `pi.agent` TypeScript Node that wraps the Pi
-coding agent. You can replace `builtin.llm_openai_compatible` with `pi.agent`
-(keep its `system_prompt` voice-first and keep `builtin.speech_formatter`
-downstream so Markdown never reaches TTS). The agent adds workspace file tools
-and web search at the cost of higher latency and heavier first-token time.
-
-## 5. Local models on the Pi (optional)
-
-The transport and VAD are already CPU-only and lightweight. For full local
-inference:
-
-- **VAD**: use `builtin.audio_vad` (energy-based, no model).
-- **ASR**: add a `faster-whisper` or `whisper.cpp` provider Node (future work).
-- **TTS**: add a `piper` provider Node (very fast on Pi).
-- **LLM**: point `builtin.llm_openai_compatible` at a local `ollama` endpoint.
-
-## 6. Automated full-duplex test
-
-`tests/test_full_duplex.py` reproduces a complete three-turn conversation
-without flashing any firmware. It synthesizes the user voice with Qwen TTS,
-streams it into the server as Opus (exactly like the device microphone), and
-verifies the greeting, a joke, and a weather barge-in.
+Every change touching ASR, Agent turns, TTS, transport, or Graph wiring must run:
 
 ```bash
-cd examples/xiaozhi-agent
-# 1. Generate the user-voice fixtures (needs DASHSCOPE_API_KEY).
-DASHSCOPE_API_KEY=... python3 tests/make_fixtures.py
-
-# 2. Run the full-duplex case (needs both DashScope values).
-DASHSCOPE_API_KEY=... DASHSCOPE_WORKSPACE_ID=... \
-    python3 -m unittest tests.test_full_duplex -v
+python3 examples/xiaozhi-agent/tests/run_voice_regression.py
 ```
 
-The test starts `muxiva serve` itself, connects a simulated device, and checks
-the `stt` / `tts` text plus assistant audio for each turn. Credentials are read
-from the environment or `.env` and never written to disk.
+Run the live cloud/WebSocket three-turn case in a maintenance window:
 
-## 7. Free quota and cost (Alibaba Cloud Model Studio)
+```bash
+python3 examples/xiaozhi-agent/tests/run_voice_regression.py --live
+```
 
-The default graph already uses the cheapest **new realtime-protocol** models,
-and every one of them has free quota on new accounts (verified against the
-Model Studio quota API):
+See [tests/VOICE_REGRESSION.md](tests/VOICE_REGRESSION.md) for the bad-case
+matrix covering first-word stutter, mid-reply stalls, cancellation, filler
+utterances, long ASR turns, decimals, required Tools, and repeated turns.
 
-| Stage | Model | Price after free quota | Free quota |
-| --- | --- | --- | --- |
-| LLM | `qwen-flash` | ¥0.15 / 1M input tokens, ¥1.5 / 1M output | **5,000,000 tokens / month** + 15,000 requests |
-| ASR | `qwen3-asr-flash-realtime` | ¥0.00033 / second | **20 sessions / day** (one server run = one session) |
-| TTS | `qwen3-tts-flash-realtime` | ¥1 / 10,000 chars | **3 sessions / day** (one reply = one session) |
+## 6. Troubleshooting
 
-Notes:
+- Device cannot connect: verify TCP port `8888`, the LAN address, and `ws://`.
+- ASR text appears but no answer: inspect `muxiva.agent.route.selected`, Tool
+  completion, and `muxiva.agent.response.failed` events.
+- Audio starts or stops incorrectly: confirm TTS drain reaches
+  `xiaozhi-events`, and run the gateway pacing tests.
+- Weather/news is guessed: confirm its capability pack is enabled and the Tool
+  completed successfully; required Tools must never silently fall back.
+- Wake word is insensitive: this is firmware/microphone/AEC policy, not an
+  Agent route. Validate it on the physical board.
 
-- One TTS WebSocket session synthesizes many sentences, so one assistant reply
-  is one session. A barge-in closes the session (the model cannot cleanly
-  resume after an in-session cancel), so an interrupted turn costs two.
-- Beyond the free quota, costs are negligible for voice use: a typical 50-char
-  reply is ¥0.005, so even a heavy 30-turn day is well under ¥1.
-- Cheaper list prices (e.g. `paraformer-realtime-v2` ASR at ¥0.00024/s,
-  `qwen3-tts-flash` at ¥0.8/10k chars) use the legacy realtime protocol or
-  have no free quota; they were tested and are **not** drop-in replacements.
-- The only fully-free path is local models (Piper TTS + Faster-Whisper ASR +
-  a local LLM), at the cost of latency and quality on a Pi 4B.
-
-## 8. Troubleshooting
-
-- `libopus is not installed` → `sudo apt-get install -y libopus0`.
-- `websockets is not installed` → `pip install websockets`.
-- Device never connects → check the Pi firewall for TCP `8888` and that the
-  firmware websocket URL uses `ws://` (not `wss://`) on the LAN.
-- No assistant audio → confirm DashScope credentials and that `qwen-tts` output
-  (24 kHz) is resampled to 16 kHz by `tts-resampler`.
-- Responses are slow → the default is fully remote; local LLM/ASR/TTS will be
-  slower on a Pi 4B.
+Cloud pricing and free quotas change over time. Check the current Alibaba Cloud
+Model Studio billing pages before choosing models; this repository does not
+embed time-sensitive price claims.

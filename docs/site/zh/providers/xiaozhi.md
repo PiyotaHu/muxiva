@@ -9,7 +9,7 @@ Muxiva 语音图，即可获得完整的 **VAD + ASR + LLM + TTS** 语音管线�
 - 设备协议：小智 WebSocket `v1`（JSON 控制 + Opus 音频）
 - 旗舰示例：[`examples/xiaozhi-agent`](https://github.com/PiyotaHu/muxiva/tree/main/examples/xiaozhi-agent)
 - 凭据：阿里云百炼 API Key + Workspace ID
-- 成本：默认 Qwen 模型均有免费额度（见 [示例 README](https://github.com/PiyotaHu/muxiva/tree/main/examples/xiaozhi-agent#7-free-quota-and-cost)）
+- 计费：请查看百炼最新价格和额度文档；本文不固化会变化的价格信息
 
 ## 设备协议
 
@@ -35,9 +35,10 @@ Muxiva 语音图，即可获得完整的 **VAD + ASR + LLM + TTS** 语音管线�
 传输层由三个 Node Pack 组成，与 Agora RTC Provider 处于同一架构层：
 
 - **`xiaozhi.audio_source`**（源节点）：内嵌 WebSocket 服务端，将 Opus 解码为
-  16kHz PCM，并把设备控制事件与 `muxiva.voice.speech.started` 打断 Signal 转发进图。
+  16kHz PCM，转发设备控制，并对下行音频做缓冲和实时节拍发送。
 - **`xiaozhi.audio_sink`**（汇节点）：把 TTS PCM 编码回 Opus 流式下发到设备。
-- **`xiaozhi.event_encoder`**（汇节点）：把转写与助手文字映射为 `stt` / `tts` 设备消息。
+- **`xiaozhi.event_encoder`**（汇节点）：把转写、助手文字、TTS 生命周期和与协议无关的
+  情绪 Event 映射为设备协议消息。
 
 由于 Muxiva 每个 Python Node 运行在独立进程中，源节点内置一个小型 gateway，
 汇节点与事件编码节点通过回环 JSON-lines 控制 socket 连接它。跨运行时边界流动的
@@ -49,8 +50,8 @@ Muxiva 语音图，即可获得完整的 **VAD + ASR + LLM + TTS** 语音管线�
 ESP32（Opus over WebSocket）
         │  ws://<服务器IP>:8888
         ▼
-xiaozhi.audio_source ──► qwen.asr_realtime ──► builtin.llm_openai_compatible
-   (VAD, barge-in)        (服务端 VAD + ASR)        (Qwen / DeepSeek / OpenAI)
+xiaozhi.audio_source ──► qwen.asr_realtime ──► pi.agent
+   (Opus 网关)             (服务端 VAD + ASR)      (路由 + 工具 + 模型)
         ▲                                                     │
         │                                                     ▼
 xiaozhi.audio_sink ◄── builtin.audio_resampler ◄── qwen.tts_realtime
@@ -59,7 +60,7 @@ xiaozhi.audio_sink ◄── builtin.audio_resampler ◄── qwen.tts_realtime
 ```
 
 该图支持全双工对话：用户可在助手说话时打断（barge-in），服务端会取消正在进行的
-TTS/LLM 工作并立即回答新的一轮。
+TTS/Agent 工作并立即回答新的一轮。
 
 ## 快速开始（树莓派 4B）
 

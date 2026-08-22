@@ -198,6 +198,107 @@ class CascadeNodeTests(unittest.TestCase):
             ],
         )
 
+    def test_asr_ignores_standalone_fillers_and_coughs_without_interrupting(self):
+        transport = FakeTransport([
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "conversation.item.input_audio_transcription.text", "text": "嗯"},
+            {"type": "input_audio_buffer.speech_stopped"},
+            {"type": "conversation.item.input_audio_transcription.completed", "transcript": "嗯。"},
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "conversation.item.input_audio_transcription.text", "text": "咳"},
+            {"type": "input_audio_buffer.speech_stopped"},
+            {"type": "conversation.item.input_audio_transcription.completed", "transcript": "（咳嗽声）"},
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "conversation.item.input_audio_transcription.text", "text": "嗯，我想问天气"},
+            {"type": "input_audio_buffer.speech_stopped"},
+            {"type": "conversation.item.input_audio_transcription.completed", "transcript": "嗯，我想问天气。"},
+        ])
+        node = asr.QwenAsrRealtimeNode({}, lambda *_: transport)
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        ctx = Context("audio_in")
+
+        node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=60), ctx)
+
+        self.assertEqual(len(ctx.signals), 1)
+        self.assertEqual(
+            [frame.text for port, frame in ctx.emissions if port == "transcript_preview_out"],
+            ["嗯，我想问天气"],
+        )
+        self.assertEqual(
+            [frame.text for port, frame in ctx.emissions if port == "text_out"],
+            ["嗯，我想问天气。"],
+        )
+
+    def test_asr_strict_barge_in_waits_for_final_transcript(self):
+        transport = FakeTransport([
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "conversation.item.input_audio_transcription.text", "text": "你好"},
+        ])
+        node = asr.QwenAsrRealtimeNode(
+            {"barge_in_requires_final": True},
+            lambda *_: transport,
+        )
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        ctx = Context("audio_in")
+
+        node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=61), ctx)
+
+        self.assertEqual(ctx.signals, [])
+        self.assertEqual(
+            [frame.text for port, frame in ctx.emissions if port == "transcript_preview_out"],
+            ["你好"],
+        )
+
+    def test_asr_explicit_stop_always_barges_in_during_playback(self):
+        transport = FakeTransport([
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "input_audio_buffer.speech_stopped"},
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "transcript": "闭嘴",
+            },
+        ])
+        node = asr.QwenAsrRealtimeNode(
+            {"barge_in_requires_final": True},
+            lambda *_: transport,
+        )
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        ctx = Context("audio_in")
+        node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=81), ctx)
+
+        self.assertEqual(len(ctx.signals), 1)
+        self.assertEqual(
+            [frame.text for port, frame in ctx.emissions if port == "text_out"],
+            ["闭嘴"],
+        )
+
+    def test_asr_distinct_question_barges_in_during_playback(self):
+        transport = FakeTransport([
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "input_audio_buffer.speech_stopped"},
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "transcript": "榴莲和菠萝蜜是亲戚吗",
+            },
+        ])
+        node = asr.QwenAsrRealtimeNode(
+            {"barge_in_requires_final": True},
+            lambda *_: transport,
+        )
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        ctx = Context("audio_in")
+        node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=91), ctx)
+
+        self.assertEqual(len(ctx.signals), 1)
+        self.assertEqual(
+            [frame.text for port, frame in ctx.emissions if port == "text_out"],
+            ["榴莲和菠萝蜜是亲戚吗"],
+        )
+
     def test_llm_background_stream_drains_sentence_and_preserves_sequence(self):
         class Client:
             def stream(self, endpoint, key, payload, cancelled):
@@ -228,6 +329,38 @@ class CascadeNodeTests(unittest.TestCase):
         self.assertEqual(ctx.events[0][0], "muxiva.voice.response.delta")
         self.assertEqual(ctx.events[-1][0], "muxiva.voice.response.completed")
         node.on_finish()
+
+    def test_llm_sentence_chunks_do_not_split_streamed_decimal(self):
+        self.assertEqual(
+            list(llm.sentence_chunks(["小主人，合肥现在气温26.", "2度，体感温度27.1度。"])),
+            ["小主人，合肥现在气温26.2度，体感温度27.1度。"],
+        )
+
+    def test_asr_reconnects_after_broken_transport_without_killing_graph(self):
+        class BrokenTransport(FakeTransport):
+            def send(self, _event):
+                raise BrokenPipeError("stale ASR websocket")
+
+        healthy = FakeTransport([
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "input_audio_buffer.speech_stopped"},
+            {"type": "conversation.item.input_audio_transcription.completed", "transcript": "恢复成功"},
+        ])
+        transports = iter([BrokenTransport(), healthy])
+        node = asr.QwenAsrRealtimeNode({}, lambda *_: next(transports))
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+            ctx = Context("audio_in")
+            node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=77), ctx)
+
+        self.assertTrue(healthy.sent)
+        self.assertEqual(
+            [frame.text for port, frame in ctx.emissions if port == "text_out"],
+            ["恢复成功"],
+        )
+
+    def test_tts_pronounces_numeric_decimal_with_dian(self):
+        self.assertEqual(tts.normalize_tts_text("气温26.2度"), "气温26点2度")
 
     def test_llm_signal_cancels_provider_and_discards_queued_old_output(self):
         started = threading.Event()
@@ -269,11 +402,11 @@ class CascadeNodeTests(unittest.TestCase):
             opened.append(transport)
             return transport
 
-        node = tts.QwenTtsRealtimeNode({}, factory)
+        node = tts.QwenTtsRealtimeNode({"end_of_turn_grace_ms": 0}, factory)
         with mock.patch.dict(os.environ, self.credentials):
             node.on_prepare()
         node.on_process(TextFrame("你好", sequence=404), Context("text_in"))
-        node.on_process(TextFrame("世界", sequence=405), Context("text_in"))
+        node.on_process(TextFrame("世界", sequence=404), Context("text_in"))
         self.assertTrue(wait_until(lambda: len(transport.sent) == 4 and node._results.qsize() >= 4))
         ctx = Context("tick_in")
         node.on_process(EventFrame("muxiva.runtime.tick"), ctx)
@@ -282,8 +415,22 @@ class CascadeNodeTests(unittest.TestCase):
         self.assertEqual(ctx.emissions[0][1].sample_rate_hz, 24000)
         self.assertEqual(ctx.emissions[0][1].sequence, 404)
         self.assertEqual(ctx.emissions[0][1].data, b"\x01\x02\x03\x04")
-        self.assertEqual(ctx.emissions[1][1].sequence, 405)
+        self.assertEqual(ctx.emissions[1][1].sequence, 404)
         self.assertEqual(len(opened), 1, "sentence chunks reuse one live TTS session")
+        self.assertEqual(
+            [frame.topic for port, frame in ctx.emissions if port == "event_out"],
+            [],
+            "a temporary empty TTS queue is not the end of the Turn",
+        )
+        terminal = Context("event_in")
+        node.on_process(
+            EventFrame("muxiva.agent.response.completed", sequence=404),
+            terminal,
+        )
+        self.assertEqual(
+            [frame.topic for port, frame in terminal.emissions if port == "event_out"],
+            ["muxiva.voice.tts.drained"],
+        )
         node.on_finish()
 
     def test_tts_signal_closes_active_session_and_clears_audio(self):
@@ -328,17 +475,64 @@ class CascadeNodeTests(unittest.TestCase):
         self.assertTrue(wait_until(lambda: not node._jobs.empty() or not node._results.empty()))
         node.on_finish()
 
-    def test_tts_connection_failure_is_reported_on_runtime_tick(self):
+    def test_tts_temporary_queue_gap_does_not_end_turn_before_later_text(self):
+        transport = FakeTransport([
+            {"type": "response.audio.delta", "delta": "AQIDBA=="},
+            {"type": "response.done"},
+        ])
+        node = tts.QwenTtsRealtimeNode({"end_of_turn_grace_ms": 0}, lambda *_: transport)
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+
+        node.on_process(TextFrame("先育秧", sequence=734), Context("text_in"))
+        self.assertTrue(wait_until(lambda: node._results.qsize() >= 2))
+        first = Context("tick_in")
+        node.on_process(EventFrame("muxiva.runtime.tick"), first)
+        self.assertEqual(
+            [frame.topic for port, frame in first.emissions if port == "event_out"],
+            [],
+        )
+
+        node.on_process(TextFrame("再移栽。", sequence=734), Context("text_in"))
+        terminal = Context("event_in")
+        node.on_process(
+            EventFrame("muxiva.agent.response.completed", sequence=734),
+            terminal,
+        )
+        self.assertEqual(terminal.emissions, [])
+        self.assertTrue(wait_until(lambda: node._results.qsize() >= 2))
+        final = Context("tick_in")
+        node.on_process(EventFrame("muxiva.runtime.tick"), final)
+        self.assertEqual(
+            [frame.topic for port, frame in final.emissions if port == "event_out"],
+            ["muxiva.voice.tts.drained"],
+        )
+        node.on_finish()
+
+    def test_tts_accepts_current_turn_when_final_barge_in_shares_its_sequence(self):
+        transport = FakeTransport([{"type": "response.done"}])
+        node = tts.QwenTtsRealtimeNode({}, lambda *_: transport)
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+
+        node.on_signal(SignalFrame("muxiva.voice.speech.started", sequence=20))
+        current = Context("text_in")
+        node.on_process(TextFrame("当前回答", sequence=20), current)
+        self.assertEqual(current.scheduled_ticks, [20])
+        self.assertTrue(wait_until(lambda: not node._jobs.empty() or not node._results.empty()))
+        node.on_finish()
+
+    def test_tts_connection_failure_is_handled_without_aborting_graph(self):
         def fail_to_connect(*_):
             raise OSError("connection refused")
 
-        node = tts.QwenTtsRealtimeNode({}, fail_to_connect)
+        node = tts.QwenTtsRealtimeNode({"connect_retries": 1}, fail_to_connect)
         with mock.patch.dict(os.environ, self.credentials):
             node.on_prepare()
         node.on_process(TextFrame("你好", sequence=500), Context("text_in"))
         self.assertTrue(wait_until(lambda: not node._results.empty()))
-        with self.assertRaisesRegex(RuntimeError, "connection refused"):
-            node.on_process(EventFrame("muxiva.runtime.tick"), Context("tick_in"))
+        node.on_process(EventFrame("muxiva.runtime.tick"), Context("tick_in"))
+        self.assertEqual(node._pending_jobs, 0)
         node.on_finish()
 
     def test_manifests_declare_cancellable_cascade_contracts(self):
@@ -362,6 +556,10 @@ class CascadeNodeTests(unittest.TestCase):
                 (root / package / "muxiva.node.json").read_text()
             )["ports"]}
             self.assertIn("signal_in", ports)
+        tts_ports = {port["name"] for port in json.loads(
+            (root / "qwen_tts_realtime" / "muxiva.node.json").read_text()
+        )["ports"]}
+        self.assertIn("event_in", tts_ports)
         for package in ("qwen_llm_stream", "qwen_tts_realtime"):
             self.assertNotIn("tick_in", {port["name"] for port in json.loads(
                 (root / package / "muxiva.node.json").read_text()
