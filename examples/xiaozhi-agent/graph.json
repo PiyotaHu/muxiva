@@ -15,6 +15,7 @@
         "sample_rate": 16000,
         "frame_duration_ms": 60,
         "playback_prebuffer_ms": 1200,
+        "playback_initial_burst_frames": 5,
         "playback_queue_ms": 120000,
         "playback_stop_grace_ms": 1000,
         "playback_no_audio_stop_timeout_ms": 5000
@@ -31,6 +32,8 @@
         "silence_duration_ms": 1000,
         "vad_threshold": 0.45,
         "ignore_filler_utterances": true,
+        "minimum_utterance_characters": 3,
+        "short_utterance_allowlist": ["闭嘴", "停下", "停止", "再见", "继续", "重来", "天气", "时间", "几点", "几号", "画画", "笑话", "不是", "小白小白"],
         "barge_in_requires_final": true
       }
     },
@@ -46,6 +49,7 @@
         "max_tokens": 768,
         "model": "qwen-flash",
         "sentence_chunk_characters": 120,
+        "sentence_chunk_min_characters": 24,
         "agent_first_output_timeout_ms": 10000,
         "agent_turn_timeout_ms": 90000,
         "max_history_messages": 18,

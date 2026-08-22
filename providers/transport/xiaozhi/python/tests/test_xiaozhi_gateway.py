@@ -219,10 +219,15 @@ class XiaozhiGatewayTests(unittest.TestCase):
 
             self.assertTrue(received_audio, "device never received Opus audio")
             self.assertEqual(received_audio_packets, 3, "PCM delta was not reblocked losslessly")
+            self.assertLess(
+                audio_packet_times[1] - audio_packet_times[0],
+                0.09,
+                "the bounded startup burst did not seed the device jitter buffer",
+            )
             self.assertGreaterEqual(
                 audio_packet_times[-1] - audio_packet_times[0],
-                0.09,
-                "Opus packets were burst-sent instead of paced near real time",
+                0.8,
+                "the padded final half-frame was not held until TTS became quiet",
             )
             self.assertTrue(received_stt, "device never received an stt message")
             self.assertTrue(received_tts, "device never received a tts message")
@@ -230,6 +235,44 @@ class XiaozhiGatewayTests(unittest.TestCase):
 
             sink.close()
             events.close()
+
+    def test_only_the_bounded_startup_window_is_burst_sent(self) -> None:
+        asyncio.run(self._run_bounded_startup_window())
+
+    async def _run_bounded_startup_window(self) -> None:
+        encoder = opus_codec.OpusEncoder(
+            sample_rate=SAMPLE_RATE, frame_duration_ms=FRAME_DURATION_MS
+        )
+        microphone_pcm = sine_pcm()
+        async with websockets.connect(f"ws://127.0.0.1:{self.ws_port}") as device:
+            await device.send(json.dumps({"type": "hello"}))
+            await asyncio.wait_for(device.recv(), timeout=5)
+            sink = xiaozhi_gateway.XiaozhiControlClient(
+                "127.0.0.1", self.control_port, "sink"
+            )
+            self.assertTrue(sink.connect())
+            # Default startup threshold is 20 frames. Publish enough audio to
+            # start playback and leave packets for the paced phase.
+            sink.send({"op": "audio", "pcm_hex": (microphone_pcm * 24).hex()})
+            packet_times = []
+            deadline = time.monotonic() + 5
+            while len(packet_times) < 8 and time.monotonic() < deadline:
+                message = await asyncio.wait_for(device.recv(), timeout=2)
+                if isinstance(message, (bytes, bytearray)):
+                    packet_times.append(time.monotonic())
+            self.assertEqual(len(packet_times), 8)
+            self.assertLess(
+                packet_times[4] - packet_times[0],
+                0.09,
+                "the five-frame client prebuffer was not sent as a bounded burst",
+            )
+            self.assertGreaterEqual(
+                packet_times[7] - packet_times[4],
+                0.14,
+                "audio after the startup window was not paced near real time",
+            )
+            sink.close()
+            encoder.close()
 
 
 if __name__ == "__main__":

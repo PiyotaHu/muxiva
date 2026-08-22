@@ -287,7 +287,15 @@ class QwenAsrRealtimeNode:
             return True
         if re.fullmatch(r"[啊阿呀嗯呃额哦噢唔哎诶欸唉呐哼]+", normalized):
             return True
-        return re.fullmatch(r"(?:(?:咳嗽)|咳)+声?", normalized) is not None
+        if re.fullmatch(r"(?:(?:咳嗽)|咳)+声?", normalized) is not None:
+            return True
+        minimum = max(1, int(self.config.get("minimum_utterance_characters", 1)))
+        allowlist = {
+            re.sub(r"[^\w\u4e00-\u9fff]+", "", str(value)).lower()
+            for value in self.config.get("short_utterance_allowlist", [])
+            if str(value).strip()
+        }
+        return len(normalized) < minimum and normalized not in allowlist
 
     def on_finish(self, _ctx: Any = None) -> None:
         if self._transport is not None:

@@ -55,6 +55,10 @@ class XiaozhiGateway:
             self.frame_duration_ms,
             int(config.get("playback_prebuffer_ms", 1200)),
         )
+        self.playback_initial_burst_frames = max(
+            1,
+            int(config.get("playback_initial_burst_frames", 5)),
+        )
         self.playback_queue_ms = max(
             self.prebuffer_ms,
             int(config.get("playback_queue_ms", 120_000)),
@@ -361,6 +365,8 @@ class XiaozhiGateway:
             self.playback_no_audio_stop_timeout_ms / 1000.0
         )
         next_audio_send_at: float | None = None
+        initial_burst_remaining = 0
+        underrun_started_at: float | None = None
         while not self._stopped.is_set():
             # Control/display messages are sent immediately, before paced audio.
             sent_message = False
@@ -385,9 +391,10 @@ class XiaozhiGateway:
             # the jitter reservoir is full, or when TTS has explicitly drained.
             with self._tts_lock:
                 playback_started = self._tts_playback_started
+                stop_pending = self._tts_stop_message is not None
                 short_reply_ready = (
                     self._tts_audio_seen
-                    and self._tts_stop_message is not None
+                    and stop_pending
                 )
             if not playback_started:
                 queued_frames = self._egress.qsize()
@@ -399,6 +406,19 @@ class XiaozhiGateway:
                 with self._tts_lock:
                     self._tts_playback_started = True
                 next_audio_send_at = time.monotonic()
+                initial_burst_remaining = min(
+                    self.playback_initial_burst_frames,
+                    max(1, queued_frames),
+                )
+                underrun_started_at = None
+                print(
+                    "[MUXIVA][XIAOZHI][playback.started] "
+                    f"queued_frames={queued_frames} "
+                    f"prebuffer_frames={self._prebuffer_frames} "
+                    f"initial_burst_frames={initial_burst_remaining}",
+                    file=sys.stderr,
+                    flush=True,
+                )
             try:
                 packet = self._egress.get_nowait()
             except queue.Empty:
@@ -444,8 +464,21 @@ class XiaozhiGateway:
                             self._tts_audio_seen = False
                     except Exception:
                         pass
+                elif playback_started and not stop_pending:
+                    if underrun_started_at is None:
+                        underrun_started_at = now
+                    elif now - underrun_started_at >= frame_seconds * 2:
+                        print(
+                            "[MUXIVA][XIAOZHI][playback.underrun] "
+                            f"gap_ms={round((now - underrun_started_at) * 1000)}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        # Log once per empty interval; a new packet rearms it.
+                        underrun_started_at = float("inf")
                 await asyncio.sleep(0.005)
                 continue
+            underrun_started_at = None
             if self._ws is not None:
                 try:
                     await self._ws.send(packet)
@@ -453,6 +486,20 @@ class XiaozhiGateway:
                         self._tts_last_packet_sent_at = time.monotonic()
                 except Exception:
                     pass
+            # Match the Xiaozhi server's client-jitter-buffer trick: put only
+            # the first few protocol frames on the wire immediately, then
+            # pace every later frame against an absolute deadline.  Five
+            # 60 ms frames give the ESP32 300 ms of startup reserve without
+            # burst-sending an entire reply.
+            if initial_burst_remaining > 0:
+                initial_burst_remaining -= 1
+                if initial_burst_remaining > 0:
+                    continue
+                next_audio_send_at = time.monotonic() + frame_seconds
+                await asyncio.sleep(
+                    max(0.0, next_audio_send_at - time.monotonic())
+                )
+                continue
             # Pace against an absolute monotonic deadline. Sleeping a full
             # frame after each send accumulates encoding/event-loop overhead,
             # making 60 ms audio packets arrive slower than real time.

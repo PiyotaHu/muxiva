@@ -251,6 +251,40 @@ class CascadeNodeTests(unittest.TestCase):
             ["你好"],
         )
 
+    def test_asr_ignores_tiny_false_turn_but_keeps_allowed_short_command(self):
+        transport = FakeTransport([
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "input_audio_buffer.speech_stopped"},
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "transcript": "好的。",
+            },
+            {"type": "input_audio_buffer.speech_started"},
+            {"type": "input_audio_buffer.speech_stopped"},
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "transcript": "闭嘴",
+            },
+        ])
+        node = asr.QwenAsrRealtimeNode(
+            {
+                "barge_in_requires_final": True,
+                "minimum_utterance_characters": 3,
+                "short_utterance_allowlist": ["闭嘴"],
+            },
+            lambda *_: transport,
+        )
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        ctx = Context("audio_in")
+        node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=71), ctx)
+
+        self.assertEqual(len(ctx.signals), 1)
+        self.assertEqual(
+            [frame.text for port, frame in ctx.emissions if port == "text_out"],
+            ["闭嘴"],
+        )
+
     def test_asr_explicit_stop_always_barges_in_during_playback(self):
         transport = FakeTransport([
             {"type": "input_audio_buffer.speech_started"},
