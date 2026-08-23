@@ -15,7 +15,7 @@
   "tags": ["tts", "text-to-speech", "cancellation", "streaming"],
   "ports": [
     { "name": "text_in", "direction": "input", "frame_type": "text", "schema": { "semantics": "synthesis_text", "streaming": true } },
-    { "name": "signal_in", "direction": "input", "frame_type": "signal", "schema": { "semantics": ["graph_control", "barge_in"] } },
+    { "name": "signal_in", "direction": "input", "frame_type": "signal", "schema": { "semantics": ["turn_cancellation"], "signal_names": ["muxiva.turn.cancelled"] } },
     { "name": "event_in", "direction": "input", "frame_type": "event", "schema": { "semantics": ["agent_response_terminal"], "streaming": false } },
     { "name": "audio_out", "direction": "output", "frame_type": "audio", "schema": { "encoding": "pcm_s16le", "sample_rate_hz": 24000, "channels": 1, "streaming": true } },
     { "name": "event_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["tts_drained"], "streaming": false } }

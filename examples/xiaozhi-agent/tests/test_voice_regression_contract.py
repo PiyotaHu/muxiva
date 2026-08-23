@@ -26,10 +26,33 @@ class VoiceRegressionContractTests(unittest.TestCase):
         self.assertGreaterEqual(config["playback_prebuffer_ms"], 1200)
         self.assertGreaterEqual(config["playback_queue_ms"], 120000)
 
-    def test_final_asr_is_required_before_barge_in(self) -> None:
-        config = self.nodes["qwen-vad-asr"]["node_config"]
-        self.assertTrue(config["barge_in_requires_final"])
-        self.assertTrue(config["ignore_filler_utterances"])
+    def test_voice_turn_controller_exclusively_owns_barge_in(self) -> None:
+        asr = self.nodes["qwen-vad-asr"]["node_config"]
+        policy = self.nodes["voice-turn"]["node_config"]
+        self.assertFalse(asr["emit_legacy_barge_in_signal"])
+        self.assertFalse(asr["ignore_filler_utterances"])
+        self.assertTrue(policy["ignore_filler_utterances"])
+        self.assertIn("嗯", policy["ignored_utterances"])
+        signal_sources = {
+            edge["from"]["node_id"]
+            for edge in self.graph["edges"]
+            if edge["frame_type"] == "signal" and edge["to"]["node_id"] != "voice-turn"
+        }
+        self.assertEqual(signal_sources, {"voice-turn"})
+
+    def test_raw_activity_is_observational_and_final_text_is_admitted_once(self) -> None:
+        self.assertEqual(
+            self.edges["speech-activity-to-turn-controller"]["to"],
+            {"node_id": "voice-turn", "port": "activity_in"},
+        )
+        self.assertEqual(
+            self.edges["asr-transcript-to-turn-controller"]["to"],
+            {"node_id": "voice-turn", "port": "transcript_in"},
+        )
+        self.assertEqual(
+            self.edges["turn-prompt-to-agent"]["from"],
+            {"node_id": "voice-turn", "port": "prompt_out"},
+        )
 
     def test_graph_is_acyclic_and_buildable(self) -> None:
         adjacency = {node_id: [] for node_id in self.nodes}
@@ -55,6 +78,11 @@ class VoiceRegressionContractTests(unittest.TestCase):
         self.assertEqual(edge["from"], {"node_id": "pi-agent", "port": "event_out"})
         self.assertEqual(edge["to"], {"node_id": "qwen-tts", "port": "event_in"})
 
+    def test_tts_drain_barrier_reaches_the_final_audio_sink(self) -> None:
+        edge = self.edges["tts-state-to-audio-sink"]
+        self.assertEqual(edge["from"], {"node_id": "qwen-tts", "port": "event_out"})
+        self.assertEqual(edge["to"], {"node_id": "xiaozhi-out", "port": "event_in"})
+
     def test_agent_capability_packs_and_timeouts_are_explicit(self) -> None:
         config = self.nodes["pi-agent"]["node_config"]
         self.assertTrue(config["information_tools_enabled"])
@@ -72,6 +100,13 @@ class VoiceRegressionContractTests(unittest.TestCase):
         self.assertIn("examples/xiaozhi-agent/requirements.txt", setup)
         self.assertTrue((PROJECT / ".muxiva" / "tools" / "prepare_image.py").is_file())
         self.assertTrue((PROJECT / ".muxiva" / "tools" / "build_gallery.py").is_file())
+
+    def test_artwork_prompt_targets_the_monochrome_display(self) -> None:
+        prompt = self.nodes["pi-agent"]["node_config"]["artwork_style_prompt"]
+        self.assertIn("400×300", prompt)
+        self.assertIn("黑白线稿", prompt)
+        self.assertIn("高对比", prompt)
+        self.assertIn("不要使用彩色", prompt)
 
     def test_spoken_progress_is_disabled_in_the_realtime_graph(self) -> None:
         config = self.nodes["pi-agent"]["node_config"]

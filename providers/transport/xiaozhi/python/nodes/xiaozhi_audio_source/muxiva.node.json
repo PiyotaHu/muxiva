@@ -9,7 +9,7 @@
   "entrypoint": "node:XiaozhiAudioSourceNode",
   "category": "transport",
   "capability": "xiaozhi.audio.ingress",
-  "summary": "Hosts the Xiaozhi ESP32 WebSocket server, decodes Opus into 16 kHz PCM Audio Frames, and forwards client control as Events and a barge-in Signal.",
+  "summary": "Hosts the Xiaozhi ESP32 WebSocket server, decodes Opus into 16 kHz PCM Audio Frames, and maps authoritative client abort to a turn interruption request.",
   "connection_id": null,
   "documentation": "https://piyotahu.github.io/muxiva/providers/xiaozhi/audio-ingress/",
   "tags": ["xiaozhi", "websocket", "opus", "audio", "ingress", "realtime"],
@@ -36,7 +36,7 @@
       "name": "signal_out",
       "direction": "output",
       "frame_type": "signal",
-      "schema": { "semantics": ["graph_control", "barge_in"] }
+      "schema": { "semantics": ["turn_interrupt_request"], "signal_names": ["muxiva.turn.interrupt.requested"] }
     }
   ],
   "config_schema": {
@@ -49,7 +49,8 @@
       "sample_rate": { "type": "integer", "default": 16000 },
       "frame_duration_ms": { "type": "integer", "default": 60 },
       "playback_prebuffer_ms": { "type": "integer", "minimum": 60, "maximum": 5000, "default": 1200 },
-      "playback_initial_burst_frames": { "type": "integer", "minimum": 1, "maximum": 20, "default": 5, "description": "Number of leading Opus frames sent immediately to seed the ESP32 playback jitter buffer before real-time pacing begins." },
+      "playback_initial_burst_frames": { "type": "integer", "minimum": 1, "maximum": 20, "default": 5, "description": "Number of leading Opus frames used to seed the ESP32 playback jitter buffer before real-time pacing begins." },
+      "playback_initial_burst_interval_ms": { "type": "integer", "minimum": 0, "maximum": 59, "default": 12, "description": "Spacing between startup frames. A small value builds client buffer lead without overwhelming constrained firmware receive queues." },
       "playback_queue_ms": { "type": "integer", "minimum": 30000, "maximum": 300000, "default": 120000 },
       "playback_stop_grace_ms": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 1000, "description": "Quiet time after the last delivered audio packet before sending tts/stop." },
       "playback_no_audio_stop_timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 30000, "default": 5000, "description": "Fail-safe delay before sending tts/stop when a turn produced no audio." }

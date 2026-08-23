@@ -59,6 +59,10 @@ class XiaozhiGateway:
             1,
             int(config.get("playback_initial_burst_frames", 5)),
         )
+        self.playback_initial_burst_interval_ms = min(
+            self.frame_duration_ms - 1,
+            max(0, int(config.get("playback_initial_burst_interval_ms", 12))),
+        )
         self.playback_queue_ms = max(
             self.prebuffer_ms,
             int(config.get("playback_queue_ms", 120_000)),
@@ -381,9 +385,9 @@ class XiaozhiGateway:
                         await self._ws.send(message)
                     except Exception:
                         pass
-            if sent_message:
-                await asyncio.sleep(0.002)
-                continue
+            # Control messages share the WebSocket, but must not consume an
+            # audio clock slot. Continue into the playout scheduler in the
+            # same iteration so display traffic cannot stretch speech timing.
             # Do not start playback on the first small cloud-TTS burst. A 120ms
             # quiet gap does not mean a short reply has finished; it is often
             # merely the gap before the next vendor delta, and starting there
@@ -415,7 +419,8 @@ class XiaozhiGateway:
                     "[MUXIVA][XIAOZHI][playback.started] "
                     f"queued_frames={queued_frames} "
                     f"prebuffer_frames={self._prebuffer_frames} "
-                    f"initial_burst_frames={initial_burst_remaining}",
+                    f"initial_burst_frames={initial_burst_remaining} "
+                    f"initial_burst_interval_ms={self.playback_initial_burst_interval_ms}",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -486,23 +491,25 @@ class XiaozhiGateway:
                         self._tts_last_packet_sent_at = time.monotonic()
                 except Exception:
                     pass
-            # Match the Xiaozhi server's client-jitter-buffer trick: put only
-            # the first few protocol frames on the wire immediately, then
-            # pace every later frame against an absolute deadline.  Five
-            # 60 ms frames give the ESP32 300 ms of startup reserve without
-            # burst-sending an entire reply.
+            # Seed the firmware jitter buffer with a small, bounded lead, but
+            # space those leading packets so constrained ESP32 receive queues
+            # are not hit by an instantaneous burst. After that startup window,
+            # every exact Opus frame follows one absolute real-time clock.
             if initial_burst_remaining > 0:
                 initial_burst_remaining -= 1
                 if initial_burst_remaining > 0:
+                    if self.playback_initial_burst_interval_ms > 0:
+                        await asyncio.sleep(
+                            self.playback_initial_burst_interval_ms / 1000.0
+                        )
                     continue
                 next_audio_send_at = time.monotonic() + frame_seconds
                 await asyncio.sleep(
                     max(0.0, next_audio_send_at - time.monotonic())
                 )
                 continue
-            # Pace against an absolute monotonic deadline. Sleeping a full
-            # frame after each send accumulates encoding/event-loop overhead,
-            # making 60 ms audio packets arrive slower than real time.
+            # Sleeping a full frame after each send would accumulate
+            # encoding/event-loop overhead, so pace against deadlines.
             now = time.monotonic()
             if (
                 next_audio_send_at is None
@@ -537,8 +544,19 @@ class XiaozhiGateway:
                         if op == "audio" and role == "sink":
                             pcm = bytes.fromhex(command.get("pcm_hex", ""))
                             gateway.publish_audio(pcm)
-                        elif op == "message" and role == "events":
-                            gateway.publish_message(command.get("payload") or {})
+                        elif op == "message":
+                            payload = command.get("payload") or {}
+                            # Event Encoder owns ordinary display/control
+                            # messages.  The audio Sink owns exactly one
+                            # control transition: the deferred tts/stop emitted
+                            # after its cross-edge PCM frame barrier releases.
+                            sink_stop = (
+                                role == "sink"
+                                and payload.get("type") == TTS_TYPE
+                                and payload.get("state") == "stop"
+                            )
+                            if role == "events" or sink_stop:
+                                gateway.publish_message(payload)
                         elif op == "reset":
                             gateway.reset_egress()
                 except (ConnectionError, OSError):

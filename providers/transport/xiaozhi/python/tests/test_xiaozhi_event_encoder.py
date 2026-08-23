@@ -49,6 +49,7 @@ finally:
 
 class Frame:
     def __init__(self, topic="", text="", sequence=1, payload=""):
+        self.name = "muxiva.turn.cancelled"
         self.topic = topic
         self.text = text
         self.sequence = sequence
@@ -61,7 +62,7 @@ class Context:
 
 
 class XiaozhiEventEncoderTests(unittest.TestCase):
-    def test_only_tts_drain_requests_device_stop(self):
+    def test_normal_tts_drain_is_owned_by_audio_sink(self):
         node = module.XiaozhiEventEncoderNode()
         node.on_process(Frame(text="问题", sequence=10), Context("transcript_in"))
         commands_before_drain = len(node._client.commands)
@@ -70,10 +71,8 @@ class XiaozhiEventEncoderTests(unittest.TestCase):
             Frame(topic="muxiva.voice.tts.drained", sequence=10),
             Context("event_in"),
         )
-        self.assertEqual(
-            node._client.commands[-1]["payload"],
-            {"type": "tts", "state": "stop"},
-        )
+        self.assertEqual(len(node._client.commands), commands_before_drain)
+        self.assertFalse(node._speaking)
 
         node = module.XiaozhiEventEncoderNode()
         node.on_process(Frame(text="问题", sequence=10), Context("transcript_in"))
@@ -120,6 +119,33 @@ class XiaozhiEventEncoderTests(unittest.TestCase):
             Context("event_in"),
         )
         self.assertEqual(len(node._client.commands), before)
+
+    def test_raw_vad_activity_never_clears_active_playback(self):
+        node = module.XiaozhiEventEncoderNode()
+        node.on_process(Frame(text="正在播报的问题", sequence=20), Context("transcript_in"))
+        before = list(node._client.commands)
+
+        node.on_process(
+            Frame(topic="muxiva.voice.speech.started", sequence=21),
+            Context("event_in"),
+        )
+        node.on_process(
+            Frame(topic="muxiva.voice.speech.stopped", sequence=22),
+            Context("event_in"),
+        )
+
+        self.assertEqual(node._client.commands, before)
+        self.assertTrue(node._speaking)
+
+    def test_validated_barge_in_signal_still_clears_playback(self):
+        node = module.XiaozhiEventEncoderNode()
+        node.on_process(Frame(text="正在播报的问题", sequence=20), Context("transcript_in"))
+
+        node.on_signal(Frame(sequence=30))
+
+        self.assertIn({"op": "reset"}, node._client.commands)
+        self.assertEqual(node._client.commands[-1]["payload"]["state"], "stop")
+        self.assertFalse(node._speaking)
 
 
 if __name__ == "__main__":

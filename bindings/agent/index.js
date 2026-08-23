@@ -1,5 +1,12 @@
-const DEFAULT_CANCEL_SIGNALS = ['muxiva.agent.cancel', 'muxiva.voice.speech.started']
-const DEFAULT_PREVIOUS_ONLY_CANCEL_SIGNALS = ['muxiva.voice.speech.started']
+const DEFAULT_CANCEL_SIGNALS = [
+  'muxiva.turn.cancelled',
+  'muxiva.agent.cancel',
+  'muxiva.voice.speech.started',
+]
+const DEFAULT_PREVIOUS_ONLY_CANCEL_SIGNALS = [
+  'muxiva.turn.cancelled',
+  'muxiva.voice.speech.started',
+]
 
 function positiveInteger(value, fallback, maximum) {
   return Number.isSafeInteger(value) && value > 0 ? Math.min(value, maximum) : fallback

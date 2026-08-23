@@ -6,11 +6,12 @@ ASR, TTS, RTC, or conversational turns; those semantics stay inside the relevant
 Official voice Nodes:
 
 - `agora.audio_source`: C++ RTC audio Source with internal scheduling and no Clock Node.
-- `agora.audio_sink`: C++ RTC audio Sink that clears playback on `muxiva.voice.speech.started`.
+- `builtin.voice_turn_controller`: vendor-neutral turn admission and sole cancellation decision point.
+- `agora.audio_sink`: C++ RTC audio Sink that clears playback on canonical `muxiva.turn.cancelled`.
 - `qwen.audio_realtime`: Python speech-to-speech Node owning VAD, ASR, reasoning, TTS, and late-response cancellation.
-- `qwen.asr_realtime`: Qwen Server VAD + ASR and the cascade interruption source.
+- `qwen.asr_realtime`: Qwen Server VAD + ASR that emits activity observations and transcripts only.
 - `qwen.llm_stream`, `qwen.tts_realtime`: replaceable, tick-drained background Nodes whose
-  active vendor connections close on `muxiva.voice.speech.started`.
+  active work is cancelled on `muxiva.turn.cancelled`.
 - `pi.agent`: Demo 2's thin TypeScript adapter Node. It loads the independently
   released [Pi coding Agent](nodes/pi-agent.md), which owns sessions, Tool Calls,
   and workspace-scoped coding capability under the

@@ -102,7 +102,10 @@ class QwenLlmStreamNode:
         raise ValueError(f"Qwen LLM received unsupported input port: {input_port}")
 
     def on_signal(self, signal: Any, _ctx: Any = None) -> None:
-        if getattr(signal, "name", "") != "muxiva.voice.speech.started":
+        if getattr(signal, "name", "") not in {
+            "muxiva.turn.cancelled",
+            "muxiva.voice.speech.started",  # pre-controller compatibility
+        }:
             return
         self._cancel_current()
         self._log("generation.cancelled", sequence=getattr(signal, "sequence", 0))

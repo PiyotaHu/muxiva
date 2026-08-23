@@ -20,6 +20,8 @@ class QwenAsrProtocolError(RuntimeError):
 
 
 class _WebSocketTransport:
+    _SEND_TIMEOUT_SECONDS = 2.0
+
     def __init__(self, endpoint: str, api_key: str, session: dict[str, Any]) -> None:
         try:
             import websocket
@@ -39,7 +41,15 @@ class _WebSocketTransport:
         self._socket.settimeout(0)
 
     def send(self, event: dict[str, Any]) -> None:
-        self._socket.send(json.dumps(event, separators=(",", ":")))
+        # ``settimeout(0)`` is required by ``poll`` so graph ticks never block,
+        # but websocket-client bypasses its SSLWantWrite/EWOULDBLOCK retry path
+        # when the socket is non-blocking.  Give writes a short bounded timeout
+        # and immediately restore non-blocking reads afterwards.
+        self._socket.settimeout(self._SEND_TIMEOUT_SECONDS)
+        try:
+            self._socket.send(json.dumps(event, separators=(",", ":")))
+        finally:
+            self._socket.settimeout(0)
 
     def poll(self, maximum: int = 64) -> Iterable[dict[str, Any]]:
         for _ in range(maximum):
@@ -87,12 +97,9 @@ class QwenAsrRealtimeNode:
         self._connect_transport()
 
     def _connect_transport(self) -> None:
-        key, _workspace = _credentials()
+        key, workspace = _credentials()
         model = str(self.config.get("model", "qwen3-asr-flash-realtime"))
-        endpoint = (
-            "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
-            f"?model={quote(model, safe='-._')}"
-        )
+        endpoint = realtime_endpoint(self.config, workspace, model)
         self._transport = self._transport_factory(endpoint, key, session_update(self.config))
         self._log(
             "session.connect",
@@ -269,11 +276,17 @@ class QwenAsrRealtimeNode:
         if self._interruption_emitted:
             return
         self._interruption_emitted = True
+        # Provider adapters publish observations and transcripts. Cancellation
+        # ownership belongs to builtin.voice_turn_controller. This opt-in exists
+        # only for graphs created before the standard turn protocol.
+        if not bool(self.config.get("emit_legacy_barge_in_signal", False)):
+            self._log("speech.validated", sequence=sequence, action="delegate_to_turn_controller")
+            return
         ctx.emit_signal(
             "muxiva.voice.speech.started",
             {"node": "qwen.asr_realtime", "detector": "qwen_server_vad"},
         )
-        self._log("speech.validated", sequence=sequence, action="interrupt")
+        self._log("speech.validated", sequence=sequence, action="legacy_interrupt")
 
     def _is_ignorable_utterance(self, text: str) -> bool:
         if not bool(self.config.get("ignore_filler_utterances", True)):
@@ -325,6 +338,16 @@ def session_update(config: dict[str, Any]) -> dict[str, Any]:
             },
         },
     }
+
+
+def realtime_endpoint(config: dict[str, Any], workspace: str, model: str) -> str:
+    region = str(config.get("region", "cn-beijing")).strip()
+    if region not in {"cn-beijing", "ap-southeast-1"}:
+        raise ValueError("Qwen ASR region must be cn-beijing or ap-southeast-1")
+    return (
+        f"wss://{workspace}.{region}.maas.aliyuncs.com/api-ws/v1/realtime"
+        f"?model={quote(model, safe='-._')}"
+    )
 
 
 def audio_append(pcm: bytes) -> dict[str, str]:

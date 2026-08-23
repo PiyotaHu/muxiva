@@ -33,6 +33,7 @@ pub const AUDIO_RESAMPLER: &str = "builtin.audio_resampler";
 pub const INTERVAL_TICK: &str = "builtin.interval_tick";
 pub const AUDIO_VAD: &str = "builtin.audio_vad";
 pub const VOICE_TURN_CONTEXT: &str = "builtin.voice_turn_context";
+pub const VOICE_TURN_CONTROLLER: &str = "builtin.voice_turn_controller";
 pub const TEXT_CANCELLATION_GATE: &str = "builtin.text_cancellation_gate";
 pub const DEMO_MICROPHONE: &str = "builtin.demo.microphone";
 pub const DEMO_STREAMING_ASR: &str = "builtin.demo.streaming_asr";
@@ -177,6 +178,25 @@ fn register_audio_nodes(registry: &mut NodeRegistry) {
             empty_schema(),
         ),
         Arc::new(VoiceTurnContextFactory),
+    );
+    register(
+        registry,
+        typed_descriptor(
+            VOICE_TURN_CONTROLLER,
+            NodeKind::Transform,
+            &[
+                ("transcript_in", PortDirection::Input, FrameType::Text),
+                ("activity_in", PortDirection::Input, FrameType::Event),
+                ("interrupt_in", PortDirection::Input, FrameType::Signal),
+                ("prompt_out", PortDirection::Output, FrameType::Text),
+                ("transcript_out", PortDirection::Output, FrameType::Text),
+                ("activity_out", PortDirection::Output, FrameType::Event),
+                ("event_out", PortDirection::Output, FrameType::Event),
+                ("signal_out", PortDirection::Output, FrameType::Signal),
+            ],
+            voice_turn_controller_schema(),
+        ),
+        Arc::new(VoiceTurnControllerFactory),
     );
 }
 
@@ -1753,29 +1773,10 @@ impl AudioVad {
         )?;
         context.publish_notification(event.as_event().expect("event payload").clone())?;
         context.emit(PortName::new("speech_out").unwrap(), event)?;
-        if active {
-            let signal = derive_payload(
-                input,
-                context.node_id(),
-                "audio-vad-interrupt",
-                FramePayload::Signal(SignalData::new(
-                    NamespacedName::new("muxiva.voice.speech.started")?,
-                    SchemaVersion::new(1)?,
-                    context.node_id().clone(),
-                    Value::String("barge-in".into()),
-                )),
-            )?;
-            context.emit_signal(signal.as_signal().expect("signal payload").clone())?;
-        }
         println!(
-            "[MUXIVA][VOICE][{}] state={} action={}",
+            "[MUXIVA][VOICE][{}] state={} action=observe",
             context.node_id(),
-            if active { "speaking" } else { "listening" },
-            if active {
-                "interrupt-downstream"
-            } else {
-                "close-turn"
-            }
+            if active { "speaking" } else { "listening" }
         );
         Ok(())
     }
@@ -1914,6 +1915,381 @@ impl Node for VoiceTurnContext {
                 ))
             }
         }
+        Ok(())
+    }
+}
+
+fn voice_turn_controller_schema() -> ConfigSchema {
+    ConfigSchema::new(map([
+        ("type", Value::String("object".into())),
+        (
+            "properties",
+            map([
+                (
+                    "ignore_filler_utterances",
+                    map([
+                        ("type", Value::String("boolean".into())),
+                        ("default", Value::Bool(true)),
+                    ]),
+                ),
+                (
+                    "minimum_utterance_characters",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(1)),
+                        ("maximum", Value::Integer(20)),
+                        ("default", Value::Integer(1)),
+                    ]),
+                ),
+                (
+                    "short_utterance_allowlist",
+                    map([
+                        ("type", Value::String("array".into())),
+                        (
+                            "items",
+                            map([
+                                ("type", Value::String("string".into())),
+                                ("minLength", Value::Integer(1)),
+                                ("maxLength", Value::Integer(32)),
+                            ]),
+                        ),
+                        ("maxItems", Value::Integer(64)),
+                        ("default", Value::List(Vec::new().into_boxed_slice())),
+                    ]),
+                ),
+                (
+                    "ignored_utterances",
+                    map([
+                        ("type", Value::String("array".into())),
+                        (
+                            "items",
+                            map([
+                                ("type", Value::String("string".into())),
+                                ("minLength", Value::Integer(1)),
+                                ("maxLength", Value::Integer(32)),
+                            ]),
+                        ),
+                        ("maxItems", Value::Integer(64)),
+                        ("default", Value::List(Vec::new().into_boxed_slice())),
+                    ]),
+                ),
+            ]),
+        ),
+        (
+            "required",
+            Value::List(
+                vec![
+                    Value::String("ignore_filler_utterances".into()),
+                    Value::String("minimum_utterance_characters".into()),
+                    Value::String("short_utterance_allowlist".into()),
+                    Value::String("ignored_utterances".into()),
+                ]
+                .into_boxed_slice(),
+            ),
+        ),
+        ("additionalProperties", Value::Bool(false)),
+    ]))
+}
+
+struct VoiceTurnControllerFactory;
+
+impl NodeFactory for VoiceTurnControllerFactory {
+    fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
+        parse_voice_turn_controller_config(config).map(|_| ())
+    }
+
+    fn create(
+        &self,
+        _node_id: &NodeId,
+        config: &ConfigMap,
+    ) -> Result<Box<dyn Node>, NodeFactoryError> {
+        let parsed = parse_voice_turn_controller_config(config)?;
+        Ok(Box::new(VoiceTurnController {
+            ignore_fillers: parsed.ignore_fillers,
+            minimum_characters: parsed.minimum_characters,
+            allowlist: parsed.allowlist,
+            ignored: parsed.ignored,
+            generation: 0,
+        }))
+    }
+}
+
+struct VoiceTurnControllerConfig {
+    ignore_fillers: bool,
+    minimum_characters: usize,
+    allowlist: BTreeSet<String>,
+    ignored: BTreeSet<String>,
+}
+
+fn parse_voice_turn_controller_config(
+    config: &ConfigMap,
+) -> Result<VoiceTurnControllerConfig, NodeFactoryError> {
+    if config.len() != 4 {
+        return Err(config_error(
+            "voice turn controller requires exactly four policy fields",
+        ));
+    }
+    let ignore_fillers = match config.get("ignore_filler_utterances") {
+        Some(Value::Bool(value)) => *value,
+        _ => return Err(config_error("ignore_filler_utterances must be boolean")),
+    };
+    let minimum_characters = match config.get("minimum_utterance_characters") {
+        Some(Value::Integer(value @ 1..=20)) => *value as usize,
+        _ => {
+            return Err(config_error(
+                "minimum_utterance_characters must be between 1 and 20",
+            ))
+        }
+    };
+    Ok(VoiceTurnControllerConfig {
+        ignore_fillers,
+        minimum_characters,
+        allowlist: voice_string_set(config, "short_utterance_allowlist")?,
+        ignored: voice_string_set(config, "ignored_utterances")?,
+    })
+}
+
+fn voice_string_set(
+    config: &ConfigMap,
+    name: &'static str,
+) -> Result<BTreeSet<String>, NodeFactoryError> {
+    let Some(Value::List(values)) = config.get(name) else {
+        return Err(config_error("voice utterance policy lists must be arrays"));
+    };
+    if values.len() > 64 {
+        return Err(config_error(
+            "voice utterance policy lists accept at most 64 values",
+        ));
+    }
+    let mut output = BTreeSet::new();
+    for value in values {
+        let Value::String(value) = value else {
+            return Err(config_error("voice utterance policy values must be strings"));
+        };
+        let normalized = normalize_voice_utterance(value);
+        if normalized.is_empty() || normalized.chars().count() > 32 {
+            return Err(config_error(
+                "voice utterance policy values must contain 1 to 32 characters",
+            ));
+        }
+        output.insert(normalized);
+    }
+    Ok(output)
+}
+
+fn normalize_voice_utterance(value: &str) -> String {
+    const PUNCTUATION: &str = "，。！？、,.!?…~～;；:：'\"“”‘’（）()[]【】<>《》*_—-";
+    value
+        .chars()
+        .filter(|character| !character.is_whitespace() && !PUNCTUATION.contains(*character))
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+struct VoiceTurnController {
+    ignore_fillers: bool,
+    minimum_characters: usize,
+    allowlist: BTreeSet<String>,
+    ignored: BTreeSet<String>,
+    generation: u64,
+}
+
+impl VoiceTurnController {
+    fn ignored_reason(&self, text: &str) -> Option<&'static str> {
+        let normalized = normalize_voice_utterance(text);
+        if normalized.is_empty() {
+            return Some("empty");
+        }
+        if self.ignored.contains(&normalized) {
+            return Some("configured");
+        }
+        if self.ignore_fillers {
+            const FILLER_CHARACTERS: &str = "啊阿呀嗯呃额哦噢唔哎诶欸唉呐哼";
+            if normalized
+                .chars()
+                .all(|character| FILLER_CHARACTERS.contains(character))
+            {
+                return Some("filler");
+            }
+            if matches!(normalized.as_str(), "咳" | "咳咳" | "咳嗽" | "咳嗽声") {
+                return Some("non_speech");
+            }
+        }
+        if normalized.chars().count() < self.minimum_characters
+            && !self.allowlist.contains(&normalized)
+        {
+            return Some("too_short");
+        }
+        None
+    }
+
+    fn next_generation(&mut self) -> u64 {
+        self.generation = self.generation.saturating_add(1);
+        self.generation
+    }
+
+    fn decision_payload(
+        generation: u64,
+        turn_id: u64,
+        reason: &str,
+    ) -> muxiva_types::Result<Value> {
+        Ok(Value::Map(ValueMap::try_from_iter([
+            (
+                "generation",
+                Value::Integer(i64::try_from(generation).unwrap_or(i64::MAX)),
+            ),
+            (
+                "turn_id",
+                Value::Integer(i64::try_from(turn_id).unwrap_or(i64::MAX)),
+            ),
+            ("reason", Value::String(reason.into())),
+            (
+                "controller",
+                Value::String("builtin.voice_turn_controller".into()),
+            ),
+        ])?))
+    }
+
+    fn emit_event(
+        input: &Frame,
+        context: &mut NodeContext,
+        topic: &str,
+        payload: Value,
+    ) -> muxiva_types::Result<()> {
+        let event = derive_payload(
+            input,
+            context.node_id(),
+            "voice-turn-event",
+            FramePayload::Event(EventData::new(
+                NamespacedName::new(topic)?,
+                SchemaVersion::new(1)?,
+                context.node_id().clone(),
+                payload,
+            )),
+        )?;
+        context.publish_notification(event.as_event().expect("event payload").clone())?;
+        context.emit(PortName::new("event_out").unwrap(), event)?;
+        Ok(())
+    }
+
+    fn commit_cancellation(
+        &mut self,
+        input: &Frame,
+        context: &mut NodeContext,
+        reason: &str,
+    ) -> muxiva_types::Result<u64> {
+        let generation = self.next_generation();
+        let turn_id = input.header().sequence_id().get();
+        let signal = derive_payload(
+            input,
+            context.node_id(),
+            "voice-turn-cancel",
+            FramePayload::Signal(SignalData::new(
+                NamespacedName::new(muxiva_types::voice::TURN_CANCELLED)?,
+                SchemaVersion::new(1)?,
+                context.node_id().clone(),
+                Self::decision_payload(generation, turn_id, reason)?,
+            )),
+        )?;
+        context.emit_signal(signal.as_signal().expect("signal payload").clone())?;
+        Ok(generation)
+    }
+}
+
+impl Node for VoiceTurnController {
+    fn on_process(
+        &mut self,
+        input: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        let input = input.ok_or_else(|| {
+            node_error(
+                "MUXIVA-VOICE-TURN-INPUT",
+                "voice turn controller requires input",
+            )
+        })?;
+        match context.input_port().map(PortName::as_str) {
+            Some("activity_in") => {
+                input.ensure_type(FrameType::Event)?;
+                context.emit(PortName::new("activity_out").unwrap(), input)?;
+            }
+            Some("transcript_in") => {
+                let text = input
+                    .as_text()
+                    .ok_or_else(|| {
+                        node_error("MUXIVA-VOICE-TURN-TYPE", "transcript must be text")
+                    })?
+                    .data()
+                    .as_str()
+                    .trim()
+                    .to_owned();
+                let turn_id = input.header().sequence_id().get();
+                if let Some(reason) = self.ignored_reason(&text) {
+                    Self::emit_event(
+                        &input,
+                        context,
+                        muxiva_types::voice::TURN_UTTERANCE_IGNORED,
+                        Self::decision_payload(self.generation, turn_id, reason)?,
+                    )?;
+                    println!(
+                        "[MUXIVA][VOICE-TURN][ignored] turn={} generation={} reason={}",
+                        turn_id, self.generation, reason
+                    );
+                    return Ok(());
+                }
+
+                let generation = self.commit_cancellation(&input, context, "new_turn")?;
+                let prompt = derive_payload(
+                    &input,
+                    context.node_id(),
+                    "voice-turn-prompt",
+                    FramePayload::Text(TextData::new(text.into_boxed_str())),
+                )?;
+                context.emit(PortName::new("prompt_out").unwrap(), prompt.clone())?;
+                context.emit(PortName::new("transcript_out").unwrap(), prompt)?;
+                for topic in [
+                    muxiva_types::voice::TURN_STARTED,
+                    muxiva_types::voice::TURN_UTTERANCE_COMMITTED,
+                ] {
+                    Self::emit_event(
+                        &input,
+                        context,
+                        topic,
+                        Self::decision_payload(generation, turn_id, "admitted")?,
+                    )?;
+                }
+                println!(
+                    "[MUXIVA][VOICE-TURN][committed] turn={} generation={} action=cancel_previous_and_start",
+                    turn_id, generation
+                );
+            }
+            _ => {
+                return Err(node_error(
+                    "MUXIVA-VOICE-TURN-PORT",
+                    "voice turn controller received an unknown data port",
+                ))
+            }
+        }
+        Ok(())
+    }
+
+    fn on_signal(
+        &mut self,
+        signal: muxiva_types::SignalFrame,
+        context: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        let input = Frame::Signal(signal);
+        let generation = self.commit_cancellation(&input, context, "authoritative_interrupt")?;
+        Self::emit_event(
+            &input,
+            context,
+            muxiva_types::voice::TURN_CANCELLED,
+            Self::decision_payload(
+                generation,
+                input.header().sequence_id().get(),
+                "authoritative_interrupt",
+            )?,
+        )?;
         Ok(())
     }
 }
@@ -2781,6 +3157,74 @@ fn derive_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn voice_turn_controller() -> VoiceTurnController {
+        VoiceTurnController {
+            ignore_fillers: true,
+            minimum_characters: 3,
+            allowlist: ["闭嘴".to_owned(), "天气".to_owned()]
+                .into_iter()
+                .collect(),
+            ignored: ["咳嗽声".to_owned()].into_iter().collect(),
+            generation: 0,
+        }
+    }
+
+    #[test]
+    fn voice_activity_is_observational_and_never_emits_cancellation() {
+        let mut vad = AudioVad {
+            threshold: 1,
+            start_frames: 1,
+            stop_frames: 1,
+            loud_frames: 0,
+            quiet_frames: 0,
+            active: false,
+        };
+        let node_id = NodeId::new("vad-test").unwrap();
+        let mut context = NodeContext::new(node_id, ConfigMap::empty(), None);
+        vad.transition(true, &source_frame("activity").unwrap(), &mut context)
+            .unwrap();
+        assert!(context.signals().is_empty());
+        assert_eq!(context.emissions().len(), 1);
+        assert_eq!(
+            context.emissions()[0]
+                .frame()
+                .as_event()
+                .unwrap()
+                .data()
+                .topic()
+                .as_str(),
+            muxiva_types::voice::VOICE_ACTIVITY_STARTED
+        );
+    }
+
+    #[test]
+    fn voice_turn_policy_rejects_fillers_coughs_and_tiny_echoes() {
+        let controller = voice_turn_controller();
+        assert_eq!(controller.ignored_reason("嗯……"), Some("filler"));
+        assert_eq!(controller.ignored_reason("（咳嗽声）"), Some("configured"));
+        assert_eq!(controller.ignored_reason("好"), Some("too_short"));
+        assert_eq!(controller.ignored_reason("闭嘴"), None);
+        assert_eq!(controller.ignored_reason("榴莲为什么这么臭？"), None);
+    }
+
+    #[test]
+    fn voice_turn_generation_and_payload_are_monotonic_and_explicit() {
+        let mut controller = voice_turn_controller();
+        assert_eq!(controller.next_generation(), 1);
+        assert_eq!(controller.next_generation(), 2);
+        let Value::Map(payload) =
+            VoiceTurnController::decision_payload(2, 91, "admitted").unwrap()
+        else {
+            panic!("decision payload must be a map");
+        };
+        assert_eq!(payload.get("generation"), Some(&Value::Integer(2)));
+        assert_eq!(payload.get("turn_id"), Some(&Value::Integer(91)));
+        assert_eq!(
+            muxiva_types::voice::TURN_CANCELLED,
+            "muxiva.turn.cancelled"
+        );
+    }
 
     fn speech_formatter() -> SpeechFormatter {
         SpeechFormatter {

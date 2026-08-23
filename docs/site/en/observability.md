@@ -83,7 +83,7 @@ Open **◎ Observe → Semantic trace** to inspect the meaning flowing through t
 
 Click a row to inspect the full bounded payload plus Frame ID, Trace ID, Stream ID, and Sequence. Use the type selector or search box to isolate one Node, Port, topic, text fragment, Frame, or Trace. Seeing the same Frame ID as an output and then as the next Node's input confirms propagation; a missing input row identifies the exact boundary where it stopped.
 
-Studio derives display turns from output markers named `muxiva.turn.started`, `muxiva.voice.speech.started`, or another `*.turn.started` / `*.speech.started` name. The marker itself is included in the turn. Duplicate Signal/Event representations of the same marker are deduplicated for grouping, but both remain visible as separate trace rows. A Graph without turn markers is shown as one **Session flow** group. This is presentation logic in Studio—Runtime Core does not own or mutate a business Turn ID.
+Studio derives display turns from `muxiva.turn.started` emitted by `builtin.voice_turn_controller`, including its `turn_id` and `generation` payload. Raw `muxiva.voice.speech.started` is activity observation and does not create a business turn. A Graph without turn markers is shown as one **Session flow** group. Runtime scheduling does not own the business Turn ID; the explicit Voice Turn Controller Node owns and emits that semantic state.
 
 Semantic tracing covers Graph Text/Event Frame ports and the graph-local Signal control plane, including Signal emission and delivery. It deliberately does **not** label process-local `NotificationBus` messages as Graph Events; those remain visible through their explicit NotificationBus consumer/logging integration.
 

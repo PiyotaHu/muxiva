@@ -9,6 +9,7 @@ though they share the Rust runtime binary.
 | `builtin.audio_vad` | Algorithm | `speech.vad` | PCM Audio in and speech activity Event out |
 | `builtin.speech_formatter` | Algorithm | `text.speech_format` | Streaming Markdown Text and cancellation Signal in; TTS-safe plain Text out |
 | `builtin.voice_turn_context` | Control | `conversation.turn_context` | Transcript plus speech Event in and turn context Text out |
+| `builtin.voice_turn_controller` | Control | `conversation.turn_control` | Filters meaningless transcripts, admits turns, and exclusively emits canonical cancellation |
 | `builtin.interval_tick` | Control | `clock.interval` | Periodic Event out |
 | `builtin.text_source` | Utility | `text.source` | Configured UTF-8 Text out |
 | `builtin.uppercase` | Utility | `text.uppercase` | UTF-8 Text in and uppercase Text out |
@@ -31,3 +32,10 @@ messages. Its `code_block_message`, `table_message`, and `strip_urls` values are
 Studio Node configuration. The streaming parser retains fence and table state across Text Frames;
 an interruption Signal or a new sequence resets that state, so stale unfinished Markdown cannot
 silence a later turn.
+
+`builtin.voice_turn_controller` is the sole interruption decision point in a cascade voice graph.
+VAD `speech.started/stopped` values are observations. Only an admitted final transcript produces
+`muxiva.turn.cancelled` and a same-sequence Prompt. Fillers, coughs, minimum length, and short
+command allowlists are configurable. An authoritative device stop first emits
+`muxiva.turn.interrupt.requested` and still passes through the controller before reaching Agent,
+TTS, and playback Nodes.

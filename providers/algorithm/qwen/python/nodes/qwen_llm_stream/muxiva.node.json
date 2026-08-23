@@ -15,7 +15,7 @@
   "tags": ["llm", "generation", "cancellation", "streaming"],
   "ports": [
     { "name": "text_in", "direction": "input", "frame_type": "text", "schema": { "semantics": "prompt_or_context", "streaming": true } },
-    { "name": "signal_in", "direction": "input", "frame_type": "signal", "schema": { "semantics": ["graph_control", "barge_in"] } },
+    { "name": "signal_in", "direction": "input", "frame_type": "signal", "schema": { "semantics": ["turn_cancellation"], "signal_names": ["muxiva.turn.cancelled"] } },
     { "name": "text_out", "direction": "output", "frame_type": "text", "schema": { "semantics": "assistant_delta", "streaming": true } },
     { "name": "event_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["response_completed"], "streaming": true } }
   ],

@@ -29,7 +29,13 @@
       "name": "signal_in",
       "direction": "input",
       "frame_type": "signal",
-      "schema": { "semantics": ["graph_control", "barge_in"] }
+      "schema": { "semantics": ["turn_cancellation"], "signal_names": ["muxiva.turn.cancelled"] }
+    },
+    {
+      "name": "event_in",
+      "direction": "input",
+      "frame_type": "event",
+      "schema": { "semantics": ["tts_media_drain_barrier"] }
     }
   ],
   "config_schema": {

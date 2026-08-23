@@ -25,9 +25,10 @@ Signal 用于打断、取消、刷新缓存或其他跨 Node 控制。Node 通�
 `ctx.emit_signal(...)` 发出，Runtime 只沿当前 Node 的显式出 Edge 投递，并调用目标 Node
 的 `on_signal`；Core 不解释 Signal 名称，也不执行语音业务规则。Signal 不是进程级广播。
 
-典型场景是 Barge-in：用户在 Agent 播放回答时重新说话，Qwen Realtime 或 VAD Node
-发出 `muxiva.voice.speech.started`。Qwen Node 取消自己的生成并丢弃晚到片段，Agora
-Audio Sink 收到同一 Signal 后清空播放队列。Runtime 只负责投递。
+典型场景是 Barge-in：VAD 只发 `speech.started/stopped` 观察 Event，ASR 最终文本进入
+`builtin.voice_turn_controller`。控制器过滤口水词并批准新轮次后，唯一发出
+`muxiva.turn.cancelled`；Agent/TTS 丢弃旧 generation，Audio Sink 清空旧播放。Runtime
+只负责沿显式 Edge 投递。
 
 ## NotificationBus：让旁观者知道发生了什么
 
@@ -59,8 +60,8 @@ Node 用 `ctx.publish_notification(...)` 发布；Studio、日志、指标系统
 
 ## 业务会话与打断
 
-如果应用需要 Turn，它应由模型 Node、上下文 Node 或项目 Node 管理，而不是由 Core
-硬编码。发生打断时，相关 Node 通常需要做到：
+语音 Turn 由框架内置但显式可配置的 `builtin.voice_turn_controller` 管理，而不是由
+Runtime 调度器硬编码，也不应散落在各 Provider。发生打断时，相关 Node 需要做到：
 
 1. 模型 Node 取消当前远端请求；
 2. 模型 Node 丢弃该请求晚到的片段；

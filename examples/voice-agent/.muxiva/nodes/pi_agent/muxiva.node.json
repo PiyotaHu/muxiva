@@ -47,6 +47,7 @@
       "artwork_tools_enabled": { "type": "boolean", "default": false, "description": "Expose image generation, persistent artwork, replay, and gallery tools." },
       "artwork_public_base_url": { "type": "string", "default": "", "description": "Public base URL for generated artwork. Prefer MUXIVA_IMAGE_PUBLIC_URL for deployments." },
       "artwork_display_duration_ms": { "type": "integer", "minimum": 1000, "maximum": 300000, "default": 15000 },
+      "artwork_style_prompt": { "type": "string", "default": "", "description": "Optional medium and display constraints prepended to image-generation requests while preserving the original user prompt in the gallery." },
       "image_generation_model": { "type": "string", "default": "wan2.6-t2i" },
       "image_generation_endpoint": { "type": "string", "default": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation", "description": "Image generation endpoint. May also be supplied through DASHSCOPE_IMAGE_ENDPOINT." },
       "python_executable": { "type": "string", "default": "python3" },
@@ -71,8 +72,8 @@
       "failure_message": { "type": "string", "default": "这次响应失败了，我已经自动恢复，请再说一次。" },
       "progress_message": { "type": "string", "default": "", "description": "Optional application-owned progress message. Empty disables spoken progress." },
       "progress_delay_ms": { "type": "integer", "minimum": 0, "maximum": 30000, "default": 0, "description": "Delay before the optional progress message; zero disables it." },
-      "cancel_signals": { "type": "array", "items": { "type": "string" }, "default": ["muxiva.agent.cancel", "muxiva.voice.speech.started"] },
-      "previous_only_cancel_signals": { "type": "array", "items": { "type": "string" }, "default": ["muxiva.voice.speech.started"], "description": "Signals that cancel only older-sequence Turns; this prevents a final transcript's same-sequence barge-in Signal from cancelling its own new Prompt." }
+      "cancel_signals": { "type": "array", "items": { "type": "string" }, "default": ["muxiva.turn.cancelled", "muxiva.agent.cancel", "muxiva.voice.speech.started"] },
+      "previous_only_cancel_signals": { "type": "array", "items": { "type": "string" }, "default": ["muxiva.turn.cancelled", "muxiva.voice.speech.started"], "description": "Canonical and compatibility Signals that cancel only older-sequence Turns, so a same-sequence admitted Prompt survives its cancellation watermark." }
     },
     "required": ["model", "system_prompt"],
     "additionalProperties": false

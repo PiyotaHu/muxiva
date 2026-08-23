@@ -1,8 +1,8 @@
 # Qwen Streaming ASR
 
 Uses Alibaba Cloud Qwen Server VAD to detect speech boundaries while producing preview and final
-transcripts. It is Demo 2's interruption source: `speech.started` leaves through `signal_out` and
-enters explicit control Edges.
+transcripts. It reports facts only: `speech.started/stopped` are observational Events and final
+transcripts go to `builtin.voice_turn_controller` for turn admission and cancellation decisions.
 
 | Property | Value |
 | --- | --- |
@@ -16,7 +16,7 @@ enters explicit control Edges.
 | --- | --- | --- |
 | `audio_in` | Input Audio | PCM S16LE, 16 kHz, mono, streaming |
 | `speech_out` | Output Event | Server-VAD `speech.started` / `speech.stopped` |
-| `signal_out` | Output Signal | `muxiva.voice.speech.started` for barge-in |
+| `signal_out` | Output Signal | Legacy graphs only; new graphs leave it disconnected and legacy mode disabled |
 | `transcript_preview_out` | Output Text | Partial transcript |
 | `text_out` | Output Text | Final transcript committed after Server VAD closes the turn |
 | `event_out` | Output Event | Transcript failure state |
@@ -32,5 +32,7 @@ The Node emits provider-neutral semantic Frames only. Demo 2 fans its Text and E
 both Graph processing Nodes and the project-local Voice Room protocol Node. If vendor events are
 reordered, the Node waits for `speech.stopped` before committing `text_out` and drops previews that
 arrive after Final, so the Graph needs no separate Turn Context Node.
+`emit_legacy_barge_in_signal` defaults to `false`. New graphs must not let an ASR provider own
+cancellation; filler, cough, and short-utterance policy belongs in the Voice Turn Controller.
 
 See Alibaba Cloud's [Qwen real-time speech recognition guide](https://help.aliyun.com/en/model-studio/real-time-speech-recognition-user-guide) for the current protocol and model scope.

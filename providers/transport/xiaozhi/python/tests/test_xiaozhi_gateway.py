@@ -85,6 +85,7 @@ class XiaozhiGatewayTests(unittest.TestCase):
                 "control_port": self.control_port,
                 "sample_rate": SAMPLE_RATE,
                 "frame_duration_ms": FRAME_DURATION_MS,
+                "playback_initial_burst_interval_ms": 12,
             }
         )
         self.gateway.start()
@@ -170,9 +171,10 @@ class XiaozhiGatewayTests(unittest.TestCase):
                     "payload": {"type": "tts", "state": "sentence_start", "text": "你好呀"},
                 }
             )
-            # The LLM may finish before asynchronous TTS audio reaches the
-            # gateway.  A stop marker must therefore remain behind the audio.
-            events.send(
+            # The audio sink owns the final media barrier, so its control
+            # connection must be allowed to enqueue the deferred stop after
+            # every PCM frame has crossed the graph.
+            sink.send(
                 {"op": "message", "payload": {"type": "tts", "state": "stop"}}
             )
 
@@ -219,11 +221,9 @@ class XiaozhiGatewayTests(unittest.TestCase):
 
             self.assertTrue(received_audio, "device never received Opus audio")
             self.assertEqual(received_audio_packets, 3, "PCM delta was not reblocked losslessly")
-            self.assertLess(
-                audio_packet_times[1] - audio_packet_times[0],
-                0.09,
-                "the bounded startup burst did not seed the device jitter buffer",
-            )
+            startup_gap = audio_packet_times[1] - audio_packet_times[0]
+            self.assertGreaterEqual(startup_gap, 0.006)
+            self.assertLess(startup_gap, 0.05)
             self.assertGreaterEqual(
                 audio_packet_times[-1] - audio_packet_times[0],
                 0.8,
@@ -236,10 +236,10 @@ class XiaozhiGatewayTests(unittest.TestCase):
             sink.close()
             events.close()
 
-    def test_only_the_bounded_startup_window_is_burst_sent(self) -> None:
-        asyncio.run(self._run_bounded_startup_window())
+    def test_startup_window_is_spaced_then_audio_is_realtime_paced(self) -> None:
+        asyncio.run(self._run_spaced_startup_window())
 
-    async def _run_bounded_startup_window(self) -> None:
+    async def _run_spaced_startup_window(self) -> None:
         encoder = opus_codec.OpusEncoder(
             sample_rate=SAMPLE_RATE, frame_duration_ms=FRAME_DURATION_MS
         )
@@ -261,15 +261,21 @@ class XiaozhiGatewayTests(unittest.TestCase):
                 if isinstance(message, (bytes, bytearray)):
                     packet_times.append(time.monotonic())
             self.assertEqual(len(packet_times), 8)
-            self.assertLess(
-                packet_times[4] - packet_times[0],
-                0.09,
-                "the five-frame client prebuffer was not sent as a bounded burst",
+            startup_intervals = [
+                packet_times[index] - packet_times[index - 1]
+                for index in range(1, 5)
+            ]
+            self.assertTrue(
+                all(0.006 <= interval <= 0.05 for interval in startup_intervals),
+                f"startup packets were not safely spaced: {startup_intervals}",
             )
-            self.assertGreaterEqual(
-                packet_times[7] - packet_times[4],
-                0.14,
-                "audio after the startup window was not paced near real time",
+            paced_intervals = [
+                packet_times[index] - packet_times[index - 1]
+                for index in range(5, len(packet_times))
+            ]
+            self.assertTrue(
+                all(0.04 <= interval <= 0.12 for interval in paced_intervals),
+                f"post-startup audio was not real-time paced: {paced_intervals}",
             )
             sink.close()
             encoder.close()

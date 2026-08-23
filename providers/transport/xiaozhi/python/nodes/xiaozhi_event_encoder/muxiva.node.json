@@ -35,7 +35,7 @@
       "name": "signal_in",
       "direction": "input",
       "frame_type": "signal",
-      "schema": { "semantics": ["graph_control", "barge_in"] }
+      "schema": { "semantics": ["turn_cancellation"], "signal_names": ["muxiva.turn.cancelled"] }
     }
   ],
   "config_schema": {

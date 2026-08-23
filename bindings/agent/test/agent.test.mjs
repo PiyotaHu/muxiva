@@ -24,7 +24,7 @@ test('Agent Node streams semantic output and suppresses stale work after cancell
   )
   await new Promise((resolve) => setImmediate(resolve))
   node.onSignal(
-    { name: 'muxiva.voice.speech.started', sequence: 8 },
+    { name: 'muxiva.turn.cancelled', sequence: 8 },
     { scheduleNextTick: (delay) => scheduled.push(delay) },
   )
   release()
@@ -39,7 +39,7 @@ test('Agent Node streams semantic output and suppresses stale work after cancell
   assert.equal(output.at(-1).frame.topic, 'muxiva.agent.response.cancelled')
 })
 
-test('a same-sequence speech Signal cannot cancel the Prompt it accompanies', async () => {
+test('a same-sequence canonical turn Signal cannot cancel the Prompt it accompanies', async () => {
   let release
   let cancelled = false
   const Node = defineAgentNode({
@@ -60,7 +60,7 @@ test('a same-sequence speech Signal cannot cancel the Prompt it accompanies', as
   )
   await new Promise((resolve) => setImmediate(resolve))
   node.onSignal(
-    { name: 'muxiva.voice.speech.started', sequence: 42 },
+    { name: 'muxiva.turn.cancelled', sequence: 42 },
     { scheduleNextTick() {} },
   )
   release()

@@ -134,9 +134,10 @@ Manifest + Factory → Registry → Graph Compiler → Runtime
 | **Signal** | 由 Runtime 沿当前 Node 的相邻 Edge 投递 | 打断、取消、清空旧播放等需要改变相关 Node 状态的控制 | 远程客户端传输 |
 | **NotificationBus 通知** | 发布给进程内观察者 | 日志、指标、Studio 诊断、转写完成等可观测信息 | 浏览器协议或业务数据流 |
 
-以 Barge-in 为例：VAD 或 Realtime Node 识别到用户重新说话，业务 Node 发出 Signal；
-Runtime 将它投递给相关模型与播放 Node；模型取消旧生成并丢弃晚到片段，播放 Node 清空
-陈旧音频。若需要把“用户正在说话”展示到远程 Voice Room，应由 Transport Node 把
+以 Barge-in 为例：VAD 识别到用户重新说话时只发出观察 Event；ASR 的最终文本进入
+`builtin.voice_turn_controller`，由它过滤口水词、批准新轮次并唯一发出
+`muxiva.turn.cancelled` Signal。Runtime 将该 Signal 投递给相关模型与播放 Node；模型取消
+旧生成并丢弃晚到片段，播放 Node 清空陈旧音频。若需要把“用户正在说话”展示到远程 Voice Room，应由 Transport Node 把
 客户端事件作为 Frame / 字节协议发送，而不是让浏览器访问 NotificationBus。
 
 ## 当前语音打断机制
@@ -148,14 +149,13 @@ Runtime 将它投递给相关模型与播放 Node；模型取消旧生成并丢�
 这张图对应当前 `Qwen Realtime + Agora RTC` Graph 的真实执行路径：
 
 1. 浏览器的麦克风上行不会因为 Agent 正在播放回答而停止，因此链路具备全双工输入条件。
-2. Qwen Realtime API 的 Server VAD 识别到 `input_audio_buffer.speech_started`；若旧回答仍
-   处于 active 状态，Qwen Node 立即发送 `response.cancel`，并设置拒收旧回复分片的标记。
-3. Qwen Node 通过 `ctx.emit_signal("muxiva.voice.speech.started", ...)` 发出控制消息。
-   Rust Runtime 不解释这个名称，只沿 Graph 中显式的 Signal Edge 调用 Agora Audio Sink
-   的 `on_signal`。
-4. Audio Sink 清空尚未发出的 PCM 队列、推进 sequence 取消水位，并拒绝不高于该水位的
+2. Qwen Server VAD 报告 `input_audio_buffer.speech_started`，ASR Node 将它作为观察 Event
+   输出，不直接取消任何工作。
+3. 最终 Transcript 通过 Voice Turn Controller 的准入策略后，控制器发出唯一的
+   `muxiva.turn.cancelled` Signal 和同 Sequence Prompt；Runtime 只沿显式 Signal Edge 投递。
+4. Agent/TTS 丢弃旧 generation；Audio Sink 清空尚未发出的 PCM 队列、推进 sequence 取消水位，并拒绝不高于该水位的
    旧音频 Frame。这与 Qwen Node 的晚到分片过滤形成双保险。
-5. `speech.started` / `barge_in` 以语义 Event Frame 离开 Qwen；项目级 Voice Room Encoder
+5. `speech.started` 仍以观察 Event Frame 离开 Qwen；项目级 Voice Room Encoder
    把这些 Event 以及转写/回答 Text Frame 映射为应用协议，再由 Agora Data Sink 发到远程
    Voice Room；`publish_notification` 只进入进程内 NotificationBus，供日志、指标和
    Studio 诊断使用。

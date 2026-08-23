@@ -57,18 +57,18 @@ transport provider.
 ESP32 (Opus over WebSocket)
         │  ws://<server-ip>:8888
         ▼
-xiaozhi.audio_source ──► qwen.asr_realtime ──► pi.agent
-   (Opus gateway)          (server VAD + ASR)    (routes + tools + model)
-        ▲                                                     │
-        │                                                     ▼
+xiaozhi.audio_source ──► qwen.asr_realtime ──► builtin.voice_turn_controller ──► pi.agent
+   (Opus gateway)          (VAD + ASR facts)       (admission + sole cancel)       (tools + model)
+        ▲                                                                                 │
+        │                                                                                 ▼
 xiaozhi.audio_sink ◄── builtin.audio_resampler ◄── qwen.tts_realtime
         ▲                        │                     ▲
         └────────────────────────┴── builtin.speech_formatter
 ```
 
-The graph supports full-duplex conversation: the user can interrupt the
-assistant mid-response (barge-in), the server cancels the active TTS/Agent work
-and immediately answers the new turn.
+The graph supports full-duplex conversation. Raw VAD never deletes playback;
+only an admitted final transcript or authoritative device stop lets the Voice
+Turn Controller cancel active Agent, TTS, and playback work with one Signal.
 
 ## Quick start (Raspberry Pi 4B)
 

@@ -96,8 +96,10 @@ class CascadeNodeTests(unittest.TestCase):
 
     def test_asr_default_vad_threshold_is_demo_safe_and_manifest_visible(self):
         sessions = []
+        endpoints = []
 
-        def connect(_endpoint, _key, session):
+        def connect(endpoint, _key, session):
+            endpoints.append(endpoint)
             sessions.append(session)
             return FakeTransport()
 
@@ -105,10 +107,57 @@ class CascadeNodeTests(unittest.TestCase):
         with mock.patch.dict(os.environ, self.credentials):
             node.on_prepare()
         self.assertEqual(sessions[0]["session"]["turn_detection"]["threshold"], 0.45)
+        self.assertEqual(
+            endpoints,
+            ["wss://workspace-1.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime?model=qwen3-asr-flash-realtime"],
+        )
         manifest = json.loads((root / "qwen_asr_realtime" / "muxiva.node.json").read_text())
         threshold = manifest["config_schema"]["properties"]["vad_threshold"]
         self.assertEqual(threshold["default"], 0.45)
         self.assertIn("Studio", threshold["description"])
+
+    def test_asr_workspace_endpoint_supports_both_documented_regions(self):
+        self.assertEqual(
+            asr.realtime_endpoint({}, "workspace-1", "qwen3-asr-flash-realtime"),
+            "wss://workspace-1.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime?model=qwen3-asr-flash-realtime",
+        )
+        self.assertEqual(
+            asr.realtime_endpoint(
+                {"region": "ap-southeast-1"},
+                "workspace-1",
+                "qwen3-asr-flash-realtime",
+            ),
+            "wss://workspace-1.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/realtime?model=qwen3-asr-flash-realtime",
+        )
+        with self.assertRaisesRegex(ValueError, "region"):
+            asr.realtime_endpoint({"region": "unknown"}, "workspace-1", "model")
+
+    def test_asr_transport_uses_bounded_blocking_writes_and_nonblocking_reads(self):
+        class Socket:
+            def __init__(self):
+                self.timeout = 10
+                self.send_timeouts = []
+
+            def send(self, _payload):
+                self.send_timeouts.append(self.timeout)
+
+            def settimeout(self, value):
+                self.timeout = value
+
+            def close(self):
+                pass
+
+        socket = Socket()
+        websocket_module = types.ModuleType("websocket")
+        websocket_module.create_connection = lambda *_args, **_kwargs: socket
+        websocket_module.WebSocketTimeoutException = TimeoutError
+
+        with mock.patch.dict(sys.modules, {"websocket": websocket_module}):
+            transport = asr._WebSocketTransport("wss://example.invalid", "secret", {})
+            transport.send({"type": "input_audio_buffer.append", "audio": "AA=="})
+
+        self.assertEqual(socket.send_timeouts, [10, 2.0])
+        self.assertEqual(socket.timeout, 0)
 
     def test_asr_server_vad_emits_speech_signal_state_and_completed_transcript(self):
         transport = FakeTransport([
@@ -123,7 +172,7 @@ class CascadeNodeTests(unittest.TestCase):
         ctx = Context("audio_in")
         node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=9), ctx)
         self.assertEqual(transport.sent[0]["type"], "input_audio_buffer.append")
-        self.assertEqual(ctx.signals[0][0], "muxiva.voice.speech.started")
+        self.assertEqual(ctx.signals, [])
         self.assertEqual(
             [frame.topic for port, frame in ctx.emissions if port == "speech_out"],
             ["muxiva.voice.speech.started", "muxiva.voice.speech.stopped"],
@@ -213,7 +262,9 @@ class CascadeNodeTests(unittest.TestCase):
             {"type": "input_audio_buffer.speech_stopped"},
             {"type": "conversation.item.input_audio_transcription.completed", "transcript": "嗯，我想问天气。"},
         ])
-        node = asr.QwenAsrRealtimeNode({}, lambda *_: transport)
+        node = asr.QwenAsrRealtimeNode(
+            {"emit_legacy_barge_in_signal": True}, lambda *_: transport
+        )
         with mock.patch.dict(os.environ, self.credentials):
             node.on_prepare()
         ctx = Context("audio_in")
@@ -236,7 +287,7 @@ class CascadeNodeTests(unittest.TestCase):
             {"type": "conversation.item.input_audio_transcription.text", "text": "你好"},
         ])
         node = asr.QwenAsrRealtimeNode(
-            {"barge_in_requires_final": True},
+            {"barge_in_requires_final": True, "emit_legacy_barge_in_signal": True},
             lambda *_: transport,
         )
         with mock.patch.dict(os.environ, self.credentials):
@@ -269,6 +320,7 @@ class CascadeNodeTests(unittest.TestCase):
         node = asr.QwenAsrRealtimeNode(
             {
                 "barge_in_requires_final": True,
+                "emit_legacy_barge_in_signal": True,
                 "minimum_utterance_characters": 3,
                 "short_utterance_allowlist": ["闭嘴"],
             },
@@ -295,7 +347,7 @@ class CascadeNodeTests(unittest.TestCase):
             },
         ])
         node = asr.QwenAsrRealtimeNode(
-            {"barge_in_requires_final": True},
+            {"barge_in_requires_final": True, "emit_legacy_barge_in_signal": True},
             lambda *_: transport,
         )
         with mock.patch.dict(os.environ, self.credentials):
@@ -319,7 +371,7 @@ class CascadeNodeTests(unittest.TestCase):
             },
         ])
         node = asr.QwenAsrRealtimeNode(
-            {"barge_in_requires_final": True},
+            {"barge_in_requires_final": True, "emit_legacy_barge_in_signal": True},
             lambda *_: transport,
         )
         with mock.patch.dict(os.environ, self.credentials):
@@ -418,7 +470,7 @@ class CascadeNodeTests(unittest.TestCase):
             node.on_process(TextFrame("old", sequence=100), Context("text_in"))
         self.assertTrue(started.wait(1))
         self.assertTrue(wait_until(lambda: not node._results.empty()))
-        node.on_signal(SignalFrame("muxiva.voice.speech.started", sequence=200))
+        node.on_signal(SignalFrame("muxiva.turn.cancelled", sequence=200))
         self.assertTrue(client.cancelled.is_set())
         ctx = Context("tick_in")
         node.on_process(EventFrame("muxiva.runtime.tick"), ctx)
@@ -465,6 +517,8 @@ class CascadeNodeTests(unittest.TestCase):
             [frame.topic for port, frame in terminal.emissions if port == "event_out"],
             ["muxiva.voice.tts.drained"],
         )
+        drained = next(frame for port, frame in terminal.emissions if port == "event_out")
+        self.assertEqual(json.loads(drained.payload)["audio_frames"], 2)
         node.on_finish()
 
     def test_tts_signal_closes_active_session_and_clears_audio(self):
@@ -489,6 +543,30 @@ class CascadeNodeTests(unittest.TestCase):
         ctx = Context("tick_in")
         node.on_process(EventFrame("muxiva.runtime.tick"), ctx)
         self.assertEqual(ctx.emissions, [])
+        node.on_finish()
+
+    def test_tts_reuses_idle_session_across_validated_turns(self):
+        transport = FakeTransport([{"type": "response.done"}])
+        opened = []
+
+        def factory(*_):
+            opened.append(transport)
+            return transport
+
+        node = tts.QwenTtsRealtimeNode({}, factory)
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        node.on_process(TextFrame("第一轮", sequence=10), Context("text_in"))
+        self.assertTrue(wait_until(lambda: node._results.qsize() >= 1))
+        node.on_process(EventFrame("muxiva.runtime.tick"), Context("tick_in"))
+        self.assertEqual(node._pending_jobs, 0)
+
+        node.on_signal(SignalFrame("muxiva.turn.cancelled", sequence=20))
+        self.assertFalse(transport.closed, "an idle TTS session should stay reusable")
+        node.on_process(TextFrame("第二轮", sequence=20), Context("text_in"))
+        self.assertTrue(wait_until(lambda: len(transport.sent) >= 4))
+
+        self.assertEqual(len(opened), 1)
         node.on_finish()
 
     def test_tts_rejects_stale_text_after_barge_in_without_a_separate_gate(self):

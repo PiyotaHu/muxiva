@@ -28,9 +28,10 @@ calls `ctx.emit_signal(...)`; the Runtime routes it only to receivers connected 
 Edges and invokes their `on_signal`. Core does not interpret Signal names or execute voice-product
 policy. A Signal is not a process-global broadcast.
 
-A common example is barge-in. Qwen Realtime or a VAD Node emits
-`muxiva.voice.speech.started`. The Qwen Node cancels its own generation and discards late chunks;
-the Agora Audio Sink clears playback when it receives the same Signal. Runtime only delivers it.
+A common example is barge-in. VAD emits observational `speech.started/stopped` Events and ASR
+final text enters `builtin.voice_turn_controller`. After filtering fillers and admitting a turn,
+the controller exclusively emits `muxiva.turn.cancelled`; Agent/TTS reject old generations and
+the Audio Sink clears stale playback. Runtime only delivers it over explicit Edges.
 
 ## NotificationBus lets observers see what happened
 
@@ -64,7 +65,8 @@ behavior remain predictable.
 
 ## Application turns and interruption
 
-If an application needs turns, a model Node, context Node, or project Node owns them—not Core.
+Voice turns are owned by the framework-provided but explicit and configurable
+`builtin.voice_turn_controller`, not hard-coded in the Runtime scheduler or duplicated across Providers.
 On interruption, relevant Nodes normally:
 
 1. cancel the current remote model request;

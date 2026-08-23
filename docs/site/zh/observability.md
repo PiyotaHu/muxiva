@@ -82,7 +82,7 @@ Studio 每 5 秒保存一个有界快照，并在会话结束时保存最终快�
 
 点击一行，可以查看有界的完整 Payload，以及 Frame ID、Trace ID、Stream ID 和 Sequence。类型选择器与搜索框可按 Node、Port、Topic、文本片段、Frame 或 Trace 过滤。同一个 Frame ID 先出现在上游输出、再出现在下游输入，表示传播成功；缺少对应输入行，就能直接确定消息消失在哪个边界。
 
-Studio 根据输出语义标记推导展示用 Turn：`muxiva.turn.started`、`muxiva.voice.speech.started`，以及其他 `*.turn.started` / `*.speech.started` 名称。标记本身属于新 Turn。同一标记同时以 Signal 和 Event 表达时，分组会去重，但两条 Trace 记录仍会分别保留。没有 Turn 标记的普通 Graph 会显示为一个 **Session flow**。这是 Studio 的展示逻辑，Runtime Core 不拥有、也不会切换业务 Turn ID。
+Studio 优先根据 `builtin.voice_turn_controller` 输出的 `muxiva.turn.started` 与 Payload 中的 `turn_id`、`generation` 展示 Turn。原始 `muxiva.voice.speech.started` 只表示活动观察，不创建业务 Turn。没有 Turn 标记的普通 Graph 会显示为一个 **Session flow**。Runtime 调度器不拥有业务 Turn ID；显式 Voice Turn Controller Node 拥有并输出该语义。
 
 语义追踪覆盖 Graph 的 Text/Event Frame Port，以及图内 Signal 控制平面，包括 Signal 的发出与送达。它不会把进程内 `NotificationBus` 消息冒充成 Graph Event；NotificationBus 仍通过其显式消费者或日志集成观察。
 

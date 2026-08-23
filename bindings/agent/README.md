@@ -16,6 +16,12 @@ background output; application Graphs do not need a clock Node. Provider-specifi
 code implements `run` plus optional `capabilities`, `route`, `cancel`, `snapshot`,
 and `close`.
 
+For voice graphs, route admitted prompts and the canonical
+`muxiva.turn.cancelled` Signal from `builtin.voice_turn_controller`. Raw VAD
+events such as `muxiva.voice.speech.started` are observations and must not be
+wired directly to Agent or media cancellation. The legacy signal remains
+accepted only so existing graphs can migrate without a flag day.
+
 ```js
 import { defineAgentNode } from '@muxiva/agent'
 

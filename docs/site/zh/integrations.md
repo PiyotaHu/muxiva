@@ -6,11 +6,12 @@ Turn；这些语义留在对应 Node 中。
 官方语音 Node：
 
 - `agora.audio_source`：C++ RTC 音频 Source；内部自调度，不需要外部 Clock Node。
-- `agora.audio_sink`：C++ RTC 音频 Sink；收到 `muxiva.voice.speech.started` Signal 后清空播放队列。
+- `builtin.voice_turn_controller`：厂商无关的轮次准入和唯一取消裁决点。
+- `agora.audio_sink`：C++ RTC 音频 Sink；收到标准 `muxiva.turn.cancelled` 后清空播放队列。
 - `qwen.audio_realtime`：Python Speech-to-Speech Node；负责 VAD、ASR、推理、TTS 和取消迟到响应。
-- `qwen.asr_realtime`：Qwen Server VAD + ASR，也是级联打断 Signal 的来源。
+- `qwen.asr_realtime`：Qwen Server VAD + ASR；只输出活动观察和 Transcript。
 - `qwen.llm_stream`、`qwen.tts_realtime`：可替换的后台 Node，通过 Tick 排空结果，并在
-  `muxiva.voice.speech.started` 时关闭进行中的厂商连接。
+  `muxiva.turn.cancelled` 时取消进行中的工作。
 - `pi.agent`：Demo 2 的 TypeScript 适配 Node；它通过薄适配器加载独立发布的
   [Pi 编码 Agent](nodes/pi-agent.md)，负责会话、Tool Call 与受限文件编码能力，并遵守
   [Agent 集成契约](nodes/agent-integration.md)。

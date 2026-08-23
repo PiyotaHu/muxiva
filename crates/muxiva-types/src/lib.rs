@@ -10,6 +10,7 @@ mod lineage;
 mod schema;
 mod time;
 mod value;
+pub mod voice;
 
 pub use error::{ErrorCategory, ErrorCodeError, ErrorContext, MuxivaError, Result};
 pub use extension::{Extension, ExtensionProducer, ExtensionVisibility, Extensions};

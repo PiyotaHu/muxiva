@@ -69,9 +69,11 @@ class XiaozhiAudioSourceNode:
                         sequence=self._sequence,
                     ),
                 )
-                # Barge-in uses the same graph-local control name as the
-                # built-in VAD, so downstream Nodes share one interrupt edge.
-                ctx.emit_signal("muxiva.voice.speech.started", {"source": "client-abort"})
+                # A device abort is an authoritative request, but only the
+                # framework Voice Turn Controller may commit cancellation.
+                ctx.emit_signal(
+                    "muxiva.turn.interrupt.requested", {"source": "client-abort"}
+                )
             else:
                 self._sequence += 1
                 ctx.emit(

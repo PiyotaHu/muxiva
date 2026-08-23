@@ -103,15 +103,16 @@ bounds queues, preserves per-edge order, and invokes `Node::on_signal`; it does
 not assign `TurnId`, switch conversations, cancel model requests, or filter Sink
 output according to a voice-specific rule.
 
-For the flagship voice Graph, `qwen.audio_realtime` owns its remote response
-state. On detected speech it cancels the active response, discards late chunks,
-and emits `muxiva.voice.speech.started`. `agora.audio_sink` receives that Signal
-and clears queued PCM. A cascade may put equivalent policy in VAD, context,
-model, and playback Nodes. Other applications can define different Signal
-schemas without changing Core.
+For a cascade voice Graph, `builtin.voice_turn_controller` owns admission and
+emits canonical `muxiva.turn.cancelled`. VAD and ASR adapters only report
+activity and final transcripts; Agent, TTS, and playback Nodes each apply the
+same cancellation generation/watermark. The Runtime remains name-agnostic and
+only delivers the typed Signal. See D12 for the standard voice protocol.
 
 This keeps mechanism and policy separate: a generic Runtime cannot infer
-whether a late Frame is invalid merely from a product-level turn model.
+whether a late Frame is invalid merely from a product-level turn model. The
+framework controller is an explicit Node and therefore policy remains visible,
+configurable, and replaceable in the Graph.
 
 ## 6. Thread, memory, and stop model
 

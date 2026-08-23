@@ -50,17 +50,17 @@ Muxiva 语音图，即可获得完整的 **VAD + ASR + LLM + TTS** 语音管线�
 ESP32（Opus over WebSocket）
         │  ws://<服务器IP>:8888
         ▼
-xiaozhi.audio_source ──► qwen.asr_realtime ──► pi.agent
-   (Opus 网关)             (服务端 VAD + ASR)      (路由 + 工具 + 模型)
-        ▲                                                     │
-        │                                                     ▼
+xiaozhi.audio_source ──► qwen.asr_realtime ──► builtin.voice_turn_controller ──► pi.agent
+   (Opus 网关)             (VAD + ASR 事实)          (准入 + 唯一取消)             (工具 + 模型)
+        ▲                                                                              │
+        │                                                                              ▼
 xiaozhi.audio_sink ◄── builtin.audio_resampler ◄── qwen.tts_realtime
         ▲                        │                     ▲
         └────────────────────────┴── builtin.speech_formatter
 ```
 
-该图支持全双工对话：用户可在助手说话时打断（barge-in），服务端会取消正在进行的
-TTS/Agent 工作并立即回答新的一轮。
+该图支持全双工对话。原始 VAD 不删除播放队列；只有通过最终转写准入或设备强制停止后，
+Voice Turn Controller 才会用一个标准 Signal 取消正在进行的 TTS/Agent/播放工作。
 
 ## 快速开始（树莓派 4B）
 

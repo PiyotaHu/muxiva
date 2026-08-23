@@ -70,9 +70,9 @@ class XiaozhiEventEncoderNode:
                 }:
                     self._send({"type": "llm", "emotion": emotion})
             elif frame.topic == "muxiva.voice.tts.drained":
-                # This event is emitted only after the Agent has closed the
-                # Turn and every queued TTS sentence has been synthesized.
-                self._send({"type": xiaozhi_gateway.TTS_TYPE, "state": "stop"})
+                # The audio sink owns the final media barrier.  Event and PCM
+                # use independent Graph edges, so sending stop here can overtake
+                # tail audio that is still buffered behind the resampler.
                 self._speaking = False
             elif frame.topic in (
                 "muxiva.agent.response.completed",
@@ -88,12 +88,27 @@ class XiaozhiEventEncoderNode:
                 # Failed turns may never reach TTS, so request media shutdown.
                 self._send({"type": xiaozhi_gateway.TTS_TYPE, "state": "stop"})
                 self._speaking = False
-            elif frame.topic == "muxiva.voice.speech.started":
-                self._client.send({"op": "reset"})
+            elif frame.topic in {
+                "muxiva.voice.speech.started",
+                "muxiva.voice.speech.stopped",
+            }:
+                # Raw VAD events are observational only.  Echo, coughs and
+                # fillers can all produce speech.started before ASR has a
+                # meaningful final transcript.  Clearing transport audio here
+                # used to delete the middle of the active reply; the remaining
+                # tail then refilled the queue and started playing again.
+                # Playback cancellation is owned exclusively by on_signal(),
+                # which receives only validated barge-in Signals.
+                return
         else:
             raise ValueError(f"unsupported Xiaozhi Event input Port: {input_port}")
 
     def on_signal(self, signal, ctx=None) -> None:
+        if getattr(signal, "name", "") not in {
+            "muxiva.turn.cancelled",
+            "muxiva.voice.speech.started",  # pre-controller compatibility
+        }:
+            return
         self._cancelled_through_sequence = max(
             self._cancelled_through_sequence, signal.sequence
         )

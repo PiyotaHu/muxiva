@@ -9,6 +9,7 @@ Builtin 是编译进 Muxiva 的厂商无关 Factory。即使它们共享 Rust Ru
 | `builtin.audio_vad` | Algorithm | `speech.vad` | PCM Audio 输入，语音活动 Event 输出 |
 | `builtin.speech_formatter` | Algorithm | `text.speech_format` | 流式 Markdown Text 与取消 Signal 输入，适合 TTS 的纯文本输出 |
 | `builtin.voice_turn_context` | Control | `conversation.turn_context` | Transcript 与语音 Event 输入，轮次上下文 Text 输出 |
+| `builtin.voice_turn_controller` | Control | `conversation.turn_control` | 过滤无意义转写、批准新轮次并唯一发出标准取消 Signal |
 | `builtin.interval_tick` | Control | `clock.interval` | 周期 Event 输出 |
 | `builtin.text_source` | Utility | `text.source` | 配置的 UTF-8 Text 输出 |
 | `builtin.uppercase` | Utility | `text.uppercase` | UTF-8 Text 输入，大写 Text 输出 |
@@ -29,3 +30,9 @@ Markdown 表格替换为可配置的播报提示。`code_block_message`、`table
 `strip_urls` 都能在 Studio 的 Node Configuration 中修改。解析器会跨 Text Frame 保存
 代码围栏和表格状态，因此不会把半截 Markdown 控制符送进 TTS。
 打断 Signal 或新的 Sequence 会重置这些状态，未闭合的旧 Markdown 不会导致下一轮静音。
+
+`builtin.voice_turn_controller` 是级联语音图唯一的中断裁决点。VAD 的
+`speech.started/stopped` 只是观察事件；最终 Transcript 通过策略校验后，控制器才发出
+`muxiva.turn.cancelled`，同时输出带相同 Sequence 的 Prompt。`嗯`、`啊`、咳嗽、最短
+长度与短指令白名单都通过配置调整。设备的强制停止先发
+`muxiva.turn.interrupt.requested`，也必须经过控制器再扇出到 Agent、TTS 和播放节点。

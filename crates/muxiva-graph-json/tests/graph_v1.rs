@@ -1,14 +1,14 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use muxiva_core::{
-    ConfigSchema, EdgePolicies, GraphRunner, LifecycleCapabilities, Node, NodeContext,
-    NodeDescriptor, NodeFactory, NodeFactoryError, NodeFactoryVersion, NodeInstances, NodeKind,
-    NodeLanguage, NodeRegistration, NodeRegistry, NodeTypeName,
+    ConcurrentRuntime, ConfigSchema, EdgePolicies, GraphRunner, LifecycleCapabilities, Node,
+    NodeContext, NodeDescriptor, NodeFactory, NodeFactoryError, NodeFactoryVersion, NodeInstances,
+    NodeKind, NodeLanguage, NodeRegistration, NodeRegistry, NodeTypeName, RuntimeOptions,
 };
 use muxiva_graph_json::{
     builtin_node_catalog, builtin_registry, compile, compile_with_registry, parse, GRAPH_V1_SCHEMA,
 };
-use muxiva_types::{Frame, NodeId, Value};
+use muxiva_types::{EdgeId, Frame, NodeId, Value};
 
 const VALID: &str = include_str!("../../../examples/graphs/text-uppercase.v1.json");
 
@@ -129,7 +129,7 @@ fn schema_is_machine_readable_and_declares_exact_factory_fields() {
 #[test]
 fn studio_catalog_is_derived_from_registry_descriptors_and_schemas() {
     let catalog = builtin_node_catalog();
-    assert_eq!(catalog.len(), 18);
+    assert_eq!(catalog.len(), 19);
     let json = serde_json::to_value(catalog).unwrap();
     let source = json
         .as_array()
@@ -154,6 +154,29 @@ fn studio_catalog_is_derived_from_registry_descriptors_and_schemas() {
     assert_eq!(speech_formatter["capability"], "text.speech_format");
     assert_eq!(
         speech_formatter["config_schema"]["properties"]["strip_urls"]["default"],
+        true
+    );
+    let voice_turn = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["node_type"] == "builtin.voice_turn_controller")
+        .unwrap();
+    assert_eq!(voice_turn["capability"], "conversation.turn_control");
+    assert_eq!(voice_turn["ports"][0]["name"], "transcript_in");
+    let canonical_signal = voice_turn["ports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|port| port["name"] == "signal_out")
+        .unwrap();
+    assert_eq!(
+        canonical_signal["schema"]["signal_names"][0],
+        "muxiva.turn.cancelled"
+    );
+    assert_eq!(
+        voice_turn["config_schema"]["properties"]["ignore_filler_utterances"]
+            ["default"],
         true
     );
 }
@@ -181,6 +204,62 @@ fn compiled_builtins_materialize_and_run_through_the_same_registry() {
     }
     let mut runner = GraphRunner::new(&graph, instances, EdgePolicies::new()).unwrap();
     runner.run().unwrap();
+}
+
+#[test]
+fn concurrent_voice_turn_controller_emits_exactly_one_canonical_cancel() {
+    let document = parse(
+        r#"{
+          "version":"muxiva.graph/v1",
+          "graph_id":"voice-turn-contract",
+          "nodes":[
+            {"id":"source","node_type":"builtin.text_source","language":"rust","factory_version":"1.0.0","node_config":{"text":"榴莲为什么这么臭"}},
+            {"id":"turn","node_type":"builtin.voice_turn_controller","language":"rust","factory_version":"1.0.0","node_config":{"ignore_filler_utterances":true,"minimum_utterance_characters":3,"short_utterance_allowlist":["闭嘴"],"ignored_utterances":["嗯","咳嗽声"]}},
+            {"id":"prompt-sink","node_type":"builtin.text_sink","language":"rust","factory_version":"1.0.0","node_config":{}},
+            {"id":"cancel-sink","node_type":"builtin.text_cancellation_gate","language":"rust","factory_version":"1.0.0","node_config":{}}
+          ],
+          "edges":[
+            {"id":"transcript","from":{"node_id":"source","port":"text_out"},"to":{"node_id":"turn","port":"transcript_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}},
+            {"id":"prompt","from":{"node_id":"turn","port":"prompt_out"},"to":{"node_id":"prompt-sink","port":"text_in"},"frame_type":"text","queue_policy":{"capacity":8,"overflow":"block"}},
+            {"id":"cancel","from":{"node_id":"turn","port":"signal_out"},"to":{"node_id":"cancel-sink","port":"signal_in"},"frame_type":"signal","queue_policy":{"capacity":8,"overflow":"block"}}
+          ]
+        }"#,
+    )
+    .unwrap();
+    let graph = compile(&document).unwrap();
+    let registry = builtin_registry();
+    let mut instances: NodeInstances = BTreeMap::new();
+    for definition in graph.nodes() {
+        let selection = definition.factory().unwrap();
+        let descriptor = definition.descriptor();
+        instances.insert(
+            descriptor.node_id().clone(),
+            registry
+                .create(
+                    descriptor.node_type(),
+                    selection.language(),
+                    selection.version(),
+                    descriptor.node_id().clone(),
+                    definition.config(),
+                )
+                .unwrap(),
+        );
+    }
+    let runtime = ConcurrentRuntime::new(
+        graph,
+        instances,
+        EdgePolicies::new(),
+        RuntimeOptions::default(),
+    )
+    .unwrap()
+    .start()
+    .unwrap();
+    runtime.wait(Duration::from_secs(2)).unwrap();
+    let metrics = runtime
+        .signal_metrics(&EdgeId::new("cancel").unwrap())
+        .unwrap();
+    assert_eq!(metrics.enqueue_total, 1);
+    assert_eq!(metrics.dequeue_total, 1);
 }
 
 struct CustomFactory;

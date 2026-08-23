@@ -187,6 +187,12 @@ fn builtin_metadata(
             "Joins transcript and speech events into a turn-aware prompt.",
             &["turn", "context", "voice"],
         ),
+        "builtin.voice_turn_controller" => (
+            "control",
+            "conversation.turn_control",
+            "Admits meaningful utterances and exclusively commits generation-scoped cancellation.",
+            &["turn", "voice", "barge-in", "cancellation", "policy"],
+        ),
         "builtin.interval_tick" => (
             "control",
             "clock.interval",
@@ -263,6 +269,23 @@ fn builtin_port_schema(node_type: &str, port: &str, frame_type: FrameType) -> se
             "channels": 1,
             "streaming": true
         });
+    }
+    if frame_type == FrameType::Signal {
+        return match (node_type, port) {
+            ("builtin.voice_turn_controller", "interrupt_in") => serde_json::json!({
+                "semantics": ["turn_interrupt_request"],
+                "signal_names": [muxiva_types::voice::TURN_INTERRUPT_REQUESTED]
+            }),
+            ("builtin.voice_turn_controller", "signal_out") => serde_json::json!({
+                "semantics": ["turn_cancellation"],
+                "signal_names": [muxiva_types::voice::TURN_CANCELLED]
+            }),
+            ("builtin.audio_vad", "signal_out") => serde_json::json!({
+                "deprecated": true,
+                "description": "Compatibility port only; audio activity never emits cancellation"
+            }),
+            _ => serde_json::json!({}),
+        };
     }
     match frame_type {
         FrameType::Text => serde_json::json!({"encoding": "utf-8"}),

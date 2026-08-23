@@ -40,12 +40,13 @@ class _WebSocketTransport:
             endpoint,
             header=[
                 f"Authorization: Bearer {api_key}",
+                f"X-DashScope-WorkSpace: {_workspace_id}",
             ],
-            timeout=20,
+            timeout=5,
             enable_multithread=True,
         )
         self._socket.send(json.dumps(session, separators=(",", ":")))
-        self._socket.settimeout(30)
+        self._socket.settimeout(15)
 
     def send(self, event: dict[str, Any]) -> None:
         self._socket.send(json.dumps(event, separators=(",", ":")))
@@ -85,6 +86,7 @@ class QwenTtsRealtimeNode:
         self._terminal_sequence: int | None = None
         self._terminal_generation: int | None = None
         self._drain_not_before = 0.0
+        self._emitted_audio_frames: dict[int, int] = {}
         self._cancelled_through_sequence = -1
         self._active_transport: Any | None = None
         self._worker: threading.Thread | None = None
@@ -172,7 +174,10 @@ class QwenTtsRealtimeNode:
         raise ValueError(f"Qwen TTS received unsupported input port: {input_port}")
 
     def on_signal(self, signal: Any, _ctx: Any = None) -> None:
-        if getattr(signal, "name", "") != "muxiva.voice.speech.started":
+        if getattr(signal, "name", "") not in {
+            "muxiva.turn.cancelled",
+            "muxiva.voice.speech.started",  # pre-controller compatibility
+        }:
             return
         with self._lock:
             self._cancelled_through_sequence = max(
@@ -180,7 +185,12 @@ class QwenTtsRealtimeNode:
                 int(getattr(signal, "sequence", 0)),
             )
             actively_synthesizing = self._pending_jobs > 0 or not self._results.empty()
-        cancelled = self._invalidate()
+        # A completed Turn leaves a reusable idle vendor session behind.  Do
+        # not tear it down merely because the next validated transcript has
+        # arrived: reconnecting on every turn caused 20-second first-audio
+        # stalls during transient TLS/WebSocket failures.  An actively running
+        # synthesis is still closed immediately for real barge-in semantics.
+        cancelled = self._invalidate(close_transport=actively_synthesizing)
         self._log(
             "synthesis.cancelled",
             sequence=getattr(signal, "sequence", 0),
@@ -205,7 +215,6 @@ class QwenTtsRealtimeNode:
 
     def _run(self) -> None:
         transport: Any | None = None
-        transport_generation = -1
         try:
             while not self._closing.is_set():
                 try:
@@ -217,16 +226,12 @@ class QwenTtsRealtimeNode:
                 generation, text, sequence = job
                 if generation != self._current_generation():
                     continue
-                if transport is None or transport_generation != generation:
-                    if transport is not None:
-                        self._close_transport(transport)
-                        self._forget_transport(transport)
+                if transport is None:
                     last_error: Exception | None = None
                     retry_count = max(1, int(self.config.get("connect_retries", 3)))
                     for attempt in range(1, retry_count + 1):
                         try:
                             transport = self._open_transport()
-                            transport_generation = generation
                             with self._lock:
                                 if generation != self._generation:
                                     self._close_transport(transport)
@@ -344,6 +349,10 @@ class QwenTtsRealtimeNode:
             if generation != self._current_generation():
                 continue
             if kind == "audio":
+                with self._lock:
+                    self._emitted_audio_frames[sequence] = (
+                        self._emitted_audio_frames.get(sequence, 0) + 1
+                    )
                 ctx.emit(
                     "audio_out",
                     muxiva.AudioFrame(
@@ -382,12 +391,25 @@ class QwenTtsRealtimeNode:
             self._terminal_sequence = None
             self._terminal_generation = None
             self._drain_not_before = 0.0
-        self._emit_drained(ctx, generation, sequence)
+            audio_frames = self._emitted_audio_frames.pop(sequence, 0)
+        self._emit_drained(ctx, generation, sequence, audio_frames)
         return True
 
     @staticmethod
-    def _emit_drained(ctx: Any, generation: int, sequence: int) -> None:
-        payload = {"generation": generation, "sequence": sequence}
+    def _emit_drained(
+        ctx: Any,
+        generation: int,
+        sequence: int,
+        audio_frames: int,
+    ) -> None:
+        # The event and PCM travel over independent Graph edges.  Include the
+        # exact frame count so the final transport sink can prevent the control
+        # event from overtaking audio still buffered in the resampler path.
+        payload = {
+            "generation": generation,
+            "sequence": sequence,
+            "audio_frames": audio_frames,
+        }
         ctx.emit(
             "event_out",
             muxiva.EventFrame(
@@ -398,15 +420,17 @@ class QwenTtsRealtimeNode:
             ),
         )
 
-    def _invalidate(self) -> bool:
+    def _invalidate(self, *, close_transport: bool = True) -> bool:
         with self._lock:
             self._generation += 1
             self._pending_jobs = 0
             self._terminal_sequence = None
             self._terminal_generation = None
             self._drain_not_before = 0.0
-            transport = self._active_transport
-            self._active_transport = None
+            self._emitted_audio_frames.clear()
+            transport = self._active_transport if close_transport else None
+            if close_transport:
+                self._active_transport = None
         self._clear_queue(self._jobs)
         self._clear_queue(self._results)
         if transport is not None:

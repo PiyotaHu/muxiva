@@ -153,8 +153,9 @@ single universal message bus:
 | **Signal** | Runtime delivery along the current Node's adjacent Edges | Interruption, cancellation, and stale-playback clearing that changes related Node state | Remote client transport |
 | **NotificationBus notification** | Process-local observers | Logs, metrics, Studio diagnostics, transcript-ready telemetry | A browser protocol or business data path |
 
-For barge-in, a VAD or Realtime Node detects that the user has started speaking and
-emits a Signal. The Runtime delivers it to related model and playback Nodes. The model
+For barge-in, VAD emits an observational Event when speech starts. ASR final text enters
+`builtin.voice_turn_controller`, which rejects fillers, admits a new turn, and exclusively emits
+`muxiva.turn.cancelled`. The Runtime delivers it to related model and playback Nodes. The model
 cancels the old generation and rejects late fragments; the playback Node clears stale
 audio. If a remote Voice Room must display “user is speaking,” a Transport Node sends
 a client event as a Frame or byte protocol—the browser never reaches into NotificationBus.
@@ -169,16 +170,14 @@ The diagram follows the actual `Qwen Realtime + Agora RTC` Graph:
 
 1. Browser microphone uplink remains active while the Agent is playing an answer, which
    provides the input side of full duplex.
-2. Qwen Realtime Server VAD reports `input_audio_buffer.speech_started`. If the old
-   response is active, the Qwen Node immediately sends `response.cancel` and enables its
-   stale-response discard gate.
-3. The Qwen Node calls `ctx.emit_signal("muxiva.voice.speech.started", ...)`. Rust Runtime
-   does not interpret that name; it only follows the explicit Signal Edge and invokes
-   Agora Audio Sink's `on_signal`.
-4. Audio Sink clears unsent PCM, advances its cancellation sequence watermark, and drops
+2. Qwen Server VAD reports `input_audio_buffer.speech_started`; the ASR Node emits it as an
+   observation and does not cancel work.
+3. After a final transcript passes Voice Turn Controller admission, the controller emits one
+   `muxiva.turn.cancelled` Signal plus a same-sequence Prompt. Runtime follows explicit Signal Edges.
+4. Agent/TTS reject old generations. Audio Sink clears unsent PCM, advances its cancellation sequence watermark, and drops
    old Audio Frames at or below that watermark. This is a second guard after the Qwen
    Node's late-chunk filter.
-5. `speech.started` and `barge_in` leave Qwen as semantic Event Frames. The project-local
+5. `speech.started` leaves Qwen as an observational Event Frame. The project-local
    Voice Room Encoder maps those Events—and transcript/response Text Frames—before Agora Data
    Sink sends application bytes to the remote Voice Room. `publish_notification` only reaches the
    process-local NotificationBus for logs, metrics, and Studio diagnostics.
