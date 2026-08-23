@@ -263,7 +263,12 @@ class CascadeNodeTests(unittest.TestCase):
             {"type": "conversation.item.input_audio_transcription.completed", "transcript": "嗯，我想问天气。"},
         ])
         node = asr.QwenAsrRealtimeNode(
-            {"emit_legacy_barge_in_signal": True}, lambda *_: transport
+            {
+                "emit_legacy_barge_in_signal": True,
+                "ignore_filler_utterances": True,
+                "ignored_utterances": ["嗯", "咳", "咳嗽声", "um", "eh"],
+            },
+            lambda *_: transport,
         )
         with mock.patch.dict(os.environ, self.credentials):
             node.on_prepare()
@@ -302,27 +307,27 @@ class CascadeNodeTests(unittest.TestCase):
             ["你好"],
         )
 
-    def test_asr_ignores_tiny_false_turn_but_keeps_allowed_short_command(self):
+    def test_asr_legacy_policy_fails_open_for_short_unknown_languages(self):
         transport = FakeTransport([
             {"type": "input_audio_buffer.speech_started"},
             {"type": "input_audio_buffer.speech_stopped"},
             {
                 "type": "conversation.item.input_audio_transcription.completed",
-                "transcript": "好的。",
+                "transcript": "go",
             },
             {"type": "input_audio_buffer.speech_started"},
             {"type": "input_audio_buffer.speech_stopped"},
             {
                 "type": "conversation.item.input_audio_transcription.completed",
-                "transcript": "闭嘴",
+                "transcript": "sí",
             },
         ])
         node = asr.QwenAsrRealtimeNode(
             {
                 "barge_in_requires_final": True,
                 "emit_legacy_barge_in_signal": True,
-                "minimum_utterance_characters": 3,
-                "short_utterance_allowlist": ["闭嘴"],
+                "ignore_filler_utterances": True,
+                "ignored_utterances": ["um", "eh"],
             },
             lambda *_: transport,
         )
@@ -331,10 +336,10 @@ class CascadeNodeTests(unittest.TestCase):
         ctx = Context("audio_in")
         node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=71), ctx)
 
-        self.assertEqual(len(ctx.signals), 1)
+        self.assertEqual(len(ctx.signals), 2)
         self.assertEqual(
             [frame.text for port, frame in ctx.emissions if port == "text_out"],
-            ["闭嘴"],
+            ["go", "sí"],
         )
 
     def test_asr_explicit_stop_always_barges_in_during_playback(self):

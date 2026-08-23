@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import pathlib
 import sys
 import types
@@ -48,8 +49,8 @@ finally:
 
 
 class Frame:
-    def __init__(self, topic="", text="", sequence=1, payload=""):
-        self.name = "muxiva.turn.cancelled"
+    def __init__(self, topic="", text="", sequence=1, payload="", name="muxiva.turn.cancelled"):
+        self.name = name
         self.topic = topic
         self.text = text
         self.sequence = sequence
@@ -120,6 +121,72 @@ class XiaozhiEventEncoderTests(unittest.TestCase):
         )
         self.assertEqual(len(node._client.commands), before)
 
+    def test_device_command_uses_the_existing_session_websocket(self):
+        node = module.XiaozhiEventEncoderNode({
+            "device_command_topics": ["muxiva.agent.device.command.requested"],
+            "device_command_allowlist": ["show_image"],
+            "device_command_message_type": "device_command",
+        })
+        node.on_process(
+            Frame(
+                topic="muxiva.agent.device.command.requested",
+                payload=json.dumps(
+                    {
+                        "command_id": "draw-42",
+                        "command": {
+                            "type": "show_image",
+                            "url": "https://example.test/art.png",
+                            "duration_ms": 15000,
+                        },
+                    }
+                ),
+            ),
+            Context("event_in"),
+        )
+        self.assertEqual(
+            node._client.commands[-1],
+            {
+                "op": "message",
+                "payload": {
+                    "type": "device_command",
+                    "command_id": "draw-42",
+                    "payload": {
+                        "type": "show_image",
+                        "url": "https://example.test/art.png",
+                        "duration_ms": 15000,
+                    },
+                },
+            },
+        )
+
+    def test_unknown_device_command_is_not_forwarded(self):
+        node = module.XiaozhiEventEncoderNode({
+            "device_command_topics": ["muxiva.agent.device.command.requested"],
+            "device_command_allowlist": ["show_image"],
+            "device_command_message_type": "device_command",
+        })
+        before = len(node._client.commands)
+        node.on_process(
+            Frame(
+                topic="muxiva.agent.device.command.requested",
+                payload='{"command":{"type":"arbitrary_shell"}}',
+            ),
+            Context("event_in"),
+        )
+        self.assertEqual(len(node._client.commands), before)
+
+    def test_device_commands_are_disabled_without_explicit_config(self):
+        node = module.XiaozhiEventEncoderNode()
+        before = len(node._client.commands)
+        node.on_process(
+            Frame(
+                topic="muxiva.agent.device.command.requested",
+                payload='{"command":{"type":"show_image"}}',
+            ),
+            Context("event_in"),
+        )
+        self.assertEqual(len(node._client.commands), before)
+
     def test_raw_vad_activity_never_clears_active_playback(self):
         node = module.XiaozhiEventEncoderNode()
         node.on_process(Frame(text="正在播报的问题", sequence=20), Context("transcript_in"))
@@ -146,7 +213,6 @@ class XiaozhiEventEncoderTests(unittest.TestCase):
         self.assertIn({"op": "reset"}, node._client.commands)
         self.assertEqual(node._client.commands[-1]["payload"]["state"], "stop")
         self.assertFalse(node._speaking)
-
 
 if __name__ == "__main__":
     unittest.main()

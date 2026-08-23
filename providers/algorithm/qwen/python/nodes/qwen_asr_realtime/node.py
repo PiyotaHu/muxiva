@@ -289,8 +289,6 @@ class QwenAsrRealtimeNode:
         self._log("speech.validated", sequence=sequence, action="legacy_interrupt")
 
     def _is_ignorable_utterance(self, text: str) -> bool:
-        if not bool(self.config.get("ignore_filler_utterances", True)):
-            return False
         normalized = re.sub(
             r"[\s\u3000，。！？、,.!?…~～;；:：'\"“”‘’（）()\[\]【】<>《》*_—-]+",
             "",
@@ -298,17 +296,20 @@ class QwenAsrRealtimeNode:
         ).lower()
         if not normalized:
             return True
-        if re.fullmatch(r"[啊阿呀嗯呃额哦噢唔哎诶欸唉呐哼]+", normalized):
-            return True
-        if re.fullmatch(r"(?:(?:咳嗽)|咳)+声?", normalized) is not None:
-            return True
-        minimum = max(1, int(self.config.get("minimum_utterance_characters", 1)))
-        allowlist = {
-            re.sub(r"[^\w\u4e00-\u9fff]+", "", str(value)).lower()
-            for value in self.config.get("short_utterance_allowlist", [])
+        if not bool(self.config.get("ignore_filler_utterances", False)):
+            return False
+        ignored = {
+            re.sub(
+                r"[\s\u3000，。！？、,.!?…~～;；:：'\"“”‘’（）()\[\]【】<>《》*_—-]+",
+                "",
+                str(value),
+            ).lower()
+            for value in self.config.get("ignored_utterances", [])
             if str(value).strip()
         }
-        return len(normalized) < minimum and normalized not in allowlist
+        # Legacy graphs also fail open: only an exact deployment-declared
+        # filler is suppressed. Unknown languages and short words pass through.
+        return normalized in ignored
 
     def on_finish(self, _ctx: Any = None) -> None:
         if self._transport is not None:

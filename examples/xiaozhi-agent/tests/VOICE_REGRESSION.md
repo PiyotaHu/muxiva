@@ -28,7 +28,7 @@ python3 examples/xiaozhi-agent/tests/run_voice_regression.py --live
 | Audio is dumped in a burst | 60 ms packets arrive at roughly 60 ms intervals | gateway roundtrip timing assertion |
 | Speaker echo cancels its own answer | device AEC plus final-transcript validation prevents unstable partials from cancelling | ASR final-only barge-in tests; physical-board AEC smoke test |
 | User cannot interrupt playback | microphone stays live; “闭嘴” and new questions emit barge-in | gateway live-mic + ASR interruption tests |
-| “嗯”, cough, or mouth noise opens a Turn | filler/non-speech produces no prompt and no cancellation | ASR filler test |
+| “嗯/额”, cough, or mouth noise interrupts playback or opens a Turn | VAD is observational; filler previews/finals produce no cancellation and no prompt | Turn Controller policy + ASR filler tests |
 | Long sentence is split too early | final transcript waits for server VAD speech-stopped | ASR pending-final test |
 | Old audio leaks after interruption | prior Agent/TTS output and queued gateway audio are cancelled | cascade cancellation + full-duplex test |
 | Text flashes but speech is missing | Agent completion is wired to the TTS drain barrier and graph remains acyclic/buildable | graph contract + event encoder test |

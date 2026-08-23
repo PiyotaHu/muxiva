@@ -26,6 +26,16 @@ class XiaozhiEventEncoderNode:
             port=int(self.config.get("control_port", 8889)),
             role="events",
         )
+        self._device_command_topics = {
+            str(topic) for topic in self.config.get("device_command_topics", [])
+        }
+        self._device_command_allowlist = {
+            str(command_type)
+            for command_type in self.config.get("device_command_allowlist", [])
+        }
+        self._device_command_message_type = str(
+            self.config.get("device_command_message_type", "")
+        )
         self._cancelled_through_sequence = 0
         self._speaking = False
         self._closed = False
@@ -58,7 +68,30 @@ class XiaozhiEventEncoderNode:
                 }
             )
         elif input_port == "event_in":
-            if frame.topic == "muxiva.agent.emotion.changed":
+            if frame.topic in self._device_command_topics:
+                try:
+                    payload = json.loads(getattr(frame, "payload", "") or "{}")
+                except json.JSONDecodeError:
+                    return
+                command = payload.get("command")
+                if not isinstance(command, dict):
+                    return
+                # Device commands are session output, exactly like TTS text and
+                # PCM. They travel over the already-bound device WebSocket;
+                # the Agent must never discover or call a device IP address.
+                if (
+                    not self._device_command_message_type
+                    or command.get("type") not in self._device_command_allowlist
+                ):
+                    return
+                self._send(
+                    {
+                        "type": self._device_command_message_type,
+                        "command_id": str(payload.get("command_id", "")),
+                        "payload": command,
+                    }
+                )
+            elif frame.topic == "muxiva.agent.emotion.changed":
                 try:
                     payload = json.loads(getattr(frame, "payload", "") or "{}")
                 except json.JSONDecodeError:
@@ -104,7 +137,8 @@ class XiaozhiEventEncoderNode:
             raise ValueError(f"unsupported Xiaozhi Event input Port: {input_port}")
 
     def on_signal(self, signal, ctx=None) -> None:
-        if getattr(signal, "name", "") not in {
+        name = getattr(signal, "name", "")
+        if name not in {
             "muxiva.turn.cancelled",
             "muxiva.voice.speech.started",  # pre-controller compatibility
         }:
@@ -117,7 +151,7 @@ class XiaozhiEventEncoderNode:
         self._client.send({"op": "reset"})
         if self._speaking:
             self._send({"type": xiaozhi_gateway.TTS_TYPE, "state": "stop"})
-            self._speaking = False
+        self._speaking = False
 
     def _send(self, payload: dict) -> None:
         self._client.send({"op": "message", "payload": payload})

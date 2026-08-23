@@ -29,9 +29,8 @@
       "language": { "type": "string", "default": "zh" },
       "vad_threshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.45, "description": "Server VAD sensitivity. Lower values trigger more easily; tune this value in the Studio Node configuration." },
       "silence_duration_ms": { "type": "integer", "minimum": 200, "maximum": 6000, "default": 1000 },
-      "ignore_filler_utterances": { "type": "boolean", "default": true, "description": "Ignore standalone filler sounds and cough transcriptions so they do not create turns or interrupt playback." },
-      "minimum_utterance_characters": { "type": "integer", "minimum": 1, "maximum": 20, "default": 1, "description": "Ignore normalized final transcripts shorter than this threshold unless explicitly allowed. Useful on full-duplex devices where speaker echo can become a tiny false Turn." },
-      "short_utterance_allowlist": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 32 }, "maxItems": 32, "default": [], "description": "Short commands that remain valid when minimum_utterance_characters is greater than one." },
+      "ignore_filler_utterances": { "type": "boolean", "default": false, "description": "Legacy-only exact filler suppression. Standard graphs delegate admission to builtin.voice_turn_controller." },
+      "ignored_utterances": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 32 }, "maxItems": 64, "default": [], "description": "Deployment-owned exact filler/non-speech transcripts for legacy graphs. Unknown input always passes through." },
       "barge_in_requires_final": { "type": "boolean", "default": false, "description": "Legacy mode only: wait for a validated final transcript before emitting the legacy interruption Signal." },
       "emit_legacy_barge_in_signal": { "type": "boolean", "default": false, "description": "Compatibility escape hatch for pre-controller graphs. New graphs must leave this false and route final transcripts through builtin.voice_turn_controller." }
     },

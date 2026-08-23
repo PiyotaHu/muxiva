@@ -207,9 +207,9 @@ class XiaozhiGateway:
             self._egress_pcm.clear()
         return self._encode_and_queue(tail)
 
-    def publish_message(self, payload: dict) -> None:
+    def publish_message(self, payload: dict) -> bool:
         if not self.has_client():
-            return
+            return False
         payload = dict(payload)
         payload.setdefault("session_id", self._client_id or "")
         message = json.dumps(payload, ensure_ascii=False)
@@ -227,11 +227,12 @@ class XiaozhiGateway:
                 with self._tts_lock:
                     self._tts_stop_message = message
                     self._tts_stop_requested_at = time.monotonic()
-                return
+                return True
         try:
             self._messages.put_nowait(message)
+            return True
         except queue.Full:
-            pass
+            return False
 
     def reset_egress(self) -> None:
         """Drop queued assistant audio after a barge-in."""

@@ -186,6 +186,7 @@ fn register_audio_nodes(registry: &mut NodeRegistry) {
             NodeKind::Transform,
             &[
                 ("transcript_in", PortDirection::Input, FrameType::Text),
+                ("preview_in", PortDirection::Input, FrameType::Text),
                 ("activity_in", PortDirection::Input, FrameType::Event),
                 ("interrupt_in", PortDirection::Input, FrameType::Signal),
                 ("prompt_out", PortDirection::Output, FrameType::Text),
@@ -1930,6 +1931,12 @@ fn voice_turn_controller_schema() -> ConfigSchema {
                     map([
                         ("type", Value::String("boolean".into())),
                         ("default", Value::Bool(true)),
+                        (
+                            "description",
+                            Value::String(
+                                "Suppress only exact normalized entries from ignored_utterances; unknown language input fails open".into(),
+                            ),
+                        ),
                     ]),
                 ),
                 (
@@ -1939,6 +1946,12 @@ fn voice_turn_controller_schema() -> ConfigSchema {
                         ("minimum", Value::Integer(1)),
                         ("maximum", Value::Integer(20)),
                         ("default", Value::Integer(1)),
+                        (
+                            "description",
+                            Value::String(
+                                "Minimum preview length for early cancellation; never rejects a non-filler final transcript".into(),
+                            ),
+                        ),
                     ]),
                 ),
                 (
@@ -1955,6 +1968,12 @@ fn voice_turn_controller_schema() -> ConfigSchema {
                         ),
                         ("maxItems", Value::Integer(64)),
                         ("default", Value::List(Vec::new().into_boxed_slice())),
+                        (
+                            "description",
+                            Value::String(
+                                "Deployment-owned short commands that may cancel on their first preview".into(),
+                            ),
+                        ),
                     ]),
                 ),
                 (
@@ -1971,6 +1990,12 @@ fn voice_turn_controller_schema() -> ConfigSchema {
                         ),
                         ("maxItems", Value::Integer(64)),
                         ("default", Value::List(Vec::new().into_boxed_slice())),
+                        (
+                            "description",
+                            Value::String(
+                                "Deployment-owned, language-specific exact fillers and non-speech transcripts".into(),
+                            ),
+                        ),
                     ]),
                 ),
             ]),
@@ -2010,6 +2035,10 @@ impl NodeFactory for VoiceTurnControllerFactory {
             allowlist: parsed.allowlist,
             ignored: parsed.ignored,
             generation: 0,
+            preview_window_open: false,
+            preview_candidate: None,
+            preview_hits: 0,
+            early_cancel_generation: None,
         }))
     }
 }
@@ -2092,33 +2121,49 @@ struct VoiceTurnController {
     allowlist: BTreeSet<String>,
     ignored: BTreeSet<String>,
     generation: u64,
+    /// Streaming ASR previews are valid only between speech start and the
+    /// corresponding final transcript. Providers may deliver an already
+    /// queued preview after the final frame, so this explicit gate prevents a
+    /// second cancellation generation from being committed for one utterance.
+    preview_window_open: bool,
+    preview_candidate: Option<String>,
+    preview_hits: u8,
+    early_cancel_generation: Option<u64>,
 }
 
 impl VoiceTurnController {
+    fn can_consume_preview(&self, text: &str) -> bool {
+        self.preview_window_open
+            && self.early_cancel_generation.is_none()
+            && self.preview_rejection_reason(text).is_none()
+    }
+
     fn ignored_reason(&self, text: &str) -> Option<&'static str> {
         let normalized = normalize_voice_utterance(text);
         if normalized.is_empty() {
             return Some("empty");
         }
-        if self.ignored.contains(&normalized) {
+        // Fail open across languages: Core suppresses only deployment-declared
+        // fillers/non-speech. Unknown words, including short English or
+        // Spanish utterances, are valid final Turns.
+        if self.ignore_fillers && self.ignored.contains(&normalized) {
             return Some("configured");
         }
-        if self.ignore_fillers {
-            const FILLER_CHARACTERS: &str = "啊阿呀嗯呃额哦噢唔哎诶欸唉呐哼";
-            if normalized
-                .chars()
-                .all(|character| FILLER_CHARACTERS.contains(character))
-            {
-                return Some("filler");
-            }
-            if matches!(normalized.as_str(), "咳" | "咳咳" | "咳嗽" | "咳嗽声") {
-                return Some("non_speech");
-            }
+        None
+    }
+
+    fn preview_rejection_reason(&self, text: &str) -> Option<&'static str> {
+        if let Some(reason) = self.ignored_reason(text) {
+            return Some(reason);
         }
+        let normalized = normalize_voice_utterance(text);
+        // Length is only an early-interruption confidence gate. It must never
+        // discard a final transcript: if no longer preview arrives, the final
+        // non-filler utterance is admitted and cancels the previous Turn.
         if normalized.chars().count() < self.minimum_characters
             && !self.allowlist.contains(&normalized)
         {
-            return Some("too_short");
+            return Some("preview_too_short");
         }
         None
     }
@@ -2194,6 +2239,11 @@ impl VoiceTurnController {
         context.emit_signal(signal.as_signal().expect("signal payload").clone())?;
         Ok(generation)
     }
+
+    fn clear_preview(&mut self) {
+        self.preview_candidate = None;
+        self.preview_hits = 0;
+    }
 }
 
 impl Node for VoiceTurnController {
@@ -2211,9 +2261,52 @@ impl Node for VoiceTurnController {
         match context.input_port().map(PortName::as_str) {
             Some("activity_in") => {
                 input.ensure_type(FrameType::Event)?;
+                let topic = input
+                    .as_event()
+                    .map(|event| event.data().topic().as_str())
+                    .unwrap_or_default();
+                if topic == muxiva_types::voice::VOICE_ACTIVITY_STARTED {
+                    self.clear_preview();
+                    self.early_cancel_generation = None;
+                    self.preview_window_open = true;
+                }
                 context.emit(PortName::new("activity_out").unwrap(), input)?;
             }
+            Some("preview_in") => {
+                let text = input
+                    .as_text()
+                    .ok_or_else(|| node_error("MUXIVA-VOICE-TURN-TYPE", "preview must be text"))?
+                    .data()
+                    .as_str();
+                if !self.can_consume_preview(text) {
+                    return Ok(());
+                }
+                let normalized = normalize_voice_utterance(text);
+                let compatible = self.preview_candidate.as_ref().is_some_and(|previous| {
+                    normalized.starts_with(previous) || previous.starts_with(&normalized)
+                });
+                if compatible {
+                    self.preview_hits = self.preview_hits.saturating_add(1);
+                    self.preview_candidate = Some(normalized.clone());
+                } else {
+                    self.preview_candidate = Some(normalized.clone());
+                    self.preview_hits = 1;
+                }
+                // Two compatible hypotheses fence transient partial mistakes.
+                // Explicit short commands are admitted on their first preview.
+                if self.preview_hits >= 2 || self.allowlist.contains(&normalized) {
+                    let generation = self.commit_cancellation(&input, context, "validated_partial")?;
+                    self.early_cancel_generation = Some(generation);
+                    println!(
+                        "[MUXIVA][VOICE-TURN][early_cancel] turn={} generation={} preview_hits={}",
+                        input.header().sequence_id().get(), generation, self.preview_hits
+                    );
+                }
+            }
             Some("transcript_in") => {
+                // Close before making the final decision. Any preview already
+                // queued behind this frame belongs to the completed utterance.
+                self.preview_window_open = false;
                 let text = input
                     .as_text()
                     .ok_or_else(|| {
@@ -2225,6 +2318,8 @@ impl Node for VoiceTurnController {
                     .to_owned();
                 let turn_id = input.header().sequence_id().get();
                 if let Some(reason) = self.ignored_reason(&text) {
+                    self.clear_preview();
+                    self.early_cancel_generation = None;
                     Self::emit_event(
                         &input,
                         context,
@@ -2238,7 +2333,12 @@ impl Node for VoiceTurnController {
                     return Ok(());
                 }
 
-                let generation = self.commit_cancellation(&input, context, "new_turn")?;
+                let generation = if let Some(generation) = self.early_cancel_generation.take() {
+                    generation
+                } else {
+                    self.commit_cancellation(&input, context, "new_turn")?
+                };
+                self.clear_preview();
                 let prompt = derive_payload(
                     &input,
                     context.node_id(),
@@ -3165,8 +3265,15 @@ mod tests {
             allowlist: ["闭嘴".to_owned(), "天气".to_owned()]
                 .into_iter()
                 .collect(),
-            ignored: ["咳嗽声".to_owned()].into_iter().collect(),
+            ignored: ["嗯", "额", "咳嗽声", "um", "eh"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
             generation: 0,
+            preview_window_open: false,
+            preview_candidate: None,
+            preview_hits: 0,
+            early_cancel_generation: None,
         }
     }
 
@@ -3201,11 +3308,34 @@ mod tests {
     #[test]
     fn voice_turn_policy_rejects_fillers_coughs_and_tiny_echoes() {
         let controller = voice_turn_controller();
-        assert_eq!(controller.ignored_reason("嗯……"), Some("filler"));
+        assert_eq!(controller.ignored_reason("嗯……"), Some("configured"));
+        assert_eq!(controller.ignored_reason("额。"), Some("configured"));
         assert_eq!(controller.ignored_reason("（咳嗽声）"), Some("configured"));
-        assert_eq!(controller.ignored_reason("好"), Some("too_short"));
+        assert_eq!(controller.ignored_reason("um"), Some("configured"));
+        assert_eq!(controller.ignored_reason("EH"), Some("configured"));
+        assert_eq!(controller.ignored_reason("好"), None);
+        assert_eq!(controller.ignored_reason("go"), None);
+        assert_eq!(controller.ignored_reason("sí"), None);
         assert_eq!(controller.ignored_reason("闭嘴"), None);
         assert_eq!(controller.ignored_reason("榴莲为什么这么臭？"), None);
+    }
+
+    #[test]
+    fn voice_turn_rejects_late_preview_after_final_window_closes() {
+        let mut controller = voice_turn_controller();
+        controller.preview_window_open = true;
+        assert!(!controller.can_consume_preview("额"));
+        assert!(!controller.can_consume_preview("um"));
+        assert!(!controller.can_consume_preview("go"));
+        assert!(!controller.can_consume_preview("sí"));
+        assert!(controller.can_consume_preview("请继续介绍"));
+        assert!(controller.can_consume_preview("please continue"));
+        assert!(controller.can_consume_preview("continúa por favor"));
+
+        // Final transcript processing closes this gate before it commits the
+        // turn, so a queued provider preview cannot cancel the new generation.
+        controller.preview_window_open = false;
+        assert!(!controller.can_consume_preview("请继续介绍机器人"));
     }
 
     #[test]

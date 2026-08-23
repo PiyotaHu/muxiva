@@ -33,6 +33,9 @@ class VoiceRegressionContractTests(unittest.TestCase):
         self.assertFalse(asr["ignore_filler_utterances"])
         self.assertTrue(policy["ignore_filler_utterances"])
         self.assertIn("嗯", policy["ignored_utterances"])
+        self.assertIn("额", policy["ignored_utterances"])
+        self.assertIn("um", policy["ignored_utterances"])
+        self.assertIn("eh", policy["ignored_utterances"])
         signal_sources = {
             edge["from"]["node_id"]
             for edge in self.graph["edges"]
@@ -52,6 +55,10 @@ class VoiceRegressionContractTests(unittest.TestCase):
         self.assertEqual(
             self.edges["turn-prompt-to-agent"]["from"],
             {"node_id": "voice-turn", "port": "prompt_out"},
+        )
+        self.assertEqual(
+            self.edges["asr-preview-to-turn-controller"]["to"],
+            {"node_id": "voice-turn", "port": "preview_in"},
         )
 
     def test_graph_is_acyclic_and_buildable(self) -> None:

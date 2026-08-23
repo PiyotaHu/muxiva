@@ -41,8 +41,8 @@ class Frame:
 
 
 class Signal:
-    def __init__(self, sequence: int):
-        self.name = "muxiva.turn.cancelled"
+    def __init__(self, sequence: int, name: str = "muxiva.turn.cancelled"):
+        self.name = name
         self.sequence = sequence
 
 

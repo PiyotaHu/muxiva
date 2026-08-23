@@ -64,11 +64,18 @@ cancel Signal's sequence.
 
 ## Admission policy
 
-`builtin.voice_turn_controller` normalizes final text, rejects empty text,
-configured ignored utterances, common standalone Mandarin fillers/coughs, and
-text shorter than `minimum_utterance_characters` unless allowlisted. These are
-configuration data, so products can tune wake words and short commands without
-forking provider code.
+`builtin.voice_turn_controller` normalizes text and rejects only empty text or
+an exact normalized entry in the deployment-owned `ignored_utterances` list.
+Muxiva Core contains no language-specific filler vocabulary. Deployments may
+configure high-confidence Mandarin, English, Spanish, or other filler and
+non-speech transcripts without forking provider code.
+
+The admission policy fails open across languages. Unknown final text is always
+admitted, even when it is shorter than `minimum_utterance_characters`; that
+threshold is only a confidence gate for early cancellation from streaming ASR
+previews. `short_utterance_allowlist` can make known short commands interrupt on
+their first preview. Consequently an unknown language may lose filler
+suppression, but it must never lose the ability to interrupt and create a Turn.
 
 Raw VAD must never cancel because echo, coughs, breathing, and fillers all
 produce legitimate activity starts before the final transcript is known.

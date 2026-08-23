@@ -33,8 +33,7 @@
         "silence_duration_ms": 1000,
         "vad_threshold": 0.45,
         "ignore_filler_utterances": false,
-        "minimum_utterance_characters": 1,
-        "short_utterance_allowlist": [],
+        "ignored_utterances": [],
         "barge_in_requires_final": true,
         "emit_legacy_barge_in_signal": false
       }
@@ -48,7 +47,11 @@
         "ignore_filler_utterances": true,
         "minimum_utterance_characters": 3,
         "short_utterance_allowlist": ["闭嘴", "停下", "停止", "再见", "继续", "重来", "天气", "时间", "几点", "几号", "画画", "笑话", "不是", "小白小白"],
-        "ignored_utterances": ["嗯", "啊", "呃", "哦", "咳", "咳咳", "咳嗽", "咳嗽声"]
+        "ignored_utterances": [
+          "嗯", "啊", "呃", "额", "哦", "咳", "咳咳", "咳嗽", "咳嗽声",
+          "um", "uh", "erm", "hmm", "mm", "mhm", "cough",
+          "eh", "em", "mmm", "tos"
+        ]
       }
     },
     {
@@ -73,6 +76,8 @@
         "workspace_tools_enabled": false,
         "device_tools_enabled": true,
         "artwork_tools_enabled": true,
+        "volume_command_type": "set_volume",
+        "artwork_display_command_type": "show_image",
         "artwork_style_prompt": "面向400×300黑白电子墨水屏创作。采用简洁可爱的黑白线稿、明确轮廓、粗细适中的闭合线条和高对比构图；主体放在中央4:3安全区域，背景简化，四周留白充足。只使用纯黑、纯白和少量点阵或排线表现阴影；不要使用彩色、照片写实风格、复杂纹理、渐变、柔光或低对比灰雾。确保画面缩小并二值化后，主体、表情和关键细节仍然清晰可辨。",
         "strip_stage_directions": true,
         "emotion_events_enabled": true,
@@ -148,7 +153,10 @@
       "factory_version": "1.0.0",
       "node_config": {
         "control_host": "127.0.0.1",
-        "control_port": 8889
+        "control_port": 8889,
+        "device_command_topics": ["muxiva.agent.device.command.requested"],
+        "device_command_allowlist": ["set_volume", "show_image"],
+        "device_command_message_type": "device_command"
       }
     }
   ],
@@ -207,6 +215,13 @@
       "from": { "node_id": "voice-turn", "port": "signal_out" },
       "to": { "node_id": "xiaozhi-events", "port": "signal_in" },
       "frame_type": "signal",
+      "queue_policy": { "capacity": 32, "overflow": "block" }
+    },
+    {
+      "id": "asr-preview-to-turn-controller",
+      "from": { "node_id": "qwen-vad-asr", "port": "transcript_preview_out" },
+      "to": { "node_id": "voice-turn", "port": "preview_in" },
+      "frame_type": "text",
       "queue_policy": { "capacity": 32, "overflow": "block" }
     },
     {

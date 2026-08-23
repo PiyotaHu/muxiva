@@ -117,7 +117,8 @@ class XiaozhiAudioSinkNode:
         }
 
     def on_signal(self, signal, ctx=None) -> None:
-        if getattr(signal, "name", "") not in {
+        name = getattr(signal, "name", "")
+        if name not in {
             "muxiva.turn.cancelled",
             "muxiva.voice.speech.started",  # pre-controller compatibility
         }:

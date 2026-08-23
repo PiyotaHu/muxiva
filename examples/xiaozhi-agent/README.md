@@ -52,9 +52,7 @@ the committed Graph:
 ```dotenv
 DASHSCOPE_API_KEY=...
 DASHSCOPE_WORKSPACE_ID=...
-ESP32_HUB_URL=http://127.0.0.1:8890/command
-ESP32_HUB_TOKEN=...
-MUXIVA_IMAGE_PUBLIC_URL=http://raspberry-pi.local:8890/generated/
+MUXIVA_IMAGE_PUBLIC_URL=https://media.example.com/generated/
 ```
 
 Optional endpoint overrides are `DASHSCOPE_COMPATIBLE_BASE_URL` and

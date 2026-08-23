@@ -37,6 +37,18 @@ loopback JSON-lines control socket (`127.0.0.1:8889` by default). No Opus or
 WebSocket object ever crosses the Muxiva runtime boundary; only PCM Frames and
 control Signals/Events do.
 
+!!! warning "Single-device prototype"
+    The current Python gateway has one mutable active WebSocket and is only a
+    development adapter. It is not the multi-user serving architecture. The
+    production contract is [one accepted connection owning one isolated
+    Session](../design/d13-connection-owned-sessions.md), with no Session Router,
+    no global current socket, and no reverse endpoint HTTP control channel.
+
+Optional endpoint-command forwarding is disabled by default. A deployment must
+configure `device_command_topics`, `device_command_allowlist`, and
+`device_command_message_type` on `xiaozhi.event_encoder`. Command meanings stay
+outside Muxiva Core and are implemented by the endpoint/provider deployment.
+
 ## Dependencies
 
 ```bash

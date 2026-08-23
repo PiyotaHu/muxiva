@@ -42,7 +42,24 @@
     "type": "object",
     "properties": {
       "control_host": { "type": "string", "default": "127.0.0.1" },
-      "control_port": { "type": "integer", "default": 8889 }
+      "control_port": { "type": "integer", "default": 8889 },
+      "device_command_topics": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "description": "Opt-in Event topics whose command payload may be encoded for this transport."
+      },
+      "device_command_allowlist": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "description": "Deployment-owned command types allowed to leave this session."
+      },
+      "device_command_message_type": {
+        "type": "string",
+        "default": "",
+        "description": "Protocol envelope type; empty disables device command forwarding."
+      }
     },
     "required": ["control_host", "control_port"],
     "additionalProperties": false
