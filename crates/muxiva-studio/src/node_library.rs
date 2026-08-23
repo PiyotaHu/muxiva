@@ -124,13 +124,20 @@ def invoke(name, *args):
     count = len(inspect.signature(callback).parameters)
     return callback(*args[:count])
 
+def payload_text(value):
+    # Match the public muxiva-python EventFrame/SignalFrame contract. Values
+    # crossing from Rust or TypeScript may already be decoded JSON objects on
+    # the Host wire, while Python Nodes consistently observe payload strings.
+    if isinstance(value, str): return value
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
 def decode_frame(value):
     if value is None: return None
     if value.get("kind") == "text": return TextFrame(value["text"], value.get("sequence", 0), value.get("stream_id", ""), value.get("trace_id", ""), value.get("timestamp_ns", 0))
     if value.get("kind") == "audio": return AudioFrame(bytes.fromhex(value["pcm_hex"]), value["sample_rate_hz"], value["channels"], value.get("sequence", 0))
     if value.get("kind") == "byte": return ByteFrame(bytes.fromhex(value["data_hex"]), value.get("media_type", "application/octet-stream"), value.get("sequence", 0))
-    if value.get("kind") == "event": return EventFrame(value["topic"], value.get("payload", ""), value.get("source", "runtime.node"), value.get("schema_version", 1), value.get("sequence", 0), value.get("stream_id", ""), value.get("trace_id", ""), value.get("timestamp_ns", 0))
-    if value.get("kind") == "signal": return SignalFrame(value["name"], value.get("payload", ""), value.get("source", "runtime.node"), value.get("schema_version", 1), value.get("sequence", 0))
+    if value.get("kind") == "event": return EventFrame(value["topic"], payload_text(value.get("payload", "")), value.get("source", "runtime.node"), value.get("schema_version", 1), value.get("sequence", 0), value.get("stream_id", ""), value.get("trace_id", ""), value.get("timestamp_ns", 0))
+    if value.get("kind") == "signal": return SignalFrame(value["name"], payload_text(value.get("payload", "")), value.get("source", "runtime.node"), value.get("schema_version", 1), value.get("sequence", 0))
     raise ValueError("Studio Python Host received an unsupported Frame")
 
 def encode_frame(value):
@@ -2457,14 +2464,14 @@ fn atomic_write(path: &Path, payload: &[u8]) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        frame_to_wire, list, register_project_nodes_with_connections, save, wire_to_frame,
+        control_frame, frame_to_wire, list, register_project_nodes_with_connections, save, wire_to_frame,
         ConnectionStore, SaveError,
     };
     use muxiva_core::{
         start_registered_runtime, ConfigMap, EdgePolicies, NodeContext, NodeFactoryVersion,
         NodeLanguage, NodeTypeName, PortName, RuntimeOptions,
     };
-    use muxiva_types::NodeId;
+    use muxiva_types::{EventData, FramePayload, NamespacedName, NodeId, SchemaVersion};
     use std::{
         fs,
         path::PathBuf,
@@ -2697,6 +2704,58 @@ mod tests {
         let output = context.emissions()[0].frame().as_byte().unwrap().data();
         assert_eq!(output.buffer().as_slice(), b"{}");
         assert_eq!(output.media_type().unwrap().as_str(), "application/json");
+        node.on_finish(&mut context).unwrap();
+        fs::remove_dir_all(graph_path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn python_host_normalizes_structured_cross_language_event_payloads() {
+        let graph_path = graph();
+        let package = r#"{"format":"muxiva.node/v1","package_id":"event_payload_reader","display_name":"Event Payload Reader","node_type":"example.event_payload_reader","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:MyNode","ports":[{"name":"event_in","direction":"input","frame_type":"event"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"import json\nimport muxiva\nclass MyNode:\n    def on_process(self, frame, ctx):\n        if not isinstance(frame.payload, str): raise TypeError('payload must match muxiva-python string contract')\n        payload = json.loads(frame.payload)\n        ctx.emit('text_out', muxiva.TextFrame(payload['command']['type'], sequence=frame.sequence))\n","runtime_available":false}"#;
+        save(&graph_path, package).unwrap();
+        let mut registry = muxiva_graph_json::builtin_registry();
+        register_project_nodes_with_connections(
+            &graph_path,
+            &mut registry,
+            ConnectionStore::load(&graph_path).unwrap(),
+        )
+        .unwrap();
+        let node_id = NodeId::new("event-reader").unwrap();
+        let mut node = registry
+            .create(
+                &NodeTypeName::new("example.event_payload_reader").unwrap(),
+                NodeLanguage::Python,
+                &NodeFactoryVersion::new("1.0.0").unwrap(),
+                node_id.clone(),
+                &ConfigMap::empty(),
+            )
+            .unwrap();
+        let mut context = NodeContext::new(
+            node_id.clone(),
+            ConfigMap::empty(),
+            Some(PortName::new("event_in").unwrap()),
+        );
+        let payload = muxiva_graph_json::value_from_json(&serde_json::json!({
+            "command": {"type": "show_image", "duration_ms": 15000}
+        }))
+        .unwrap();
+        let input = control_frame(
+            None,
+            &node_id,
+            FramePayload::Event(EventData::new(
+                NamespacedName::new("muxiva.agent.device.command.requested").unwrap(),
+                SchemaVersion::new(1).unwrap(),
+                NodeId::new("typescript-agent").unwrap(),
+                payload,
+            )),
+        )
+        .unwrap();
+        node.on_prepare(&mut context).unwrap();
+        node.on_process(Some(input), &mut context).unwrap();
+        assert_eq!(
+            context.emissions()[0].frame().as_text().unwrap().data().as_str(),
+            "show_image"
+        );
         node.on_finish(&mut context).unwrap();
         fs::remove_dir_all(graph_path.parent().unwrap()).unwrap();
     }

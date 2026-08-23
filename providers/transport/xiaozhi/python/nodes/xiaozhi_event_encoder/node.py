@@ -18,6 +18,26 @@ if _SHARED not in sys.path:
 import xiaozhi_gateway  # noqa: E402
 
 
+def _object_payload(frame) -> dict:
+    """Accept Event payloads from both native Python and cross-language Nodes.
+
+    Python-created EventFrames traditionally carry a JSON string. JavaScript
+    Nodes, however, can publish a structured Value that reaches the Python
+    host as an already-decoded dict. Treat both representations identically so
+    transport policy does not depend on the Agent implementation language.
+    """
+    raw = getattr(frame, "payload", None)
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            decoded = json.loads(raw or "{}")
+        except json.JSONDecodeError:
+            return {}
+        return decoded if isinstance(decoded, dict) else {}
+    return {}
+
+
 class XiaozhiEventEncoderNode:
     def __init__(self, config: dict | None = None) -> None:
         self.config = config or {}
@@ -69,10 +89,7 @@ class XiaozhiEventEncoderNode:
             )
         elif input_port == "event_in":
             if frame.topic in self._device_command_topics:
-                try:
-                    payload = json.loads(getattr(frame, "payload", "") or "{}")
-                except json.JSONDecodeError:
-                    return
+                payload = _object_payload(frame)
                 command = payload.get("command")
                 if not isinstance(command, dict):
                     return
@@ -106,10 +123,7 @@ class XiaozhiEventEncoderNode:
                     }
                 )
             elif frame.topic == "muxiva.agent.emotion.changed":
-                try:
-                    payload = json.loads(getattr(frame, "payload", "") or "{}")
-                except json.JSONDecodeError:
-                    payload = {}
+                payload = _object_payload(frame)
                 emotion = str(payload.get("emotion", "neutral"))
                 if emotion in {
                     "neutral", "happy", "laughing", "sad", "angry",

@@ -159,6 +159,56 @@ class XiaozhiEventEncoderTests(unittest.TestCase):
             },
         )
 
+    def test_device_command_accepts_structured_cross_language_payload(self):
+        node = module.XiaozhiEventEncoderNode({
+            "device_command_topics": ["muxiva.agent.device.command.requested"],
+            "device_command_allowlist": ["show_image"],
+            "device_command_message_type": "device_command",
+        })
+        node.on_process(
+            Frame(
+                topic="muxiva.agent.device.command.requested",
+                payload={
+                    "command_id": "draw-js-42",
+                    "command": {
+                        "type": "show_image",
+                        "url": "http://192.168.1.134:8004/artwork.png",
+                        "duration_ms": 15000,
+                    },
+                },
+            ),
+            Context("event_in"),
+        )
+        self.assertEqual(
+            node._client.commands[-1],
+            {
+                "op": "message",
+                "payload": {
+                    "type": "device_command",
+                    "command_id": "draw-js-42",
+                    "payload": {
+                        "type": "show_image",
+                        "url": "http://192.168.1.134:8004/artwork.png",
+                        "duration_ms": 15000,
+                    },
+                },
+            },
+        )
+
+    def test_emotion_accepts_structured_cross_language_payload(self):
+        node = module.XiaozhiEventEncoderNode()
+        node.on_process(
+            Frame(
+                topic="muxiva.agent.emotion.changed",
+                payload={"emotion": "happy"},
+            ),
+            Context("event_in"),
+        )
+        self.assertEqual(
+            node._client.commands[-1],
+            {"op": "message", "payload": {"type": "llm", "emotion": "happy"}},
+        )
+
     def test_unknown_device_command_is_not_forwarded(self):
         node = module.XiaozhiEventEncoderNode({
             "device_command_topics": ["muxiva.agent.device.command.requested"],
