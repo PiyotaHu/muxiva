@@ -34,6 +34,11 @@ function timeoutError(stage, timeoutMs) {
   return error
 }
 
+function errorString(error, key) {
+  const value = error && typeof error === 'object' ? error[key] : undefined
+  return typeof value === 'string' ? value.trim() : ''
+}
+
 function capabilityId(value, label = 'capability') {
   const id = String(value ?? '').trim()
   if (!/^[a-z][a-z0-9._:-]{0,127}$/.test(id)) {
@@ -434,15 +439,22 @@ export class AgentTurnController {
           console.error(`[MUXIVA][AGENT][turn.timeout] sequence=${sequence} stage=${error.stage} duration_ms=${Date.now() - startedAt}`)
         } else if (!controller.signal.aborted && generation === this.generation) {
           accepting = false
-          this.rotateDriver('run.failed')
+          const recoverDriver = !(error && typeof error === 'object' && error.recoverDriver === false)
+          const reason = errorString(error, 'reason') || errorString(error, 'code') || 'run.failed'
+          const userMessage = errorString(error, 'userMessage') || this.failureMessage
+          if (recoverDriver) this.rotateDriver(reason)
           console.error('[MUXIVA][AGENT][response.failed]', error?.stack ?? error?.message ?? String(error))
           this.enqueue(
             generation,
             'event_out',
-            eventFrame('muxiva.agent.response.failed', { message: error?.message ?? String(error) }, sequence),
+            eventFrame('muxiva.agent.response.failed', {
+              message: error?.message ?? String(error),
+              reason,
+              driver_recovered: recoverDriver,
+            }, sequence),
           )
-          if (this.failureMessage) {
-            this.enqueue(generation, 'text_out', { kind: 'text', text: this.failureMessage, sequence })
+          if (userMessage) {
+            this.enqueue(generation, 'text_out', { kind: 'text', text: userMessage, sequence })
           }
         }
       } finally {

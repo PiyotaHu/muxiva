@@ -147,6 +147,42 @@ test('first-output watchdog fails visibly and rotates the driver', async () => {
   assert.equal(output.some(({ frame }) => frame.text === '已经自动恢复'), true)
 })
 
+test('bounded tool failures keep the driver and present their own safe message', async () => {
+  let creations = 0
+  const Node = defineAgentNode({
+    createDriver() {
+      creations += 1
+      return {
+        async run() {
+          const error = new Error('upstream returned HTTP 503')
+          error.reason = 'tool.artwork.failed'
+          error.userMessage = '这次画图没有完成，请稍后再试。'
+          error.recoverDriver = false
+          throw error
+        },
+      }
+    },
+  })
+  const node = new Node({ failure_message: '模型连接失败' })
+  node.onProcess(
+    { kind: 'text', text: 'draw', sequence: 22 },
+    { inputPort: 'prompt_in', scheduleNextTick() {} },
+  )
+  await new Promise((resolve) => setImmediate(resolve))
+
+  const output = []
+  node.onProcess(undefined, {
+    inputPort: undefined,
+    emit: (port, frame) => output.push({ port, frame }),
+  })
+  const failure = output.find(({ frame }) => frame.topic === 'muxiva.agent.response.failed')
+  assert.equal(creations, 1)
+  assert.equal(failure.frame.payload.reason, 'tool.artwork.failed')
+  assert.equal(failure.frame.payload.driver_recovered, false)
+  assert.equal(output.some(({ frame }) => frame.text === '这次画图没有完成，请稍后再试。'), true)
+  assert.equal(output.some(({ frame }) => frame.text === '模型连接失败'), false)
+})
+
 test('driver rotation transfers an optional state snapshot to the replacement', async () => {
   const receivedStates = []
   let creations = 0

@@ -27,6 +27,14 @@ export interface AgentDriver {
   snapshot?(): unknown
   close?(): void | Promise<void>
 }
+export interface AgentDriverError extends Error {
+  /** Stable machine-readable failure class published with response.failed. */
+  reason?: string
+  /** Optional deployment-safe text to present instead of the generic failure message. */
+  userMessage?: string
+  /** Set false for bounded tool/business failures that do not require replacing the Driver. */
+  recoverDriver?: boolean
+}
 export interface AgentNodeConfig {
   max_queue_size?: number
   max_results_per_wakeup?: number
