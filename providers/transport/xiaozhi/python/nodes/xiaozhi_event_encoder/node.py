@@ -83,7 +83,21 @@ class XiaozhiEventEncoderNode:
                     not self._device_command_message_type
                     or command.get("type") not in self._device_command_allowlist
                 ):
+                    print(
+                        "[MUXIVA][XIAOZHI][device_command.rejected] "
+                        f"command_id={payload.get('command_id', '')} "
+                        f"type={command.get('type', '')} reason=not_allowed",
+                        file=sys.stderr,
+                        flush=True,
+                    )
                     return
+                print(
+                    "[MUXIVA][XIAOZHI][device_command.forwarded] "
+                    f"command_id={payload.get('command_id', '')} "
+                    f"type={command.get('type', '')}",
+                    file=sys.stderr,
+                    flush=True,
+                )
                 self._send(
                     {
                         "type": self._device_command_message_type,
