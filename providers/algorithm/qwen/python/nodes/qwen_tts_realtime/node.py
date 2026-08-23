@@ -23,6 +23,14 @@ from urllib.parse import quote
 import muxiva
 
 
+class _RetryableSynthesisError(RuntimeError):
+    """The live session failed before it emitted audio for this text job."""
+
+
+class _ProviderSynthesisError(RuntimeError):
+    """The provider rejected or corrupted a job; reconnecting cannot fix it."""
+
+
 class _WebSocketTransport:
     def __init__(
         self,
@@ -227,42 +235,31 @@ class QwenTtsRealtimeNode:
                 if generation != self._current_generation():
                     continue
                 if transport is None:
-                    last_error: Exception | None = None
-                    retry_count = max(1, int(self.config.get("connect_retries", 3)))
-                    for attempt in range(1, retry_count + 1):
-                        try:
-                            transport = self._open_transport()
-                            with self._lock:
-                                if generation != self._generation:
-                                    self._close_transport(transport)
-                                    transport = None
-                                    break
-                                self._active_transport = transport
-                            last_error = None
-                            break
-                        except Exception as error:
-                            transport = None
-                            last_error = error
-                            self._log(
-                                "connect.retry",
-                                attempt=attempt,
-                                maximum=retry_count,
-                                error=str(error)[:160],
-                            )
-                            if attempt < retry_count and not self._closing.is_set():
-                                time.sleep(min(0.5 * attempt, 1.5))
-                    if transport is None:
-                        if (
-                            last_error is not None
-                            and generation == self._current_generation()
-                            and not self._closing.is_set()
-                        ):
-                            self._put_result(
-                                (generation, "error", str(last_error)[:512], sequence)
-                            )
+                    try:
+                        transport = self._connect_transport(generation)
+                    except Exception as error:
+                        if generation == self._current_generation() and not self._closing.is_set():
+                            self._put_result((generation, "error", str(error)[:512], sequence))
                         continue
                 try:
                     self._synthesize(transport, generation, text, sequence)
+                except _RetryableSynthesisError as error:
+                    self._log("synthesis.retry", sequence=sequence, error=str(error)[:160])
+                    self._close_transport(transport)
+                    self._forget_transport(transport)
+                    transport = None
+                    if generation != self._current_generation() or self._closing.is_set():
+                        continue
+                    try:
+                        transport = self._connect_transport(generation)
+                        self._synthesize(transport, generation, text, sequence)
+                    except Exception as retry_error:
+                        if generation == self._current_generation() and not self._closing.is_set():
+                            self._put_result((generation, "error", str(retry_error)[:512], sequence))
+                        if transport is not None:
+                            self._close_transport(transport)
+                            self._forget_transport(transport)
+                            transport = None
                 except Exception as error:
                     if generation == self._current_generation() and not self._closing.is_set():
                         self._put_result((generation, "error", str(error)[:512], sequence))
@@ -283,6 +280,30 @@ class QwenTtsRealtimeNode:
             with self._lock:
                 self._active_transport = None
 
+    def _connect_transport(self, generation: int) -> Any:
+        last_error: Exception | None = None
+        retry_count = max(1, int(self.config.get("connect_retries", 3)))
+        for attempt in range(1, retry_count + 1):
+            try:
+                transport = self._open_transport()
+                with self._lock:
+                    if generation != self._generation:
+                        self._close_transport(transport)
+                        raise RuntimeError("TTS generation was cancelled while connecting")
+                    self._active_transport = transport
+                return transport
+            except Exception as error:
+                last_error = error
+                self._log(
+                    "connect.retry",
+                    attempt=attempt,
+                    maximum=retry_count,
+                    error=str(error)[:160],
+                )
+                if attempt < retry_count and not self._closing.is_set():
+                    time.sleep(min(0.5 * attempt, 1.5))
+        raise last_error or RuntimeError("Qwen TTS connection failed")
+
     def _open_transport(self) -> Any:
         if self._credentials is None:
             raise RuntimeError("TTS credentials are unavailable")
@@ -301,24 +322,33 @@ class QwenTtsRealtimeNode:
         text: str,
         sequence: int,
     ) -> None:
-        transport.send({
-            "event_id": _event_id(),
-            "type": "input_text_buffer.append",
-            "text": text,
-        })
-        transport.send({"event_id": _event_id(), "type": "input_text_buffer.commit"})
-        for event in transport.poll():
-            if generation != self._current_generation():
-                return
-            kind = event["type"]
-            if kind == "response.audio.delta":
-                pcm = base64.b64decode(event.get("delta", ""), validate=True)
-                if not pcm or len(pcm) > 256 * 1024 or len(pcm) % 2:
-                    raise RuntimeError("Qwen TTS returned invalid PCM")
-                self._put_result((generation, "audio", pcm, sequence))
-            elif kind == "error":
-                error = event.get("error", {})
-                raise RuntimeError(str(error.get("message", "request failed"))[:512])
+        emitted_audio = False
+        try:
+            transport.send({
+                "event_id": _event_id(),
+                "type": "input_text_buffer.append",
+                "text": text,
+            })
+            transport.send({"event_id": _event_id(), "type": "input_text_buffer.commit"})
+            for event in transport.poll():
+                if generation != self._current_generation():
+                    return
+                kind = event["type"]
+                if kind == "response.audio.delta":
+                    pcm = base64.b64decode(event.get("delta", ""), validate=True)
+                    if not pcm or len(pcm) > 256 * 1024 or len(pcm) % 2:
+                        raise _ProviderSynthesisError("Qwen TTS returned invalid PCM")
+                    self._put_result((generation, "audio", pcm, sequence))
+                    emitted_audio = True
+                elif kind == "error":
+                    error = event.get("error", {})
+                    raise _ProviderSynthesisError(str(error.get("message", "request failed"))[:512])
+        except _ProviderSynthesisError:
+            raise
+        except Exception as error:
+            if not emitted_audio:
+                raise _RetryableSynthesisError(str(error)) from error
+            raise
         if generation == self._current_generation():
             self._put_result((generation, "done", len(text), sequence))
 

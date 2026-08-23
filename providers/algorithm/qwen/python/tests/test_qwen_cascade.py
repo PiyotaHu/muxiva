@@ -448,6 +448,30 @@ class CascadeNodeTests(unittest.TestCase):
     def test_tts_pronounces_numeric_decimal_with_dian(self):
         self.assertEqual(tts.normalize_tts_text("气温26.2度"), "气温26点2度")
 
+    def test_tts_reconnects_and_replays_first_text_after_stale_session(self):
+        class BrokenTransport(FakeTransport):
+            def send(self, _event):
+                raise BrokenPipeError("stale TTS websocket")
+
+        healthy = FakeTransport([
+            {"type": "response.audio.delta", "delta": "AQIDBA=="},
+            {"type": "response.done"},
+        ])
+        transports = iter([BrokenTransport(), healthy])
+        node = tts.QwenTtsRealtimeNode({}, lambda *_: next(transports))
+        with mock.patch.dict(os.environ, self.credentials):
+            node.on_prepare()
+        node.on_process(TextFrame("第一句话不能丢", sequence=88), Context("text_in"))
+        self.assertTrue(wait_until(lambda: node._results.qsize() >= 2))
+        ctx = Context("tick_in")
+        node.on_process(EventFrame("muxiva.runtime.tick"), ctx)
+        self.assertEqual(healthy.sent[0]["text"], "第一句话不能丢")
+        self.assertEqual(
+            [frame.data for port, frame in ctx.emissions if port == "audio_out"],
+            [b"\x01\x02\x03\x04"],
+        )
+        node.on_finish()
+
     def test_llm_signal_cancels_provider_and_discards_queued_old_output(self):
         started = threading.Event()
 

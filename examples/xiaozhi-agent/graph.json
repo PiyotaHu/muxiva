@@ -63,7 +63,7 @@
         "max_tokens": 768,
         "model": "qwen-flash",
         "sentence_chunk_characters": 120,
-        "sentence_chunk_min_characters": 24,
+        "sentence_chunk_min_characters": 40,
         "agent_first_output_timeout_ms": 10000,
         "agent_turn_timeout_ms": 90000,
         "max_history_messages": 18,
