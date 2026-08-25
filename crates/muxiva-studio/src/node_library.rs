@@ -2375,12 +2375,17 @@ fn wire_to_frame(
                     .unwrap_or(node_id.as_str()),
             )
             .map_err(|_| python_error("Python Event Frame has an invalid source"))?,
-            muxiva_types::Value::String(
-                wire.get("payload")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or_default()
-                    .into(),
-            ),
+            // Event payloads are part of the cross-language data contract, not
+            // an implementation detail of the Python Host. TypeScript Nodes
+            // commonly emit structured objects; coercing those through
+            // `as_str()` silently replaced every object with an empty string.
+            // Preserve the complete JSON value here. `frame_to_wire` and the
+            // Python Host shim normalize it to Python's JSON-string payload
+            // convention at the receiving boundary.
+            muxiva_graph_json::value_from_json(
+                wire.get("payload").unwrap_or(&serde_json::Value::Null),
+            )
+            .map_err(python_error)?,
         )),
         _ => return Err(python_error("Python Host emitted an unsupported Frame")),
     };
@@ -2705,6 +2710,116 @@ mod tests {
         assert_eq!(output.buffer().as_slice(), b"{}");
         assert_eq!(output.media_type().unwrap().as_str(), "application/json");
         node.on_finish(&mut context).unwrap();
+        fs::remove_dir_all(graph_path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn project_host_preserves_structured_event_payloads() {
+        let payload = serde_json::json!({
+            "command_id": "draw-42",
+            "command": {
+                "type": "show_image",
+                "url": "http://device.test/turtle.png",
+                "duration_ms": 15000
+            }
+        });
+        let frame = wire_to_frame(
+            &serde_json::json!({
+                "kind": "event",
+                "topic": "muxiva.agent.device.command.requested",
+                "payload": payload,
+                "source": "typescript-agent",
+                "schema_version": 1,
+                "sequence": 42
+            }),
+            None,
+            &NodeId::new("agent-node").unwrap(),
+        )
+        .unwrap();
+
+        let event = frame.as_event().unwrap();
+        assert_eq!(
+            muxiva_graph_json::value_to_json(event.data().payload()),
+            payload
+        );
+        assert_eq!(frame.header().sequence_id().get(), 42);
+    }
+
+    #[test]
+    fn typescript_event_objects_reach_python_nodes_end_to_end() {
+        let graph_path = graph();
+        let emitter = r#"{"format":"muxiva.node/v1","package_id":"typescript_event_emitter","display_name":"TypeScript Event Emitter","node_type":"example.typescript_event_emitter","language":"typescript","factory_version":"1.0.0","kind":"transform","entrypoint":"node:node","ports":[{"name":"text_in","direction":"input","frame_type":"text"},{"name":"event_out","direction":"output","frame_type":"event"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"export const node = {\n  onProcess(frame, ctx) {\n    ctx.emit('event_out', {\n      kind: 'event',\n      topic: 'muxiva.agent.device.command.requested',\n      payload: { command_id: 'draw-42', command: { type: 'show_image', duration_ms: 15000 } },\n      source: 'typescript-agent',\n      schema_version: 1,\n      sequence: frame.sequence,\n    })\n  },\n}\n","runtime_available":false}"#;
+        let reader = r#"{"format":"muxiva.node/v1","package_id":"python_event_reader","display_name":"Python Event Reader","node_type":"example.python_event_reader","language":"python","factory_version":"1.0.0","kind":"transform","entrypoint":"node:MyNode","ports":[{"name":"event_in","direction":"input","frame_type":"event"},{"name":"text_out","direction":"output","frame_type":"text"}],"config_schema":{"type":"object","properties":{},"additionalProperties":false},"code":"import json\nimport muxiva\nclass MyNode:\n    def on_process(self, frame, ctx):\n        payload = json.loads(frame.payload)\n        ctx.emit('text_out', muxiva.TextFrame(payload['command']['type'], sequence=frame.sequence))\n","runtime_available":false}"#;
+        let saved = save(&graph_path, emitter).unwrap();
+        save(&graph_path, reader).unwrap();
+        if !saved.runtime_available {
+            fs::remove_dir_all(graph_path.parent().unwrap()).unwrap();
+            return;
+        }
+
+        let mut registry = muxiva_graph_json::builtin_registry();
+        register_project_nodes_with_connections(
+            &graph_path,
+            &mut registry,
+            ConnectionStore::load(&graph_path).unwrap(),
+        )
+        .unwrap();
+
+        let emitter_id = NodeId::new("typescript-emitter").unwrap();
+        let mut emitter_node = registry
+            .create(
+                &NodeTypeName::new("example.typescript_event_emitter").unwrap(),
+                NodeLanguage::TypeScript,
+                &NodeFactoryVersion::new("1.0.0").unwrap(),
+                emitter_id.clone(),
+                &ConfigMap::empty(),
+            )
+            .unwrap();
+        let mut emitter_context = NodeContext::new(
+            emitter_id,
+            ConfigMap::empty(),
+            Some(PortName::new("text_in").unwrap()),
+        );
+        emitter_node.on_prepare(&mut emitter_context).unwrap();
+        emitter_node
+            .on_process(
+                Some(muxiva_testkit::text_frame(42, "draw a turtle")),
+                &mut emitter_context,
+            )
+            .unwrap();
+        let event = emitter_context.emissions()[0].frame().clone();
+
+        let reader_id = NodeId::new("python-reader").unwrap();
+        let mut reader_node = registry
+            .create(
+                &NodeTypeName::new("example.python_event_reader").unwrap(),
+                NodeLanguage::Python,
+                &NodeFactoryVersion::new("1.0.0").unwrap(),
+                reader_id.clone(),
+                &ConfigMap::empty(),
+            )
+            .unwrap();
+        let mut reader_context = NodeContext::new(
+            reader_id,
+            ConfigMap::empty(),
+            Some(PortName::new("event_in").unwrap()),
+        );
+        reader_node.on_prepare(&mut reader_context).unwrap();
+        reader_node
+            .on_process(Some(event), &mut reader_context)
+            .unwrap();
+        assert_eq!(
+            reader_context.emissions()[0]
+                .frame()
+                .as_text()
+                .unwrap()
+                .data()
+                .as_str(),
+            "show_image"
+        );
+
+        emitter_node.on_finish(&mut emitter_context).unwrap();
+        reader_node.on_finish(&mut reader_context).unwrap();
         fs::remove_dir_all(graph_path.parent().unwrap()).unwrap();
     }
 
