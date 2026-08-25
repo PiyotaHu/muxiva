@@ -29,8 +29,9 @@ class VoiceRegressionContractTests(unittest.TestCase):
     def test_voice_turn_controller_exclusively_owns_barge_in(self) -> None:
         asr = self.nodes["qwen-vad-asr"]["node_config"]
         policy = self.nodes["voice-turn"]["node_config"]
-        self.assertFalse(asr["emit_legacy_barge_in_signal"])
-        self.assertFalse(asr["ignore_filler_utterances"])
+        self.assertNotIn("emit_legacy_barge_in_signal", asr)
+        self.assertNotIn("ignore_filler_utterances", asr)
+        self.assertNotIn("barge_in_requires_final", asr)
         self.assertTrue(policy["ignore_filler_utterances"])
         self.assertIn("嗯", policy["ignored_utterances"])
         self.assertIn("额", policy["ignored_utterances"])
@@ -85,6 +86,26 @@ class VoiceRegressionContractTests(unittest.TestCase):
         self.assertEqual(edge["from"], {"node_id": "pi-agent", "port": "event_out"})
         self.assertEqual(edge["to"], {"node_id": "qwen-tts", "port": "event_in"})
 
+    def test_voice_presentation_is_downstream_of_the_generic_agent(self) -> None:
+        formatter = self.nodes["speech-formatter"]["node_config"]
+        self.assertEqual(
+            self.edges["agent-to-formatter"]["from"],
+            {"node_id": "pi-agent", "port": "text_out"},
+        )
+        self.assertEqual(
+            self.edges["agent-to-events"]["from"],
+            {"node_id": "speech-formatter", "port": "text_out"},
+        )
+        self.assertEqual(
+            self.edges["agent-state-to-formatter"]["to"],
+            {"node_id": "speech-formatter", "port": "event_in"},
+        )
+        self.assertIn("耳朵", formatter["suppressed_parenthetical_terms"])
+        agent_config = self.nodes["pi-agent"]["node_config"]
+        self.assertNotIn("strip_stage_directions", agent_config)
+        self.assertNotIn("emotion_events_enabled", agent_config)
+        self.assertNotIn("sentence_chunk_characters", agent_config)
+
     def test_tts_drain_barrier_reaches_the_final_audio_sink(self) -> None:
         edge = self.edges["tts-state-to-audio-sink"]
         self.assertEqual(edge["from"], {"node_id": "qwen-tts", "port": "event_out"})
@@ -97,7 +118,7 @@ class VoiceRegressionContractTests(unittest.TestCase):
         self.assertTrue(config["device_tools_enabled"])
         self.assertTrue(config["artwork_tools_enabled"])
         self.assertFalse(config["workspace_tools_enabled"])
-        self.assertGreater(config["agent_turn_timeout_ms"], config["web_search_timeout_ms"])
+        self.assertGreater(config["agent_request_timeout_ms"], config["web_search_timeout_ms"])
         self.assertGreaterEqual(config["max_tokens"], 768)
 
     def test_artwork_runtime_is_reproducibly_installable(self) -> None:
@@ -114,11 +135,6 @@ class VoiceRegressionContractTests(unittest.TestCase):
         self.assertIn("黑白线稿", prompt)
         self.assertIn("高对比", prompt)
         self.assertIn("不要使用彩色", prompt)
-
-    def test_spoken_progress_is_disabled_in_the_realtime_graph(self) -> None:
-        config = self.nodes["pi-agent"]["node_config"]
-        self.assertEqual(config["progress_message"], "")
-        self.assertEqual(config["progress_delay_ms"], 0)
 
     def test_transport_stop_policy_is_configurable(self) -> None:
         config = self.nodes["xiaozhi-in"]["node_config"]

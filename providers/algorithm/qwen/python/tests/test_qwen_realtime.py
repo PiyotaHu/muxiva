@@ -174,6 +174,13 @@ class QwenNodeTests(unittest.TestCase):
         self.assertEqual(update["session"]["voice"], "longanqian")
         self.assertNotIn("input_audio_transcription", update["session"])
 
+    def test_session_instructions_are_fully_configuration_owned(self):
+        update = module.session_update({"instructions": "Configured application policy."})
+        self.assertEqual(
+            update["session"]["instructions"],
+            "Configured application policy.",
+        )
+
     def test_default_batches_ten_millisecond_frames_into_recommended_chunk(self):
         transport = FakeTransport([])
         node = module.QwenAudioRealtimeNode({}, lambda *_: transport)

@@ -6,8 +6,8 @@ The package separates three responsibilities:
 
 - Rust Runtime Core owns Graph scheduling, Frames, bounded Edge queues, Signals,
   and Node lifecycle;
-- framework `AgentTurnController` owns turn admission, bounded output,
-  cancellation, deadlines, stale-response suppression, and Driver recovery;
+- framework `AgentNodeAdapter` owns bounded request execution, explicit
+  cancellation, deadlines, stale-output suppression, and Driver recovery;
 - the Agent driver owns model/session state, capability policy, and tools.
 
 An Agent Node has the stable Ports `prompt_in`, `signal_in`, `text_out`, and
@@ -19,8 +19,9 @@ and `close`.
 For voice graphs, route admitted prompts and the canonical
 `muxiva.turn.cancelled` Signal from `builtin.voice_turn_controller`. Raw VAD
 events such as `muxiva.voice.speech.started` are observations and must not be
-wired directly to Agent or media cancellation. The legacy signal remains
-accepted only so existing graphs can migrate without a flag day.
+wired directly to Agent or media cancellation. The adapter treats every Frame
+received on `signal_in` as an explicit cancellation command; it never derives
+cancellation from a Signal name, sequence number, or a newly arrived prompt.
 
 ```js
 import { defineAgentNode } from '@muxiva/agent'
@@ -38,9 +39,12 @@ export const AgentNode = defineAgentNode({
 })
 ```
 
-`defineAgentNode` constructs an exported `AgentTurnController`; applications do
-not add another Graph Node for it. A Driver that declares capabilities can make
-a synchronous route decision before each turn. Muxiva validates that the route
+`defineAgentNode` constructs an exported `AgentNodeAdapter`; applications do
+not add another Graph Node for request execution. Prompts are executed in input
+order. An explicit cancellation Signal stops the request executing at that
+moment; it does not classify or discard queued prompts. A Driver that declares
+capabilities can make a synchronous route decision before each request. Muxiva
+validates that the route
 cannot grant undeclared capabilities and emits `muxiva.agent.route.selected`.
 
 ```js
@@ -79,4 +83,4 @@ through a thin project Node adapter. The independently versioned
 [PiyotaHu/muxiva-pi-agent](https://github.com/PiyotaHu/muxiva-pi-agent) repository
 is the workspace-scoped coding Agent used by the flagship cascade demo.
 
-Architecture details: [D11 Agent Turn Controller and Capability Routing](../../docs/design/d11-agent-turn-controller-capability-routing.md).
+Architecture details: [D11 Agent Node Adapter and Capability Routing](../../docs/design/d11-agent-node-adapter-capability-routing.md).

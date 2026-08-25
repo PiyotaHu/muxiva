@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { AgentTurnController, CapabilityRouter, defineAgentNode, SentenceChunker } from '../index.js'
+import { AgentNodeAdapter, CapabilityRouter, defineAgentNode } from '../index.js'
 
 test('Agent Node streams semantic output and suppresses stale work after cancellation', async () => {
   let release
@@ -24,7 +24,7 @@ test('Agent Node streams semantic output and suppresses stale work after cancell
   )
   await new Promise((resolve) => setImmediate(resolve))
   node.onSignal(
-    { name: 'muxiva.turn.cancelled', sequence: 8 },
+    { name: 'application.stop_requested', sequence: 8 },
     { scheduleNextTick: (delay) => scheduled.push(delay) },
   )
   release()
@@ -39,31 +39,34 @@ test('Agent Node streams semantic output and suppresses stale work after cancell
   assert.equal(output.at(-1).frame.topic, 'muxiva.agent.response.cancelled')
 })
 
-test('a same-sequence canonical turn Signal cannot cancel the Prompt it accompanies', async () => {
-  let release
-  let cancelled = false
+test('a new Prompt queues without implying cancellation or supersession', async () => {
+  let releaseFirst
+  const requests = []
   const Node = defineAgentNode({
     createDriver() {
       return {
-        async run(_prompt, sink) {
-          await new Promise((resolve) => { release = resolve })
-          sink.text('same turn survived')
+        async run(prompt, sink) {
+          requests.push(prompt.text)
+          if (prompt.text === 'first') {
+            await new Promise((resolve) => { releaseFirst = resolve })
+          }
+          sink.text(prompt.text)
         },
-        cancel() { cancelled = true },
       }
     },
   })
   const node = new Node()
+  const context = { inputPort: 'prompt_in', scheduleNextTick() {} }
   node.onProcess(
-    { kind: 'text', text: 'new prompt', sequence: 42 },
-    { inputPort: 'prompt_in', scheduleNextTick() {} },
+    { kind: 'text', text: 'first', sequence: 41 },
+    context,
   )
   await new Promise((resolve) => setImmediate(resolve))
-  node.onSignal(
-    { name: 'muxiva.turn.cancelled', sequence: 42 },
-    { scheduleNextTick() {} },
-  )
-  release()
+  node.onProcess({ kind: 'text', text: 'second', sequence: 42 }, context)
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(requests, ['first'])
+  releaseFirst()
+  await new Promise((resolve) => setImmediate(resolve))
   await new Promise((resolve) => setImmediate(resolve))
 
   const output = []
@@ -71,18 +74,12 @@ test('a same-sequence canonical turn Signal cannot cancel the Prompt it accompan
     inputPort: undefined,
     emit: (port, frame) => output.push({ port, frame }),
   })
-  assert.equal(cancelled, false)
-  assert.equal(output.some(({ frame }) => frame.text === 'same turn survived'), true)
+  assert.deepEqual(requests, ['first', 'second'])
+  assert.deepEqual(output.filter(({ frame }) => frame.kind === 'text').map(({ frame }) => frame.text), ['first', 'second'])
   assert.equal(output.some(({ frame }) => frame.topic === 'muxiva.agent.response.cancelled'), false)
 })
 
-test('SentenceChunker emits speech-sized chunks and flushes its remainder', () => {
-  const chunker = new SentenceChunker({ maximumCharacters: 8 })
-  assert.deepEqual(chunker.push('你好。继续'), ['你好。'])
-  assert.deepEqual(chunker.flush(), ['继续'])
-})
-
-test('a cancelled driver that ignores abort cannot block the next turn', async () => {
+test('a cancelled driver that ignores abort cannot block the next request', async () => {
   let creations = 0
   const Node = defineAgentNode({
     createDriver() {
@@ -90,7 +87,7 @@ test('a cancelled driver that ignores abort cannot block the next turn', async (
       return {
         async run(_prompt, sink) {
           if (id === 1) await new Promise(() => undefined)
-          else sink.text('second turn works')
+          else sink.text('second request works')
         },
         cancel() {},
       }
@@ -100,8 +97,8 @@ test('a cancelled driver that ignores abort cannot block the next turn', async (
   const context = { inputPort: 'prompt_in', scheduleNextTick() {} }
   node.onProcess({ kind: 'text', text: 'first', sequence: 10 }, context)
   await new Promise((resolve) => setImmediate(resolve))
-  node.onSignal({ name: 'muxiva.voice.speech.started', sequence: 11 }, { scheduleNextTick() {} })
   node.onProcess({ kind: 'text', text: 'second', sequence: 12 }, context)
+  node.onSignal({ name: 'muxiva.turn.cancelled', sequence: 11 }, { scheduleNextTick() {} })
   await new Promise((resolve) => setImmediate(resolve))
   await new Promise((resolve) => setImmediate(resolve))
 
@@ -111,7 +108,7 @@ test('a cancelled driver that ignores abort cannot block the next turn', async (
     emit: (port, frame) => output.push({ port, frame }),
   })
   assert.equal(creations, 2)
-  assert.equal(output.some(({ frame }) => frame.text === 'second turn works'), true)
+  assert.equal(output.some(({ frame }) => frame.text === 'second request works'), true)
   assert.equal(output.some(({ frame }) => frame.text === 'stale'), false)
 })
 
@@ -128,7 +125,7 @@ test('first-output watchdog fails visibly and rotates the driver', async () => {
   })
   const node = new Node({
     agent_first_output_timeout_ms: 20,
-    agent_turn_timeout_ms: 100,
+    agent_request_timeout_ms: 100,
     timeout_message: '已经自动恢复',
   })
   node.onProcess(
@@ -204,7 +201,7 @@ test('driver rotation transfers an optional state snapshot to the replacement', 
   const context = { inputPort: 'prompt_in', scheduleNextTick() {} }
   node.onProcess({ kind: 'text', text: 'first', sequence: 21 }, context)
   await new Promise((resolve) => setImmediate(resolve))
-  node.onSignal({ name: 'muxiva.voice.speech.started', sequence: 22 }, { scheduleNextTick() {} })
+  node.onSignal({ name: 'muxiva.turn.cancelled', sequence: 22 }, { scheduleNextTick() {} })
   node.onProcess({ kind: 'text', text: 'second', sequence: 23 }, context)
   await new Promise((resolve) => setImmediate(resolve))
   await new Promise((resolve) => setImmediate(resolve))
@@ -252,9 +249,9 @@ test('CapabilityRouter validates declarations and keeps business matchers outsid
   }), /requires capability not granted/)
 })
 
-test('AgentTurnController emits a validated route decision and passes it to the driver', async () => {
+test('AgentNodeAdapter emits a validated route decision and passes it to the driver', async () => {
   let receivedPrompt
-  const controller = new AgentTurnController({
+  const adapter = new AgentNodeAdapter({
     createDriver() {
       return {
         capabilities: () => [{ id: 'model.chat', kind: 'model' }],
@@ -269,42 +266,17 @@ test('AgentTurnController emits a validated route decision and passes it to the 
       }
     },
   })
-  controller.onProcess(
+  adapter.onProcess(
     { kind: 'text', text: 'hello', sequence: 30 },
     { inputPort: 'prompt_in', scheduleNextTick() {} },
   )
   await new Promise((resolve) => setImmediate(resolve))
   const output = []
-  controller.onProcess(undefined, {
+  adapter.onProcess(undefined, {
     inputPort: undefined,
     emit: (port, frame) => output.push({ port, frame }),
   })
   assert.equal(receivedPrompt.route.id, 'fast_chat')
   assert.deepEqual(receivedPrompt.route.requiredCapabilities, ['model.chat'])
   assert.equal(output.some(({ frame }) => frame.topic === 'muxiva.agent.route.selected'), true)
-})
-
-test('progress speech is opt-in and delay zero disables it', async () => {
-  const Node = defineAgentNode({
-    createDriver() {
-      return { async run(_prompt, sink) {
-        sink.event('tool.started', { name: 'slow_tool' })
-        await new Promise((resolve) => setTimeout(resolve, 30))
-        sink.text('完成')
-      } }
-    },
-  })
-  const node = new Node({ progress_message: '处理中', progress_delay_ms: 0 })
-  node.onProcess(
-    { kind: 'text', text: 'go', sequence: 40 },
-    { inputPort: 'prompt_in', scheduleNextTick() {} },
-  )
-  await new Promise((resolve) => setTimeout(resolve, 50))
-  const output = []
-  node.onProcess(undefined, {
-    inputPort: undefined,
-    emit: (port, frame) => output.push({ port, frame }),
-  })
-  assert.equal(output.some(({ frame }) => frame.text === '处理中'), false)
-  assert.equal(output.some(({ frame }) => frame.text === '完成'), true)
 })

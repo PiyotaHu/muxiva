@@ -692,6 +692,92 @@ fn runtime_observer_sees_signal_emission_and_delivery_boundaries() {
     );
 }
 
+struct SignalThenFrameSource;
+
+impl Node for SignalThenFrameSource {
+    fn on_process(
+        &mut self,
+        _: Option<Frame>,
+        context: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        context.emit_signal(signal_frame(8, "ordered-source"))?;
+        context.emit(port("out"), text_frame(8))?;
+        Ok(())
+    }
+}
+
+struct OrderedSignalSink {
+    received: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl Node for OrderedSignalSink {
+    fn on_process(
+        &mut self,
+        _: Option<Frame>,
+        _: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        self.received.lock().unwrap().push("frame");
+        Ok(())
+    }
+
+    fn on_signal(
+        &mut self,
+        _: SignalFrame,
+        _: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        self.received.lock().unwrap().push("signal");
+        Ok(())
+    }
+}
+
+#[test]
+fn callback_signals_are_delivered_before_accompanying_frames() {
+    let mut builder = GraphBuilder::new();
+    builder
+        .add_node(descriptor(
+            "ordered-source",
+            NodeKind::Source,
+            &[("out", PortDirection::Output)],
+        ))
+        .unwrap();
+    builder
+        .add_node(descriptor(
+            "ordered-sink",
+            NodeKind::Sink,
+            &[("in", PortDirection::Input)],
+        ))
+        .unwrap();
+    connect(
+        &mut builder,
+        "ordered-edge",
+        "ordered-source",
+        "out",
+        "ordered-sink",
+        "in",
+        2,
+    );
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let mut nodes: NodeInstances = BTreeMap::new();
+    nodes.insert(id("ordered-source"), Box::new(SignalThenFrameSource));
+    nodes.insert(
+        id("ordered-sink"),
+        Box::new(OrderedSignalSink {
+            received: received.clone(),
+        }),
+    );
+    let runtime = ConcurrentRuntime::new(
+        builder.build().unwrap(),
+        nodes,
+        EdgePolicies::new(),
+        RuntimeOptions::default(),
+    )
+    .unwrap()
+    .start()
+    .unwrap();
+    runtime.wait(Duration::from_secs(1)).unwrap();
+    assert_eq!(received.lock().unwrap().as_slice(), &["signal", "frame"]);
+}
+
 #[test]
 fn block_policy_backpressures_a_slow_sink() {
     let (runtime, received) = source_sink_runtime(30, 2, Duration::from_millis(2));

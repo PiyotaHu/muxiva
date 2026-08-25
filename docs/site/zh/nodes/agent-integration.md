@@ -12,8 +12,8 @@
 | --- | --- | --- | --- |
 | Agent 仓库 | 应用团队 | 模型 Harness、会话、能力目录、路由策略、Tool、业务测试 | Graph 调度、RTC、ASR、TTS |
 | Agent Node 适配器 | Agent 项目 | Port 映射、配置 Schema、Driver 装配 | 大量业务代码、厂商 SDK |
-| `@muxiva/agent` Binding | Muxiva | 通用 Turn Controller、能力契约与路由校验 | 新闻/天气/设备意图规则或具体 Tool |
-| Muxiva Core/Runtime | Muxiva | Frame、Graph、Edge 队列、Signal、调度、Host、可观测性 | Agent Turn、Qwen、Pi 或业务 Tool |
+| `@muxiva/agent` Binding | Muxiva | 通用请求执行、能力契约与路由校验 | Turn 准入、新闻/天气/设备意图规则或具体 Tool |
+| Muxiva Core/Runtime | Muxiva | Frame、Graph、Edge 队列、Signal、调度、Host、可观测性 | 业务 Turn 语义、Qwen、Pi 或业务 Tool |
 
 因此，更换 Pi、LangGraph 或自研 Agent 时，RTC、ASR、TTS 和 Graph 不需要重写；更换
 Agora 或 Qwen Node 时，Agent 仓库也不需要感知。
@@ -41,10 +41,10 @@ interface AgentDriver {
 }
 ```
 
-- `run` 接收一条已经由 ASR Final 提交的用户问题；
+- `run` 接收一条已经由上游准入的用户问题；
 - `sink.text` 输出流式回答，Muxiva 会转为 Text Frame；
-- `sink.event` 输出 Agent、Turn 和 Tool 生命周期 Event；
-- `AbortSignal` 是首选取消通道；用户插话或新问题覆盖旧问题时会立即触发；
+- `sink.event` 输出 Agent 和 Tool 生命周期 Event；
+- `AbortSignal` 是首选的显式取消通道；
 - `cancel` 用于同步通知 Agent Harness；
 - `capabilities` 声明本 Driver 可以授予的模型、Tool 或资源能力；
 - `route` 为当前 Prompt 同步选择能力子集，Muxiva 会拒绝任何未声明能力；
@@ -54,21 +54,23 @@ interface AgentDriver {
 这不是 HTTP 协议，也不要求 Agent 与 Runtime 在同一个实现仓库。它是应用 Agent 与
 Muxiva Node 之间最小、可测试的进程内契约。
 
-## AgentTurnController 在哪一层
+## AgentNodeAdapter 在哪一层
 
-`AgentTurnController` 是 `@muxiva/agent` 导出的框架组件，也是 `defineAgentNode` 背后的
+`AgentNodeAdapter` 是 `@muxiva/agent` 导出的框架组件，也是 `defineAgentNode` 背后的
 默认实现。它不是新的 Graph Node，也不属于 Rust Runtime Core。应用仍然只在 Graph 中
 看到一个 Agent Node。
 
-它统一处理 latest-wins、Generation、输出队列、取消、首字与整轮超时、晚到结果抑制、
-Driver 熔断重建和终止事件。Rust Core 仍只处理 Frame、Edge、Signal 和 Node 生命周期，
-遵守 Stage 6 的机制/业务策略边界。
+它只处理按输入顺序执行、输出队列、显式取消、首字与整次请求超时、取消后晚到结果抑制、
+Driver 熔断重建和终止事件。它不读取 Turn ID，不比较 Signal/Prompt 序列，也不会把新 Prompt
+解释成对旧请求的覆盖。语音 Graph 中只有 `builtin.voice_turn_controller` 负责 Turn 准入与
+覆盖，并通过明确的 Signal 通知 Agent。Rust Core 仍只处理 Frame、Edge、Signal 和 Node
+生命周期。
 
 能力路由同样分两部分：Muxiva 定义并校验 `AgentCapability`、`AgentRouteDecision`，应用
 Agent 决定“什么输入需要什么能力”。例如“最近新闻需要联网”属于 Pi Agent 的产品策略，
 绝不会写入 Muxiva Core。每次有效决定都会产生 `muxiva.agent.route.selected` Event。
 
-路由里的 `capabilities` 表示本轮“最多允许使用”的权限；`requiredCapabilities` 是其中
+路由里的 `capabilities` 表示本次请求“最多允许使用”的权限；`requiredCapabilities` 是其中
 “回答前必须真正满足”的子集。框架会校验必需能力没有越权，Driver 负责执行并在无法满足
 时显式失败。这样新闻或天气问题不会因为 Tool 只是可用但没有调用，就把模型猜测提交给
 UI/TTS。
@@ -80,11 +82,11 @@ UI/TTS。
 | Port | Frame | 语义 |
 | --- | --- | --- |
 | `prompt_in` | Text 输入 | ASR Final、聊天输入或上游规划结果 |
-| `signal_in` | Signal 输入 | `muxiva.agent.cancel`、用户插话等取消信号 |
+| `signal_in` | Signal 输入 | 显式请求取消；语音 Graph 只接 Voice Turn Controller 的标准 Signal |
 | `text_out` | Text 输出 | 可被 TTS、UI 或下游 Agent 消费的流式片段 |
-| `event_out` | Event 输出 | response、turn、tool、failure 生命周期 |
+| `event_out` | Event 输出 | response、tool、route、failure 生命周期 |
 
-`defineAgentNode` 负责有界输出队列、Generation ID、晚到结果抑制、内部唤醒、取消和
+`defineAgentNode` 负责有界输出队列、每次请求的 Sink、显式取消后的晚到结果抑制、内部唤醒和
 关闭。Agent 不需要在 Graph 中添加 Clock Node，也不需要把 WebSocket 或 RTC 逻辑放进
 自己的代码。
 
@@ -266,15 +268,18 @@ Muxiva 不解析百炼协议：它只通过通用 `tool.started/completed` Event
 典型级联链路：
 
 ```text
-ASR.transcript_out ──Text──> Agent.prompt_in
-VAD.signal_out ──Signal────> Agent.signal_in
-Agent.text_out ──Text──────> TTS.text_in
-Agent.event_out ──Event────> 应用 Event Encoder
+ASR.transcript_out ──Text──> VoiceTurnController.transcript_in
+VAD.speech_out ─────Event─> VoiceTurnController.activity_in
+VoiceTurnController.prompt_out ──Text──> Agent.prompt_in
+VoiceTurnController.signal_out ─Signal─> Agent/TTS/音频出口取消输入
+Agent.text_out ─────────────Text───────> TTS.text_in
+Agent.event_out ────────────Event──────> 应用 Event Encoder
 ```
 
-用户插话时，同一个 Signal 应同时到达 Agent、TTS 和音频出口。Agent 取消当前 Pi Turn；
-通用适配器推进 Generation ID，并丢弃取消后晚到的 Text/Event；下一条 ASR Final Text
-启动新 Turn。
+一次插话被准入后，Voice Turn Controller 先向 Agent、TTS 和音频出口发送同一个标准
+Signal，再转发新 Prompt；Runtime 保证同次回调的 Signal 先于 Frame 到达下游队列。
+Agent 适配器只取消当前 Pi 请求并关闭该请求的 Sink，丢弃取消后晚到的 Text/Event。
+新 Turn 只由 Voice Turn Controller 创建，Agent 适配器不推断。
 
 验证清单：
 

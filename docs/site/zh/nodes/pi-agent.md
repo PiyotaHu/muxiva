@@ -117,7 +117,7 @@ ls -la examples/voice-agent/.muxiva/workspaces/pi-agent
 ```
 
 打开 Observe：Tool 生命周期应出现在 Semantic Trace；`pi-agent` 的 Text 输出进入 TTS；
-用户插话产生的 Signal 会取消当前 Pi Turn，旧 Generation 的晚到输出不会继续播报。
+Voice Turn Controller 发出的标准 Signal 会取消当前 Pi 请求；已关闭请求 Sink 的晚到输出不会继续播报。
 
 再问一个必须联网的问题，例如“搜索今天的 Qwen 新闻并给出来源”。Observe 中应看到
 `web_search` 的 `tool.started/completed`；Tool 详情包含 `duration_ms`、`search_strategy`、

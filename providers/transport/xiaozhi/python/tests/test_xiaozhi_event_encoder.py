@@ -93,33 +93,35 @@ class XiaozhiEventEncoderTests(unittest.TestCase):
         )
         self.assertEqual(node._client.commands[-1]["payload"]["state"], "stop")
 
-    def test_emotion_event_is_mapped_without_inspecting_spoken_text(self):
-        node = module.XiaozhiEventEncoderNode()
+    def test_emotion_is_product_policy_derived_from_presentation_text(self):
+        node = module.XiaozhiEventEncoderNode({
+            "emotion_rules": [
+                {"emotion": "laughing", "keywords": ["哈哈", "太逗"]},
+            ],
+            "default_emotion": "neutral",
+        })
         node.on_process(
-            Frame(topic="muxiva.agent.emotion.changed", payload='{"emotion":"happy"}'),
-            Context("event_in"),
+            Frame(text="哈哈，这个例子太逗了。"),
+            Context("response_text_in"),
         )
         self.assertEqual(
             node._client.commands[-1]["payload"],
-            {"type": "llm", "emotion": "happy"},
+            {"type": "llm", "emotion": "laughing"},
         )
 
         before = len(node._client.commands)
         node.on_process(
-            Frame(text="哈哈，这句话本身不应由传输层做情绪推断。"),
+            Frame(text="这是一句中性回答。"),
             Context("response_text_in"),
         )
-        self.assertEqual(len(node._client.commands), before + 1)
-        self.assertEqual(node._client.commands[-1]["payload"]["type"], "tts")
+        self.assertEqual(len(node._client.commands), before + 2)
+        self.assertEqual(node._client.commands[-1]["payload"], {"type": "llm", "emotion": "neutral"})
 
-    def test_invalid_emotion_event_is_ignored(self):
+    def test_emotion_messages_are_disabled_without_product_rules(self):
         node = module.XiaozhiEventEncoderNode()
-        before = len(node._client.commands)
-        node.on_process(
-            Frame(topic="muxiva.agent.emotion.changed", payload='{"emotion":"unknown"}'),
-            Context("event_in"),
-        )
-        self.assertEqual(len(node._client.commands), before)
+        node.on_process(Frame(text="哈哈，这个例子太逗了。"), Context("response_text_in"))
+        self.assertEqual(len(node._client.commands), 1)
+        self.assertEqual(node._client.commands[0]["payload"]["type"], "tts")
 
     def test_device_command_uses_the_existing_session_websocket(self):
         node = module.XiaozhiEventEncoderNode({
@@ -193,20 +195,6 @@ class XiaozhiEventEncoderTests(unittest.TestCase):
                     },
                 },
             },
-        )
-
-    def test_emotion_accepts_structured_cross_language_payload(self):
-        node = module.XiaozhiEventEncoderNode()
-        node.on_process(
-            Frame(
-                topic="muxiva.agent.emotion.changed",
-                payload={"emotion": "happy"},
-            ),
-            Context("event_in"),
-        )
-        self.assertEqual(
-            node._client.commands[-1],
-            {"op": "message", "payload": {"type": "llm", "emotion": "happy"}},
         )
 
     def test_unknown_device_command_is_not_forwarded(self):

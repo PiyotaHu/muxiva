@@ -13,9 +13,9 @@ Studio 内置两张可选择的图：
 
 - **Qwen Realtime（推荐）**：Qwen Audio Realtime 端到端语音模型，链路短、延迟低；
 - **Pi Agent Full-Duplex Cascade（Demo 2）**：阿里云 Qwen Server VAD + Streaming ASR →
-  Pi TypeScript 编码 Agent（Qwen 模型、会话、Tool Call 与工作区文件）→ Speech Formatter →
+  Voice Turn Controller → Pi TypeScript 编码 Agent（Qwen 模型、会话、Tool Call 与工作区文件）→ Speech Formatter →
   可取消 Qwen TTS。聊天框保留原始 Markdown，只有清理后的自然文本进入 TTS。用户插话时，
-  `muxiva.voice.speech.started` Signal 会取消旧 Agent/TTS 请求、清除过期文本和客户端
+  Voice Turn Controller 发出的 `muxiva.turn.cancelled` Signal 会取消旧 Agent/TTS 请求、清除过期文本和客户端
   事件，并清空 Agora 播放队列。
 
 ### 准备
@@ -90,10 +90,10 @@ Agent owns Demo 2 sessions, tools, and workspace-scoped file edits. The Rust
 Runtime remains vendor-neutral.
 
 Studio offers two graphs: low-latency **Qwen Realtime**, and **Pi Agent
-Full-Duplex Cascade (Demo 2)**: Qwen Server VAD + Streaming ASR → a stateful,
+Full-Duplex Cascade (Demo 2)**: Qwen Server VAD + Streaming ASR → Voice Turn Controller → a stateful,
 tool-using Pi TypeScript coding Agent backed by Qwen → Speech Formatter → cancellable Qwen TTS.
 The chat retains original Markdown while only normalized spoken text reaches TTS. On
-barge-in, the `muxiva.voice.speech.started` Signal cancels Agent/TTS work,
+barge-in, the Voice Turn Controller emits `muxiva.turn.cancelled` to cancel Agent/TTS work,
 stale text and client events, and Agora playback.
 
 Prepare Node.js 22.19+, an Agora Native C++ SDK, DashScope API Key and Workspace

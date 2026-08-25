@@ -110,8 +110,10 @@ class VoiceRoomProtocolTests(unittest.TestCase):
     def test_cascade_graph_exposes_only_domain_nodes_not_runtime_plumbing(self):
         project = pathlib.Path(__file__).parents[1]
         graphs = [
-            json.loads((project / "graph.json").read_text()),
-            json.loads((project / ".muxiva/templates/02-qwen-cascade.json").read_text())["graph"],
+            json.loads((project / "graph.json").read_text(encoding="utf-8")),
+            json.loads(
+                (project / ".muxiva/templates/02-qwen-cascade.json").read_text(encoding="utf-8")
+            )["graph"],
         ]
         for graph in graphs:
             with self.subTest(graph=graph["graph_id"]):
@@ -128,16 +130,23 @@ class VoiceRoomProtocolTests(unittest.TestCase):
                     (edge["from"]["node_id"], edge["to"]["node_id"])
                     for edge in graph["edges"]
                 }
-                self.assertIn(("qwen-vad-asr", "pi-agent"), routes)
+                self.assertIn("builtin.voice_turn_controller", node_types)
+                self.assertIn(("qwen-vad-asr", "voice-turn"), routes)
+                self.assertIn(("voice-turn", "pi-agent"), routes)
                 self.assertIn(("pi-agent", "speech-formatter"), routes)
                 self.assertIn(("speech-formatter", "qwen-tts"), routes)
-                self.assertIn(("qwen-vad-asr", "speech-formatter"), routes)
+                self.assertIn(("voice-turn", "speech-formatter"), routes)
+                self.assertFalse(any(
+                    edge["from"] == {"node_id": "qwen-vad-asr", "port": "signal_out"}
+                    for edge in graph["edges"]
+                ))
                 vad = next(node for node in graph["nodes"] if node["id"] == "qwen-vad-asr")
                 self.assertEqual(vad["node_config"]["vad_threshold"], 0.45)
                 formatter = next(
                     node for node in graph["nodes"] if node["id"] == "speech-formatter"
                 )
                 self.assertEqual(formatter["node_type"], "builtin.speech_formatter")
+                self.assertEqual(formatter["node_config"]["suppressed_parenthetical_terms"], [])
 
 
 if __name__ == "__main__":

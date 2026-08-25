@@ -7,15 +7,16 @@ client of a Muxiva voice pipeline running on a Raspberry Pi:
 ESP32 (Opus/WebSocket)
   │
   ▼
-Xiaozhi gateway → Qwen realtime ASR → Pi Agent → speech formatter
-       ▲                                  │              │
-       │                                  └─ tools       ▼
-       └──── paced Opus ← resampler ← Qwen realtime TTS
+Xiaozhi gateway → Qwen realtime ASR → Voice Turn Controller → Pi Agent
+       ▲                                                     │  │
+       │                                               tools ┘  ▼
+       └──── paced Opus ← resampler ← Qwen realtime TTS ← formatter
 ```
 
-The Graph keeps transport, ASR, Agent policy, formatting, TTS, and playback as
-separate Nodes. `@muxiva/agent` supplies the reusable Turn Controller inside the
-Agent Node; product routes and Tools come from
+The Graph keeps transport, ASR, voice Turn policy, Agent policy, formatting,
+TTS, and playback as separate Nodes. `builtin.voice_turn_controller` owns Turn
+admission and supersession. `@muxiva/agent` supplies reusable request execution;
+product routes and Tools come from
 [`muxiva-pi-agent`](https://github.com/PiyotaHu/muxiva-pi-agent).
 
 ## 1. Responsibilities
@@ -23,10 +24,12 @@ Agent Node; product routes and Tools come from
 | Layer | Owns |
 | --- | --- |
 | Muxiva Runtime | Frames, Signals, bounded queues, scheduling, lifecycle |
-| `@muxiva/agent` | turn admission, cancellation, deadlines, stale-output suppression, Driver recovery, route validation |
-| `muxiva-pi-agent` | model session, capability policy, weather/time/search/device/artwork Tools, voice presentation policy |
-| Qwen ASR Node | server endpointing, final transcript, filler rejection, validated barge-in |
-| Qwen TTS Node | sentence synthesis, cancellation, retry, Turn drain barrier |
+| `builtin.voice_turn_controller` | voice Turn admission, Turn ID/generation, supersession, canonical cancellation |
+| `@muxiva/agent` | sequential request execution, explicit cancellation, deadlines, stale-output suppression, Driver recovery, route validation |
+| `muxiva-pi-agent` | model session, capability policy, weather/time/search/device/artwork Tools, semantic text deltas |
+| Speech Formatter | sentence batching and TTS-oriented presentation formatting |
+| Qwen ASR Node | server endpointing, activity observations, transcript previews and finals |
+| Qwen TTS Node | sentence synthesis, explicit cancellation, retry, response drain barrier |
 | Xiaozhi provider | WebSocket/Opus protocol, jitter buffer, real-time packet pacing, UI protocol mapping |
 
 The Graph is deliberately acyclic. Assistant text is not fed back into ASR;
@@ -83,17 +86,16 @@ The `pi-agent` Node in `graph.json` enables independent capability packs:
 The product route grants only the pack required by the utterance. Stable
 knowledge takes the model-only fast route. News and current facts require live
 search; weather and date questions require their factual Tool. If a required
-pack is disabled or its Tool fails, the Turn fails visibly instead of falling
+pack is disabled or its Tool fails, the request fails visibly instead of falling
 back to an ungrounded model answer.
 
 Timeouts are layered: search has its own bounded timeout, while the whole Agent
-Turn has a longer deadline. Spoken progress is disabled by default because it
-can introduce an extra TTS session and first-word jitter; applications may opt
-in with `progress_message` and `progress_delay_ms`.
+request has a longer deadline. Presentation text and TTS batching are handled by
+the downstream Speech Formatter rather than the Agent.
 
 ## 5. Regression gate
 
-Every change touching ASR, Agent turns, TTS, transport, or Graph wiring must run:
+Every change touching voice Turns, Agent requests, TTS, transport, or Graph wiring must run:
 
 ```bash
 python3 examples/xiaozhi-agent/tests/run_voice_regression.py

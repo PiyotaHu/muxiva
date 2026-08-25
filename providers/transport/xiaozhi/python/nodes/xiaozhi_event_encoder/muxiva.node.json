@@ -4,7 +4,7 @@
   "display_name": "Xiaozhi Device Event Encoder",
   "node_type": "xiaozhi.event_encoder",
   "language": "python",
-  "factory_version": "1.0.0",
+  "factory_version": "1.1.0",
   "kind": "sink",
   "entrypoint": "node:XiaozhiEventEncoderNode",
   "category": "transport",
@@ -59,6 +59,34 @@
         "type": "string",
         "default": "",
         "description": "Protocol envelope type; empty disables device command forwarding."
+      },
+      "emotion_rules": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "emotion": {
+              "type": "string",
+              "enum": ["neutral", "happy", "laughing", "sad", "angry", "thinking", "relaxed", "confident"]
+            },
+            "keywords": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1, "maxLength": 32 },
+              "minItems": 1,
+              "maxItems": 32
+            }
+          },
+          "required": ["emotion", "keywords"],
+          "additionalProperties": false
+        },
+        "maxItems": 16,
+        "default": [],
+        "description": "Ordered product-owned keyword rules for optional Xiaozhi display emotions. Empty disables emotion messages."
+      },
+      "default_emotion": {
+        "type": "string",
+        "enum": ["neutral", "happy", "laughing", "sad", "angry", "thinking", "relaxed", "confident"],
+        "default": "neutral"
       }
     },
     "required": ["control_host", "control_port"],

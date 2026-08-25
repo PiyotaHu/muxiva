@@ -9,11 +9,23 @@ but must be called out explicitly with migration guidance.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `@muxiva/agent` now exports `AgentNodeAdapter` instead of
+  `AgentTurnController`. The adapter no longer infers supersession from new
+  prompts or Signal sequences; voice Turn admission and supersession belong to
+  `builtin.voice_turn_controller`. Rename `agent_turn_timeout_ms` to
+  `agent_request_timeout_ms`, remove Agent-side Signal-name filters, and wire an
+  explicit cancellation source to `signal_in`.
+- Concurrent Runtime treats callback-emitted Signals as a control barrier: all
+  connected downstream Signal queues accept them before accompanying Frames
+  are dispatched.
+
 ### Added
 
-- Public `AgentTurnController` and `CapabilityRouter` contracts in
+- Public `AgentNodeAdapter` and `CapabilityRouter` contracts in
   `@muxiva/agent`, with least-authority route validation, route-selection
-  events, first-output/whole-Turn watchdogs, stale-output isolation, and
+  events, first-output/whole-request watchdogs, stale-output isolation, and
   recoverable Driver rotation without moving Agent business policy into Core.
 - Strictly separated English and Simplified Chinese documentation sources with
   contextual language switching and translation-parity CI validation.

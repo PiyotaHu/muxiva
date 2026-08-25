@@ -42,8 +42,13 @@ the Agora RTC provider:
   Opus packets in real time.
 - **`xiaozhi.audio_sink`** (Sink): encodes TTS PCM back to Opus and streams it
   to the device.
-- **`xiaozhi.event_encoder`** (Sink): maps transcripts, assistant text, TTS
-  lifecycle, and transport-neutral emotion Events into device protocol messages.
+- **`xiaozhi.event_encoder`** (Sink): maps transcripts, presentation-ready
+  assistant text, TTS lifecycle, device commands, and product emotion into
+  device protocol messages.
+
+Emotion is not Agent output. The Xiaozhi Graph owns `emotion_rules` and
+`default_emotion`; an empty rule list disables emotion messages. Character vocabulary and display
+policy can therefore change without modifying the Agent or provider implementation.
 
 Every Muxiva Python Node runs in its own process, so the Source Node owns a
 small in-process gateway and the Sink / Event Encoder Nodes connect to it over a

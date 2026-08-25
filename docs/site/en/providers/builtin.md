@@ -28,10 +28,14 @@ and `output` configuration objects, so 16 kHz input and 48 kHz output are not se
 `builtin.speech_formatter` lets an Agent's original Markdown branch directly to a rich chat client
 while a derived plain-text branch feeds TTS. It strips emphasis markers and bare URLs, keeps link
 labels, and replaces streamed fenced-code blocks and Markdown tables with configurable spoken
-messages. Its `code_block_message`, `table_message`, and `strip_urls` values are editable in the
-Studio Node configuration. The streaming parser retains fence and table state across Text Frames;
-an interruption Signal or a new sequence resets that state, so stale unfinished Markdown cannot
-silence a later turn.
+messages. It also owns sentence batching for TTS through
+`minimum_chunk_characters` and `maximum_chunk_characters`; the Agent itself
+emits semantic text deltas without voice policy. A terminal Agent Event flushes
+the final partial sentence. `suppressed_parenthetical_terms` configures product-specific
+parenthetical presentation that must not be spoken. The Builtin contains no character or device
+vocabulary; Xiaozhi terms live only in the Xiaozhi Graph. The streaming parser retains fence and table state
+across Text Frames; an interruption Signal or a new sequence resets that state,
+so stale unfinished Markdown cannot silence a later turn.
 
 `builtin.voice_turn_controller` is the sole interruption decision point in a cascade voice graph.
 VAD `speech.started/stopped` values are observations. Only an admitted final transcript produces

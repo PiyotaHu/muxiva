@@ -156,6 +156,16 @@ fn studio_catalog_is_derived_from_registry_descriptors_and_schemas() {
         speech_formatter["config_schema"]["properties"]["strip_urls"]["default"],
         true
     );
+    assert_eq!(
+        speech_formatter["config_schema"]["properties"]["suppressed_parenthetical_terms"]
+            ["default"],
+        serde_json::json!([])
+    );
+    assert!(speech_formatter["ports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|port| port["name"] == "event_in"));
     let voice_turn = json
         .as_array()
         .unwrap()

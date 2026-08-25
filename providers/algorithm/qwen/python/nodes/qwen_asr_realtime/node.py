@@ -79,10 +79,6 @@ class QwenAsrRealtimeNode:
         self._transport: Any | None = None
         self._speech_active = False
         self._pending_transcript: tuple[str, int] | None = None
-        # Do not let a cough or a standalone filler sound interrupt playback.
-        # Barge-in is armed by Server VAD, but committed only after ASR has
-        # produced some meaningful text for the utterance.
-        self._interruption_emitted = False
         # Qwen may deliver a final transcript before an already-buffered preview.
         # Fence previews at the utterance boundary so a committed transcript can
         # never be reopened by that late event.
@@ -138,7 +134,6 @@ class QwenAsrRealtimeNode:
                 self._speech_active = False
                 self._pending_transcript = None
                 self._transcript_committed = False
-                self._interruption_emitted = False
         if events is None:
             # A cloud/network outage must not kill the Python Host and then the
             # whole graph.  Drop this 60 ms frame; the next frame retries.
@@ -153,12 +148,11 @@ class QwenAsrRealtimeNode:
                 self._speech_active = True
                 self._transcript_committed = False
                 self._pending_transcript = None
-                self._interruption_emitted = False
                 self._emit_speech_state(ctx, frame.sequence, True)
                 self._log(
                     "speech.started",
                     sequence=frame.sequence,
-                    action="await_meaningful_transcript",
+                    action="observation",
                 )
             elif kind == "input_audio_buffer.speech_stopped":
                 if not self._speech_active:
@@ -182,13 +176,7 @@ class QwenAsrRealtimeNode:
                     )
                     continue
                 text = f"{event.get('text', '')}{event.get('stash', '')}"
-                if text and not self._is_ignorable_utterance(text):
-                    # Partial hypotheses can briefly turn a filler such as
-                    # "嗯" into another word and then correct it in the final
-                    # transcript.  In strict mode, never let that unstable
-                    # preview stop the assistant's audio.
-                    if not bool(self.config.get("barge_in_requires_final", False)):
-                        self._emit_interruption(ctx, frame.sequence)
+                if text:
                     ctx.emit(
                         "transcript_preview_out",
                         muxiva.TextFrame(text, sequence=frame.sequence),
@@ -259,57 +247,9 @@ class QwenAsrRealtimeNode:
         ctx.publish_notification(topic, payload)
 
     def _emit_completed(self, ctx: Any, text: str, sequence: int) -> None:
-        if self._is_ignorable_utterance(text):
-            self._log(
-                "transcript.ignored",
-                sequence=sequence,
-                reason="filler_or_non_speech",
-                chars=len(text),
-            )
-            return
-        self._emit_interruption(ctx, sequence)
         ctx.emit("text_out", muxiva.TextFrame(text, sequence=sequence))
         ctx.publish_notification("muxiva.voice.transcript.completed", {"text": text})
         self._log("transcript.completed", sequence=sequence, chars=len(text))
-
-    def _emit_interruption(self, ctx: Any, sequence: int) -> None:
-        if self._interruption_emitted:
-            return
-        self._interruption_emitted = True
-        # Provider adapters publish observations and transcripts. Cancellation
-        # ownership belongs to builtin.voice_turn_controller. This opt-in exists
-        # only for graphs created before the standard turn protocol.
-        if not bool(self.config.get("emit_legacy_barge_in_signal", False)):
-            self._log("speech.validated", sequence=sequence, action="delegate_to_turn_controller")
-            return
-        ctx.emit_signal(
-            "muxiva.voice.speech.started",
-            {"node": "qwen.asr_realtime", "detector": "qwen_server_vad"},
-        )
-        self._log("speech.validated", sequence=sequence, action="legacy_interrupt")
-
-    def _is_ignorable_utterance(self, text: str) -> bool:
-        normalized = re.sub(
-            r"[\s\u3000，。！？、,.!?…~～;；:：'\"“”‘’（）()\[\]【】<>《》*_—-]+",
-            "",
-            text,
-        ).lower()
-        if not normalized:
-            return True
-        if not bool(self.config.get("ignore_filler_utterances", False)):
-            return False
-        ignored = {
-            re.sub(
-                r"[\s\u3000，。！？、,.!?…~～;；:：'\"“”‘’（）()\[\]【】<>《》*_—-]+",
-                "",
-                str(value),
-            ).lower()
-            for value in self.config.get("ignored_utterances", [])
-            if str(value).strip()
-        }
-        # Legacy graphs also fail open: only an exact deployment-declared
-        # filler is suppressed. Unknown languages and short words pass through.
-        return normalized in ignored
 
     def on_finish(self, _ctx: Any = None) -> None:
         if self._transport is not None:

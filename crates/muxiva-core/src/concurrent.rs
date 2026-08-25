@@ -1015,7 +1015,10 @@ struct OutputDispatch {
 
 enum Dispatch {
     Frames(Vec<Frame>),
-    Signals(Vec<SignalFrame>),
+    Signals {
+        signals: Vec<SignalFrame>,
+        acknowledged: mpsc::SyncSender<()>,
+    },
 }
 
 struct NodeCallOutput {
@@ -1267,6 +1270,7 @@ impl NodeWorker {
         let mut batches = (0..self.outgoing.len())
             .map(|_| Vec::new())
             .collect::<Vec<_>>();
+        let mut frame_observations = Vec::new();
         for emission in output.emissions {
             let (output_port, frame) = emission.into_parts();
             let Some(port) = descriptor.ports().iter().find(|candidate| {
@@ -1288,18 +1292,62 @@ impl NodeWorker {
                     AbortStage::Process,
                 ));
             }
-            observe_frame(
-                self.shared.runtime_observer.as_deref(),
-                &self.node_id,
-                &output_port,
-                FrameObservationDirection::Output,
-                &frame,
-            );
             for (index, output) in self.outgoing.iter().enumerate() {
                 if output.descriptor.from_output_port() == &output_port {
                     batches[index].push(frame.clone());
                 }
             }
+            frame_observations.push((output_port, frame));
+        }
+
+        // Signals are an adjacent control-plane barrier for Frames produced by
+        // the same callback. Every downstream Signal queue must accept them
+        // before any accompanying data-plane Frame is dispatched. Nodes can
+        // therefore react to explicit cancellation without inspecting Frame
+        // sequence numbers or reconstructing an upstream policy decision.
+        if !output.signals.is_empty() {
+            for signal in &output.signals {
+                observe_signal(
+                    self.shared.runtime_observer.as_deref(),
+                    &self.node_id,
+                    None,
+                    SignalObservationDirection::Output,
+                    signal,
+                );
+            }
+            let (acknowledged_tx, acknowledged_rx) =
+                mpsc::sync_channel(self.outgoing.len());
+            for outgoing in &self.outgoing {
+                if outgoing
+                    .sender
+                    .send(Dispatch::Signals {
+                        signals: output.signals.clone(),
+                        acknowledged: acknowledged_tx.clone(),
+                    })
+                    .is_err()
+                {
+                    return self.dispatch_closed_abort();
+                }
+            }
+            drop(acknowledged_tx);
+            for _ in 0..self.outgoing.len() {
+                if acknowledged_rx.recv().is_err() {
+                    return self.dispatch_closed_abort();
+                }
+            }
+            if let Some(reason) = self.shared.control.reason() {
+                return Err(reason);
+            }
+        }
+
+        for (output_port, frame) in &frame_observations {
+            observe_frame(
+                self.shared.runtime_observer.as_deref(),
+                &self.node_id,
+                output_port,
+                FrameObservationDirection::Output,
+                frame,
+            );
         }
 
         // Every edge receives its complete bounded callback batch before this
@@ -1318,7 +1366,9 @@ impl NodeWorker {
                 Err(mpsc::TrySendError::Full(Dispatch::Frames(batch))) => {
                     pending.push((index, batch))
                 }
-                Err(mpsc::TrySendError::Full(Dispatch::Signals(_))) => unreachable!("sent frames"),
+                Err(mpsc::TrySendError::Full(Dispatch::Signals { .. })) => {
+                    unreachable!("sent frames")
+                }
                 Err(mpsc::TrySendError::Disconnected(_)) => {
                     return self.dispatch_closed_abort();
                 }
@@ -1331,26 +1381,6 @@ impl NodeWorker {
                 .is_err()
             {
                 return self.dispatch_closed_abort();
-            }
-        }
-        if !output.signals.is_empty() {
-            for signal in &output.signals {
-                observe_signal(
-                    self.shared.runtime_observer.as_deref(),
-                    &self.node_id,
-                    None,
-                    SignalObservationDirection::Output,
-                    signal,
-                );
-            }
-            for outgoing in &self.outgoing {
-                if outgoing
-                    .sender
-                    .send(Dispatch::Signals(output.signals.clone()))
-                    .is_err()
-                {
-                    return self.dispatch_closed_abort();
-                }
             }
         }
         Ok(())
@@ -1417,12 +1447,21 @@ fn run_dispatcher(
                     }
                 }
             }
-            Dispatch::Signals(signals) => {
+            Dispatch::Signals {
+                signals,
+                acknowledged,
+            } => {
+                let mut failed = false;
                 for signal in signals {
                     if let Err(reason) = apply_signal(&shared.graph, &mut output, signal) {
                         fail_graph(shared, reason);
-                        break 'dispatch;
+                        failed = true;
+                        break;
                     }
+                }
+                let _ = acknowledged.send(());
+                if failed {
+                    break 'dispatch;
                 }
             }
         }

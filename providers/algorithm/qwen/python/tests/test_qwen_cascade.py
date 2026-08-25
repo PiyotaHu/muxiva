@@ -224,7 +224,7 @@ class CascadeNodeTests(unittest.TestCase):
             ["第一轮预览", "第二轮预览"],
         )
 
-    def test_asr_holds_completed_text_until_server_vad_stops_the_turn(self):
+    def test_asr_holds_completed_text_until_server_vad_stops_the_utterance(self):
         transport = FakeTransport([
             {"type": "input_audio_buffer.speech_started"},
             {"type": "conversation.item.input_audio_transcription.completed", "transcript": "完整问题"},
@@ -247,7 +247,7 @@ class CascadeNodeTests(unittest.TestCase):
             ],
         )
 
-    def test_asr_ignores_standalone_fillers_and_coughs_without_interrupting(self):
+    def test_asr_forwards_all_transcripts_for_controller_admission(self):
         transport = FakeTransport([
             {"type": "input_audio_buffer.speech_started"},
             {"type": "conversation.item.input_audio_transcription.text", "text": "嗯"},
@@ -262,39 +262,29 @@ class CascadeNodeTests(unittest.TestCase):
             {"type": "input_audio_buffer.speech_stopped"},
             {"type": "conversation.item.input_audio_transcription.completed", "transcript": "嗯，我想问天气。"},
         ])
-        node = asr.QwenAsrRealtimeNode(
-            {
-                "emit_legacy_barge_in_signal": True,
-                "ignore_filler_utterances": True,
-                "ignored_utterances": ["嗯", "咳", "咳嗽声", "um", "eh"],
-            },
-            lambda *_: transport,
-        )
+        node = asr.QwenAsrRealtimeNode({}, lambda *_: transport)
         with mock.patch.dict(os.environ, self.credentials):
             node.on_prepare()
         ctx = Context("audio_in")
 
         node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=60), ctx)
 
-        self.assertEqual(len(ctx.signals), 1)
+        self.assertEqual(ctx.signals, [])
         self.assertEqual(
             [frame.text for port, frame in ctx.emissions if port == "transcript_preview_out"],
-            ["嗯，我想问天气"],
+            ["嗯", "咳", "嗯，我想问天气"],
         )
         self.assertEqual(
             [frame.text for port, frame in ctx.emissions if port == "text_out"],
-            ["嗯，我想问天气。"],
+            ["嗯。", "（咳嗽声）", "嗯，我想问天气。"],
         )
 
-    def test_asr_strict_barge_in_waits_for_final_transcript(self):
+    def test_asr_preview_is_observational_and_never_interrupts(self):
         transport = FakeTransport([
             {"type": "input_audio_buffer.speech_started"},
             {"type": "conversation.item.input_audio_transcription.text", "text": "你好"},
         ])
-        node = asr.QwenAsrRealtimeNode(
-            {"barge_in_requires_final": True, "emit_legacy_barge_in_signal": True},
-            lambda *_: transport,
-        )
+        node = asr.QwenAsrRealtimeNode({}, lambda *_: transport)
         with mock.patch.dict(os.environ, self.credentials):
             node.on_prepare()
         ctx = Context("audio_in")
@@ -307,7 +297,7 @@ class CascadeNodeTests(unittest.TestCase):
             ["你好"],
         )
 
-    def test_asr_legacy_policy_fails_open_for_short_unknown_languages(self):
+    def test_asr_forwards_short_unknown_languages(self):
         transport = FakeTransport([
             {"type": "input_audio_buffer.speech_started"},
             {"type": "input_audio_buffer.speech_stopped"},
@@ -322,27 +312,19 @@ class CascadeNodeTests(unittest.TestCase):
                 "transcript": "sí",
             },
         ])
-        node = asr.QwenAsrRealtimeNode(
-            {
-                "barge_in_requires_final": True,
-                "emit_legacy_barge_in_signal": True,
-                "ignore_filler_utterances": True,
-                "ignored_utterances": ["um", "eh"],
-            },
-            lambda *_: transport,
-        )
+        node = asr.QwenAsrRealtimeNode({}, lambda *_: transport)
         with mock.patch.dict(os.environ, self.credentials):
             node.on_prepare()
         ctx = Context("audio_in")
         node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=71), ctx)
 
-        self.assertEqual(len(ctx.signals), 2)
+        self.assertEqual(ctx.signals, [])
         self.assertEqual(
             [frame.text for port, frame in ctx.emissions if port == "text_out"],
             ["go", "sí"],
         )
 
-    def test_asr_explicit_stop_always_barges_in_during_playback(self):
+    def test_asr_explicit_stop_is_forwarded_without_provider_interrupt(self):
         transport = FakeTransport([
             {"type": "input_audio_buffer.speech_started"},
             {"type": "input_audio_buffer.speech_stopped"},
@@ -351,22 +333,19 @@ class CascadeNodeTests(unittest.TestCase):
                 "transcript": "闭嘴",
             },
         ])
-        node = asr.QwenAsrRealtimeNode(
-            {"barge_in_requires_final": True, "emit_legacy_barge_in_signal": True},
-            lambda *_: transport,
-        )
+        node = asr.QwenAsrRealtimeNode({}, lambda *_: transport)
         with mock.patch.dict(os.environ, self.credentials):
             node.on_prepare()
         ctx = Context("audio_in")
         node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=81), ctx)
 
-        self.assertEqual(len(ctx.signals), 1)
+        self.assertEqual(ctx.signals, [])
         self.assertEqual(
             [frame.text for port, frame in ctx.emissions if port == "text_out"],
             ["闭嘴"],
         )
 
-    def test_asr_distinct_question_barges_in_during_playback(self):
+    def test_asr_distinct_question_is_forwarded_without_provider_interrupt(self):
         transport = FakeTransport([
             {"type": "input_audio_buffer.speech_started"},
             {"type": "input_audio_buffer.speech_stopped"},
@@ -375,16 +354,13 @@ class CascadeNodeTests(unittest.TestCase):
                 "transcript": "榴莲和菠萝蜜是亲戚吗",
             },
         ])
-        node = asr.QwenAsrRealtimeNode(
-            {"barge_in_requires_final": True, "emit_legacy_barge_in_signal": True},
-            lambda *_: transport,
-        )
+        node = asr.QwenAsrRealtimeNode({}, lambda *_: transport)
         with mock.patch.dict(os.environ, self.credentials):
             node.on_prepare()
         ctx = Context("audio_in")
         node.on_process(AudioFrame(b"\0" * 640, 16000, sequence=91), ctx)
 
-        self.assertEqual(len(ctx.signals), 1)
+        self.assertEqual(ctx.signals, [])
         self.assertEqual(
             [frame.text for port, frame in ctx.emissions if port == "text_out"],
             ["榴莲和菠萝蜜是亲戚吗"],
@@ -408,24 +384,18 @@ class CascadeNodeTests(unittest.TestCase):
         node.on_process(EventFrame("muxiva.runtime.tick"), ctx)
         self.assertEqual(
             [frame.text for port, frame in ctx.emissions if port == "text_out"],
-            ["你好，我是 Muxiva。"],
+            ["你好", "，", "我是 Muxiva。"],
         )
         self.assertEqual(ctx.emissions[0][1].sequence, 301)
         self.assertEqual(
             [frame.topic for port, frame in ctx.emissions if port == "event_out"],
-            ["muxiva.voice.response.completed"],
+            ["muxiva.model.response.completed"],
         )
         self.assertFalse(any(port == "client_event_out" for port, _ in ctx.emissions))
         self.assertTrue(client.request[2]["stream"])
-        self.assertEqual(ctx.events[0][0], "muxiva.voice.response.delta")
-        self.assertEqual(ctx.events[-1][0], "muxiva.voice.response.completed")
+        self.assertEqual(ctx.events[0][0], "muxiva.model.response.delta")
+        self.assertEqual(ctx.events[-1][0], "muxiva.model.response.completed")
         node.on_finish()
-
-    def test_llm_sentence_chunks_do_not_split_streamed_decimal(self):
-        self.assertEqual(
-            list(llm.sentence_chunks(["小主人，合肥现在气温26.", "2度，体感温度27.1度。"])),
-            ["小主人，合肥现在气温26.2度，体感温度27.1度。"],
-        )
 
     def test_asr_reconnects_after_broken_transport_without_killing_graph(self):
         class BrokenTransport(FakeTransport):
@@ -689,9 +659,10 @@ class CascadeNodeTests(unittest.TestCase):
             (root / "qwen_asr_realtime" / "muxiva.node.json").read_text()
         )["ports"]}
         self.assertTrue(
-            {"speech_out", "signal_out", "transcript_preview_out", "text_out", "event_out"}
+            {"speech_out", "transcript_preview_out", "text_out", "event_out"}
             .issubset(asr_ports)
         )
+        self.assertNotIn("signal_out", asr_ports)
         for package in ("qwen_llm_stream", "qwen_tts_realtime"):
             ports = {port["name"] for port in json.loads(
                 (root / package / "muxiva.node.json").read_text()

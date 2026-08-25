@@ -38,14 +38,10 @@ export interface AgentDriverError extends Error {
 export interface AgentNodeConfig {
   max_queue_size?: number
   max_results_per_wakeup?: number
-  cancel_signals?: string[]
-  previous_only_cancel_signals?: string[]
   agent_first_output_timeout_ms?: number
-  agent_turn_timeout_ms?: number
+  agent_request_timeout_ms?: number
   timeout_message?: string
   failure_message?: string
-  progress_message?: string
-  progress_delay_ms?: number
   [key: string]: unknown
 }
 export interface AgentNodeDefinition {
@@ -79,7 +75,7 @@ export class CapabilityRouter {
   capabilities(): readonly Readonly<AgentCapability>[]
   route(prompt: Omit<AgentPrompt, "route">): AgentRouteDecision
 }
-export class AgentTurnController implements AgentNodeInstance {
+export class AgentNodeAdapter implements AgentNodeInstance {
   constructor(options: { createDriver: AgentNodeDefinition["createDriver"]; config?: AgentNodeConfig })
   onProcess(frame: Record<string, unknown>, context: AgentNodeContext): void
   onSignal(signal: Record<string, unknown>, context?: AgentNodeContext): void
@@ -88,8 +84,3 @@ export class AgentTurnController implements AgentNodeInstance {
 }
 export type AgentNodeConstructor = new (config?: AgentNodeConfig) => AgentNodeInstance
 export function defineAgentNode(definition: AgentNodeDefinition): AgentNodeConstructor
-export class SentenceChunker {
-  constructor(options?: { maximumCharacters?: number })
-  push(delta: string): string[]
-  flush(): string[]
-}

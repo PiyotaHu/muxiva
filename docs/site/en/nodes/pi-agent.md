@@ -119,7 +119,7 @@ ls -la examples/voice-agent/.muxiva/workspaces/pi-agent
 ```
 
 Observe should show Tool lifecycle in Semantic Trace, Agent Text flowing into
-TTS, and barge-in Signal cancelling the active Pi Turn. Late output from the
+TTS, and barge-in Signal cancelling the active Pi request. Late output from the
 old generation must not continue to play.
 
 Then ask a question that requires the live web, such as “Search for today's

@@ -4,12 +4,12 @@
   "display_name": "Qwen Cancellable Streaming LLM",
   "node_type": "qwen.llm_stream",
   "language": "python",
-  "factory_version": "1.3.0",
+  "factory_version": "2.0.0",
   "kind": "transform",
   "entrypoint": "node:QwenLlmStreamNode",
   "category": "algorithm",
   "capability": "language.generation.cancellable_streaming",
-  "summary": "Generates sentence-streamed responses on a cancellable background request with Runtime-managed wakeups.",
+  "summary": "Generates raw semantic text deltas on a cancellable background request with Runtime-managed wakeups.",
   "connection_id": "dashscope",
   "documentation": "https://piyotahu.github.io/muxiva/providers/qwen/llm-stream/",
   "tags": ["llm", "generation", "cancellation", "streaming"],
@@ -23,7 +23,7 @@
     "type": "object",
     "properties": {
       "model": { "type": "string", "default": "qwen-flash" },
-      "system_prompt": { "type": "string", "default": "You are Muxiva, a warm, concise real-time voice assistant. Respond in the user's language." },
+      "system_prompt": { "type": "string", "default": "You are a capable assistant. Respond in the user's language and use provided context accurately." },
       "temperature": { "type": "number", "default": 0.6 },
       "max_results_per_wakeup": { "type": "integer", "minimum": 1, "maximum": 256, "default": 32 }
     },

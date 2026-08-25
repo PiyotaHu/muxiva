@@ -1,6 +1,6 @@
 # Qwen Streaming LLM
 
-接收 Transcript 或上下文文本，输出按句切分的助手响应增量。
+接收 Transcript 或上下文文本，输出原始语义助手响应增量。
 
 | 属性 | 值 |
 | --- | --- |
@@ -20,7 +20,7 @@
 ## 配置
 
 `model` 默认是 `qwen-flash`；`system_prompt` 定义助手行为；`temperature` 默认是 `0.6`。
-按句输出使 TTS 不必等待完整回答即可开始合成。HTTP SSE 在后台 Worker 中运行；Node
+语音呈现断句由下游 Speech Formatter 负责。HTTP SSE 在后台 Worker 中运行；Node
 回调只负责启动请求或排空有界队列，因此 `on_signal` 能及时关闭进行中的响应，而不是等待
 完整答案结束。Node 通过 Context 请求 Runtime 内部唤醒，无需 Clock Node 或 `tick_in` Port。
 `max_results_per_wakeup` 默认是 `32`。

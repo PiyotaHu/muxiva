@@ -26,9 +26,12 @@ Builtin 是编译进 Muxiva 的厂商无关 Factory。即使它们共享 Rust Ru
 
 `builtin.speech_formatter` 让 Agent 原始 Markdown 继续分叉到富文本聊天界面，只把派生的
 纯文本送入 TTS。它会删除强调符号和裸 URL、保留链接标题，并把跨 Frame 的代码围栏和
-Markdown 表格替换为可配置的播报提示。`code_block_message`、`table_message` 和
-`strip_urls` 都能在 Studio 的 Node Configuration 中修改。解析器会跨 Text Frame 保存
-代码围栏和表格状态，因此不会把半截 Markdown 控制符送进 TTS。
+Markdown 表格替换为可配置的播报提示。它还通过
+`minimum_chunk_characters` 和 `maximum_chunk_characters` 负责 TTS 断句提交；Agent 本身只
+输出语义文本增量，不包含语音策略。Agent 终止 Event 会冲刷最后一段。
+`suppressed_parenthetical_terms` 可按产品配置不应朗读的括号内呈现词；Builtin 不内置
+任何角色或设备词，小智的动作词表只存在于小智 Graph 配置中。
+解析器会跨 Text Frame 保存代码围栏和表格状态，因此不会把半截 Markdown 控制符送进 TTS。
 打断 Signal 或新的 Sequence 会重置这些状态，未闭合的旧 Markdown 不会导致下一轮静音。
 
 `builtin.voice_turn_controller` 是级联语音图唯一的中断裁决点。VAD 的

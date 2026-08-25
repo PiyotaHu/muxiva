@@ -38,9 +38,16 @@ Schema version is `1`.
 
 Controller decision payloads contain `turn_id`, `generation`, `reason`, and
 `controller`. `turn_id` is the admitted input sequence in v1. `generation` is a
-monotonic controller-local epoch. Downstream adapters must reject work from a
-strictly older sequence/generation, while allowing the prompt that shares the
-cancel Signal's sequence.
+monotonic controller-local epoch. Turn-aware presentation and media adapters may
+use those fields for their cancellation watermark. The Agent adapter does not:
+it consumes the controller's ordered cancellation Signal and prompt, and closes
+the active request sink to suppress late output.
+
+The Runtime provides the generic causal guarantee needed here: Signals emitted
+by one Node callback are accepted by every connected downstream Signal queue
+before Frames emitted by that callback are dispatched. Therefore a controller
+can cancel old work and forward a new prompt without downstream Nodes comparing
+Turn IDs or reconstructing supersession policy.
 
 ## Ownership rules
 
@@ -51,8 +58,11 @@ cancel Signal's sequence.
 3. `VoiceTurnController` is the only component allowed to convert a transcript
    or authoritative interrupt request into `muxiva.turn.cancelled`.
 4. `AgentAdapter` owns model sessions, tools, capability routing, and semantic
-   output. Framework `AgentTurnController` owns deadlines, cancellation, stale
-   generation suppression, and recovery.
+   output. Framework `AgentNodeAdapter` executes requests, applies explicit
+   cancellation, enforces deadlines, suppresses output from retired executions,
+   and recovers an unresponsive Driver. It does not interpret Turn IDs,
+   generations, sequence ordering, or prompt supersession; those semantics
+   belong exclusively to `VoiceTurnController`.
 5. `TtsAdapter` accepts text and canonical cancellation, reuses an idle vendor
    session, and drops late PCM from cancelled generations.
 6. `MediaController` behavior lives at the final transport/media boundary: a

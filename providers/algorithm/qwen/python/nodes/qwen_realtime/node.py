@@ -354,11 +354,6 @@ def session_update(config: dict[str, Any]) -> dict[str, Any]:
     instructions = str(
         config.get("instructions", "You are a concise, helpful realtime voice assistant.")
     ).strip()
-    instructions += (
-        "\nRealtime voice rules: reply in at most two short spoken sentences unless the "
-        "user explicitly asks for detail. Respond promptly. If a request needs missing "
-        "information, such as a weather location, ask one concise follow-up question."
-    )
     return {
         "event_id": _event_id(),
         "type": "session.update",

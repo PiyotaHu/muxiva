@@ -125,6 +125,7 @@ class QwenTtsRealtimeNode:
         if input_port == "event_in":
             if getattr(frame, "topic", "") not in {
                 "muxiva.agent.response.completed",
+                "muxiva.model.response.completed",
                 "muxiva.voice.response.completed",
             }:
                 return

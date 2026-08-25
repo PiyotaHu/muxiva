@@ -4,7 +4,7 @@
   "display_name": "Qwen Server VAD + Streaming ASR",
   "node_type": "qwen.asr_realtime",
   "language": "python",
-  "factory_version": "1.3.0",
+  "factory_version": "2.0.0",
   "kind": "transform",
   "entrypoint": "node:QwenAsrRealtimeNode",
   "category": "algorithm",
@@ -12,11 +12,10 @@
   "summary": "Uses Qwen Server VAD and streaming ASR to emit observational speech state and transcripts; a Voice Turn Controller owns cancellation.",
   "connection_id": "dashscope",
   "documentation": "https://piyotahu.github.io/muxiva/providers/qwen/asr-realtime/",
-  "tags": ["vad", "asr", "speech-to-text", "barge-in", "streaming"],
+  "tags": ["vad", "asr", "speech-to-text", "streaming"],
   "ports": [
     { "name": "audio_in", "direction": "input", "frame_type": "audio", "schema": { "encoding": "pcm_s16le", "sample_rate_hz": 16000, "channels": 1, "streaming": true } },
     { "name": "speech_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["speech_started", "speech_stopped"], "detector": "qwen_server_vad", "streaming": true } },
-    { "name": "signal_out", "direction": "output", "frame_type": "signal", "schema": { "semantics": ["legacy_turn_cancellation"], "deprecated": true, "streaming": true } },
     { "name": "transcript_preview_out", "direction": "output", "frame_type": "text", "schema": { "semantics": ["partial_transcript"], "streaming": true } },
     { "name": "text_out", "direction": "output", "frame_type": "text", "schema": { "semantics": ["final_transcript"], "streaming": false } },
     { "name": "event_out", "direction": "output", "frame_type": "event", "schema": { "semantics": ["transcript_failure"], "streaming": true } }
@@ -28,11 +27,7 @@
       "region": { "type": "string", "enum": ["cn-beijing", "ap-southeast-1"], "default": "cn-beijing", "description": "Alibaba Cloud Model Studio region used to build the recommended workspace-specific realtime WebSocket endpoint." },
       "language": { "type": "string", "default": "zh" },
       "vad_threshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.45, "description": "Server VAD sensitivity. Lower values trigger more easily; tune this value in the Studio Node configuration." },
-      "silence_duration_ms": { "type": "integer", "minimum": 200, "maximum": 6000, "default": 1000 },
-      "ignore_filler_utterances": { "type": "boolean", "default": false, "description": "Legacy-only exact filler suppression. Standard graphs delegate admission to builtin.voice_turn_controller." },
-      "ignored_utterances": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 32 }, "maxItems": 64, "default": [], "description": "Deployment-owned exact filler/non-speech transcripts for legacy graphs. Unknown input always passes through." },
-      "barge_in_requires_final": { "type": "boolean", "default": false, "description": "Legacy mode only: wait for a validated final transcript before emitting the legacy interruption Signal." },
-      "emit_legacy_barge_in_signal": { "type": "boolean", "default": false, "description": "Compatibility escape hatch for pre-controller graphs. New graphs must leave this false and route final transcripts through builtin.voice_turn_controller." }
+      "silence_duration_ms": { "type": "integer", "minimum": 200, "maximum": 6000, "default": 1000 }
     },
     "required": ["model", "language"],
     "additionalProperties": false

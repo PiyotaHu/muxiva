@@ -136,7 +136,7 @@ class QwenLlmStreamNode:
             history = list(self._history[-12:])
         system_prompt = self.config.get(
             "system_prompt",
-            "You are Muxiva, a warm, concise real-time voice assistant. Respond in the user's language.",
+            "You are a capable assistant. Respond in the user's language and use provided context accurately.",
         )
         payload = {
             "model": self.config.get("model", "qwen-flash"),
@@ -180,11 +180,13 @@ class QwenLlmStreamNode:
         answer: list[str] = []
         try:
             deltas = client.stream(endpoint, api_key, payload, cancelled)
-            for sentence in sentence_chunks(deltas, cancelled):
+            for delta in semantic_deltas(deltas, cancelled):
                 if cancelled.is_set() or generation != self._current_generation():
                     return
-                answer.append(sentence)
-                self._put_result((generation, "delta", sentence, sequence), cancelled)
+                if not delta:
+                    continue
+                answer.append(delta)
+                self._put_result((generation, "delta", delta, sequence), cancelled)
             if not cancelled.is_set() and generation == self._current_generation():
                 self._put_result(
                     (generation, "done", {"user": user_text, "answer": "".join(answer)}, sequence),
@@ -214,7 +216,7 @@ class QwenLlmStreamNode:
                 continue
             if kind == "delta":
                 ctx.emit("text_out", muxiva.TextFrame(value, sequence=sequence))
-                ctx.publish_notification("muxiva.voice.response.delta", {"text": value})
+                ctx.publish_notification("muxiva.model.response.delta", {"text": value})
             elif kind == "done":
                 answer = value["answer"]
                 if answer:
@@ -225,7 +227,7 @@ class QwenLlmStreamNode:
                         ])
                         self._history = self._history[-12:]
                     self._emit_event(
-                        ctx, "muxiva.voice.response.completed", {"text": answer}, sequence
+                        ctx, "muxiva.model.response.completed", {"text": answer}, sequence
                     )
                 self._log("generation.completed", generation=generation, chars=len(answer))
             elif kind == "error":
@@ -298,33 +300,12 @@ def _credentials() -> tuple[str, str]:
         raise ValueError("DASHSCOPE_WORKSPACE_ID has an invalid format")
     return api_key, workspace
 
-
-def sentence_chunks(
+def semantic_deltas(
     deltas: Iterable[str], cancelled: threading.Event | None = None
 ) -> Iterable[str]:
-    buffer = ""
+    """Forward provider deltas without applying presentation or sentence policy."""
     for delta in deltas:
         if cancelled is not None and cancelled.is_set():
             return
-        buffer += delta
-        while True:
-            positions: list[int] = []
-            for index, mark in enumerate(buffer):
-                if mark in "。！？!?\n":
-                    positions.append(index)
-                elif mark == ".":
-                    # A streaming delta may end at `26.` and deliver `2` in
-                    # the next delta.  Wait for one-character look-ahead and
-                    # never treat a decimal point as a sentence boundary.
-                    if index + 1 == len(buffer):
-                        continue
-                    if index > 0 and buffer[index - 1].isdigit() and buffer[index + 1].isdigit():
-                        continue
-                    positions.append(index)
-            if not positions and len(buffer) < 80:
-                break
-            end = min(positions) + 1 if positions else 80
-            yield buffer[:end]
-            buffer = buffer[end:]
-    if buffer and (cancelled is None or not cancelled.is_set()):
-        yield buffer
+        if delta:
+            yield delta

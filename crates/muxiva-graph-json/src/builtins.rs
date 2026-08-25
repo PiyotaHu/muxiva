@@ -100,6 +100,7 @@ pub fn registry() -> NodeRegistry {
             NodeKind::Transform,
             &[
                 (TEXT_INPUT, PortDirection::Input, FrameType::Text),
+                ("event_in", PortDirection::Input, FrameType::Event),
                 ("signal_in", PortDirection::Input, FrameType::Signal),
                 (TEXT_OUTPUT, PortDirection::Output, FrameType::Text),
             ],
@@ -313,15 +314,6 @@ fn llm_openai_compatible_schema() -> ConfigSchema {
                     ]),
                 ),
                 (
-                    "sentence_chunk_characters",
-                    map([
-                        ("type", Value::String("integer".into())),
-                        ("minimum", Value::Integer(20)),
-                        ("maximum", Value::Integer(400)),
-                        ("default", Value::Integer(80)),
-                    ]),
-                ),
-                (
                     "stream",
                     map([
                         ("type", Value::String("boolean".into())),
@@ -342,7 +334,7 @@ fn llm_openai_compatible_schema() -> ConfigSchema {
 }
 
 const LLM_DEFAULT_SYSTEM_PROMPT: &str =
-    "You are Muxiva, a warm, concise real-time voice assistant. Respond in the user's language using short, natural spoken sentences. Never use Markdown, lists, or URLs aloud.";
+    "You are a capable assistant. Respond in the user's language and use provided context accurately.";
 
 struct LlmOpenAiCompatibleFactory;
 
@@ -367,7 +359,6 @@ impl NodeFactory for LlmOpenAiCompatibleFactory {
             || !matches!(config.get("timeout_ms"), Some(Value::Integer(1_000..=300_000)))
             || !matches!(config.get("max_results_per_wakeup"), Some(Value::Integer(1..=256)))
             || !matches!(config.get("history_turns"), Some(Value::Integer(0..=32)))
-            || !matches!(config.get("sentence_chunk_characters"), Some(Value::Integer(20..=400)))
             || !matches!(config.get("stream"), Some(Value::Bool(_)))
         {
             return Err(config_error("LLM node has an out-of-range numeric or boolean value"));
@@ -410,7 +401,6 @@ impl NodeFactory for LlmOpenAiCompatibleFactory {
             timeout_ms: integer("timeout_ms", 60_000) as u64,
             max_results_per_wakeup: integer("max_results_per_wakeup", 32) as usize,
             history_turns: integer("history_turns", 6) as usize,
-            sentence_chunk_characters: integer("sentence_chunk_characters", 80) as usize,
             stream: matches!(config.get("stream"), Some(Value::Bool(true))),
             generation: 0,
             cancel: None,
@@ -439,7 +429,6 @@ struct LlmOpenAiCompatible {
     timeout_ms: u64,
     max_results_per_wakeup: usize,
     history_turns: usize,
-    sentence_chunk_characters: usize,
     stream: bool,
     generation: u64,
     cancel: Option<Arc<AtomicBool>>,
@@ -486,7 +475,6 @@ impl LlmOpenAiCompatible {
         let temperature = self.temperature;
         let max_tokens = self.max_tokens;
         let timeout_ms = self.timeout_ms;
-        let sentence_chunk_characters = self.sentence_chunk_characters;
         let stream = self.stream;
         let history: Vec<(String, String)> = self
             .history
@@ -523,7 +511,6 @@ impl LlmOpenAiCompatible {
                     temperature,
                     max_tokens,
                     timeout_ms,
-                    sentence_chunk_characters,
                     stream,
                     generation,
                     sequence,
@@ -563,7 +550,7 @@ impl LlmOpenAiCompatible {
                                 context.node_id(),
                                 sequence,
                                 FramePayload::Event(EventData::new(
-                                    NamespacedName::new("muxiva.voice.response.completed")?,
+                                    NamespacedName::new("muxiva.model.response.completed")?,
                                     SchemaVersion::new(1)?,
                                     context.node_id().clone(),
                                     Value::String(answer.clone().into()),
@@ -678,7 +665,6 @@ fn run_llm_request(
     temperature: f64,
     max_tokens: u32,
     timeout_ms: u64,
-    sentence_chunk_characters: usize,
     stream: bool,
     generation: u64,
     sequence: u64,
@@ -726,21 +712,6 @@ fn run_llm_request(
     };
 
     let mut answer = String::new();
-    let mut pending = String::new();
-    let mut chunks = Vec::new();
-    let emit_chunks = |pending: &mut String, chunks: &mut Vec<String>, sender: &Sender<LlmResult>| {
-        drain_sentence_chunks(pending, sentence_chunk_characters, chunks);
-        for chunk in chunks.drain(..) {
-            if !chunk.is_empty() {
-                pending_count.fetch_add(1, Ordering::AcqRel);
-                let _ = sender.send(LlmResult::Delta {
-                    generation,
-                    sequence,
-                    text: chunk,
-                });
-            }
-        }
-    };
     if stream {
         let mut reader = std::io::BufReader::new(response.into_body().into_reader());
         let mut line = String::new();
@@ -768,8 +739,14 @@ fn run_llm_request(
                         .and_then(serde_json::Value::as_str)
                     {
                         answer.push_str(delta);
-                        pending.push_str(delta);
-                        emit_chunks(&mut pending, &mut chunks, &sender);
+                        if !delta.is_empty() {
+                            pending_count.fetch_add(1, Ordering::AcqRel);
+                            let _ = sender.send(LlmResult::Delta {
+                                generation,
+                                sequence,
+                                text: delta.to_owned(),
+                            });
+                        }
                     }
                 }
             }
@@ -786,23 +763,15 @@ fn run_llm_request(
                 .and_then(serde_json::Value::as_str)
             {
                 answer.push_str(content);
-                pending.push_str(content);
-                emit_chunks(&mut pending, &mut chunks, &sender);
+                if !content.is_empty() {
+                    pending_count.fetch_add(1, Ordering::AcqRel);
+                    let _ = sender.send(LlmResult::Delta {
+                        generation,
+                        sequence,
+                        text: content.to_owned(),
+                    });
+                }
             }
-        }
-    }
-    drain_sentence_chunks(&mut pending, sentence_chunk_characters, &mut chunks);
-    if !pending.is_empty() {
-        chunks.push(std::mem::take(&mut pending));
-    }
-    for chunk in chunks.drain(..) {
-        if !chunk.is_empty() {
-            pending_count.fetch_add(1, Ordering::AcqRel);
-            let _ = sender.send(LlmResult::Delta {
-                generation,
-                sequence,
-                text: chunk,
-            });
         }
     }
 
@@ -813,30 +782,6 @@ fn run_llm_request(
         user,
         answer,
     });
-}
-
-/// Drains complete spoken sentences (or oversized runs) out of `buffer`.
-fn drain_sentence_chunks(buffer: &mut String, max_characters: usize, chunks: &mut Vec<String>) {
-    loop {
-        let boundary = buffer
-            .char_indices()
-            .find(|(_, ch)| matches!(ch, '。' | '！' | '？' | '.' | '!' | '?' | '\n'))
-            .map(|(index, ch)| index + ch.len_utf8());
-        if let Some(end) = boundary {
-            chunks.push(buffer.drain(..end).collect());
-            continue;
-        }
-        if buffer.chars().count() >= max_characters {
-            let cut = buffer
-                .char_indices()
-                .nth(max_characters)
-                .map(|(index, _)| index)
-                .unwrap_or(buffer.len());
-            chunks.push(buffer.drain(..cut).collect());
-            continue;
-        }
-        break;
-    }
 }
 
 struct TextCancellationGateFactory;
@@ -1537,6 +1482,40 @@ fn speech_formatter_schema() -> ConfigSchema {
                         ("default", Value::Bool(true)),
                     ]),
                 ),
+                (
+                    "maximum_chunk_characters",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(20)),
+                        ("maximum", Value::Integer(400)),
+                        ("default", Value::Integer(120)),
+                    ]),
+                ),
+                (
+                    "minimum_chunk_characters",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(1)),
+                        ("maximum", Value::Integer(400)),
+                        ("default", Value::Integer(40)),
+                    ]),
+                ),
+                (
+                    "suppressed_parenthetical_terms",
+                    map([
+                        ("type", Value::String("array".into())),
+                        (
+                            "items",
+                            map([
+                                ("type", Value::String("string".into())),
+                                ("minLength", Value::Integer(1)),
+                                ("maxLength", Value::Integer(32)),
+                            ]),
+                        ),
+                        ("maxItems", Value::Integer(64)),
+                        ("default", Value::List(Vec::new().into_boxed_slice())),
+                    ]),
+                ),
             ]),
         ),
         (
@@ -1546,6 +1525,9 @@ fn speech_formatter_schema() -> ConfigSchema {
                     Value::String("code_block_message".into()),
                     Value::String("table_message".into()),
                     Value::String("strip_urls".into()),
+                    Value::String("maximum_chunk_characters".into()),
+                    Value::String("minimum_chunk_characters".into()),
+                    Value::String("suppressed_parenthetical_terms".into()),
                 ]
                 .into_boxed_slice(),
             ),
@@ -2714,18 +2696,45 @@ impl Node for Uppercase {
 
 struct SpeechFormatterFactory;
 
+fn speech_formatter_terms(config: &ConfigMap) -> Result<Vec<Box<str>>, NodeFactoryError> {
+    let Some(Value::List(values)) = config.get("suppressed_parenthetical_terms") else {
+        return Err(config_error("suppressed_parenthetical_terms must be an array"));
+    };
+    if values.len() > 64 {
+        return Err(config_error("suppressed_parenthetical_terms accepts at most 64 values"));
+    }
+    values
+        .iter()
+        .map(|value| match value {
+            Value::String(value) if !value.trim().is_empty() && value.chars().count() <= 32 => {
+                Ok(value.trim().into())
+            }
+            _ => Err(config_error(
+                "suppressed_parenthetical_terms values must contain 1 to 32 characters",
+            )),
+        })
+        .collect()
+}
+
 impl NodeFactory for SpeechFormatterFactory {
     fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
         let valid_message = |name: &str| matches!(config.get(name), Some(Value::String(value)) if !value.trim().is_empty() && value.len() <= 512);
-        if config.len() == 3
+        if config.len() == 6
             && valid_message("code_block_message")
             && valid_message("table_message")
             && matches!(config.get("strip_urls"), Some(Value::Bool(_)))
+            && matches!(config.get("maximum_chunk_characters"), Some(Value::Integer(20..=400)))
+            && matches!(config.get("minimum_chunk_characters"), Some(Value::Integer(1..=400)))
+            && matches!(
+                (config.get("minimum_chunk_characters"), config.get("maximum_chunk_characters")),
+                (Some(Value::Integer(minimum)), Some(Value::Integer(maximum))) if minimum <= maximum
+            )
+            && speech_formatter_terms(config).is_ok()
         {
             Ok(())
         } else {
             Err(config_error(
-                "speech formatter requires bounded code_block_message, table_message, and strip_urls values",
+                "speech formatter requires bounded messages, URL policy, and valid chunk limits",
             ))
         }
     }
@@ -2743,15 +2752,25 @@ impl NodeFactory for SpeechFormatterFactory {
             Some(Value::Bool(value)) => *value,
             _ => unreachable!("validated speech formatter configuration"),
         };
+        let integer = |name: &str| match config.get(name) {
+            Some(Value::Integer(value)) => *value as usize,
+            _ => unreachable!("validated speech formatter configuration"),
+        };
         Ok(Box::new(SpeechFormatter {
             code_block_message: message("code_block_message"),
             table_message: message("table_message"),
             strip_urls,
+            maximum_chunk_characters: integer("maximum_chunk_characters"),
+            minimum_chunk_characters: integer("minimum_chunk_characters"),
             in_fenced_code: false,
             in_table: false,
             pending_backticks: 0,
             in_bare_url: false,
             active_sequence: None,
+            pending_text: String::new(),
+            suppressed_parenthetical_terms: speech_formatter_terms(config)?,
+            pending_parenthetical: String::new(),
+            parenthetical_closing: None,
         }))
     }
 }
@@ -2766,11 +2785,17 @@ struct SpeechFormatter {
     code_block_message: Box<str>,
     table_message: Box<str>,
     strip_urls: bool,
+    maximum_chunk_characters: usize,
+    minimum_chunk_characters: usize,
     in_fenced_code: bool,
     in_table: bool,
     pending_backticks: usize,
     in_bare_url: bool,
     active_sequence: Option<u64>,
+    pending_text: String,
+    suppressed_parenthetical_terms: Vec<Box<str>>,
+    pending_parenthetical: String,
+    parenthetical_closing: Option<char>,
 }
 
 impl SpeechFormatter {
@@ -2783,11 +2808,15 @@ impl SpeechFormatter {
         self.in_table = false;
         self.pending_backticks = 0;
         self.in_bare_url = false;
+        self.pending_text.clear();
+        self.pending_parenthetical.clear();
+        self.parenthetical_closing = None;
     }
 
     fn format_chunk(&mut self, input: &str) -> String {
+        let filtered = self.filter_parenthetical(input);
         let mut combined = "`".repeat(self.pending_backticks);
-        combined.push_str(input);
+        combined.push_str(&filtered);
         self.pending_backticks = 0;
 
         let trailing_backticks = combined
@@ -2835,6 +2864,48 @@ impl SpeechFormatter {
             cursor = marker + run;
         }
         collapse_spoken_whitespace(&output)
+    }
+
+    fn filter_parenthetical(&mut self, input: &str) -> String {
+        if self.suppressed_parenthetical_terms.is_empty() {
+            return input.into();
+        }
+        let mut output = String::new();
+        for character in input.chars() {
+            if let Some(closing) = self.parenthetical_closing {
+                self.pending_parenthetical.push(character);
+                if character == closing {
+                    let suppress = self
+                        .suppressed_parenthetical_terms
+                        .iter()
+                        .any(|term| self.pending_parenthetical.contains(term.as_ref()));
+                    if !suppress {
+                        output.push_str(&self.pending_parenthetical);
+                    }
+                    self.pending_parenthetical.clear();
+                    self.parenthetical_closing = None;
+                } else if self.pending_parenthetical.chars().count() > 120 {
+                    output.push_str(&self.pending_parenthetical);
+                    self.pending_parenthetical.clear();
+                    self.parenthetical_closing = None;
+                }
+                continue;
+            }
+            let closing = match character {
+                '（' => Some('）'),
+                '(' => Some(')'),
+                '【' => Some('】'),
+                '[' => Some(']'),
+                _ => None,
+            };
+            if let Some(closing) = closing {
+                self.pending_parenthetical.push(character);
+                self.parenthetical_closing = Some(closing);
+            } else {
+                output.push(character);
+            }
+        }
+        output
     }
 
     fn append_markdown_text(&mut self, input: &str, output: &mut String) {
@@ -2908,30 +2979,99 @@ impl SpeechFormatter {
     }
 }
 
+impl SpeechFormatter {
+    fn emit_chunks(
+        &mut self,
+        source: &Frame,
+        chunks: Vec<String>,
+        context: &mut NodeContext,
+    ) -> muxiva_types::Result<()> {
+        for chunk in chunks {
+            let spoken = self.format_chunk(&chunk);
+            if spoken.is_empty() {
+                continue;
+            }
+            context.emit(
+                PortName::new(TEXT_OUTPUT).expect("valid built-in port"),
+                derive_payload(
+                    source,
+                    context.node_id(),
+                    "speech-formatter",
+                    FramePayload::Text(TextData::new(spoken)),
+                )?,
+            )?;
+        }
+        Ok(())
+    }
+}
+
 impl Node for SpeechFormatter {
     fn on_process(
         &mut self,
         input: Option<Frame>,
         context: &mut NodeContext,
     ) -> muxiva_types::Result<()> {
-        let input = required_type(input, FrameType::Text, "speech formatter requires text")?;
-        self.begin_sequence(input.header().sequence_id().get());
-        let source = input
-            .as_text()
-            .expect("validated text frame")
-            .data()
-            .as_str();
-        let spoken = self.format_chunk(source);
-        if !spoken.is_empty() {
-            context.emit(
-                PortName::new(TEXT_OUTPUT).expect("valid built-in port"),
-                derive_payload(
-                    &input,
-                    context.node_id(),
-                    "speech-formatter",
-                    FramePayload::Text(TextData::new(spoken)),
-                )?,
-            )?;
+        let input = input.ok_or_else(|| {
+            node_error(
+                "MUXIVA-SPEECH-FORMATTER-INPUT",
+                "speech formatter requires input",
+            )
+        })?;
+        match context.input_port().map(PortName::as_str) {
+            Some(TEXT_INPUT) => {
+                input.ensure_type(FrameType::Text)?;
+                self.begin_sequence(input.header().sequence_id().get());
+                self.pending_text.push_str(
+                    input.as_text().expect("validated text frame").data().as_str(),
+                );
+                let mut chunks = Vec::new();
+                drain_presentable_text(
+                    &mut self.pending_text,
+                    self.minimum_chunk_characters,
+                    self.maximum_chunk_characters,
+                    false,
+                    &mut chunks,
+                );
+                self.emit_chunks(&input, chunks, context)?;
+            }
+            Some("event_in") => {
+                input.ensure_type(FrameType::Event)?;
+                let topic = input
+                    .as_event()
+                    .map(|event| event.data().topic().as_str())
+                    .unwrap_or_default();
+                let same_sequence = self.active_sequence
+                    == Some(input.header().sequence_id().get());
+                if same_sequence && matches!(
+                    topic,
+                    "muxiva.agent.response.completed"
+                        | "muxiva.model.response.completed"
+                        | "muxiva.voice.response.completed"
+                ) {
+                    let mut chunks = Vec::new();
+                    drain_presentable_text(
+                        &mut self.pending_text,
+                        self.minimum_chunk_characters,
+                        self.maximum_chunk_characters,
+                        true,
+                        &mut chunks,
+                    );
+                    self.emit_chunks(&input, chunks, context)?;
+                } else if same_sequence && matches!(
+                    topic,
+                    "muxiva.agent.response.failed"
+                        | "muxiva.model.response.failed"
+                        | "muxiva.voice.response.failed"
+                ) {
+                    self.pending_text.clear();
+                }
+            }
+            _ => {
+                return Err(node_error(
+                    "MUXIVA-SPEECH-FORMATTER-PORT",
+                    "speech formatter received an unknown input port",
+                ))
+            }
         }
         Ok(())
     }
@@ -2946,7 +3086,49 @@ impl Node for SpeechFormatter {
         self.in_table = false;
         self.pending_backticks = 0;
         self.in_bare_url = false;
+        self.pending_text.clear();
+        self.pending_parenthetical.clear();
+        self.parenthetical_closing = None;
         Ok(())
+    }
+}
+
+fn drain_presentable_text(
+    buffer: &mut String,
+    minimum_characters: usize,
+    maximum_characters: usize,
+    flush: bool,
+    chunks: &mut Vec<String>,
+) {
+    loop {
+        let characters = buffer.chars().count();
+        let boundary = buffer
+            .char_indices()
+            .enumerate()
+            .find(|(offset, (_, character))| {
+                *offset + 1 >= minimum_characters
+                    && matches!(character, '。' | '！' | '？' | '.' | '!' | '?' | '\n')
+            })
+            .map(|(_, (index, character))| index + character.len_utf8());
+        let end = boundary.or_else(|| {
+            (characters >= maximum_characters).then(|| {
+                buffer
+                    .char_indices()
+                    .nth(maximum_characters)
+                    .map(|(index, _)| index)
+                    .unwrap_or(buffer.len())
+            })
+        });
+        if let Some(end) = end {
+            chunks.push(buffer.drain(..end).collect());
+            continue;
+        }
+        if flush && !buffer.trim().is_empty() {
+            chunks.push(std::mem::take(buffer));
+        } else if flush {
+            buffer.clear();
+        }
+        break;
     }
 }
 
@@ -3361,11 +3543,17 @@ mod tests {
             code_block_message: "代码已经生成，请在聊天窗口查看。".into(),
             table_message: "详细表格请在聊天窗口查看。".into(),
             strip_urls: true,
+            maximum_chunk_characters: 120,
+            minimum_chunk_characters: 40,
             in_fenced_code: false,
             in_table: false,
             pending_backticks: 0,
             in_bare_url: false,
             active_sequence: None,
+            pending_text: String::new(),
+            suppressed_parenthetical_terms: vec!["internal-action".into(), "gesture".into()],
+            pending_parenthetical: String::new(),
+            parenthetical_closing: None,
         }
     }
 
@@ -3427,18 +3615,31 @@ mod tests {
     }
 
     #[test]
-    fn llm_sentence_chunks_split_on_boundaries_and_overflow() {
-        let mut buffer = String::from("第一句。第二句！第三句？");
+    fn speech_formatter_chunks_streaming_text_only_at_presentation_boundary() {
+        let mut buffer = String::from("当然可以。这是同一段里的完整解释，现在可以提交给合成器。");
         let mut chunks = Vec::new();
-        drain_sentence_chunks(&mut buffer, 80, &mut chunks);
-        assert_eq!(chunks, vec!["第一句。", "第二句！", "第三句？"]);
+        drain_presentable_text(&mut buffer, 12, 80, false, &mut chunks);
+        assert_eq!(chunks, vec!["当然可以。这是同一段里的完整解释，现在可以提交给合成器。"]);
         assert!(buffer.is_empty());
 
-        let mut buffer = String::from("没有标点符号的超长回答");
+        let mut buffer = String::from("没有结尾标点的最后一段");
         let mut chunks = Vec::new();
-        drain_sentence_chunks(&mut buffer, 4, &mut chunks);
-        assert_eq!(chunks, vec!["没有标点", "符号的超"]);
-        assert_eq!(buffer, "长回答");
+        drain_presentable_text(&mut buffer, 12, 80, true, &mut chunks);
+        assert_eq!(chunks, vec!["没有结尾标点的最后一段"]);
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn speech_formatter_suppresses_only_configured_parenthetical_presentation() {
+        let mut formatter = speech_formatter();
+        assert_eq!(
+            formatter.format_chunk("Answer (internal-action: nods) continues."),
+            "Answer continues."
+        );
+        assert_eq!(
+            formatter.format_chunk("Temperature (Celsius) is 26.2."),
+            "Temperature Celsius is 26.2."
+        );
     }
 
     #[test]
@@ -3481,10 +3682,6 @@ mod tests {
                 (
                     muxiva_core::ConfigKey::new("history_turns").unwrap(),
                     Value::Integer(6),
-                ),
-                (
-                    muxiva_core::ConfigKey::new("sentence_chunk_characters").unwrap(),
-                    Value::Integer(80),
                 ),
                 (
                     muxiva_core::ConfigKey::new("stream").unwrap(),
@@ -3569,10 +3766,6 @@ mod tests {
                 Value::Integer(0),
             ),
             (
-                muxiva_core::ConfigKey::new("sentence_chunk_characters").unwrap(),
-                Value::Integer(80),
-            ),
-            (
                 muxiva_core::ConfigKey::new("stream").unwrap(),
                 Value::Bool(true),
             ),
@@ -3609,7 +3802,7 @@ mod tests {
                     ),
                     "event_out" => {
                         let event = emission.frame().as_event().unwrap();
-                        if event.data().topic().as_str() == "muxiva.voice.response.completed" {
+                        if event.data().topic().as_str() == "muxiva.model.response.completed" {
                             saw_completed = true;
                         }
                     }

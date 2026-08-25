@@ -1,19 +1,5 @@
-const DEFAULT_CANCEL_SIGNALS = [
-  'muxiva.turn.cancelled',
-  'muxiva.agent.cancel',
-  'muxiva.voice.speech.started',
-]
-const DEFAULT_PREVIOUS_ONLY_CANCEL_SIGNALS = [
-  'muxiva.turn.cancelled',
-  'muxiva.voice.speech.started',
-]
-
 function positiveInteger(value, fallback, maximum) {
   return Number.isSafeInteger(value) && value > 0 ? Math.min(value, maximum) : fallback
-}
-
-function nonNegativeInteger(value, fallback, maximum) {
-  return Number.isSafeInteger(value) && value >= 0 ? Math.min(value, maximum) : fallback
 }
 
 function eventFrame(topic, payload, sequence) {
@@ -166,17 +152,20 @@ function validateDriverRoute(driver, prompt) {
 /**
  * Wrap a vendor-specific Agent driver in Muxiva's stable Agent Node contract.
  * The driver owns model/session/tool behavior; this adapter owns graph lifecycle,
- * cancellation, bounded streaming output, and stale-generation suppression.
+ * explicit cancellation, bounded streaming output, and stale-request suppression.
+ * It deliberately does not infer conversational Turn semantics from Prompts or
+ * Signal sequence numbers. A Voice Turn Controller, when present in the Graph,
+ * owns admission and supersession and sends an explicit cancellation Signal.
  */
-export class AgentTurnController {
+export class AgentNodeAdapter {
   constructor({ createDriver, config = {} } = {}) {
-  if (typeof createDriver !== 'function') throw new TypeError('createDriver must be a function')
+      if (typeof createDriver !== 'function') throw new TypeError('createDriver must be a function')
       this.config = config
       this.queue = []
-      this.generation = 0
+      this.nextRequestId = 0
       this.activeController = undefined
       this.activeDriver = undefined
-      this.activeSequence = undefined
+      this.activeRequest = undefined
       this.closed = false
       this.tail = Promise.resolve()
       this.createDriver = createDriver
@@ -188,21 +177,13 @@ export class AgentTurnController {
         64,
         1024,
       )
-      this.cancelSignals = new Set(
-        Array.isArray(config.cancel_signals) ? config.cancel_signals : DEFAULT_CANCEL_SIGNALS,
-      )
-      this.previousOnlyCancelSignals = new Set(
-        Array.isArray(config.previous_only_cancel_signals)
-          ? config.previous_only_cancel_signals
-          : DEFAULT_PREVIOUS_ONLY_CANCEL_SIGNALS,
-      )
       this.firstOutputTimeoutMs = positiveInteger(
         config.agent_first_output_timeout_ms ?? config.first_output_timeout_ms,
         10_000,
         300_000,
       )
-      this.turnTimeoutMs = positiveInteger(
-        config.agent_turn_timeout_ms ?? config.turn_timeout_ms,
+      this.requestTimeoutMs = positiveInteger(
+        config.agent_request_timeout_ms ?? config.request_timeout_ms,
         60_000,
         600_000,
       )
@@ -212,10 +193,6 @@ export class AgentTurnController {
       this.failureMessage = typeof config.failure_message === 'string'
         ? config.failure_message.trim()
         : ''
-      this.progressMessage = typeof config.progress_message === 'string'
-        ? config.progress_message.trim()
-        : ''
-      this.progressDelayMs = nonNegativeInteger(config.progress_delay_ms, 0, 30_000)
       this.driver = this.makeDriver(undefined)
   }
 
@@ -235,20 +212,8 @@ export class AgentTurnController {
     }
 
     onSignal(signal, context) {
-      if (this.cancelSignals.has(signal?.name)) {
-        const sequence = Number(signal?.sequence ?? 0)
-        if (
-          this.previousOnlyCancelSignals.has(signal?.name)
-          && sequence > 0
-          && this.activeSequence !== undefined
-          && sequence <= this.activeSequence
-        ) {
-          console.error(`[MUXIVA][AGENT][cancel.ignored] signal=${signal.name} signal_sequence=${sequence} active_sequence=${this.activeSequence}`)
-          return
-        }
-        this.cancel(signal?.name ?? 'cancelled', sequence)
-        if (this.queue.length > 0) context?.scheduleNextTick?.(1)
-      }
+      this.cancel(signal?.name ?? 'cancelled', Number(signal?.sequence ?? 0))
+      if (this.queue.length > 0) context?.scheduleNextTick?.(1)
     }
 
     async onFinish() {
@@ -269,47 +234,56 @@ export class AgentTurnController {
     start(text, sequence) {
       const prompt = String(text).trim()
       if (!prompt || this.closed) return
-      this.cancel('superseded', sequence)
-      const generation = ++this.generation
-      const controller = new AbortController()
-      this.activeController = controller
-      this.activeSequence = sequence
+      const request = {
+        id: ++this.nextRequestId,
+        prompt,
+        sequence,
+        cancelled: false,
+      }
       this.tail = this.tail
         .catch(() => undefined)
-        .then(() => this.executeTurn({ prompt, sequence, generation, controller }))
+        .then(() => this.executeRequest(request))
     }
 
     cancel(reason, sequence) {
       const controller = this.activeController
-      if (!controller || controller.signal.aborted) return
-      controller.abort(reason)
-      this.activeDriver?.cancel?.(reason)
+      const request = this.activeRequest
+      const hadActiveRequest = Boolean(controller && !controller.signal.aborted)
+      if (hadActiveRequest) {
+        if (request) request.cancelled = true
+        controller.abort(reason)
+        this.activeDriver?.cancel?.(reason)
+      }
       this.activeController = undefined
-      this.activeSequence = undefined
-      this.generation += 1
+      this.activeDriver = undefined
+      this.activeRequest = undefined
       this.queue.length = 0
-      this.queue.push({
-        generation: this.generation,
-        port: 'event_out',
-        frame: eventFrame('muxiva.agent.response.cancelled', { reason }, sequence),
-      })
+      if (hadActiveRequest) {
+        this.queue.push({
+          port: 'event_out',
+          frame: eventFrame('muxiva.agent.response.cancelled', { reason }, sequence),
+        })
+      }
     }
 
-    async executeTurn({ prompt, sequence, generation, controller }) {
-      if (generation !== this.generation || controller.signal.aborted || this.closed) return
-      if (this.driverBusy) this.rotateDriver('previous_turn_unresponsive')
+    async executeRequest(request) {
+      const { id, prompt, sequence } = request
+      if (request.cancelled || this.closed) return
+      if (this.driverBusy) this.rotateDriver('previous_request_unresponsive')
+      const controller = new AbortController()
+      this.activeController = controller
+      this.activeRequest = request
       const driver = this.driver
       const epoch = this.driverEpoch
       this.driverBusy = true
       this.activeDriver = driver
-      this.enqueue(generation, 'event_out', eventFrame('muxiva.agent.response.started', {}, sequence))
+      this.enqueue(request, 'event_out', eventFrame('muxiva.agent.response.started', {}, sequence))
       const startedAt = Date.now()
       let accepting = true
       let responseText = ''
       let firstTextEmitted = false
       let firstOutputTimer
-      let turnTimer
-      let progressTimer
+      let requestTimer
       let rejectWatchdog
       const watchdog = new Promise((_, reject) => { rejectWatchdog = reject })
       const failForTimeout = (stage, timeoutMs) => {
@@ -328,56 +302,35 @@ export class AgentTurnController {
         () => failForTimeout('first_output', this.firstOutputTimeoutMs),
         this.firstOutputTimeoutMs,
       )
-      turnTimer = setTimeout(
-        () => failForTimeout('turn', this.turnTimeoutMs),
-        this.turnTimeoutMs,
+      requestTimer = setTimeout(
+        () => failForTimeout('request', this.requestTimeoutMs),
+        this.requestTimeoutMs,
       )
       const sink = {
         text: (delta) => {
-          if (!accepting || generation !== this.generation) return
+          if (!accepting || request.cancelled) return
           const value = String(delta)
           if (!value) return
-          if (progressTimer) {
-            clearTimeout(progressTimer)
-            progressTimer = undefined
-          }
           clearFirstOutputTimer()
           if (!firstTextEmitted) {
             firstTextEmitted = true
             console.error(`[MUXIVA][AGENT][first_text] sequence=${sequence} duration_ms=${Date.now() - startedAt}`)
           }
           responseText += value
-          this.enqueue(generation, 'text_out', { kind: 'text', text: value, sequence })
+          this.enqueue(request, 'text_out', { kind: 'text', text: value, sequence })
         },
         event: (type, payload = {}) => {
-          if (!accepting || generation !== this.generation) return
+          if (!accepting || request.cancelled) return
           if (type === 'tool.started') {
             clearFirstOutputTimer()
             console.error(`[MUXIVA][AGENT][first_activity] sequence=${sequence} type=tool.started duration_ms=${Date.now() - startedAt}`)
-            if (
-              !firstTextEmitted
-              && this.progressMessage
-              && this.progressDelayMs > 0
-              && !progressTimer
-            ) {
-              progressTimer = setTimeout(() => {
-                progressTimer = undefined
-                if (!accepting || firstTextEmitted || generation !== this.generation) return
-                firstTextEmitted = true
-                responseText += this.progressMessage
-                this.enqueue(generation, 'text_out', {
-                  kind: 'text', text: this.progressMessage, sequence,
-                })
-                console.error(`[MUXIVA][AGENT][first_text] sequence=${sequence} source=progress duration_ms=${Date.now() - startedAt}`)
-              }, this.progressDelayMs)
-            }
           }
-          this.enqueue(generation, 'event_out', eventFrame(`muxiva.agent.${type}`, payload, sequence))
+          this.enqueue(request, 'event_out', eventFrame(`muxiva.agent.${type}`, payload, sequence))
         },
       }
       let removeAbortListener = () => undefined
       const aborted = new Promise((_, reject) => {
-        const onAbort = () => reject(controller.signal.reason ?? new Error('Agent turn cancelled'))
+        const onAbort = () => reject(controller.signal.reason ?? new Error('Agent request cancelled'))
         controller.signal.addEventListener('abort', onAbort, { once: true })
         removeAbortListener = () => controller.signal.removeEventListener('abort', onAbort)
       })
@@ -407,25 +360,25 @@ export class AgentTurnController {
           if (this.driver === driver && this.driverEpoch === epoch) this.driverBusy = false
         })
         .catch(() => undefined)
-      console.error(`[MUXIVA][AGENT][turn.started] sequence=${sequence} generation=${generation} epoch=${epoch}`)
+      console.error(`[MUXIVA][AGENT][request.started] sequence=${sequence} request_id=${id} driver_epoch=${epoch}`)
       try {
         await Promise.race([driverRun, aborted, watchdog])
-        if (!controller.signal.aborted && generation === this.generation) {
+        if (!controller.signal.aborted && !request.cancelled) {
           this.enqueue(
-            generation,
+            request,
             'event_out',
             eventFrame('muxiva.agent.response.completed', { text: responseText }, sequence),
           )
-          console.error(`[MUXIVA][AGENT][turn.completed] sequence=${sequence} duration_ms=${Date.now() - startedAt}`)
+          console.error(`[MUXIVA][AGENT][request.completed] sequence=${sequence} duration_ms=${Date.now() - startedAt}`)
         }
       } catch (error) {
         const timedOut = error?.code === 'MUXIVA_AGENT_FIRST_OUTPUT_TIMEOUT'
-          || error?.code === 'MUXIVA_AGENT_TURN_TIMEOUT'
-        if (timedOut && generation === this.generation) {
+          || error?.code === 'MUXIVA_AGENT_REQUEST_TIMEOUT'
+        if (timedOut && !request.cancelled) {
           accepting = false
           this.rotateDriver(`timeout.${error.stage}`)
           this.enqueue(
-            generation,
+            request,
             'event_out',
             eventFrame('muxiva.agent.response.failed', {
               message: error.message,
@@ -434,10 +387,10 @@ export class AgentTurnController {
             }, sequence),
           )
           if (this.timeoutMessage) {
-            this.enqueue(generation, 'text_out', { kind: 'text', text: this.timeoutMessage, sequence })
+            this.enqueue(request, 'text_out', { kind: 'text', text: this.timeoutMessage, sequence })
           }
-          console.error(`[MUXIVA][AGENT][turn.timeout] sequence=${sequence} stage=${error.stage} duration_ms=${Date.now() - startedAt}`)
-        } else if (!controller.signal.aborted && generation === this.generation) {
+          console.error(`[MUXIVA][AGENT][request.timeout] sequence=${sequence} stage=${error.stage} duration_ms=${Date.now() - startedAt}`)
+        } else if (!controller.signal.aborted && !request.cancelled) {
           accepting = false
           const recoverDriver = !(error && typeof error === 'object' && error.recoverDriver === false)
           const reason = errorString(error, 'reason') || errorString(error, 'code') || 'run.failed'
@@ -445,7 +398,7 @@ export class AgentTurnController {
           if (recoverDriver) this.rotateDriver(reason)
           console.error('[MUXIVA][AGENT][response.failed]', error?.stack ?? error?.message ?? String(error))
           this.enqueue(
-            generation,
+            request,
             'event_out',
             eventFrame('muxiva.agent.response.failed', {
               message: error?.message ?? String(error),
@@ -454,19 +407,18 @@ export class AgentTurnController {
             }, sequence),
           )
           if (userMessage) {
-            this.enqueue(generation, 'text_out', { kind: 'text', text: userMessage, sequence })
+            this.enqueue(request, 'text_out', { kind: 'text', text: userMessage, sequence })
           }
         }
       } finally {
         accepting = false
         removeAbortListener()
         if (firstOutputTimer) clearTimeout(firstOutputTimer)
-        if (turnTimer) clearTimeout(turnTimer)
-        if (progressTimer) clearTimeout(progressTimer)
-        if (generation === this.generation) {
+        if (requestTimer) clearTimeout(requestTimer)
+        if (this.activeController === controller) {
           this.activeController = undefined
           this.activeDriver = undefined
-          this.activeSequence = undefined
+          this.activeRequest = undefined
         }
       }
     }
@@ -497,14 +449,14 @@ export class AgentTurnController {
       console.error(`[MUXIVA][AGENT][driver.rotated] epoch=${this.driverEpoch} reason=${reason}`)
     }
 
-    enqueue(generation, port, frame) {
-      if (generation !== this.generation || this.closed) return
+    enqueue(request, port, frame) {
+      if (request.cancelled || this.closed) return
       if (this.queue.length >= this.maxQueueSize) {
+        request.cancelled = true
         this.activeController?.abort('output.queue_full')
         this.activeDriver?.cancel?.('output.queue_full')
         this.queue.length = 0
         this.queue.push({
-          generation,
           port: 'event_out',
           frame: eventFrame(
             'muxiva.agent.response.failed',
@@ -514,14 +466,13 @@ export class AgentTurnController {
         })
         return
       }
-      this.queue.push({ generation, port, frame })
+      this.queue.push({ port, frame })
     }
 
     drain(context) {
       for (let index = 0; index < this.maxResultsPerWakeup; index += 1) {
         const item = this.queue.shift()
         if (!item) return
-        if (item.generation !== this.generation) continue
         context.emit(item.port, item.frame)
         if (item.port === 'text_out') {
           context.publishNotification?.('muxiva.agent.response.delta', { text: item.frame.text })
@@ -534,38 +485,9 @@ export class AgentTurnController {
 
 export function defineAgentNode({ createDriver }) {
   if (typeof createDriver !== 'function') throw new TypeError('createDriver must be a function')
-  return class MuxivaAgentNode extends AgentTurnController {
+  return class MuxivaAgentNode extends AgentNodeAdapter {
     constructor(config = {}) {
       super({ createDriver, config })
     }
-  }
-}
-
-export class SentenceChunker {
-  constructor({ maximumCharacters = 80 } = {}) {
-    this.maximumCharacters = positiveInteger(maximumCharacters, 80, 4096)
-    this.buffer = ''
-  }
-
-  push(delta) {
-    this.buffer += String(delta)
-    const chunks = []
-    const boundaries = new Set(['。', '！', '？', '.', '!', '?', '\n'])
-    while (this.buffer.length > 0) {
-      let end = [...this.buffer].findIndex((character) => boundaries.has(character))
-      if (end >= 0) end += 1
-      else if (this.buffer.length >= this.maximumCharacters) end = this.maximumCharacters
-      else break
-      chunks.push(this.buffer.slice(0, end))
-      this.buffer = this.buffer.slice(end)
-    }
-    return chunks
-  }
-
-  flush() {
-    if (!this.buffer) return []
-    const value = this.buffer
-    this.buffer = ''
-    return [value]
   }
 }

@@ -38,6 +38,45 @@ def _object_payload(frame) -> dict:
     return {}
 
 
+_VALID_EMOTIONS = {
+    "neutral", "happy", "laughing", "sad", "angry", "thinking", "relaxed", "confident",
+}
+
+
+def _emotion_rules(value) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Validate product-owned keyword rules even when instantiated outside Studio."""
+    if not isinstance(value, list):
+        return ()
+    rules = []
+    for item in value:
+        if not isinstance(item, dict) or item.get("emotion") not in _VALID_EMOTIONS:
+            continue
+        keywords = item.get("keywords")
+        if not isinstance(keywords, list):
+            continue
+        normalized = tuple(
+            keyword.strip() for keyword in keywords
+            if isinstance(keyword, str) and keyword.strip()
+        )
+        if normalized:
+            rules.append((str(item["emotion"]), normalized))
+    return tuple(rules)
+
+
+def _infer_emotion(
+    text: str,
+    rules: tuple[tuple[str, tuple[str, ...]], ...],
+    default: str,
+) -> str | None:
+    """Apply configured Xiaozhi display policy to presentation-ready text."""
+    if not rules:
+        return None
+    return next(
+        (emotion for emotion, keywords in rules if any(keyword in text for keyword in keywords)),
+        default,
+    )
+
+
 class XiaozhiEventEncoderNode:
     def __init__(self, config: dict | None = None) -> None:
         self.config = config or {}
@@ -58,6 +97,12 @@ class XiaozhiEventEncoderNode:
         )
         self._cancelled_through_sequence = 0
         self._speaking = False
+        self._emotion_rules = _emotion_rules(self.config.get("emotion_rules", []))
+        configured_default = str(self.config.get("default_emotion", "neutral"))
+        self._default_emotion = (
+            configured_default if configured_default in _VALID_EMOTIONS else "neutral"
+        )
+        self._last_emotion = "neutral"
         self._closed = False
 
     def on_prepare(self, ctx) -> None:
@@ -87,6 +132,12 @@ class XiaozhiEventEncoderNode:
                     "text": frame.text,
                 }
             )
+            emotion = _infer_emotion(
+                str(frame.text), self._emotion_rules, self._default_emotion
+            )
+            if emotion is not None and emotion != self._last_emotion:
+                self._last_emotion = emotion
+                self._send({"type": "llm", "emotion": emotion})
         elif input_port == "event_in":
             if frame.topic in self._device_command_topics:
                 payload = _object_payload(frame)
@@ -122,14 +173,6 @@ class XiaozhiEventEncoderNode:
                         "payload": command,
                     }
                 )
-            elif frame.topic == "muxiva.agent.emotion.changed":
-                payload = _object_payload(frame)
-                emotion = str(payload.get("emotion", "neutral"))
-                if emotion in {
-                    "neutral", "happy", "laughing", "sad", "angry",
-                    "thinking", "relaxed", "confident",
-                }:
-                    self._send({"type": "llm", "emotion": emotion})
             elif frame.topic == "muxiva.voice.tts.drained":
                 # The audio sink owns the final media barrier.  Event and PCM
                 # use independent Graph edges, so sending stop here can overtake
@@ -180,6 +223,7 @@ class XiaozhiEventEncoderNode:
         if self._speaking:
             self._send({"type": xiaozhi_gateway.TTS_TYPE, "state": "stop"})
         self._speaking = False
+        self._last_emotion = "neutral"
 
     def _send(self, payload: dict) -> None:
         self._client.send({"op": "message", "payload": payload})

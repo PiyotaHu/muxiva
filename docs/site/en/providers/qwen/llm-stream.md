@@ -1,6 +1,6 @@
 # Qwen Streaming LLM
 
-Consumes transcript or context text and emits sentence-sized assistant response deltas.
+Consumes transcript or context text and emits raw semantic assistant response deltas.
 
 | Property | Value |
 | --- | --- |
@@ -20,7 +20,7 @@ Consumes transcript or context text and emits sentence-sized assistant response 
 ## Configuration
 
 `model` defaults to `qwen-flash`; `system_prompt` defines behavior; `temperature` defaults to
-`0.6`. Sentence-sized output lets TTS start before the full response completes. HTTP SSE runs on
+`0.6`. Presentation batching belongs to a downstream Speech Formatter. HTTP SSE runs on
 a background worker; callbacks only start requests or drain a bounded queue, so
 `on_signal` can close an in-flight response immediately. The Node requests Runtime-managed
 internal wakeups through its Context, so it exposes no Clock Node or `tick_in` Port.

@@ -32,7 +32,7 @@ The Node emits provider-neutral semantic Frames only. Demo 2 fans its Text and E
 both Graph processing Nodes and the project-local Voice Room protocol Node. If vendor events are
 reordered, the Node waits for `speech.stopped` before committing `text_out` and drops previews that
 arrive after Final, so the Graph needs no separate Turn Context Node.
-`emit_legacy_barge_in_signal` defaults to `false`. New graphs must not let an ASR provider own
-cancellation; filler, cough, and short-utterance policy belongs in the Voice Turn Controller.
+The ASR provider exposes no cancellation Signal and makes no filler, cough, or short-utterance
+decision. Admission and cancellation policy belongs exclusively in the Voice Turn Controller.
 
 See Alibaba Cloud's [Qwen real-time speech recognition guide](https://help.aliyun.com/en/model-studio/real-time-speech-recognition-user-guide) for the current protocol and model scope.

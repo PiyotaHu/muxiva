@@ -31,7 +31,7 @@
 该 Node 只输出与客户端无关的语义 Frame。Demo 2 会把 Text/Event 分叉给 Graph 内部处理
 Node 和项目级 Voice Room 协议 Node。即使厂商事件乱序，Node 也会等待 `speech.stopped`
 后才提交 `text_out`，并丢弃 Final 之后迟到的 Preview，因此不需要额外 Turn Context Node。
-`emit_legacy_barge_in_signal` 默认是 `false`。新图不得让 ASR Provider 直接拥有取消权；
-口水词、咳嗽和短句策略统一配置在 Voice Turn Controller 中。
+ASR Provider 不提供取消 Signal，也不判断口水词、咳嗽或短句；这些准入与取消策略统一
+配置在 Voice Turn Controller 中。
 
 协议与模型范围以[阿里云 Qwen 实时语音识别文档](https://help.aliyun.com/zh/model-studio/real-time-speech-recognition-user-guide)为准。

@@ -37,8 +37,11 @@ Muxiva 语音图，即可获得完整的 **VAD + ASR + LLM + TTS** 语音管线�
 - **`xiaozhi.audio_source`**（源节点）：内嵌 WebSocket 服务端，将 Opus 解码为
   16kHz PCM，转发设备控制，并对下行音频做缓冲和实时节拍发送。
 - **`xiaozhi.audio_sink`**（汇节点）：把 TTS PCM 编码回 Opus 流式下发到设备。
-- **`xiaozhi.event_encoder`**（汇节点）：把转写、助手文字、TTS 生命周期和与协议无关的
-  情绪 Event 映射为设备协议消息。
+- **`xiaozhi.event_encoder`**（汇节点）：把转写、经语音呈现处理的助手文字、TTS
+  生命周期、设备命令和产品情绪映射为设备协议消息。
+
+情绪不是 Agent 输出。`emotion_rules` 与 `default_emotion` 由小智 Graph 配置；规则为空时
+encoder 不发送情绪消息。这样角色词表和显示策略可以替换，而无需修改 Agent 或 Provider 代码。
 
 由于 Muxiva 每个 Python Node 运行在独立进程中，源节点内置一个小型 gateway，
 汇节点与事件编码节点通过回环 JSON-lines 控制 socket 连接它。跨运行时边界流动的

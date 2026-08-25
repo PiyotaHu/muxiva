@@ -14,8 +14,8 @@ running Muxiva Graph.
 | --- | --- | --- | --- |
 | Agent repository | application team | model harness, sessions, capability catalog, route policy, tools, tests | Graph scheduling, RTC, ASR, TTS |
 | Agent Node adapter | Agent project | Port mapping, configuration schema, Driver assembly | substantial business logic or vendor SDKs |
-| `@muxiva/agent` binding | Muxiva | generic Turn Controller, capability contract and route validation | news/weather/device intent rules or concrete tools |
-| Muxiva Core/Runtime | Muxiva | Frames, Graph, queues, Signals, scheduling, Hosts, observability | Agent turns, Pi, Qwen, or application tools |
+| `@muxiva/agent` binding | Muxiva | generic request execution, capability contract and route validation | Turn admission, news/weather/device intent rules, or concrete tools |
+| Muxiva Core/Runtime | Muxiva | Frames, Graph, queues, Signals, scheduling, Hosts, observability | business Turn semantics, Pi, Qwen, or application tools |
 
 Replacing Pi, LangGraph, or an in-house Agent does not rewrite RTC, ASR, TTS,
 or the Graph. Replacing Agora or Qwen Nodes does not affect the Agent repo.
@@ -43,12 +43,12 @@ interface AgentDriver {
 }
 ```
 
-`run` receives a committed ASR prompt. `sink.text` produces streaming Text
-Frames; `sink.event` produces Agent, Turn, and Tool lifecycle Events.
-`AbortSignal` is the primary cancellation path for barge-in and superseding
-prompts. `capabilities` declares the maximum authority available to this Driver;
-`route` synchronously selects a bounded subset for one Turn. The binding rejects
-routes that attempt to grant undeclared capabilities. `snapshot` optionally
+`run` receives a prompt already admitted by its upstream source. `sink.text`
+produces streaming Text Frames; `sink.event` produces Agent and Tool lifecycle
+Events. `AbortSignal` is the primary explicit cancellation path.
+`capabilities` declares the maximum authority available to this Driver;
+`route` synchronously selects a bounded subset for one request. The binding
+rejects routes that attempt to grant undeclared capabilities. `snapshot` optionally
 preserves session state when a timed-out or wedged Driver is rotated. `close`
 releases sessions and subscriptions at Runtime shutdown.
 
@@ -61,27 +61,32 @@ Agent and a Muxiva Node.
 | Port | Frame | Semantics |
 | --- | --- | --- |
 | `prompt_in` | Text input | ASR Final, chat input, or an upstream plan |
-| `signal_in` | Signal input | `muxiva.agent.cancel`, barge-in, and equivalent cancellation |
+| `signal_in` | Signal input | explicit request cancellation; voice Graphs wire the Voice Turn Controller's canonical Signal |
 | `text_out` | Text output | streaming chunks for TTS, UI, or downstream Agents |
-| `event_out` | Event output | response, turn, tool, and failure lifecycle |
+| `event_out` | Event output | response, tool, route, and failure lifecycle |
 
-`defineAgentNode` owns the bounded output queue, generation IDs, stale-result
-suppression, internal wakeups, cancellation, and shutdown. The Agent does not
-need a Clock Node and should not embed WebSocket, RTC, or browser protocols.
+`defineAgentNode` owns the bounded output queue, per-request sinks, stale-result
+suppression after explicit cancellation, internal wakeups, and shutdown. The
+Agent does not need a Clock Node and should not embed WebSocket, RTC, or browser
+protocols.
 
-## Turn Controller and capability routing
+## Agent Node adapter and capability routing
 
-`AgentTurnController` is the concrete framework component returned by
+`AgentNodeAdapter` is the concrete binding component returned by
 `defineAgentNode`. It is not an extra Graph Node and it is intentionally not in
-Rust Core. Core transports typed Frames and Signals; the controller applies
-generic Agent-Turn semantics:
+Rust Core. Core transports typed Frames and Signals; the adapter applies only
+generic request-execution mechanics:
 
-- latest-Turn-wins sequencing, bounded queues, cancellation, and stale-output
-  suppression;
-- first-output and whole-Turn watchdogs, optional application-configured progress output, visible failure events, and
+- input-order execution, bounded queues, explicit cancellation, and stale-output
+  suppression after cancellation or Driver retirement;
+- first-output and whole-request watchdogs, optional application-configured progress output, visible failure events, and
   Driver rotation with optional state transfer;
-- capability declaration validation, per-Turn route validation, and
+- capability declaration validation, per-request route validation, and
   `muxiva.agent.route.selected` observability.
+
+It never interprets Turn IDs, Signal/Prompt sequence ordering, or a new prompt
+as supersession. In a voice Graph, `builtin.voice_turn_controller` alone owns
+Turn admission and supersession and sends an explicit cancellation Signal.
 
 `CapabilityRouter` is a declarative helper for Agent repositories. Muxiva owns
 the catalog/route schema and validates least-authority decisions, but route
@@ -106,7 +111,7 @@ const router = new CapabilityRouter({
 })
 ```
 
-Granted capabilities are the Turn's maximum authority. Required capabilities
+Granted capabilities are the request's maximum authority. Required capabilities
 are a validated subset that the Driver must satisfy before committing an
 answer. This distinction prevents a model from guessing a news or weather
 answer merely because the correct Tool was available but not invoked.
@@ -286,15 +291,20 @@ Studio search enabled, and Alibaba Cloud bills search separately. See the
 ## SOP 6: connect the Graph and verify interruption
 
 ```text
-ASR.transcript_out ──Text──> Agent.prompt_in
-VAD.signal_out ──Signal────> Agent.signal_in
-Agent.text_out ──Text──────> TTS.text_in
-Agent.event_out ──Event────> application Event Encoder
+ASR.transcript_out ──Text──> VoiceTurnController.transcript_in
+VAD.speech_out ─────Event─> VoiceTurnController.activity_in
+VoiceTurnController.prompt_out ──Text──> Agent.prompt_in
+VoiceTurnController.signal_out ─Signal─> Agent/TTS/audio cancellation inputs
+Agent.text_out ─────────────Text───────> TTS.text_in
+Agent.event_out ────────────Event──────> application Event Encoder
 ```
 
-On barge-in, the same Signal reaches Agent, TTS, and audio egress. The Agent
-cancels the active Pi Turn; the generic adapter advances its generation ID and
-drops late Text/Event output. The next ASR Final Text starts a new Turn.
+On an admitted barge-in, the Voice Turn Controller sends the same canonical
+Signal to Agent, TTS, and audio egress before forwarding the new prompt. The
+Runtime enforces this Signal-before-Frame barrier. The Agent adapter cancels its
+active Pi request, closes that request's sink, and drops late Text/Event output.
+Only the Voice Turn Controller creates the new Turn; the Agent adapter does not
+infer it.
 
 Verification checklist:
 
