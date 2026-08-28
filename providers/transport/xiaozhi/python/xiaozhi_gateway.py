@@ -265,7 +265,14 @@ class XiaozhiGateway:
 
         async def serve() -> None:
             async with websockets.serve(
-                self._ws_handler, self.ws_host, self.ws_port
+                self._ws_handler,
+                self.ws_host,
+                self.ws_port,
+                # Xiaozhi firmware uses audio/application messages as its
+                # channel health signal and doesn't answer RFC 6455 control
+                # pings consistently.  The websockets default (20 s + 20 s)
+                # therefore tears down healthy idle device sessions.
+                ping_interval=None,
             ):
                 self._ws_loop = asyncio.get_running_loop()
                 self._async_stop = asyncio.Event()
@@ -287,35 +294,74 @@ class XiaozhiGateway:
     async def _ws_handler(self, ws) -> None:
         # Never let audio/control data from a dead session leak into a newly
         # connected device session.
+        previous_ws = self._ws
+        previous_client_id = self._client_id
+        client_id = str(uuid.uuid4())
         self.reset_egress()
+        self._client_id = client_id
         self._ws = ws
-        self._client_id = str(uuid.uuid4())
         print(
-            f"[MUXIVA][XIAOZHI][device.connected] id={self._client_id}",
+            f"[MUXIVA][XIAOZHI][device.connected] id={client_id}",
             file=sys.stderr,
             flush=True,
         )
+        if previous_ws is not None and previous_ws is not ws:
+            print(
+                "[MUXIVA][XIAOZHI][device.replaced] "
+                f"old_id={previous_client_id or ''} new_id={client_id}",
+                file=sys.stderr,
+                flush=True,
+            )
+            asyncio.create_task(self._retire_ws(previous_ws))
         try:
             async for message in ws:
+                # A reconnect may install a replacement while this handler is
+                # still unwinding. Stale sessions must not publish microphone
+                # audio or control events into the active graph session.
+                if self._ws is not ws:
+                    break
                 if isinstance(message, (bytes, bytearray)):
                     self._on_binary(bytes(message))
                 elif isinstance(message, str):
-                    await self._on_text(message)
+                    await self._on_text(message, ws, client_id)
         except Exception as error:
-            print(
-                "[MUXIVA][XIAOZHI][device.connection_error] "
-                f"type={type(error).__name__} detail={str(error)[:240]}",
-                file=sys.stderr,
-                flush=True,
-            )
+            if self._ws is ws:
+                print(
+                    "[MUXIVA][XIAOZHI][device.connection_error] "
+                    f"id={client_id} type={type(error).__name__} "
+                    f"detail={str(error)[:240]}",
+                    file=sys.stderr,
+                    flush=True,
+                )
         finally:
-            self._ws = None
-            self.reset_egress()
+            active = self._ws is ws
+            if active:
+                self._ws = None
+                self._client_id = None
+                self.reset_egress()
             print(
-                f"[MUXIVA][XIAOZHI][device.disconnected] id={self._client_id}",
+                "[MUXIVA][XIAOZHI][device.disconnected] "
+                f"id={client_id} active={str(active).lower()}",
                 file=sys.stderr,
                 flush=True,
             )
+
+    @staticmethod
+    async def _retire_ws(ws) -> None:
+        """Close a superseded device connection without delaying takeover."""
+        try:
+            await asyncio.wait_for(
+                ws.close(code=1001, reason="superseded"),
+                timeout=1.0,
+            )
+        except asyncio.TimeoutError:
+            # Some embedded clients don't complete the close handshake. The
+            # replacement is already active, so tear down only the old socket.
+            transport = getattr(ws, "transport", None)
+            if transport is not None:
+                transport.close()
+        except Exception:
+            pass
 
     def _on_binary(self, packet: bytes) -> None:
         try:
@@ -327,16 +373,16 @@ class XiaozhiGateway:
         except queue.Full:
             pass
 
-    async def _on_text(self, message: str) -> None:
+    async def _on_text(self, message: str, ws, client_id: str) -> None:
         try:
             data = json.loads(message)
         except json.JSONDecodeError:
             return
         message_type = data.get("type")
         if message_type == HELLO_TYPE:
-            await self._send_json(self._server_hello())
+            await self._send_json(self._server_hello(client_id), ws)
         elif message_type == PING_TYPE:
-            await self._send_json({"type": PONG_TYPE})
+            await self._send_json({"type": PONG_TYPE}, ws)
         elif message_type in (ABORT_TYPE, LISTEN_TYPE):
             try:
                 self._events.put_nowait(data)
@@ -345,7 +391,7 @@ class XiaozhiGateway:
             if message_type == ABORT_TYPE:
                 self.reset_egress()
 
-    def _server_hello(self) -> dict:
+    def _server_hello(self, client_id: str | None = None) -> dict:
         return {
             "type": HELLO_TYPE,
             "version": 1,
@@ -356,12 +402,13 @@ class XiaozhiGateway:
                 "channels": 1,
                 "frame_duration": self.frame_duration_ms,
             },
-            "session_id": self._client_id or str(uuid.uuid4()),
+            "session_id": client_id or self._client_id or str(uuid.uuid4()),
         }
 
-    async def _send_json(self, payload: dict) -> None:
-        if self._ws is not None:
-            await self._ws.send(json.dumps(payload, ensure_ascii=False))
+    async def _send_json(self, payload: dict, ws=None) -> None:
+        target = ws if ws is not None else self._ws
+        if target is not None:
+            await target.send(json.dumps(payload, ensure_ascii=False))
 
     async def _ws_sender(self) -> None:
         frame_seconds = self.frame_duration_ms / 1000.0

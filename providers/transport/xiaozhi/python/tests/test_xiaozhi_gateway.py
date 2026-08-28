@@ -98,6 +98,53 @@ class XiaozhiGatewayTests(unittest.TestCase):
     def test_device_session_roundtrip(self) -> None:
         asyncio.run(self._run_device_session())
 
+    def test_latest_connection_owns_device_session(self) -> None:
+        asyncio.run(self._run_connection_takeover())
+
+    async def _run_connection_takeover(self) -> None:
+        uri = f"ws://127.0.0.1:{self.ws_port}"
+        async with websockets.connect(uri) as first:
+            await first.send(json.dumps({"type": "hello"}))
+            first_hello = json.loads(
+                await asyncio.wait_for(first.recv(), timeout=5)
+            )
+
+            async with websockets.connect(uri) as second:
+                await second.send(json.dumps({"type": "hello"}))
+                second_hello = json.loads(
+                    await asyncio.wait_for(second.recv(), timeout=5)
+                )
+                self.assertNotEqual(
+                    first_hello["session_id"], second_hello["session_id"]
+                )
+
+                # The previous handler's delayed cleanup used to clear _ws
+                # after the replacement was already live. Wait until that old
+                # handler has fully unwound, then prove the new session still
+                # owns both request and response traffic.
+                await asyncio.wait_for(first.wait_closed(), timeout=3)
+                self.assertTrue(self.gateway.has_client())
+                self.assertEqual(
+                    self.gateway._client_id, second_hello["session_id"]
+                )
+
+                await second.send(json.dumps({"type": "ping"}))
+                pong = json.loads(await asyncio.wait_for(second.recv(), timeout=2))
+                self.assertEqual(pong["type"], "pong")
+
+                self.assertTrue(
+                    self.gateway.publish_message(
+                        {"type": "stt", "text": "replacement-live"}
+                    )
+                )
+                message = json.loads(
+                    await asyncio.wait_for(second.recv(), timeout=2)
+                )
+                self.assertEqual(message["text"], "replacement-live")
+                self.assertEqual(
+                    message["session_id"], second_hello["session_id"]
+                )
+
     async def _run_device_session(self) -> None:
         encoder = opus_codec.OpusEncoder(
             sample_rate=SAMPLE_RATE, frame_duration_ms=FRAME_DURATION_MS
