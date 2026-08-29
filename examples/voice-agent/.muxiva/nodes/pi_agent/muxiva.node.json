@@ -59,6 +59,8 @@
       "web_search_model": { "type": "string", "default": "qwen-flash", "description": "Bailian model used for live search synthesis." },
       "web_search_strategy": { "type": "string", "enum": ["turbo", "max"], "default": "turbo" },
       "web_search_max_sources": { "type": "integer", "minimum": 1, "maximum": 25, "default": 10 },
+      "web_search_evidence_max_tokens": { "type": "integer", "minimum": 64, "maximum": 2048, "default": 512, "description": "Maximum grounded evidence tokens returned by live search to the main Agent loop." },
+      "web_search_streaming": { "type": "boolean", "default": true, "description": "Use DashScope SSE and request that search sources be returned before generated evidence text." },
       "web_search_timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 60000, "default": 20000 },
       "max_results_per_wakeup": { "type": "integer", "minimum": 1, "maximum": 1024, "default": 64 },
       "max_queue_size": { "type": "integer", "minimum": 16, "maximum": 65536, "default": 2048 },

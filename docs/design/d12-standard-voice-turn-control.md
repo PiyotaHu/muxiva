@@ -84,7 +84,10 @@ The admission policy fails open across languages. Unknown final text is always
 admitted, even when it is shorter than `minimum_utterance_characters`; that
 threshold is only a confidence gate for early cancellation from streaming ASR
 previews. `short_utterance_allowlist` can make known short commands interrupt on
-their first preview. Consequently an unknown language may lose filler
+their first preview. `early_cancel_preview_hits` controls whether a deployment
+interrupts on the first meaningful preview or waits for compatible hypotheses;
+the generic default is `2`, while latency-sensitive device Graphs may choose
+`1`. Consequently an unknown language may lose filler
 suppression, but it must never lose the ability to interrupt and create a Turn.
 
 Raw VAD must never cancel because echo, coughs, breathing, and fillers all

@@ -189,6 +189,11 @@ fn studio_catalog_is_derived_from_registry_descriptors_and_schemas() {
             ["default"],
         true
     );
+    assert_eq!(
+        voice_turn["config_schema"]["properties"]["early_cancel_preview_hits"]
+            ["default"],
+        2
+    );
 }
 
 #[test]

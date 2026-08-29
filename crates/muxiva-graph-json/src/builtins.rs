@@ -1937,6 +1937,21 @@ fn voice_turn_controller_schema() -> ConfigSchema {
                     ]),
                 ),
                 (
+                    "early_cancel_preview_hits",
+                    map([
+                        ("type", Value::String("integer".into())),
+                        ("minimum", Value::Integer(1)),
+                        ("maximum", Value::Integer(3)),
+                        ("default", Value::Integer(2)),
+                        (
+                            "description",
+                            Value::String(
+                                "Compatible meaningful ASR previews required before early cancellation; deployments prioritizing barge-in latency may set 1".into(),
+                            ),
+                        ),
+                    ]),
+                ),
+                (
                     "short_utterance_allowlist",
                     map([
                         ("type", Value::String("array".into())),
@@ -2014,6 +2029,7 @@ impl NodeFactory for VoiceTurnControllerFactory {
         Ok(Box::new(VoiceTurnController {
             ignore_fillers: parsed.ignore_fillers,
             minimum_characters: parsed.minimum_characters,
+            early_cancel_preview_hits: parsed.early_cancel_preview_hits,
             allowlist: parsed.allowlist,
             ignored: parsed.ignored,
             generation: 0,
@@ -2028,6 +2044,7 @@ impl NodeFactory for VoiceTurnControllerFactory {
 struct VoiceTurnControllerConfig {
     ignore_fillers: bool,
     minimum_characters: usize,
+    early_cancel_preview_hits: u8,
     allowlist: BTreeSet<String>,
     ignored: BTreeSet<String>,
 }
@@ -2035,9 +2052,9 @@ struct VoiceTurnControllerConfig {
 fn parse_voice_turn_controller_config(
     config: &ConfigMap,
 ) -> Result<VoiceTurnControllerConfig, NodeFactoryError> {
-    if config.len() != 4 {
+    if !(4..=5).contains(&config.len()) {
         return Err(config_error(
-            "voice turn controller requires exactly four policy fields",
+            "voice turn controller requires four policy fields and accepts early_cancel_preview_hits",
         ));
     }
     let ignore_fillers = match config.get("ignore_filler_utterances") {
@@ -2052,9 +2069,19 @@ fn parse_voice_turn_controller_config(
             ))
         }
     };
+    let early_cancel_preview_hits = match config.get("early_cancel_preview_hits") {
+        None => 2,
+        Some(Value::Integer(value @ 1..=3)) => *value as u8,
+        _ => {
+            return Err(config_error(
+                "early_cancel_preview_hits must be between 1 and 3",
+            ))
+        }
+    };
     Ok(VoiceTurnControllerConfig {
         ignore_fillers,
         minimum_characters,
+        early_cancel_preview_hits,
         allowlist: voice_string_set(config, "short_utterance_allowlist")?,
         ignored: voice_string_set(config, "ignored_utterances")?,
     })
@@ -2100,6 +2127,7 @@ fn normalize_voice_utterance(value: &str) -> String {
 struct VoiceTurnController {
     ignore_fillers: bool,
     minimum_characters: usize,
+    early_cancel_preview_hits: u8,
     allowlist: BTreeSet<String>,
     ignored: BTreeSet<String>,
     generation: u64,
@@ -2132,6 +2160,25 @@ impl VoiceTurnController {
             return Some("configured");
         }
         None
+    }
+
+    fn observe_preview(&mut self, text: &str) -> bool {
+        if !self.can_consume_preview(text) {
+            return false;
+        }
+        let normalized = normalize_voice_utterance(text);
+        let compatible = self.preview_candidate.as_ref().is_some_and(|previous| {
+            normalized.starts_with(previous) || previous.starts_with(&normalized)
+        });
+        if compatible {
+            self.preview_hits = self.preview_hits.saturating_add(1);
+            self.preview_candidate = Some(normalized.clone());
+        } else {
+            self.preview_candidate = Some(normalized.clone());
+            self.preview_hits = 1;
+        }
+        self.preview_hits >= self.early_cancel_preview_hits
+            || self.allowlist.contains(&normalized)
     }
 
     fn preview_rejection_reason(&self, text: &str) -> Option<&'static str> {
@@ -2260,30 +2307,15 @@ impl Node for VoiceTurnController {
                     .ok_or_else(|| node_error("MUXIVA-VOICE-TURN-TYPE", "preview must be text"))?
                     .data()
                     .as_str();
-                if !self.can_consume_preview(text) {
+                if !self.observe_preview(text) {
                     return Ok(());
                 }
-                let normalized = normalize_voice_utterance(text);
-                let compatible = self.preview_candidate.as_ref().is_some_and(|previous| {
-                    normalized.starts_with(previous) || previous.starts_with(&normalized)
-                });
-                if compatible {
-                    self.preview_hits = self.preview_hits.saturating_add(1);
-                    self.preview_candidate = Some(normalized.clone());
-                } else {
-                    self.preview_candidate = Some(normalized.clone());
-                    self.preview_hits = 1;
-                }
-                // Two compatible hypotheses fence transient partial mistakes.
-                // Explicit short commands are admitted on their first preview.
-                if self.preview_hits >= 2 || self.allowlist.contains(&normalized) {
-                    let generation = self.commit_cancellation(&input, context, "validated_partial")?;
-                    self.early_cancel_generation = Some(generation);
-                    println!(
-                        "[MUXIVA][VOICE-TURN][early_cancel] turn={} generation={} preview_hits={}",
-                        input.header().sequence_id().get(), generation, self.preview_hits
-                    );
-                }
+                let generation = self.commit_cancellation(&input, context, "validated_partial")?;
+                self.early_cancel_generation = Some(generation);
+                println!(
+                    "[MUXIVA][VOICE-TURN][early_cancel] turn={} generation={} preview_hits={}",
+                    input.header().sequence_id().get(), generation, self.preview_hits
+                );
             }
             Some("transcript_in") => {
                 // Close before making the final decision. Any preview already
@@ -3444,6 +3476,7 @@ mod tests {
         VoiceTurnController {
             ignore_fillers: true,
             minimum_characters: 3,
+            early_cancel_preview_hits: 2,
             allowlist: ["闭嘴".to_owned(), "天气".to_owned()]
                 .into_iter()
                 .collect(),
@@ -3500,6 +3533,42 @@ mod tests {
         assert_eq!(controller.ignored_reason("sí"), None);
         assert_eq!(controller.ignored_reason("闭嘴"), None);
         assert_eq!(controller.ignored_reason("榴莲为什么这么臭？"), None);
+    }
+
+    #[test]
+    fn voice_turn_low_latency_policy_waits_for_meaningful_asr_preview() {
+        let mut controller = voice_turn_controller();
+        controller.early_cancel_preview_hits = 1;
+        let node_id = NodeId::new("voice-turn-test").unwrap();
+
+        let activity_source = source_frame("activity").unwrap();
+        let activity = derive_payload(
+            &activity_source,
+            &node_id,
+            "speech-started",
+            FramePayload::Event(EventData::new(
+                NamespacedName::new(muxiva_types::voice::VOICE_ACTIVITY_STARTED).unwrap(),
+                SchemaVersion::new(1).unwrap(),
+                node_id.clone(),
+                Value::Map(ValueMap::empty()),
+            )),
+        )
+        .unwrap();
+        let mut activity_context = NodeContext::new(
+            node_id.clone(),
+            ConfigMap::empty(),
+            Some(PortName::new("activity_in").unwrap()),
+        );
+        controller
+            .on_process(Some(activity), &mut activity_context)
+            .unwrap();
+        assert!(activity_context.signals().is_empty(), "raw VAD must not cancel");
+
+        assert!(!controller.observe_preview("嗯"), "filler must not cancel");
+        assert!(
+            controller.observe_preview("请介绍一下机器人"),
+            "first meaningful ASR preview must cancel in the low-latency policy"
+        );
     }
 
     #[test]

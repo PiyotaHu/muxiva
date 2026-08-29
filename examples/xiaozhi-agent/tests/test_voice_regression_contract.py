@@ -33,6 +33,7 @@ class VoiceRegressionContractTests(unittest.TestCase):
         self.assertNotIn("ignore_filler_utterances", asr)
         self.assertNotIn("barge_in_requires_final", asr)
         self.assertTrue(policy["ignore_filler_utterances"])
+        self.assertEqual(policy["early_cancel_preview_hits"], 1)
         self.assertIn("嗯", policy["ignored_utterances"])
         self.assertIn("额", policy["ignored_utterances"])
         self.assertIn("um", policy["ignored_utterances"])
@@ -119,7 +120,20 @@ class VoiceRegressionContractTests(unittest.TestCase):
         self.assertTrue(config["artwork_tools_enabled"])
         self.assertFalse(config["workspace_tools_enabled"])
         self.assertGreater(config["agent_request_timeout_ms"], config["web_search_timeout_ms"])
+        self.assertEqual(config["web_search_evidence_max_tokens"], 256)
+        self.assertTrue(config["web_search_streaming"])
         self.assertGreaterEqual(config["max_tokens"], 768)
+
+    def test_product_persona_keeps_cat_flavor_subtle(self) -> None:
+        prompt = self.nodes["pi-agent"]["node_config"]["system_prompt"]
+        self.assertIn("首要任务是准确、高效地帮助用户", prompt)
+        self.assertIn("而不是表演猫咪", prompt)
+        self.assertIn("每次回复最多一次", prompt)
+        self.assertIn("严肃问题", prompt)
+        self.assertIn("正常助手语气", prompt)
+        self.assertIn("不要主动使用", prompt)
+        for cliche in ("小鱼干", "毛线球", "猫爪"):
+            self.assertIn(cliche, prompt)
 
     def test_artwork_runtime_is_reproducibly_installable(self) -> None:
         requirements = (PROJECT / "requirements.txt").read_text(encoding="utf-8")
