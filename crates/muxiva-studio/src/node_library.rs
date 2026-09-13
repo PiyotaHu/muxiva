@@ -1472,7 +1472,11 @@ fn python_executable(graph: &Path) -> PathBuf {
     if project_python.is_file() {
         project_python
     } else {
-        PathBuf::from("python3")
+        PathBuf::from(if cfg!(target_os = "windows") {
+            "python"
+        } else {
+            "python3"
+        })
     }
 }
 

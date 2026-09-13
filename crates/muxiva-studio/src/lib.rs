@@ -100,7 +100,7 @@ impl StudioRuntime {
 
 pub fn random_token() -> std::io::Result<String> {
     let mut bytes = [0_u8; 32];
-    fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+    getrandom::getrandom(&mut bytes).map_err(|error| std::io::Error::other(error.to_string()))?;
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
@@ -1247,8 +1247,8 @@ fn write_response_bytes(
 #[cfg(test)]
 mod tests {
     use super::{
-        handle_connection, project_templates, route, validate, HttpRequest, StudioRuntime, LOGO,
-        SCRIPT,
+        handle_connection, project_templates, random_token, route, validate, HttpRequest,
+        StudioRuntime, LOGO, SCRIPT,
     };
     use std::{
         fs,
@@ -1260,6 +1260,15 @@ mod tests {
     };
 
     static NEXT_PATH: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn random_tokens_are_portable_hex_secrets() {
+        let first = random_token().unwrap();
+        let second = random_token().unwrap();
+        assert_eq!(first.len(), 64);
+        assert!(first.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_ne!(first, second);
+    }
 
     #[test]
     fn installed_voice_templates_compile_against_the_real_project_registry() {

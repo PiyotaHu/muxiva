@@ -789,7 +789,10 @@ mod tests {
         let path = std::env::temp_dir().join(format!(
             "muxiva-media-dump-wav-{}-{}.wav",
             std::process::id(),
-            std::thread::current().name().unwrap_or("test")
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         let mut file = fs::File::create(&path).unwrap();
         write_wav_header(&mut file, 16_000, 1, PcmSampleFormat::I16Le, 4).unwrap();

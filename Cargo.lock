@@ -701,6 +701,7 @@ dependencies = [
 name = "muxiva-studio"
 version = "0.1.1"
 dependencies = [
+ "getrandom",
  "muxiva-core",
  "muxiva-ffi",
  "muxiva-graph-json",
