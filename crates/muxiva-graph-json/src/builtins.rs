@@ -340,28 +340,42 @@ struct LlmOpenAiCompatibleFactory;
 
 impl NodeFactory for LlmOpenAiCompatibleFactory {
     fn validate_config(&self, config: &ConfigMap) -> Result<(), NodeFactoryError> {
-        if !matches!(config.get("endpoint"), Some(Value::String(value)) if !value.trim().is_empty() && value.len() <= 1024) {
-            return Err(config_error("LLM node requires a non-empty endpoint string"));
+        if !matches!(config.get("endpoint"), Some(Value::String(value)) if !value.trim().is_empty() && value.len() <= 1024)
+        {
+            return Err(config_error(
+                "LLM node requires a non-empty endpoint string",
+            ));
         }
-        if !matches!(config.get("model"), Some(Value::String(value)) if !value.trim().is_empty() && value.len() <= 256) {
+        if !matches!(config.get("model"), Some(Value::String(value)) if !value.trim().is_empty() && value.len() <= 256)
+        {
             return Err(config_error("LLM node requires a non-empty model string"));
         }
         if !matches!(config.get("api_key_env"), Some(Value::String(value)) if value.len() <= 256) {
             return Err(config_error("LLM api_key_env must be a bounded string"));
         }
-        if !matches!(config.get("system_prompt"), Some(Value::String(value)) if value.len() <= 16_384) {
+        if !matches!(config.get("system_prompt"), Some(Value::String(value)) if value.len() <= 16_384)
+        {
             return Err(config_error("LLM system_prompt must be a bounded string"));
         }
-        if !matches!(config.get("temperature"), Some(Value::Float(value)) if value.get() >= 0.0 && value.get() <= 2.0) {
+        if !matches!(config.get("temperature"), Some(Value::Float(value)) if value.get() >= 0.0 && value.get() <= 2.0)
+        {
             return Err(config_error("LLM temperature must be between 0 and 2"));
         }
         if !matches!(config.get("max_tokens"), Some(Value::Integer(1..=32_768)))
-            || !matches!(config.get("timeout_ms"), Some(Value::Integer(1_000..=300_000)))
-            || !matches!(config.get("max_results_per_wakeup"), Some(Value::Integer(1..=256)))
+            || !matches!(
+                config.get("timeout_ms"),
+                Some(Value::Integer(1_000..=300_000))
+            )
+            || !matches!(
+                config.get("max_results_per_wakeup"),
+                Some(Value::Integer(1..=256))
+            )
             || !matches!(config.get("history_turns"), Some(Value::Integer(0..=32)))
             || !matches!(config.get("stream"), Some(Value::Bool(_)))
         {
-            return Err(config_error("LLM node has an out-of-range numeric or boolean value"));
+            return Err(config_error(
+                "LLM node has an out-of-range numeric or boolean value",
+            ));
         }
         Ok(())
     }
@@ -414,9 +428,21 @@ impl NodeFactory for LlmOpenAiCompatibleFactory {
 }
 
 enum LlmResult {
-    Delta { generation: u64, sequence: u64, text: String },
-    Done { generation: u64, sequence: u64, user: String, answer: String },
-    Error { generation: u64, message: String },
+    Delta {
+        generation: u64,
+        sequence: u64,
+        text: String,
+    },
+    Done {
+        generation: u64,
+        sequence: u64,
+        user: String,
+        answer: String,
+    },
+    Error {
+        generation: u64,
+        message: String,
+    },
 }
 
 struct LlmOpenAiCompatible {
@@ -499,28 +525,30 @@ impl LlmOpenAiCompatible {
         let cancel = Arc::new(AtomicBool::new(false));
         let pending_count = Arc::clone(&self.pending);
         self.cancel = Some(Arc::clone(&cancel));
-        self.worker = Some(thread::Builder::new()
-            .name(format!("muxiva-llm-{generation}"))
-            .spawn(move || {
-                run_llm_request(
-                    endpoint,
-                    api_key_env,
-                    api_key,
-                    model,
-                    messages,
-                    temperature,
-                    max_tokens,
-                    timeout_ms,
-                    stream,
-                    generation,
-                    sequence,
-                    user,
-                    sender,
-                    cancel,
-                    pending_count,
-                );
-            })
-            .expect("bounded LLM worker thread"));
+        self.worker = Some(
+            thread::Builder::new()
+                .name(format!("muxiva-llm-{generation}"))
+                .spawn(move || {
+                    run_llm_request(
+                        endpoint,
+                        api_key_env,
+                        api_key,
+                        model,
+                        messages,
+                        temperature,
+                        max_tokens,
+                        timeout_ms,
+                        stream,
+                        generation,
+                        sequence,
+                        user,
+                        sender,
+                        cancel,
+                        pending_count,
+                    );
+                })
+                .expect("bounded LLM worker thread"),
+        );
         context.schedule_next_tick(Duration::from_millis(20));
         Ok(())
     }
@@ -528,14 +556,28 @@ impl LlmOpenAiCompatible {
     fn drain(&mut self, context: &mut NodeContext) -> muxiva_types::Result<()> {
         for _ in 0..self.max_results_per_wakeup {
             match self.results.try_recv() {
-                Ok(LlmResult::Delta { generation, sequence, text }) if generation == self.generation => {
+                Ok(LlmResult::Delta {
+                    generation,
+                    sequence,
+                    text,
+                }) if generation == self.generation => {
                     self.pending.fetch_sub(1, Ordering::AcqRel);
                     context.emit(
                         PortName::new("text_out").unwrap(),
-                        llm_frame(context.node_id(), sequence, FramePayload::Text(TextData::new(text)), "llm-delta")?,
+                        llm_frame(
+                            context.node_id(),
+                            sequence,
+                            FramePayload::Text(TextData::new(text)),
+                            "llm-delta",
+                        )?,
                     )?;
                 }
-                Ok(LlmResult::Done { generation, sequence, user, answer }) if generation == self.generation => {
+                Ok(LlmResult::Done {
+                    generation,
+                    sequence,
+                    user,
+                    answer,
+                }) if generation == self.generation => {
                     self.pending.fetch_sub(1, Ordering::AcqRel);
                     if !answer.is_empty() {
                         self.history.push((user, answer.clone()));
@@ -561,7 +603,10 @@ impl LlmOpenAiCompatible {
                     }
                     break;
                 }
-                Ok(LlmResult::Error { generation, message }) if generation == self.generation => {
+                Ok(LlmResult::Error {
+                    generation,
+                    message,
+                }) if generation == self.generation => {
                     self.pending.fetch_sub(1, Ordering::AcqRel);
                     return Err(MuxivaError::new(
                         ErrorCategory::External,
@@ -581,7 +626,9 @@ impl LlmOpenAiCompatible {
     }
 
     fn has_pending_work(&self) -> bool {
-        self.worker.as_ref().is_some_and(|worker| !worker.is_finished())
+        self.worker
+            .as_ref()
+            .is_some_and(|worker| !worker.is_finished())
             || self.pending.load(Ordering::Acquire) > 0
     }
 }
@@ -595,7 +642,11 @@ impl Node for LlmOpenAiCompatible {
         match context.input_port().map(PortName::as_str) {
             Some("text_in") => {
                 let input = required_type(input, FrameType::Text, "LLM node requires text")?;
-                let text = input.as_text().expect("validated text frame").data().as_str();
+                let text = input
+                    .as_text()
+                    .expect("validated text frame")
+                    .data()
+                    .as_str();
                 let sequence = input.header().sequence_id().get();
                 self.start_generation(text, sequence, context)?;
             }
@@ -695,9 +746,7 @@ fn run_llm_request(
             "[MUXIVA][LLM][request.started] endpoint={endpoint} model={model} auth_env={name}"
         );
     } else {
-        eprintln!(
-            "[MUXIVA][LLM][request.started] endpoint={endpoint} model={model} auth=none"
-        );
+        eprintln!("[MUXIVA][LLM][request.started] endpoint={endpoint} model={model} auth=none");
     }
     let response = match request.send_json(&body) {
         Ok(response) => response,
@@ -753,7 +802,10 @@ fn run_llm_request(
         }
     } else {
         let mut body_text = String::new();
-        let _ = response.into_body().into_reader().read_to_string(&mut body_text);
+        let _ = response
+            .into_body()
+            .into_reader()
+            .read_to_string(&mut body_text);
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body_text) {
             if let Some(content) = value
                 .get("choices")
@@ -2102,7 +2154,9 @@ fn voice_string_set(
     let mut output = BTreeSet::new();
     for value in values {
         let Value::String(value) = value else {
-            return Err(config_error("voice utterance policy values must be strings"));
+            return Err(config_error(
+                "voice utterance policy values must be strings",
+            ));
         };
         let normalized = normalize_voice_utterance(value);
         if normalized.is_empty() || normalized.chars().count() > 32 {
@@ -2177,8 +2231,7 @@ impl VoiceTurnController {
             self.preview_candidate = Some(normalized.clone());
             self.preview_hits = 1;
         }
-        self.preview_hits >= self.early_cancel_preview_hits
-            || self.allowlist.contains(&normalized)
+        self.preview_hits >= self.early_cancel_preview_hits || self.allowlist.contains(&normalized)
     }
 
     fn preview_rejection_reason(&self, text: &str) -> Option<&'static str> {
@@ -2314,7 +2367,9 @@ impl Node for VoiceTurnController {
                 self.early_cancel_generation = Some(generation);
                 println!(
                     "[MUXIVA][VOICE-TURN][early_cancel] turn={} generation={} preview_hits={}",
-                    input.header().sequence_id().get(), generation, self.preview_hits
+                    input.header().sequence_id().get(),
+                    generation,
+                    self.preview_hits
                 );
             }
             Some("transcript_in") => {
@@ -2323,9 +2378,7 @@ impl Node for VoiceTurnController {
                 self.preview_window_open = false;
                 let text = input
                     .as_text()
-                    .ok_or_else(|| {
-                        node_error("MUXIVA-VOICE-TURN-TYPE", "transcript must be text")
-                    })?
+                    .ok_or_else(|| node_error("MUXIVA-VOICE-TURN-TYPE", "transcript must be text"))?
                     .data()
                     .as_str()
                     .trim()
@@ -2730,10 +2783,14 @@ struct SpeechFormatterFactory;
 
 fn speech_formatter_terms(config: &ConfigMap) -> Result<Vec<Box<str>>, NodeFactoryError> {
     let Some(Value::List(values)) = config.get("suppressed_parenthetical_terms") else {
-        return Err(config_error("suppressed_parenthetical_terms must be an array"));
+        return Err(config_error(
+            "suppressed_parenthetical_terms must be an array",
+        ));
     };
     if values.len() > 64 {
-        return Err(config_error("suppressed_parenthetical_terms accepts at most 64 values"));
+        return Err(config_error(
+            "suppressed_parenthetical_terms accepts at most 64 values",
+        ));
     }
     values
         .iter()
@@ -2755,8 +2812,14 @@ impl NodeFactory for SpeechFormatterFactory {
             && valid_message("code_block_message")
             && valid_message("table_message")
             && matches!(config.get("strip_urls"), Some(Value::Bool(_)))
-            && matches!(config.get("maximum_chunk_characters"), Some(Value::Integer(20..=400)))
-            && matches!(config.get("minimum_chunk_characters"), Some(Value::Integer(1..=400)))
+            && matches!(
+                config.get("maximum_chunk_characters"),
+                Some(Value::Integer(20..=400))
+            )
+            && matches!(
+                config.get("minimum_chunk_characters"),
+                Some(Value::Integer(1..=400))
+            )
             && matches!(
                 (config.get("minimum_chunk_characters"), config.get("maximum_chunk_characters")),
                 (Some(Value::Integer(minimum)), Some(Value::Integer(maximum))) if minimum <= maximum
@@ -2942,6 +3005,11 @@ impl SpeechFormatter {
 
     fn append_markdown_text(&mut self, input: &str, output: &mut String) {
         for line in input.split_inclusive('\n') {
+            // Trimming presentation whitespace must not erase a URL
+            // terminator at either edge of a streaming chunk.
+            if line.starts_with(char::is_whitespace) {
+                self.in_bare_url = false;
+            }
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 self.in_table = false;
@@ -2962,6 +3030,9 @@ impl SpeechFormatter {
             } else {
                 linked
             };
+            if line.ends_with(char::is_whitespace) {
+                self.in_bare_url = false;
+            }
             let plain = without_urls
                 .chars()
                 .filter(|character| {
@@ -3054,7 +3125,11 @@ impl Node for SpeechFormatter {
                 input.ensure_type(FrameType::Text)?;
                 self.begin_sequence(input.header().sequence_id().get());
                 self.pending_text.push_str(
-                    input.as_text().expect("validated text frame").data().as_str(),
+                    input
+                        .as_text()
+                        .expect("validated text frame")
+                        .data()
+                        .as_str(),
                 );
                 let mut chunks = Vec::new();
                 drain_presentable_text(
@@ -3072,14 +3147,16 @@ impl Node for SpeechFormatter {
                     .as_event()
                     .map(|event| event.data().topic().as_str())
                     .unwrap_or_default();
-                let same_sequence = self.active_sequence
-                    == Some(input.header().sequence_id().get());
-                if same_sequence && matches!(
-                    topic,
-                    "muxiva.agent.response.completed"
-                        | "muxiva.model.response.completed"
-                        | "muxiva.voice.response.completed"
-                ) {
+                let same_sequence =
+                    self.active_sequence == Some(input.header().sequence_id().get());
+                if same_sequence
+                    && matches!(
+                        topic,
+                        "muxiva.agent.response.completed"
+                            | "muxiva.model.response.completed"
+                            | "muxiva.voice.response.completed"
+                    )
+                {
                     let mut chunks = Vec::new();
                     drain_presentable_text(
                         &mut self.pending_text,
@@ -3089,12 +3166,14 @@ impl Node for SpeechFormatter {
                         &mut chunks,
                     );
                     self.emit_chunks(&input, chunks, context)?;
-                } else if same_sequence && matches!(
-                    topic,
-                    "muxiva.agent.response.failed"
-                        | "muxiva.model.response.failed"
-                        | "muxiva.voice.response.failed"
-                ) {
+                } else if same_sequence
+                    && matches!(
+                        topic,
+                        "muxiva.agent.response.failed"
+                            | "muxiva.model.response.failed"
+                            | "muxiva.voice.response.failed"
+                    )
+                {
                     self.pending_text.clear();
                 }
             }
@@ -3132,37 +3211,143 @@ fn drain_presentable_text(
     flush: bool,
     chunks: &mut Vec<String>,
 ) {
-    loop {
-        let characters = buffer.chars().count();
-        let boundary = buffer
-            .char_indices()
-            .enumerate()
-            .find(|(offset, (_, character))| {
-                *offset + 1 >= minimum_characters
-                    && matches!(character, '。' | '！' | '？' | '.' | '!' | '?' | '\n')
+    // The cap also applies when a later sentence ending is already in this
+    // Frame. Collect indices once; do not repeatedly copy a large remainder.
+    let characters = buffer.char_indices().collect::<Vec<_>>();
+    let mut cursor = 0;
+    while cursor < characters.len() {
+        let remaining = &characters[cursor..];
+        let limit = maximum_characters.min(remaining.len());
+        let sentence = (0..limit)
+            .find(|&offset| {
+                offset + 1 >= minimum_characters
+                    && speech_sentence_boundary(remaining, offset, flush)
             })
-            .map(|(_, (index, character))| index + character.len_utf8());
-        let end = boundary.or_else(|| {
-            (characters >= maximum_characters).then(|| {
-                buffer
-                    .char_indices()
-                    .nth(maximum_characters)
-                    .map(|(index, _)| index)
-                    .unwrap_or(buffer.len())
-            })
+            .map(|offset| {
+                let mut end = offset + 1;
+                // Keep visible punctuation and closing quotes with a sentence.
+                while end < limit
+                    && matches!(
+                        remaining[end].1,
+                        '。' | '！'
+                            | '？'
+                            | '!'
+                            | '?'
+                            | '.'
+                            | '…'
+                            | '”'
+                            | '’'
+                            | '"'
+                            | '\''
+                            | ')'
+                            | '）'
+                            | ']'
+                            | '】'
+                    )
+                {
+                    // A following dot can start a fractional number, even
+                    // when that number arrives in the next Text Frame.
+                    if remaining[end].1 == '.'
+                        && remaining
+                            .get(end + 1)
+                            .map_or(!flush, |(_, next)| next.is_ascii_digit())
+                    {
+                        break;
+                    }
+                    end += 1;
+                }
+                end
+            });
+        let end = sentence.or_else(|| {
+            if remaining.len() < maximum_characters {
+                return flush.then_some(remaining.len());
+            }
+            // Prefer clauses, then spaces, then a boundary outside a short
+            // ASCII word/number. Only an oversized token needs a hard split.
+            (0..limit)
+                .rev()
+                .find(|&offset| speech_clause_boundary(remaining, offset))
+                .map(|offset| offset + 1)
+                .or_else(|| {
+                    (0..limit)
+                        .rev()
+                        .find(|&offset| remaining[offset].1.is_whitespace())
+                        .map(|offset| offset + 1)
+                })
+                .or_else(|| {
+                    (1..=limit).rev().find(|&end| {
+                        !speech_ascii_token_character(remaining[end - 1].1)
+                            || remaining
+                                .get(end)
+                                .is_some_and(|(_, next)| !speech_ascii_token_character(*next))
+                    })
+                })
+                .or(Some(limit))
         });
-        if let Some(end) = end {
-            chunks.push(buffer.drain(..end).collect());
-            continue;
+        let Some(end) = end else { break };
+        let start_byte = remaining[0].0;
+        let end_byte = characters
+            .get(cursor + end)
+            .map_or(buffer.len(), |(index, _)| *index);
+        let chunk = &buffer[start_byte..end_byte];
+        if !(flush && cursor + end == characters.len() && chunk.trim().is_empty()) {
+            chunks.push(chunk.to_owned());
         }
-        if flush && !buffer.trim().is_empty() {
-            chunks.push(std::mem::take(buffer));
-        } else if flush {
-            buffer.clear();
+        cursor += end;
+    }
+    let consumed = characters
+        .get(cursor)
+        .map_or(buffer.len(), |(index, _)| *index);
+    buffer.drain(..consumed);
+}
+
+fn speech_sentence_boundary(characters: &[(usize, char)], offset: usize, flush: bool) -> bool {
+    let character = characters[offset].1;
+    if matches!(character, '。' | '！' | '？' | '!' | '?' | '\n') {
+        return true;
+    }
+    if character != '.' {
+        return false;
+    }
+    let previous = offset.checked_sub(1).map(|index| characters[index].1);
+    let next = characters.get(offset + 1).map(|(_, value)| *value);
+    // Look ahead before treating a streamed trailing dot as a sentence.
+    if next.is_none() {
+        return flush;
+    }
+    if next == Some('.') || next.is_some_and(|value| value.is_ascii_digit()) {
+        return false;
+    }
+    !(previous.is_some_and(|value| value.is_ascii_alphanumeric())
+        && next.is_some_and(|value| value.is_ascii_alphanumeric()))
+}
+
+fn speech_clause_boundary(characters: &[(usize, char)], offset: usize) -> bool {
+    match characters[offset].1 {
+        '，' | '；' | '：' | '、' | ';' => true,
+        ',' => {
+            let previous = offset.checked_sub(1).map(|index| characters[index].1);
+            let next = characters.get(offset + 1).map(|(_, value)| *value);
+            // Do not cut thousands groups, including partial tails. ASCII
+            // colons are not clause breaks: they may be a time or URL scheme.
+            !(previous.is_some_and(|value| value.is_ascii_digit())
+                && next.is_none_or(|value| value.is_ascii_digit()))
         }
-        break;
+        _ => false,
     }
 }
+
+fn speech_ascii_token_character(character: char) -> bool {
+    character.is_ascii_alphanumeric()
+        || matches!(
+            character,
+            '.' | ',' | ':' | '/' | '-' | '+' | '_' | '\'' | '%' | '°' | '℃' | '℉'
+        )
+}
+
+#[cfg(test)]
+#[path = "speech_formatter_tests.rs"]
+mod speech_formatter_tests;
 
 fn append_phrase(output: &mut String, phrase: &str) {
     if phrase.is_empty() {
@@ -3477,9 +3662,7 @@ mod tests {
             ignore_fillers: true,
             minimum_characters: 3,
             early_cancel_preview_hits: 2,
-            allowlist: ["闭嘴".to_owned(), "天气".to_owned()]
-                .into_iter()
-                .collect(),
+            allowlist: ["闭嘴".to_owned(), "天气".to_owned()].into_iter().collect(),
             ignored: ["嗯", "额", "咳嗽声", "um", "eh"]
                 .into_iter()
                 .map(str::to_owned)
@@ -3562,7 +3745,10 @@ mod tests {
         controller
             .on_process(Some(activity), &mut activity_context)
             .unwrap();
-        assert!(activity_context.signals().is_empty(), "raw VAD must not cancel");
+        assert!(
+            activity_context.signals().is_empty(),
+            "raw VAD must not cancel"
+        );
 
         assert!(!controller.observe_preview("嗯"), "filler must not cancel");
         assert!(
@@ -3594,17 +3780,13 @@ mod tests {
         let mut controller = voice_turn_controller();
         assert_eq!(controller.next_generation(), 1);
         assert_eq!(controller.next_generation(), 2);
-        let Value::Map(payload) =
-            VoiceTurnController::decision_payload(2, 91, "admitted").unwrap()
+        let Value::Map(payload) = VoiceTurnController::decision_payload(2, 91, "admitted").unwrap()
         else {
             panic!("decision payload must be a map");
         };
         assert_eq!(payload.get("generation"), Some(&Value::Integer(2)));
         assert_eq!(payload.get("turn_id"), Some(&Value::Integer(91)));
-        assert_eq!(
-            muxiva_types::voice::TURN_CANCELLED,
-            "muxiva.turn.cancelled"
-        );
+        assert_eq!(muxiva_types::voice::TURN_CANCELLED, "muxiva.turn.cancelled");
     }
 
     fn speech_formatter() -> SpeechFormatter {
@@ -3688,7 +3870,10 @@ mod tests {
         let mut buffer = String::from("当然可以。这是同一段里的完整解释，现在可以提交给合成器。");
         let mut chunks = Vec::new();
         drain_presentable_text(&mut buffer, 12, 80, false, &mut chunks);
-        assert_eq!(chunks, vec!["当然可以。这是同一段里的完整解释，现在可以提交给合成器。"]);
+        assert_eq!(
+            chunks,
+            vec!["当然可以。这是同一段里的完整解释，现在可以提交给合成器。"]
+        );
         assert!(buffer.is_empty());
 
         let mut buffer = String::from("没有结尾标点的最后一段");
@@ -3786,8 +3971,63 @@ mod tests {
         );
         let responder = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 4096];
-            let _ = stream.read(&mut request);
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            // A TCP read need not contain the complete request. Closing with
+            // unread request-body bytes can reset the connection on Windows.
+            // Drain this bounded fixture request, including chunked JSON.
+            {
+                use std::io::{BufRead as _, BufReader};
+                let mut request = BufReader::new(&mut stream);
+                let mut content_length = 0;
+                let mut chunked = false;
+                let mut header_bytes = 0;
+                loop {
+                    let mut line = String::new();
+                    let read = request.read_line(&mut line).unwrap();
+                    assert!(read > 0, "incomplete HTTP request headers");
+                    header_bytes += read;
+                    assert!(header_bytes < 16_384);
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if let Some((name, value)) = line.split_once(':') {
+                        if name.eq_ignore_ascii_case("content-length") {
+                            content_length = value.trim().parse::<usize>().unwrap();
+                        } else if name.eq_ignore_ascii_case("transfer-encoding") {
+                            chunked = value.trim().eq_ignore_ascii_case("chunked");
+                        }
+                    }
+                }
+                let mut payload = Vec::new();
+                if chunked {
+                    loop {
+                        let mut line = String::new();
+                        assert!(request.read_line(&mut line).unwrap() > 0);
+                        let size = usize::from_str_radix(line.trim(), 16).unwrap();
+                        assert!(payload.len() + size <= 65_536);
+                        if size == 0 {
+                            line.clear();
+                            request.read_line(&mut line).unwrap();
+                            assert_eq!(line, "\r\n");
+                            break;
+                        }
+                        let start = payload.len();
+                        payload.resize(start + size, 0);
+                        request.read_exact(&mut payload[start..]).unwrap();
+                        let mut ending = [0; 2];
+                        request.read_exact(&mut ending).unwrap();
+                        assert_eq!(&ending, b"\r\n");
+                    }
+                } else {
+                    assert!(content_length <= 65_536);
+                    payload.resize(content_length, 0);
+                    request.read_exact(&mut payload).unwrap();
+                }
+                let input: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+                assert_eq!(input["model"], "test-model");
+            }
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{}",
                 body.len(),
@@ -3861,14 +4101,9 @@ mod tests {
             node.on_process(None, &mut tick).unwrap();
             for emission in tick.take_emissions() {
                 match emission.output_port().as_str() {
-                    "text_out" => received_text.push_str(
-                        emission
-                            .frame()
-                            .as_text()
-                            .unwrap()
-                            .data()
-                            .as_str(),
-                    ),
+                    "text_out" => {
+                        received_text.push_str(emission.frame().as_text().unwrap().data().as_str())
+                    }
                     "event_out" => {
                         let event = emission.frame().as_event().unwrap();
                         if event.data().topic().as_str() == "muxiva.model.response.completed" {

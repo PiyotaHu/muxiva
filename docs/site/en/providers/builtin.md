@@ -37,6 +37,14 @@ vocabulary; Xiaozhi terms live only in the Xiaozhi Graph. The streaming parser r
 across Text Frames; an interruption Signal or a new sequence resets that state,
 so stale unfinished Markdown cannot silence a later turn.
 
+Batching prefers sentence endings within the configured raw-text character cap, then clause
+punctuation and whitespace when a long sentence reaches that cap. Short ASCII words and numeric
+tokens such as `26.25°C` are kept together when possible; an oversized token still has a bounded
+Unicode-character fallback. A trailing ASCII dot waits for the next text delta or completion Event
+so a streamed decimal is not mistaken for a full stop (the cap can still force a split). These are
+deterministic presentation rules, not linguistic word segmentation or emotional prosody. The cap
+counts input Unicode scalar values before Markdown replacement, not the final spoken expansion.
+
 `builtin.voice_turn_controller` is the sole interruption decision point in a cascade voice graph.
 VAD `speech.started/stopped` values are observations. Only an admitted final transcript produces
 `muxiva.turn.cancelled` and a same-sequence Prompt. Fillers, coughs, minimum length, and short

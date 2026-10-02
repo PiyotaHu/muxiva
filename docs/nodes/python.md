@@ -25,7 +25,14 @@ class Uppercase:
 
 `ctx.emit` may be called repeatedly for different ports or Frames. Return
 values remain supported by the Studio Host only as compatibility sugar. The
-Host also exposes `ctx.schedule_next_tick(delay_ms)` for bounded background
+optional third argument `ctx.emit_signal(name, payload, sequence)` preserves a
+Source Node's explicit sequence when no input Frame exists (for example, a
+physical interruption). Omit it to retain the input sequence, or zero without
+an input. The TypeScript Host supports the same optional third argument on
+`ctx.emitSignal`. This forwards existing Frame identity; it does not infer voice
+turns or cancellation policy.
+
+The Host also exposes `ctx.schedule_next_tick(delay_ms)` for bounded background
 result draining without a Clock Node or `tick_in` Port. The
 standalone Wheel's general Graph callback bridge still uses returned mappings;
 bringing this context-action protocol to that bridge is a tracked SDK boundary.

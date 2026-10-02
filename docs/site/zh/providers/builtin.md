@@ -34,6 +34,12 @@ Markdown 表格替换为可配置的播报提示。它还通过
 解析器会跨 Text Frame 保存代码围栏和表格状态，因此不会把半截 Markdown 控制符送进 TTS。
 打断 Signal 或新的 Sequence 会重置这些状态，未闭合的旧 Markdown 不会导致下一轮静音。
 
+切句优先选择原始文本长度上限内的句末标点；长句达到上限时，再优先选择短语标点和空白。
+尽可能保留较短的 ASCII 单词及 `26.25°C` 这类数字词元；单个超长词元仍按 Unicode 字符
+上限兜底切分。末尾 ASCII 小数点会等待下一段文本或完成 Event 再判断，避免把流式小数
+误作句号（达到长度上限时仍可能强制切分）。这些是确定性的呈现规则，不是语言学分词或
+情感韵律模型。长度统计采用 Markdown 替换前的 Unicode 标量值，不限制替换提示展开后的长度。
+
 `builtin.voice_turn_controller` 是级联语音图唯一的中断裁决点。VAD 的
 `speech.started/stopped` 只是观察事件；最终 Transcript 通过策略校验后，控制器才发出
 `muxiva.turn.cancelled`，同时输出带相同 Sequence 的 Prompt。`嗯`、`啊`、咳嗽、最短

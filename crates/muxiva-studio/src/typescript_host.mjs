@@ -39,6 +39,10 @@ function encodeFrame(value) {
       sample_rate_hz: value.sample_rate_hz ?? value.sampleRateHz,
       channels: value.channels,
       sequence: value.sequence ?? 0,
+      stream_id: value.stream_id,
+      trace_id: value.trace_id,
+      timestamp_ns: value.timestamp_ns,
+      clock_domain: value.clock_domain,
     }
   }
   if (value.kind === 'byte') {
@@ -81,8 +85,12 @@ class NodeContext {
     else this.emissions.push(emission)
   }
 
-  emitSignal(name, payload = null) {
+  emitSignal(name, payload = null, sequence = undefined) {
     const signal = { name, payload }
+    if (sequence !== undefined) {
+      if (!Number.isSafeInteger(sequence) || sequence < 0) throw new RangeError('signal sequence must be a non-negative safe integer')
+      signal.sequence = sequence
+    }
     if (this.streaming) write({ kind: 'signal', ...signal })
     else this.signals.push(signal)
   }
