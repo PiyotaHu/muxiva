@@ -14,7 +14,7 @@ jobs:
         run: cargo fetch
       - name: Collect measurements with provenance
         run: ./scripts/check-bench.sh
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: benchmark-${{ github.sha }}-ubuntu-x86_64
           path: tests/reports/benchmarks/*.json
